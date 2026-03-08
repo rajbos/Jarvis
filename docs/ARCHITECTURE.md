@@ -948,8 +948,9 @@ if (rateLimits.core.remaining < 100) {
 For users with GitHub App installations (higher rate limits), the agent can use the App's installation token:
 
 ```typescript
-// App installation tokens have higher rate limits (5000/hr vs 5000/hr for OAuth)
-// But can access org-level resources the user's OAuth token may not
+// GitHub App installation tokens: 5000 req/hr (or 15000 for GitHub Enterprise Cloud)
+// OAuth user tokens: 5000 req/hr — but App tokens can access org-level resources
+// the user's OAuth token may not have scope for
 const appOctokit = new Octokit({ auth: installationToken });
 const rateLimit = await appOctokit.rest.rateLimit.get();
 ```
