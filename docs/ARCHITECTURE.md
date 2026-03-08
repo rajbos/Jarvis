@@ -15,9 +15,12 @@
 6. [Ollama Integration](#6-ollama-integration)
 7. [MCP Extensibility](#7-mcp-extensibility)
 8. [Local Storage](#8-local-storage)
-9. [GitHub Maintenance Module](#9-github-maintenance-module)
-10. [Configuration](#10-configuration)
-11. [Recommended Approach](#11-recommended-approach)
+9. [Container Isolation](#9-container-isolation)
+10. [Async Actor Pattern](#10-async-actor-pattern)
+11. [Activity Tracking & Weekly Summaries](#11-activity-tracking--weekly-summaries)
+12. [GitHub Maintenance Module](#12-github-maintenance-module)
+13. [Configuration](#13-configuration)
+14. [Recommended Approach](#14-recommended-approach)
 
 ---
 
@@ -37,6 +40,12 @@
 | R10 | GitHub OAuth integration | Discover orgs/repos via active OAuth session |
 | R11 | Local repo discovery | Scan local directories, correlate with GitHub remotes |
 | R12 | Fast/small unit & integration tests | TypeScript/Node.js for easy test workflow |
+| R13 | Advanced GitHub queries | Secrets scanning, fork analysis, upstream sync checks |
+| R14 | Container isolation | Run tasks in containers to prevent access to local services |
+| R15 | Async actor pattern | Background async checks (rate limits, scheduled tasks) |
+| R16 | Cross-repo activity summaries | Find latest PRs/issues across orgs, generate weekly summaries |
+| R17 | Work journal / thought capture | Track things the user has been thinking about or working on |
+| R18 | Full SQLite encryption | Encrypt sensitive data at rest to prevent exfiltration |
 
 ---
 
@@ -55,21 +64,33 @@
 │  │  │ (GUI/CLI)   │   │            │   │                      │ ││
 │  │  └────────────┘   └────────────┘   └──────────┬───────────┘ ││
 │  │                                                │             ││
-│  │                                    ┌───────────┴───────────┐ ││
-│  │                                    │     MCP Client Hub    │ ││
-│  │                                    │                       │ ││
-│  │                                    │  ┌─────┐  ┌────────┐ │ ││
-│  │                                    │  │GitHub│  │ Future │ │ ││
-│  │                                    │  │ MCP  │  │  MCP   │ │ ││
-│  │                                    │  │Server│  │Servers │ │ ││
-│  │                                    │  └─────┘  └────────┘ │ ││
-│  │                                    └───────────────────────┘ ││
+│  │  ┌──────────────────┐              ┌───────────┴───────────┐ ││
+│  │  │  Async Task       │              │     MCP Client Hub    │ ││
+│  │  │  Runner (Actor)   │              │                       │ ││
+│  │  │                   │              │  ┌─────┐  ┌────────┐ │ ││
+│  │  │  ┌─────────────┐ │              │  │GitHub│  │ Future │ │ ││
+│  │  │  │ Scheduled    │ │              │  │ MCP  │  │  MCP   │ │ ││
+│  │  │  │ Tasks        │ │              │  │Server│  │Servers │ │ ││
+│  │  │  ├─────────────┤ │              │  └─────┘  └────────┘ │ ││
+│  │  │  │ Rate Limit   │ │              └───────────────────────┘ ││
+│  │  │  │ Monitor      │ │                                       ││
+│  │  │  ├─────────────┤ │  ┌──────────────────────────────────┐  ││
+│  │  │  │ Weekly       │ │  │  Activity Tracker                │  ││
+│  │  │  │ Summary Gen  │ │  │  ┌──────┐ ┌──────┐ ┌─────────┐ │  ││
+│  │  │  └─────────────┘ │  │  │ PRs  │ │Issues│ │ Work    │ │  ││
+│  │  └──────────────────┘  │  │      │ │      │ │ Journal │ │  ││
+│  │                         │  └──────┘ └──────┘ └─────────┘ │  ││
+│  │                         └──────────────────────────────────┘  ││
 │  │                                                              ││
 │  │  ┌────────────────────────────────────────────────────────┐  ││
-│  │  │              Local Storage (SQLite)                    │  ││
+│  │  │       Local Storage (SQLite — encrypted via sqleet)    │  ││
 │  │  │  ┌────────┐ ┌────────┐ ┌──────────┐ ┌─────────────┐  │  ││
 │  │  │  │ Config │ │Indexes │ │ Local    │ │Conversation │  │  ││
 │  │  │  │        │ │        │ │ Repos    │ │    Log      │  │  ││
+│  │  │  └────────┘ └────────┘ └──────────┘ └─────────────┘  │  ││
+│  │  │  ┌────────┐ ┌────────┐ ┌──────────┐ ┌─────────────┐  │  ││
+│  │  │  │Activity│ │ Async  │ │ Weekly   │ │  Secrets    │  │  ││
+│  │  │  │  Log   │ │ Tasks  │ │Summaries │ │Scan Results │  │  ││
 │  │  │  └────────┘ └────────┘ └──────────┘ └─────────────┘  │  ││
 │  │  └────────────────────────────────────────────────────────┘  ││
 │  └──────────────────────────────────────────────────────────────┘│
@@ -79,6 +100,16 @@
 │  │  Manager            │  │  (Renderer Process)                │  │
 │  └────────────────────┘  └────────────────────────────────────┘  │
 └──────────────────────────────────────────────────────────────────┘
+                │
+                │ (optional sandboxed execution)
+                ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                    Container Runtime (Docker)                     │
+│  ┌──────────────────┐  ┌──────────────────┐                     │
+│  │  Sandboxed MCP    │  │  Sandboxed Task   │                    │
+│  │  Server           │  │  Runner           │                    │
+│  └──────────────────┘  └──────────────────┘                     │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ### Core Flow
@@ -87,8 +118,9 @@
 2. **Onboarding** — On first run, notifications guide the user through setup (Ollama discovery, local repos, GitHub OAuth).
 3. **Prompt Input** — User submits a natural-language request via the GUI window or CLI.
 4. **Ollama Router** — The local Ollama model interprets the prompt and determines which action(s) to invoke, including which MCP tools to call and with what parameters.
-5. **Action Executor** — Dispatches tool calls to the appropriate MCP server(s) and collects results.
-6. **Response** — Results are optionally summarized by Ollama and returned to the user.
+5. **Action Executor** — Dispatches tool calls to the appropriate MCP server(s) and collects results. Tasks requiring isolation can be routed to containerized runners.
+6. **Async Tasks** — Background actor processes run scheduled tasks (rate-limit checks, weekly summaries, periodic indexing) without blocking the main agent.
+7. **Response** — Results are optionally summarized by Ollama and returned to the user.
 
 ---
 
@@ -549,6 +581,8 @@ CREATE TABLE github_repos (
     default_branch  TEXT,
     language        TEXT,
     archived        INTEGER DEFAULT 0,
+    fork            INTEGER DEFAULT 0,
+    parent_full_name TEXT,           -- upstream repo if this is a fork
     private         INTEGER DEFAULT 0,
     last_pushed_at  DATETIME,
     last_updated_at DATETIME,
@@ -585,6 +619,82 @@ CREATE TABLE task_history (
     status      TEXT DEFAULT 'pending',  -- pending, running, completed, failed
     result      TEXT  -- JSON blob
 );
+
+-- Activity log (PRs, issues, commits, reviews across all repos)
+CREATE TABLE activity_log (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    github_user TEXT NOT NULL,
+    activity_type TEXT NOT NULL,  -- 'pr_opened', 'pr_merged', 'issue_opened', 'issue_closed', 'review', 'commit'
+    repo_full_name TEXT NOT NULL,
+    org_login   TEXT,
+    title       TEXT,
+    url         TEXT NOT NULL,
+    state       TEXT,            -- 'open', 'closed', 'merged'
+    created_at  DATETIME,
+    updated_at  DATETIME,
+    fetched_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+    metadata    TEXT             -- JSON blob for extra fields
+);
+CREATE INDEX idx_activity_log_type ON activity_log(activity_type);
+CREATE INDEX idx_activity_log_created ON activity_log(created_at);
+CREATE INDEX idx_activity_log_repo ON activity_log(repo_full_name);
+
+-- Work journal (manual or captured thoughts, notes, topics)
+CREATE TABLE work_journal (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp   DATETIME DEFAULT CURRENT_TIMESTAMP,
+    content     TEXT NOT NULL,
+    source      TEXT DEFAULT 'manual',  -- 'manual', 'auto_captured', 'pr_context', 'conversation'
+    tags        TEXT,                    -- JSON array of tags
+    week_number INTEGER,                -- ISO week number for easy weekly grouping
+    year        INTEGER
+);
+
+-- Weekly summaries (generated)
+CREATE TABLE weekly_summaries (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    week_number INTEGER NOT NULL,
+    year        INTEGER NOT NULL,
+    generated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    summary     TEXT NOT NULL,         -- Markdown-formatted summary
+    pr_count    INTEGER DEFAULT 0,
+    issue_count INTEGER DEFAULT 0,
+    repos_touched INTEGER DEFAULT 0,
+    metadata    TEXT,                   -- JSON blob for detailed stats
+    UNIQUE(week_number, year)
+);
+
+-- Async task queue
+CREATE TABLE async_tasks (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_type    TEXT NOT NULL,          -- 'rate_limit_check', 'secrets_scan', 'weekly_summary', 'index_repos'
+    schedule     TEXT,                   -- cron expression or 'once'
+    status       TEXT DEFAULT 'pending', -- 'pending', 'running', 'completed', 'failed', 'scheduled'
+    priority     INTEGER DEFAULT 0,
+    payload      TEXT,                   -- JSON blob with task parameters
+    result       TEXT,                   -- JSON blob with task output
+    error        TEXT,
+    created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+    started_at   DATETIME,
+    completed_at DATETIME,
+    next_run_at  DATETIME
+);
+CREATE INDEX idx_async_tasks_status ON async_tasks(status);
+CREATE INDEX idx_async_tasks_next_run ON async_tasks(next_run_at);
+
+-- Secrets scan results
+CREATE TABLE secrets_scan_results (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    repo_full_name  TEXT NOT NULL,
+    secret_type     TEXT NOT NULL,       -- 'pat', 'api_key', 'password', 'token', etc.
+    secret_name     TEXT,
+    location        TEXT,               -- file path or secret name
+    alert_state     TEXT,               -- 'open', 'resolved', 'dismissed'
+    alert_url       TEXT,
+    scanned_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+    metadata        TEXT                -- JSON blob
+);
+CREATE INDEX idx_secrets_scan_repo ON secrets_scan_results(repo_full_name);
 ```
 
 ### Option B: JSON File Storage
@@ -609,6 +719,49 @@ This hybrid approach gives the best of both worlds:
 
 **Start with SQLite** (Option A) for all storage. It is simple, requires no external services, and supports the query patterns needed for repo indexing. Consider adding the **MCP Memory server** (Option C) later for more advanced knowledge management.
 
+### Full-Database Encryption
+
+To prevent exfiltration or misuse of the SQLite database (which contains OAuth tokens, repo metadata, activity data, and conversation history), the entire database should be encrypted at rest.
+
+#### Option A: sqleet (recommended)
+
+[`sqleet`](https://github.com/nickolasburr/sqleet) is a transparent encryption layer for SQLite using ChaCha20-Poly1305. The `better-sqlite3` package can be compiled against sqleet to enable transparent encryption:
+
+```typescript
+import Database from 'better-sqlite3';
+
+// Open encrypted database — all data is encrypted/decrypted transparently
+const db = new Database('%APPDATA%/jarvis/jarvis.db', {
+  // better-sqlite3 compiled with sqleet support
+});
+db.pragma(`key='${encryptionKey}'`);
+```
+
+#### Option B: SQLCipher
+
+[SQLCipher](https://www.zetetic.net/sqlcipher/) is the most widely-used SQLite encryption extension, using AES-256-CBC. Available via [`better-sqlite3-sqlcipher`](https://www.npmjs.com/package/@journeyapps/sqlcipher) or similar forks.
+
+```typescript
+import Database from 'better-sqlite3';
+
+const db = new Database('%APPDATA%/jarvis/jarvis.db');
+db.pragma(`key='${encryptionKey}'`);  // AES-256 encryption
+```
+
+#### Comparison
+
+| | sqleet | SQLCipher |
+|--|--------|-----------|
+| Algorithm | ChaCha20-Poly1305 | AES-256-CBC |
+| License | Public domain | BSD (community) / Commercial |
+| Performance | Faster on systems without AES-NI | Faster with hardware AES |
+| npm integration | Requires custom build | `@journeyapps/sqlcipher` available |
+| Maturity | ⭐⭐ | ⭐⭐⭐ |
+
+#### Key Management
+
+The database encryption key is derived from the master key stored in **Windows Credential Manager** (same key used for OAuth token encryption — see [Configuration](#13-configuration)). If no key exists on first run, the agent generates a 256-bit random key and stores it in Credential Manager automatically.
+
 ### Storage Location
 
 Use the Windows standard application data directory:
@@ -622,13 +775,343 @@ Use the Windows standard application data directory:
 
 ---
 
-## 9. GitHub Maintenance Module
+## 9. Container Isolation
+
+### Motivation
+
+Some tasks should run in isolation to prevent accidental or malicious access to local services, filesystems, or credentials. Container isolation is especially important for:
+
+- **MCP servers that execute untrusted code** — e.g., running user-provided scripts or plugins.
+- **Secrets scanning** — operations that parse repository contents should not leak data.
+- **Network-restricted tasks** — tasks that should only access specific APIs (e.g., GitHub) and nothing else.
+- **Multi-tenant safety** — if the agent ever runs tasks on behalf of multiple accounts or orgs.
+
+### Architecture
+
+The agent can optionally launch tasks inside Docker containers instead of running them directly:
+
+```
+┌─────────────────────┐
+│    Jarvis Agent      │
+│    (Host Process)    │
+│                      │        ┌─────────────────────────┐
+│  ┌────────────────┐  │        │  Docker Container        │
+│  │ Task Scheduler  │──┼───────▶│                         │
+│  │                 │  │  stdio │  ┌───────────────────┐  │
+│  │ decides:        │  │◀───────┤  │  Sandboxed MCP    │  │
+│  │ local vs        │  │        │  │  Server / Task    │  │
+│  │ containerized   │  │        │  └───────────────────┘  │
+│  └────────────────┘  │        │                         │
+└─────────────────────┘        │  No access to:          │
+                                │  - Host filesystem       │
+                                │  - Host network services  │
+                                │  - Credential Manager     │
+                                └─────────────────────────┘
+```
+
+### Container Configuration
+
+Tasks can be tagged with an isolation level in the config:
+
+```json
+{
+  "taskIsolation": {
+    "default": "local",
+    "overrides": {
+      "secrets_scan": "container",
+      "untrusted_mcp_server": "container",
+      "code_analysis": "container"
+    }
+  },
+  "container": {
+    "runtime": "docker",
+    "image": "jarvis-sandbox:latest",
+    "networkMode": "none",
+    "readOnlyRootfs": true,
+    "memoryLimit": "512m",
+    "cpuLimit": "1.0",
+    "volumes": []
+  }
+}
+```
+
+### Docker Image
+
+A minimal container image with only the required tools:
+
+```dockerfile
+FROM node:20-slim
+WORKDIR /app
+# Install only what's needed for sandboxed tasks
+COPY package*.json ./
+RUN npm ci --production
+COPY dist/ ./dist/
+USER node
+ENTRYPOINT ["node", "dist/sandbox-entry.js"]
+```
+
+### When to Containerize
+
+| Task | Default | Can Override |
+|------|---------|-------------|
+| MCP server execution | Local | ✅ Container |
+| Secrets scanning | Container | ✅ Local |
+| Code analysis | Container | ✅ Local |
+| GitHub API calls | Local | ✅ Container |
+| Local repo scanning | Local | ❌ Needs host access |
+| Ollama inference | Local | ❌ Needs GPU access |
+
+### Recommendation
+
+Start with **all tasks running locally** (Phase 1-8). Add container isolation as **Phase 9** for security-sensitive operations. Users can opt-in to containerized execution per task type.
+
+---
+
+## 10. Async Actor Pattern
+
+### Motivation
+
+Many tasks are long-running, periodic, or should not block the main agent loop:
+
+- **GitHub API rate limit monitoring** — check remaining rate limits and pause/resume operations.
+- **Periodic repo re-indexing** — refresh the local index on a schedule.
+- **Weekly summary generation** — aggregate activity data and generate summaries.
+- **Secrets scanning** — scan repos for leaked credentials in the background.
+- **Upstream fork sync checks** — compare forks to upstream for divergence.
+
+### Actor Model
+
+The agent uses a lightweight actor-style task runner where each background task is:
+
+1. **Registered** with a schedule (cron expression) or triggered on-demand.
+2. **Queued** in the `async_tasks` table in SQLite.
+3. **Executed** by a worker pool (configurable concurrency).
+4. **Monitored** — the agent can check task status, cancel running tasks, or retry failed ones.
+
+```
+┌───────────────────────────────────────────────┐
+│               Async Task Runner                │
+│                                                │
+│  ┌──────────┐   ┌──────────┐   ┌────────────┐ │
+│  │ Scheduler │   │  Queue   │   │  Worker    │ │
+│  │ (cron)    │──▶│ (SQLite) │──▶│  Pool      │ │
+│  └──────────┘   └──────────┘   └────────────┘ │
+│                                      │         │
+│                                      ▼         │
+│                               ┌────────────┐   │
+│                               │  Results   │   │
+│                               │  (SQLite)  │   │
+│                               └────────────┘   │
+│                                      │         │
+│                                      ▼         │
+│                               ┌────────────┐   │
+│                               │Notification│   │
+│                               │  Manager   │   │
+│                               └────────────┘   │
+└───────────────────────────────────────────────┘
+```
+
+### Task Types
+
+| Task Type | Schedule | Description |
+|-----------|----------|-------------|
+| `rate_limit_check` | Every 15 min | Check GitHub API rate limits, pause operations if low |
+| `index_repos` | Daily | Re-index repos and orgs from GitHub API |
+| `secrets_scan` | Weekly | Scan repos for secrets/PATs via GitHub secret scanning API |
+| `weekly_summary` | Monday 9 AM | Generate weekly activity summary |
+| `fork_sync_check` | Daily | Check if forks have diverged from upstream |
+| `dependency_audit` | Weekly | Check for outdated dependencies and security alerts |
+| `branch_cleanup` | Weekly | Identify stale branches across repos |
+
+### Rate Limit Awareness
+
+The agent monitors GitHub API rate limits and automatically throttles:
+
+```typescript
+interface RateLimitState {
+  remaining: number;
+  limit: number;
+  resetAt: Date;
+  category: 'core' | 'search' | 'graphql';
+}
+
+// Before making GitHub API calls
+const rateLimits = await checkRateLimits(octokit);
+if (rateLimits.core.remaining < 100) {
+  await pauseUntil(rateLimits.core.resetAt);
+  notify('GitHub API rate limit low — pausing operations until reset.');
+}
+```
+
+### GitHub App Rate Limits
+
+For users with GitHub App installations (higher rate limits), the agent can use the App's installation token:
+
+```typescript
+// App installation tokens have higher rate limits (5000/hr vs 5000/hr for OAuth)
+// But can access org-level resources the user's OAuth token may not
+const appOctokit = new Octokit({ auth: installationToken });
+const rateLimit = await appOctokit.rest.rateLimit.get();
+```
+
+### Task Lifecycle
+
+```
+Created → Scheduled → Running → Completed
+                         ↓
+                       Failed → Retry (up to 3x) → Permanently Failed
+```
+
+Each task execution is logged to `async_tasks` and the result can trigger notifications.
+
+---
+
+## 11. Activity Tracking & Weekly Summaries
+
+### Motivation
+
+The user wants to:
+1. See what they've been working on across all repos and orgs.
+2. Generate a weekly summary of PRs, issues, reviews, and commits.
+3. Capture ad-hoc thoughts and notes that should feed into the summary.
+4. Have context about recent work when chatting with the agent.
+
+### Data Sources
+
+| Source | Data Captured |
+|--------|--------------|
+| **GitHub API** | PRs opened/merged/reviewed, issues opened/closed, commits pushed |
+| **Work journal** | Manual notes, thoughts, topics entered via chat or UI |
+| **Conversation history** | Things discussed with the agent (auto-captured) |
+| **Local git history** | Commits in local repos (from `git log`) |
+
+### Activity Fetching
+
+The agent periodically fetches activity from GitHub using the Events API and Search API:
+
+```typescript
+// Fetch recent PRs authored by the user across all repos
+const prs = await octokit.search.issuesAndPullRequests({
+  q: `author:${username} type:pr created:>=${oneWeekAgo}`,
+  sort: 'created',
+  order: 'desc',
+  per_page: 100,
+});
+
+// Fetch recent issues
+const issues = await octokit.search.issuesAndPullRequests({
+  q: `author:${username} type:issue created:>=${oneWeekAgo}`,
+  sort: 'created',
+  order: 'desc',
+  per_page: 100,
+});
+
+// Fetch reviews the user participated in
+const reviews = await octokit.search.issuesAndPullRequests({
+  q: `reviewed-by:${username} type:pr updated:>=${oneWeekAgo}`,
+  sort: 'updated',
+  order: 'desc',
+  per_page: 100,
+});
+```
+
+### Work Journal
+
+The user can capture thoughts and notes at any time via the chat interface or a dedicated UI:
+
+```
+User: "Note: I've been thinking about migrating the auth service to OAuth2"
+Agent: ✅ Added to your work journal. This will be included in your weekly summary.
+
+User: "Journal: Started investigating rate limit issues on the billing API"
+Agent: ✅ Noted. Tagged with #billing #rate-limits.
+```
+
+Journal entries are stored in the `work_journal` table with:
+- Automatic week/year tagging for grouping.
+- Auto-extracted tags from content (via Ollama).
+- Source tracking (manual, from conversation, from PR context).
+
+### Weekly Summary Generation
+
+A scheduled async task generates a weekly summary every Monday:
+
+```typescript
+async function generateWeeklySummary(weekNumber: number, year: number): Promise<string> {
+  // 1. Fetch all activity for the week
+  const prs = await db.getActivityByWeek(weekNumber, year, 'pr_opened', 'pr_merged');
+  const issues = await db.getActivityByWeek(weekNumber, year, 'issue_opened', 'issue_closed');
+  const reviews = await db.getActivityByWeek(weekNumber, year, 'review');
+  const journalEntries = await db.getJournalByWeek(weekNumber, year);
+
+  // 2. Use Ollama to generate a natural-language summary
+  const prompt = buildSummaryPrompt({ prs, issues, reviews, journalEntries });
+  const summary = await ollama.generate({ model: config.model, prompt });
+
+  // 3. Store the summary
+  await db.insertWeeklySummary({
+    weekNumber, year, summary: summary.response,
+    prCount: prs.length, issueCount: issues.length,
+    reposTouched: countUniqueRepos([...prs, ...issues]),
+  });
+
+  return summary.response;
+}
+```
+
+### Example Summary Output
+
+```markdown
+## Weekly Summary — Week 10, 2026
+
+### Pull Requests (7)
+- ✅ Merged: `jarvis/agent#42` — Add container isolation support
+- ✅ Merged: `billing-api#128` — Fix rate limit handling
+- 🔄 Open: `auth-service#55` — OAuth2 migration (draft)
+- ...
+
+### Issues (3)
+- 🆕 Opened: `infra#201` — Investigate Docker registry performance
+- ✅ Closed: `billing-api#130` — Timeout on large invoices
+- ...
+
+### Reviews (5)
+- Reviewed `team-dashboard#78` — Approved with comments
+- ...
+
+### Notes & Thoughts
+- Started investigating OAuth2 migration for auth service
+- Rate limit issues on billing API seem related to burst traffic
+- Considering moving to GitHub App auth for higher rate limits
+
+### Repos Touched: 5 | PRs: 7 | Issues: 3 | Reviews: 5
+```
+
+### Query Examples
+
+```
+User: "What did I work on last week?"
+Agent: Retrieves weekly summary → displays formatted report
+
+User: "Show me all open PRs I have across all orgs"
+Agent: Queries activity_log for open PRs → lists them
+
+User: "Which repos did I contribute to in the last month?"
+Agent: Aggregates activity_log by repo → returns unique repos
+
+User: "Add to my journal: considering using Redis for caching in the billing service"
+Agent: Inserts journal entry → confirms
+```
+
+---
+
+## 12. GitHub Maintenance Module
 
 ### Initial Capabilities
 
 The first concrete use case is GitHub repository maintenance. The agent should support:
 
-#### 9.1 Repository & Organization Indexing
+#### 12.1 Repository & Organization Indexing
 
 - **Index organizations** — Discover and store all orgs the user belongs to via GitHub OAuth.
 - **Index repositories** — For each org, list and store all repositories with metadata.
@@ -637,13 +1120,80 @@ The first concrete use case is GitHub repository maintenance. The agent should s
 - **Incremental updates** — Only fetch changes since last index.
 - **Search** — Query the local index by name, language, last activity, etc.
 
-#### 9.2 Maintenance Tasks (Future)
+#### 12.2 Secrets Scanning
+
+Scan repos for exposed secrets, tokens, and credentials:
+
+- **GitHub Secret Scanning API** — Query the secret scanning alerts endpoint for repos with Advanced Security enabled.
+- **Custom pattern matching** — For repos without Advanced Security, scan for common patterns (PATs, API keys, connection strings) in repo content via the GitHub Search API or local clone analysis.
+- **Filter by type** — "Find all secrets that have PAT in the name" → queries `secrets_scan_results` filtered by `secret_type` or `secret_name` matching.
+
+```
+User: "Check my personal repos for all secrets that have PAT in the name"
+Agent: 1. Queries GitHub secret scanning API for each personal repo
+       2. Filters alerts where secret_type or name contains 'PAT'
+       3. Stores results in secrets_scan_results table
+       4. Returns: "Found 3 exposed PATs across 2 repos: ..."
+```
+
+#### 12.3 Fork Analysis & Upstream Sync
+
+Analyze forked repos for staleness and upstream divergence:
+
+- **Identify forks** — Filter indexed repos where `fork = true`.
+- **Check upstream freshness** — Compare the fork's default branch to the upstream's default branch.
+- **Detect unmerged upstream changes** — Use GitHub's compare API to find commits in upstream that haven't been merged into the fork.
+- **Staleness detection** — Find forks with no activity since a configurable date.
+- **Recommend action** — Suggest syncing, archiving, or deleting stale forks.
+
+```
+User: "Check all personal repos that are forks, have not been updated in forever,
+       and check if they still have updates not merged upstream"
+Agent: 1. Queries local index for repos where fork=true AND last_pushed_at < threshold
+       2. For each stale fork, calls GitHub compare API: upstream...fork
+       3. Reports: "Found 8 stale forks. 3 have unmerged upstream changes:
+          - repo-a: 47 commits behind upstream
+          - repo-b: 12 commits behind upstream
+          - repo-c: 3 commits behind upstream
+          5 forks are up-to-date but inactive — consider archiving."
+```
+
+```typescript
+// Fork analysis pseudocode
+async function analyzeStaleForksWithUpstream(username: string, staleDays: number) {
+  const forks = await db.getForkedRepos(username, { staleDays });
+
+  for (const fork of forks) {
+    const parent = await octokit.repos.get({ owner: fork.owner, repo: fork.name });
+    if (!parent.data.parent) continue;
+
+    const upstream = parent.data.parent;
+    const comparison = await octokit.repos.compareCommits({
+      owner: upstream.owner.login,
+      repo: upstream.name,
+      base: `${fork.owner}:${fork.default_branch}`,
+      head: `${upstream.owner.login}:${upstream.default_branch}`,
+    });
+
+    await db.updateForkAnalysis(fork.id, {
+      upstreamFullName: upstream.full_name,
+      behindBy: comparison.data.ahead_by,  // commits in upstream not in fork
+      aheadBy: comparison.data.behind_by,  // commits in fork not in upstream
+      lastUpstreamCommit: comparison.data.commits?.[0]?.commit?.committer?.date,
+    });
+  }
+}
+```
+
+#### 12.4 Maintenance Tasks
 
 Once indexing is in place, these maintenance tasks can be added incrementally:
 
 | Task | Description |
 |------|-------------|
 | Stale repo detection | Find repos with no activity in N months |
+| Secrets scanning | Find exposed PATs, API keys, tokens in repos |
+| Fork upstream sync | Check if forks have unmerged upstream changes |
 | Dependency audit | Check for outdated dependencies or security alerts |
 | Branch cleanup | Identify stale branches across repos |
 | Action workflow status | Monitor GitHub Actions health across repos |
@@ -652,7 +1202,7 @@ Once indexing is in place, these maintenance tasks can be added incrementally:
 | Archive suggestions | Suggest repos that could be archived |
 | Topic/description gaps | Find repos missing topics or descriptions |
 
-#### 9.3 Implementation Approach
+#### 12.5 Implementation Approach
 
 **Option A: Use the pre-built GitHub MCP Server**
 
@@ -691,13 +1241,25 @@ Agent: Queries local index → "You have 47 repos in 'myorg'"
 User: "Which repos haven't been updated in the last 6 months?"
 Agent: Queries local index with date filter → returns list
 
+User: "Check my personal repos for all secrets that have PAT in the name"
+Agent: Scans repos via secret scanning API → filters by PAT → returns results
+
+User: "Find all my forks that are behind upstream"
+Agent: Identifies forks → compares with upstream → reports divergence
+
+User: "What are my open PRs across all orgs?"
+Agent: Queries activity_log → returns list of open PRs with links
+
+User: "Generate my weekly summary"
+Agent: Aggregates PRs, issues, reviews, journal entries → generates markdown report
+
 User: "Run a full maintenance check on my repos"
 Agent: Executes multiple checks → generates a report
 ```
 
 ---
 
-## 10. Configuration
+## 13. Configuration
 
 ### Agent Configuration File
 
@@ -711,7 +1273,8 @@ A single `config.json` in the app data directory:
     "timeout": 120
   },
   "storage": {
-    "database": "%APPDATA%/jarvis/jarvis.db"
+    "database": "%APPDATA%/jarvis/jarvis.db",
+    "encrypted": true
   },
   "localRepos": {
     "scanPaths": ["%USERPROFILE%/repos", "%USERPROFILE%/projects"],
@@ -719,7 +1282,7 @@ A single `config.json` in the app data directory:
     "excludePatterns": ["node_modules", ".git"]
   },
   "github": {
-    "oauthClientId": "Iv1.xxxxxxxxxxxxxxxx",  // GitHub OAuth App client ID — see https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/creating-an-oauth-app
+    "oauthClientId": "Iv1.xxxxxxxxxxxxxxxx",
     "scopes": ["repo", "read:org", "read:user"]
   },
   "mcpServers": {
@@ -739,6 +1302,31 @@ A single `config.json` in the app data directory:
   "electron": {
     "startMinimized": true,
     "openAtLogin": true
+  },
+  "asyncTasks": {
+    "workerConcurrency": 2,
+    "schedules": {
+      "rate_limit_check": "*/15 * * * *",
+      "index_repos": "0 2 * * *",
+      "secrets_scan": "0 3 * * 0",
+      "weekly_summary": "0 9 * * 1",
+      "fork_sync_check": "0 4 * * *",
+      "dependency_audit": "0 5 * * 0",
+      "branch_cleanup": "0 6 * * 0"
+    }
+  },
+  "taskIsolation": {
+    "default": "local",
+    "overrides": {
+      "secrets_scan": "container",
+      "code_analysis": "container"
+    }
+  },
+  "container": {
+    "runtime": "docker",
+    "image": "jarvis-sandbox:latest",
+    "networkMode": "none",
+    "memoryLimit": "512m"
   }
 }
 ```
@@ -752,15 +1340,15 @@ Sensitive values (tokens, keys) should come from environment variables, never st
 | `GITHUB_TOKEN` | GitHub access token (fallback if OAuth not used) |
 | `JARVIS_CONFIG_DIR` | Override default config directory |
 | `OLLAMA_HOST` | Override Ollama URL |
-| `JARVIS_ENCRYPTION_KEY` | AES-256 key for encrypting OAuth tokens at rest |
+| `JARVIS_ENCRYPTION_KEY` | Master key for encrypting the SQLite database and OAuth tokens at rest |
 
 #### Encryption Key Management
 
-`JARVIS_ENCRYPTION_KEY` should be a 256-bit (32-byte) random key, base64-encoded. On first run, if no key is set, the agent can generate one and store it in **Windows Credential Manager** (via `keytar` or `node-keychain`) so the user never has to manage it manually. This keeps the key out of environment variables and config files for most users while allowing advanced users to override via the environment variable.
+`JARVIS_ENCRYPTION_KEY` is used as the master key for full SQLite database encryption (via sqleet/SQLCipher — see [Section 8](#8-local-storage)) and for application-layer encryption of especially sensitive fields. On first run, if no key is set, the agent generates a 256-bit (32-byte) random key and stores it in **Windows Credential Manager** (via `keytar` or `node-keychain`) so the user never has to manage it manually. This keeps the key out of environment variables and config files for most users while allowing advanced users to override via the environment variable.
 
 ---
 
-## 11. Recommended Approach
+## 14. Recommended Approach
 
 Based on the requirements analysis and feedback, here is the chosen approach:
 
@@ -797,7 +1385,8 @@ jarvis/
 │   │   ├── index.html
 │   │   ├── onboarding/              # Onboarding wizard UI
 │   │   ├── settings/                # Settings UI
-│   │   └── chat/                    # Chat / prompt UI
+│   │   ├── chat/                    # Chat / prompt UI
+│   │   └── summary/                 # Weekly summary display
 │   ├── agent/                       # Core agent logic
 │   │   ├── agent.ts                 # Agent loop & orchestration
 │   │   ├── config.ts                # Configuration loading
@@ -807,22 +1396,40 @@ jarvis/
 │   ├── mcp/
 │   │   └── client.ts                # MCP client hub
 │   ├── storage/
-│   │   ├── database.ts              # SQLite operations
-│   │   └── schema.ts                # Table definitions & migrations
-│   └── services/
-│       ├── github-oauth.ts          # GitHub Device Flow
-│       ├── github-indexer.ts        # Org & repo indexing
-│       └── local-repo-scanner.ts    # Local .git discovery
+│   │   ├── database.ts              # SQLite operations (encrypted)
+│   │   ├── schema.ts                # Table definitions & migrations
+│   │   └── encryption.ts            # Key management (Credential Manager)
+│   ├── tasks/                       # Async actor task runner
+│   │   ├── runner.ts                # Task queue & worker pool
+│   │   ├── scheduler.ts             # Cron-based scheduling
+│   │   ├── rate-limit-monitor.ts    # GitHub API rate limit tracking
+│   │   └── weekly-summary.ts        # Weekly summary generation
+│   ├── services/
+│   │   ├── github-oauth.ts          # GitHub Device Flow
+│   │   ├── github-indexer.ts        # Org & repo indexing
+│   │   ├── local-repo-scanner.ts    # Local .git discovery
+│   │   ├── secrets-scanner.ts       # Secrets/PAT scanning
+│   │   ├── fork-analyzer.ts         # Fork analysis & upstream sync
+│   │   └── activity-tracker.ts      # PR/issue/review tracking
+│   └── container/                   # Container isolation
+│       ├── docker-manager.ts        # Docker container lifecycle
+│       └── sandbox-entry.ts         # Entry point for sandboxed tasks
 ├── tests/
 │   ├── unit/
 │   │   ├── agent.test.ts
 │   │   ├── ollama-client.test.ts
 │   │   ├── database.test.ts
 │   │   ├── local-repo-scanner.test.ts
-│   │   └── github-indexer.test.ts
+│   │   ├── github-indexer.test.ts
+│   │   ├── secrets-scanner.test.ts
+│   │   ├── fork-analyzer.test.ts
+│   │   ├── activity-tracker.test.ts
+│   │   ├── task-runner.test.ts
+│   │   └── weekly-summary.test.ts
 │   └── integration/
 │       ├── onboarding.test.ts
-│       └── mcp-client.test.ts
+│       ├── mcp-client.test.ts
+│       └── container-isolation.test.ts
 ├── assets/
 │   ├── icon.png                     # App icon
 │   └── icon.ico                     # Windows icon
@@ -830,6 +1437,7 @@ jarvis/
 │   └── default.json                 # Default configuration
 ├── docs/
 │   └── ARCHITECTURE.md              # This document
+├── Dockerfile                       # Sandbox container image
 ├── package.json
 ├── tsconfig.json
 ├── vitest.config.ts
@@ -843,13 +1451,17 @@ jarvis/
 | Phase | Scope | Outcome |
 |-------|-------|---------|
 | **Phase 1** | Electron shell + system tray + startup on boot | App launches silently on login with tray icon |
-| **Phase 2** | SQLite storage + config loading | Persistent state, onboarding tracking |
+| **Phase 2** | SQLite storage (encrypted) + config loading | Persistent encrypted state, onboarding tracking |
 | **Phase 3** | Ollama discovery + model selection | Detects Ollama, user selects model, notification-driven |
 | **Phase 4** | Local repo scanning | Scans directories for `.git` repos, indexes into SQLite |
 | **Phase 5** | GitHub OAuth + org/repo indexing | Device Flow login, discover orgs/repos, correlate with local |
 | **Phase 6** | MCP client integration | Can connect to MCP servers, expose tools to Ollama |
 | **Phase 7** | Chat / prompt UI + Ollama routing | Natural-language prompts dispatched to MCP tools |
-| **Phase 8** | Maintenance tasks | Stale repo detection, health checks, notifications |
+| **Phase 8** | Async task runner + scheduling | Background task queue with cron scheduling |
+| **Phase 9** | Activity tracking + weekly summaries | Cross-repo PR/issue tracking, work journal, generated summaries |
+| **Phase 10** | Secrets scanning + fork analysis | Scan for exposed secrets, analyze fork upstream divergence |
+| **Phase 11** | Container isolation | Optional sandboxed execution for security-sensitive tasks |
+| **Phase 12** | Advanced maintenance tasks | Stale repo detection, dependency audits, branch cleanup |
 
 ---
 
@@ -861,7 +1473,11 @@ jarvis/
 | GUI host | **Electron** | System tray, notifications, startup on boot, web UI |
 | Windows startup method | **Electron `openAtLogin`** | Registry-based, no Task Scheduler needed |
 | Storage engine | **SQLite** (`better-sqlite3`) | Battle-tested, zero config, queryable |
+| Database encryption | **sqleet or SQLCipher** | Full-database encryption to prevent exfiltration |
 | GitHub authentication | **OAuth Device Flow** | Frictionless browser-based login |
 | MCP server approach | **Pre-built server first** | Quick start, move to hybrid later |
 | Ollama model | **User selects at onboarding** | Detected from local Ollama installation |
 | Testing framework | **Vitest** | Fast, TypeScript-native |
+| Async task execution | **Actor-style task runner** | Background queue with cron scheduling, rate-limit aware |
+| Container isolation | **Docker (opt-in)** | Sandboxed execution for security-sensitive tasks |
+| Activity summaries | **Weekly generated summaries** | Cross-repo PR/issue/review aggregation + work journal |
