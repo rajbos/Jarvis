@@ -1,12 +1,14 @@
-# Python
-__pycache__/
-*.py[cod]
-*.egg-info/
+# Dependencies
+node_modules/
+
+# Build output
 dist/
+out/
 build/
-*.egg
-.venv/
-venv/
+*.tsbuildinfo
+
+# Electron
+release/
 
 # IDE
 .vscode/

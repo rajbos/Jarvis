@@ -10,13 +10,14 @@
 1. [Requirements Summary](#1-requirements-summary)
 2. [High-Level Architecture](#2-high-level-architecture)
 3. [Runtime & Language Options](#3-runtime--language-options)
-4. [Windows Startup Strategies](#4-windows-startup-strategies)
-5. [Ollama Integration](#5-ollama-integration)
-6. [MCP Extensibility](#6-mcp-extensibility)
-7. [Local Storage](#7-local-storage)
-8. [GitHub Maintenance Module](#8-github-maintenance-module)
-9. [Configuration](#9-configuration)
-10. [Recommended Approach](#10-recommended-approach)
+4. [Electron GUI Host](#4-electron-gui-host)
+5. [First-Run Onboarding Flow](#5-first-run-onboarding-flow)
+6. [Ollama Integration](#6-ollama-integration)
+7. [MCP Extensibility](#7-mcp-extensibility)
+8. [Local Storage](#8-local-storage)
+9. [GitHub Maintenance Module](#9-github-maintenance-module)
+10. [Configuration](#10-configuration)
+11. [Recommended Approach](#11-recommended-approach)
 
 ---
 
@@ -25,53 +26,69 @@
 | # | Requirement | Notes |
 |---|-------------|-------|
 | R1 | Runs locally on Windows | No cloud dependency for core operation |
-| R2 | Starts on system startup | Minimal user intervention after install |
+| R2 | Starts on system startup | Background process with system tray presence |
 | R3 | Natural-language prompt interface | User talks to the agent in plain English |
 | R4 | Uses local Ollama for LLM inference | No API keys or cloud LLM costs |
 | R5 | Easy to extend over time | Adding new capabilities should be simple |
 | R6 | MCP support for tool/service integration | Standardized protocol for connecting tools |
 | R7 | Local persistent storage | Agent can store state, indexes, preferences |
 | R8 | GitHub repo & org maintenance | First concrete use case |
+| R9 | Electron GUI with notifications | System tray app, notification-driven onboarding |
+| R10 | GitHub OAuth integration | Discover orgs/repos via active OAuth session |
+| R11 | Local repo discovery | Scan local directories, correlate with GitHub remotes |
+| R12 | Fast/small unit & integration tests | TypeScript/Node.js for easy test workflow |
 
 ---
 
 ## 2. High-Level Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                        Jarvis Agent                          │
-│                                                              │
-│  ┌────────────┐   ┌────────────┐   ┌──────────────────────┐ │
-│  │   Prompt    │   │   Ollama    │   │   Action Executor    │ │
-│  │   Input     │──▶│   Router    │──▶│   (MCP Dispatch)     │ │
-│  │  (CLI/API)  │   │            │   │                      │ │
-│  └────────────┘   └────────────┘   └──────────┬───────────┘ │
-│                                                │             │
-│                                    ┌───────────┴───────────┐ │
-│                                    │     MCP Client Hub    │ │
-│                                    │                       │ │
-│                                    │  ┌─────┐  ┌────────┐ │ │
-│                                    │  │ GitHub│  │ Future │ │ │
-│                                    │  │ MCP  │  │ MCP    │ │ │
-│                                    │  │Server│  │Servers │ │ │
-│                                    │  └─────┘  └────────┘ │ │
-│                                    └───────────────────────┘ │
-│                                                              │
-│  ┌────────────────────────────────────────────────────────┐  │
-│  │              Local Storage (SQLite)                    │  │
-│  │  ┌──────────┐  ┌──────────┐  ┌─────────────────────┐ │  │
-│  │  │  Config   │  │  Indexes  │  │  Conversation Log   │ │  │
-│  │  └──────────┘  └──────────┘  └─────────────────────┘ │  │
-│  └────────────────────────────────────────────────────────┘  │
-└──────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                    Electron Shell (System Tray)                   │
+│                                                                  │
+│  ┌──────────────────────────────────────────────────────────────┐│
+│  │                       Jarvis Agent                           ││
+│  │                                                              ││
+│  │  ┌────────────┐   ┌────────────┐   ┌──────────────────────┐ ││
+│  │  │   Prompt    │   │   Ollama    │   │   Action Executor    │ ││
+│  │  │   Input     │──▶│   Router    │──▶│   (MCP Dispatch)     │ ││
+│  │  │ (GUI/CLI)   │   │            │   │                      │ ││
+│  │  └────────────┘   └────────────┘   └──────────┬───────────┘ ││
+│  │                                                │             ││
+│  │                                    ┌───────────┴───────────┐ ││
+│  │                                    │     MCP Client Hub    │ ││
+│  │                                    │                       │ ││
+│  │                                    │  ┌─────┐  ┌────────┐ │ ││
+│  │                                    │  │GitHub│  │ Future │ │ ││
+│  │                                    │  │ MCP  │  │  MCP   │ │ ││
+│  │                                    │  │Server│  │Servers │ │ ││
+│  │                                    │  └─────┘  └────────┘ │ ││
+│  │                                    └───────────────────────┘ ││
+│  │                                                              ││
+│  │  ┌────────────────────────────────────────────────────────┐  ││
+│  │  │              Local Storage (SQLite)                    │  ││
+│  │  │  ┌────────┐ ┌────────┐ ┌──────────┐ ┌─────────────┐  │  ││
+│  │  │  │ Config │ │Indexes │ │ Local    │ │Conversation │  │  ││
+│  │  │  │        │ │        │ │ Repos    │ │    Log      │  │  ││
+│  │  │  └────────┘ └────────┘ └──────────┘ └─────────────┘  │  ││
+│  │  └────────────────────────────────────────────────────────┘  ││
+│  └──────────────────────────────────────────────────────────────┘│
+│                                                                  │
+│  ┌────────────────────┐  ┌────────────────────────────────────┐  │
+│  │  Notification       │  │  Settings / Onboarding UI          │  │
+│  │  Manager            │  │  (Renderer Process)                │  │
+│  └────────────────────┘  └────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ### Core Flow
 
-1. **Prompt Input** — User submits a natural-language request (CLI, API, or future GUI).
-2. **Ollama Router** — The local Ollama model interprets the prompt and determines which action(s) to invoke, including which MCP tools to call and with what parameters.
-3. **Action Executor** — Dispatches tool calls to the appropriate MCP server(s) and collects results.
-4. **Response** — Results are optionally summarized by Ollama and returned to the user.
+1. **Startup** — Electron app launches on system startup, sits in the system tray.
+2. **Onboarding** — On first run, notifications guide the user through setup (Ollama discovery, local repos, GitHub OAuth).
+3. **Prompt Input** — User submits a natural-language request via the GUI window or CLI.
+4. **Ollama Router** — The local Ollama model interprets the prompt and determines which action(s) to invoke, including which MCP tools to call and with what parameters.
+5. **Action Executor** — Dispatches tool calls to the appropriate MCP server(s) and collects results.
+6. **Response** — Results are optionally summarized by Ollama and returned to the user.
 
 ---
 
@@ -130,45 +147,224 @@
 
 ---
 
-## 4. Windows Startup Strategies
+## 4. Electron GUI Host
 
-### Option 1: Windows Task Scheduler
+### Why Electron
 
-- Create a scheduled task triggered at user logon.
-- Works with any runtime (Python, Node.js, .NET).
-- Can be set up via PowerShell script during install.
-- **Pros**: Simple, no admin rights needed for per-user tasks, reliable.
-- **Cons**: Not a true service (no service manager integration).
+Electron provides a cross-platform desktop application shell that combines a Node.js backend with a Chromium-based UI. For Jarvis, it gives us:
 
-### Option 2: Windows Service
+- **System tray integration** — Runs in the background with a tray icon.
+- **Native notifications** — Windows toast notifications for onboarding and alerts.
+- **Bundled Node.js runtime** — No separate Node.js install required for end users.
+- **Web-based UI** — Build settings and chat UI with standard HTML/CSS/JS.
+- **Auto-updater** — Built-in support for silent updates via `electron-updater`.
+- **Single executable** — Package everything into one installer.
 
-- Register as a native Windows service using `sc.exe` or framework helpers.
-- Best support in .NET (`BackgroundService` / `Worker Service` template).
-- Possible in Node.js via `node-windows`, in Python via `pywin32`.
-- **Pros**: Runs before user login; managed by Windows service infrastructure; auto-restart on failure.
-- **Cons**: More complex setup; may need admin rights.
+### Process Model
 
-### Option 3: Startup Folder / Registry Run Key
+Electron uses a multi-process architecture that maps well to Jarvis:
 
-- Place a shortcut in `shell:startup` or add a registry entry under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`.
-- **Pros**: Simplest approach; easy to understand.
-- **Cons**: Only runs after user login; less control over restart behavior.
+| Process | Role |
+|---------|------|
+| **Main process** | Agent core, MCP client, Ollama integration, SQLite, system tray management |
+| **Renderer process** | Settings UI, onboarding wizard, chat/prompt window |
+| **MCP server processes** | Spawned as child processes, managed by the main process |
 
-### Option 4: System Tray Application
+### System Tray Behavior
 
-- Run as a background app with a system tray icon for quick access.
-- Best support in .NET (WinForms `NotifyIcon`) or Electron.
-- Python can use `pystray`.
-- **Pros**: Visible presence; easy to access; can combine with any startup method.
-- **Cons**: Requires a GUI framework.
+- On install / first launch, Jarvis starts and places an icon in the Windows system tray.
+- **Left-click** the tray icon → opens the chat / prompt window.
+- **Right-click** the tray icon → context menu with options:
+  - Open Jarvis
+  - Settings
+  - View indexed repos
+  - Check for updates
+  - Quit
+- The app continues running in the background when the window is closed (minimizes to tray).
 
-### Recommendation
+### Startup on Boot
 
-Start with **Task Scheduler** (Option 1) for simplicity. Consider adding a **system tray icon** (Option 4) later for visibility. Move to a **Windows Service** (Option 2) only if the agent needs to run before user login or requires service-level reliability.
+Electron provides `app.setLoginItemSettings()` to register the app to start on user login:
+
+```typescript
+app.setLoginItemSettings({
+  openAtLogin: true,
+  openAsHidden: true, // start minimized to tray
+});
+```
+
+This writes to the Windows Registry `Run` key automatically — no Task Scheduler or Windows Service needed.
+
+### Notifications
+
+Electron's `Notification` API maps to native Windows toast notifications:
+
+```typescript
+new Notification({
+  title: 'Jarvis',
+  body: 'Found local Ollama installation. Click to configure models.',
+  icon: path.join(__dirname, 'assets/icon.png'),
+}).show();
+```
+
+Notifications are used for:
+- Onboarding steps (see [Section 5](#5-first-run-onboarding-flow))
+- Background task completion ("Indexing complete — 47 repos found")
+- Alerts ("3 repos have critical security alerts")
+- Requesting user input ("Click to approve GitHub access")
+
+### Alternative: Tauri
+
+[Tauri](https://tauri.app/) is a lighter-weight alternative to Electron that uses the system webview instead of bundling Chromium. Trade-offs:
+
+| | Electron | Tauri |
+|--|----------|-------|
+| Bundle size | ~150 MB | ~10 MB |
+| Memory usage | Higher | Lower |
+| Backend language | Node.js / TypeScript | Rust (with JS/TS frontend) |
+| System tray | ✅ | ✅ |
+| Notifications | ✅ | ✅ |
+| Ecosystem maturity | ⭐⭐⭐ | ⭐⭐ |
+| Node.js compatibility | Native | Via sidecar |
+
+**Recommendation**: Start with **Electron** for maximum Node.js compatibility and ecosystem maturity. Consider migrating to Tauri later if bundle size or memory becomes a concern.
 
 ---
 
-## 5. Ollama Integration
+## 5. First-Run Onboarding Flow
+
+On first launch, the agent runs a guided onboarding sequence using native notifications and a settings UI. Each step is optional and can be completed later.
+
+### Onboarding Sequence
+
+```
+┌─────────────────────────────────────────────────────┐
+│                 First Launch                         │
+│                                                     │
+│  Step 1: Ollama Discovery                           │
+│  ├── Probe http://localhost:11434/api/tags           │
+│  ├── If found → notification: "Ollama detected!     │
+│  │   Click to select which models Jarvis can use."  │
+│  ├── If not found → notification: "Ollama not       │
+│  │   found. Install it to enable AI features."      │
+│  └── User selects model(s) → saved to config        │
+│                                                     │
+│  Step 2: Local Repository Discovery                 │
+│  ├── Notification: "Where are your local GitHub     │
+│  │   repos stored? Click to select folder."         │
+│  ├── User picks folder (e.g. C:\Users\rob\repos)    │
+│  ├── Agent scans for .git directories recursively   │
+│  ├── Reads git remote URLs to identify GitHub repos  │
+│  └── Indexes found repos into SQLite                │
+│                                                     │
+│  Step 3: GitHub Account Connection                  │
+│  ├── Notification: "Connect your GitHub account     │
+│  │   to discover orgs and remote repos."            │
+│  ├── Opens GitHub OAuth flow (Device Flow)          │
+│  │   or GitHub App installation flow                │
+│  ├── On success → discover user's orgs & repos      │
+│  ├── Correlate remote repos with local clones       │
+│  └── Store everything in SQLite                     │
+│                                                     │
+│  ✅ Onboarding complete                              │
+│  Notification: "Jarvis is ready! You have X local   │
+│  repos mapped to Y GitHub repos across Z orgs."     │
+└─────────────────────────────────────────────────────┘
+```
+
+### Step 1: Ollama Discovery
+
+The agent probes the local Ollama HTTP API:
+
+```typescript
+// Check if Ollama is running
+const response = await fetch('http://localhost:11434/api/tags');
+const { models } = await response.json();
+// models = [{ name: "llama3.1:latest", size: 4700000000, ... }, ...]
+```
+
+The user is presented with the list of installed models and picks one (or more) for Jarvis to use. The selection is saved to the config and can be changed later.
+
+### Step 2: Local Repository Discovery
+
+The agent scans a user-selected directory tree for Git repositories:
+
+1. Recursively find all `.git` directories up to a configurable depth.
+2. For each repo, read `.git/config` to extract remote URLs.
+3. Parse remote URLs to identify GitHub repos (match `github.com` host).
+4. Store each discovered repo in SQLite with its local path and remote URL.
+
+```typescript
+// Pseudocode for local repo discovery
+const repos = await scanForGitRepos(selectedFolder, { maxDepth: 4 });
+for (const repo of repos) {
+  const remotes = await getGitRemotes(repo.path);
+  const githubRemote = remotes.find(r => r.url.includes('github.com'));
+  await db.upsertLocalRepo({
+    localPath: repo.path,
+    remoteName: githubRemote?.name,
+    remoteUrl: githubRemote?.url,
+    owner: githubRemote?.owner,
+    repoName: githubRemote?.repo,
+  });
+}
+```
+
+### Step 3: GitHub OAuth Connection
+
+Instead of a Personal Access Token, the agent uses **GitHub OAuth Device Flow** for a frictionless login experience:
+
+1. Agent requests a device code from GitHub.
+2. Notification shows the user code and a link to `https://github.com/login/device`.
+3. User enters the code in their browser and authorizes the app.
+4. Agent polls for the access token.
+5. On success, agent fetches the user's orgs and repos.
+6. Correlates remote repos with locally discovered clones.
+
+```typescript
+// GitHub Device Flow (simplified)
+const { device_code, user_code, verification_uri } = await requestDeviceCode(clientId);
+
+new Notification({
+  title: 'Jarvis — GitHub Login',
+  body: `Enter code ${user_code} at ${verification_uri}`,
+}).show();
+
+const token = await pollForToken(clientId, device_code);
+await db.saveGitHubToken(token); // encrypted with AES-256-GCM before storage
+
+// Now discover orgs and repos
+const orgs = await octokit.orgs.listForAuthenticatedUser();
+const repos = await octokit.repos.listForAuthenticatedUser({ per_page: 100 });
+```
+
+#### GitHub OAuth vs PAT
+
+| | OAuth Device Flow | Personal Access Token |
+|--|-------------------|----------------------|
+| User experience | Browser-based, guided | Manual token creation |
+| Token rotation | Automatic refresh | Manual renewal |
+| Scoping | Fine-grained via OAuth app | Fine-grained via PAT settings |
+| Security | Token encrypted locally | User responsible for storage |
+| Setup friction | Low (click-through) | Medium (navigate to settings) |
+
+### Onboarding State Machine
+
+The onboarding state is tracked in SQLite so it survives restarts:
+
+```sql
+CREATE TABLE onboarding (
+    step       TEXT PRIMARY KEY,  -- 'ollama', 'local_repos', 'github_oauth'
+    status     TEXT DEFAULT 'pending',  -- 'pending', 'completed', 'skipped'
+    completed_at DATETIME
+);
+```
+
+Each step can be re-triggered from the Settings UI at any time.
+
+---
+
+## 6. Ollama Integration
 
 ### How Ollama Fits In
 
@@ -214,7 +410,7 @@ Ollama summarizes ──▶ "Found 12 repos in 'myorg' not updated since Sep 202
 
 ---
 
-## 6. MCP Extensibility
+## 7. MCP Extensibility
 
 ### Why MCP
 
@@ -285,7 +481,7 @@ The agent automatically discovers the new tools and makes them available for Oll
 
 ---
 
-## 7. Local Storage
+## 8. Local Storage
 
 ### Requirements
 
@@ -314,6 +510,26 @@ CREATE TABLE config (
     value TEXT NOT NULL
 );
 
+-- Onboarding state
+CREATE TABLE onboarding (
+    step         TEXT PRIMARY KEY,  -- 'ollama', 'local_repos', 'github_oauth'
+    status       TEXT DEFAULT 'pending',  -- 'pending', 'completed', 'skipped'
+    completed_at DATETIME
+);
+
+-- GitHub OAuth session
+-- Tokens are encrypted at the application layer using AES-256-GCM
+-- with a key derived from JARVIS_ENCRYPTION_KEY (see Configuration section)
+CREATE TABLE github_auth (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    login         TEXT NOT NULL UNIQUE,
+    access_token  TEXT NOT NULL,  -- AES-256-GCM encrypted
+    refresh_token TEXT,           -- AES-256-GCM encrypted
+    scopes        TEXT,
+    created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+    expires_at    DATETIME
+);
+
 -- GitHub organizations being tracked
 CREATE TABLE github_orgs (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -323,22 +539,33 @@ CREATE TABLE github_orgs (
     metadata   TEXT  -- JSON blob for flexible fields
 );
 
--- GitHub repositories index
+-- GitHub repositories index (remote)
 CREATE TABLE github_repos (
-    id             INTEGER PRIMARY KEY AUTOINCREMENT,
-    org_id         INTEGER REFERENCES github_orgs(id),
-    full_name      TEXT NOT NULL UNIQUE,
-    name           TEXT NOT NULL,
-    description    TEXT,
-    default_branch TEXT,
-    language       TEXT,
-    archived       INTEGER DEFAULT 0,
-    private        INTEGER DEFAULT 0,
-    last_pushed_at DATETIME,
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    org_id          INTEGER REFERENCES github_orgs(id),
+    full_name       TEXT NOT NULL UNIQUE,
+    name            TEXT NOT NULL,
+    description     TEXT,
+    default_branch  TEXT,
+    language        TEXT,
+    archived        INTEGER DEFAULT 0,
+    private         INTEGER DEFAULT 0,
+    last_pushed_at  DATETIME,
     last_updated_at DATETIME,
-    indexed_at     DATETIME,
-    metadata       TEXT  -- JSON blob for flexible fields
+    indexed_at      DATETIME,
+    metadata        TEXT  -- JSON blob for flexible fields
 );
+
+-- Local repository clones
+CREATE TABLE local_repos (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    local_path     TEXT NOT NULL UNIQUE,
+    remote_url     TEXT,
+    github_repo_id INTEGER REFERENCES github_repos(id),
+    discovered_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+    last_scanned   DATETIME
+);
+CREATE INDEX idx_local_repos_github_repo_id ON local_repos(github_repo_id);
 
 -- Conversation / interaction log
 CREATE TABLE conversations (
@@ -395,20 +622,22 @@ Use the Windows standard application data directory:
 
 ---
 
-## 8. GitHub Maintenance Module
+## 9. GitHub Maintenance Module
 
 ### Initial Capabilities
 
 The first concrete use case is GitHub repository maintenance. The agent should support:
 
-#### 8.1 Repository & Organization Indexing
+#### 9.1 Repository & Organization Indexing
 
-- **Index organizations** — Discover and store all orgs the user belongs to.
+- **Index organizations** — Discover and store all orgs the user belongs to via GitHub OAuth.
 - **Index repositories** — For each org, list and store all repositories with metadata.
+- **Discover local clones** — Scan a user-specified directory for `.git` repos and read remote URLs.
+- **Correlate local ↔ remote** — Match local clones to GitHub repos by remote URL.
 - **Incremental updates** — Only fetch changes since last index.
 - **Search** — Query the local index by name, language, last activity, etc.
 
-#### 8.2 Maintenance Tasks (Future)
+#### 9.2 Maintenance Tasks (Future)
 
 Once indexing is in place, these maintenance tasks can be added incrementally:
 
@@ -423,7 +652,7 @@ Once indexing is in place, these maintenance tasks can be added incrementally:
 | Archive suggestions | Suggest repos that could be archived |
 | Topic/description gaps | Find repos missing topics or descriptions |
 
-#### 8.3 Implementation Approach
+#### 9.3 Implementation Approach
 
 **Option A: Use the pre-built GitHub MCP Server**
 
@@ -468,7 +697,7 @@ Agent: Executes multiple checks → generates a report
 
 ---
 
-## 9. Configuration
+## 10. Configuration
 
 ### Agent Configuration File
 
@@ -484,6 +713,15 @@ A single `config.json` in the app data directory:
   "storage": {
     "database": "%APPDATA%/jarvis/jarvis.db"
   },
+  "localRepos": {
+    "scanPaths": ["%USERPROFILE%/repos", "%USERPROFILE%/projects"],
+    "maxScanDepth": 4,
+    "excludePatterns": ["node_modules", ".git"]
+  },
+  "github": {
+    "oauthClientId": "Iv1.xxxxxxxxxxxxxxxx",  // GitHub OAuth App client ID — see https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/creating-an-oauth-app
+    "scopes": ["repo", "read:org", "read:user"]
+  },
   "mcpServers": {
     "github": {
       "command": "npx",
@@ -497,41 +735,52 @@ A single `config.json` in the app data directory:
     "logLevel": "info",
     "conversationHistoryLimit": 50,
     "systemPrompt": "You are Jarvis, a personal assistant for managing GitHub repositories and development tasks."
+  },
+  "electron": {
+    "startMinimized": true,
+    "openAtLogin": true
   }
 }
 ```
 
 ### Environment Variables
 
-Sensitive values (tokens, keys) should come from environment variables, never stored in config files:
+Sensitive values (tokens, keys) should come from environment variables, never stored in plain-text config files:
 
 | Variable | Purpose |
 |----------|---------|
-| `GITHUB_TOKEN` | GitHub Personal Access Token |
+| `GITHUB_TOKEN` | GitHub access token (fallback if OAuth not used) |
 | `JARVIS_CONFIG_DIR` | Override default config directory |
 | `OLLAMA_HOST` | Override Ollama URL |
+| `JARVIS_ENCRYPTION_KEY` | AES-256 key for encrypting OAuth tokens at rest |
+
+#### Encryption Key Management
+
+`JARVIS_ENCRYPTION_KEY` should be a 256-bit (32-byte) random key, base64-encoded. On first run, if no key is set, the agent can generate one and store it in **Windows Credential Manager** (via `keytar` or `node-keychain`) so the user never has to manage it manually. This keeps the key out of environment variables and config files for most users while allowing advanced users to override via the environment variable.
 
 ---
 
-## 10. Recommended Approach
+## 11. Recommended Approach
 
-Based on the requirements analysis, here is the recommended starting point:
+Based on the requirements analysis and feedback, here is the chosen approach:
 
-### Language: Python
+### Language: TypeScript / Node.js
 
-**Rationale**: Python offers the most mature MCP SDK, the best Ollama integration, and the fastest path to a working prototype. The AI/ML ecosystem is unmatched. For a personal assistant that needs rapid iteration, Python is the strongest choice.
+**Rationale**: TypeScript gives us easy, fast unit and integration testing with established tools (Vitest/Jest). The MCP and Ollama SDKs are both mature for Node.js. Electron provides the GUI shell, system tray, and notifications out of the box.
 
 ### Initial Stack
 
 | Component | Choice | Rationale |
 |-----------|--------|-----------|
-| **Runtime** | Python 3.12+ | Latest stable, good performance |
+| **Runtime** | Node.js 20 LTS (bundled with Electron) | Stable, long-term support |
+| **Language** | TypeScript 5.x | Type safety, better DX, refactoring support |
+| **GUI shell** | Electron | System tray, notifications, startup on boot, web UI |
 | **LLM** | Ollama (local) via `ollama` package | Official SDK, tool calling support |
-| **MCP** | `mcp` package (official SDK) | Act as MCP client to connect tools |
-| **Storage** | SQLite via `sqlite3` (stdlib) | Zero dependencies, reliable |
-| **GitHub** | Pre-built GitHub MCP Server | Quick start, no custom code |
-| **CLI** | `click` or `typer` | Clean CLI interface |
-| **Startup** | Windows Task Scheduler | Simple, reliable, no admin needed |
+| **MCP** | `@modelcontextprotocol/sdk` | Official SDK, act as MCP client |
+| **Storage** | SQLite via `better-sqlite3` | Synchronous API, fast, reliable |
+| **GitHub API** | `octokit` + GitHub OAuth Device Flow | Official SDK, frictionless auth |
+| **Testing** | Vitest | Fast, TypeScript-native, good DX |
+| **Packaging** | `electron-builder` | Installers, auto-update, code signing |
 | **Config** | JSON files | Human-readable, easy to edit |
 
 ### Suggested Project Structure
@@ -539,31 +788,52 @@ Based on the requirements analysis, here is the recommended starting point:
 ```
 jarvis/
 ├── src/
-│   └── jarvis/
-│       ├── __init__.py
-│       ├── __main__.py          # Entry point
-│       ├── agent.py             # Core agent loop
-│       ├── config.py            # Configuration loading
-│       ├── llm/
-│       │   ├── __init__.py
-│       │   └── ollama_client.py # Ollama integration
-│       ├── mcp/
-│       │   ├── __init__.py
-│       │   └── client.py        # MCP client hub
-│       ├── storage/
-│       │   ├── __init__.py
-│       │   ├── database.py      # SQLite operations
-│       │   └── models.py        # Data models
-│       └── tools/
-│           ├── __init__.py
-│           └── github.py        # GitHub-specific logic
-├── config/
-│   └── default.json             # Default configuration
+│   ├── main/                        # Electron main process
+│   │   ├── index.ts                 # Electron app entry point
+│   │   ├── tray.ts                  # System tray management
+│   │   ├── notifications.ts         # Notification helpers
+│   │   └── windows.ts               # Window management
+│   ├── renderer/                    # Electron renderer (UI)
+│   │   ├── index.html
+│   │   ├── onboarding/              # Onboarding wizard UI
+│   │   ├── settings/                # Settings UI
+│   │   └── chat/                    # Chat / prompt UI
+│   ├── agent/                       # Core agent logic
+│   │   ├── agent.ts                 # Agent loop & orchestration
+│   │   ├── config.ts                # Configuration loading
+│   │   └── onboarding.ts            # Onboarding state machine
+│   ├── llm/
+│   │   └── ollama-client.ts         # Ollama integration
+│   ├── mcp/
+│   │   └── client.ts                # MCP client hub
+│   ├── storage/
+│   │   ├── database.ts              # SQLite operations
+│   │   └── schema.ts                # Table definitions & migrations
+│   └── services/
+│       ├── github-oauth.ts          # GitHub Device Flow
+│       ├── github-indexer.ts        # Org & repo indexing
+│       └── local-repo-scanner.ts    # Local .git discovery
 ├── tests/
-│   └── ...
+│   ├── unit/
+│   │   ├── agent.test.ts
+│   │   ├── ollama-client.test.ts
+│   │   ├── database.test.ts
+│   │   ├── local-repo-scanner.test.ts
+│   │   └── github-indexer.test.ts
+│   └── integration/
+│       ├── onboarding.test.ts
+│       └── mcp-client.test.ts
+├── assets/
+│   ├── icon.png                     # App icon
+│   └── icon.ico                     # Windows icon
+├── config/
+│   └── default.json                 # Default configuration
 ├── docs/
-│   └── ARCHITECTURE.md          # This document
-├── pyproject.toml               # Project metadata & dependencies
+│   └── ARCHITECTURE.md              # This document
+├── package.json
+├── tsconfig.json
+├── vitest.config.ts
+├── electron-builder.yml
 ├── README.md
 └── .gitignore
 ```
@@ -572,12 +842,14 @@ jarvis/
 
 | Phase | Scope | Outcome |
 |-------|-------|---------|
-| **Phase 1** | Core agent + Ollama + CLI | Can send prompts and get LLM responses |
-| **Phase 2** | SQLite storage + config | Persistent state and configuration |
-| **Phase 3** | MCP client integration | Can connect to MCP servers |
-| **Phase 4** | GitHub MCP server + indexing | Index repos and orgs |
-| **Phase 5** | Windows startup + packaging | Runs on startup, easy to install |
-| **Phase 6** | Maintenance tasks | Stale repo detection, health checks, etc. |
+| **Phase 1** | Electron shell + system tray + startup on boot | App launches silently on login with tray icon |
+| **Phase 2** | SQLite storage + config loading | Persistent state, onboarding tracking |
+| **Phase 3** | Ollama discovery + model selection | Detects Ollama, user selects model, notification-driven |
+| **Phase 4** | Local repo scanning | Scans directories for `.git` repos, indexes into SQLite |
+| **Phase 5** | GitHub OAuth + org/repo indexing | Device Flow login, discover orgs/repos, correlate with local |
+| **Phase 6** | MCP client integration | Can connect to MCP servers, expose tools to Ollama |
+| **Phase 7** | Chat / prompt UI + Ollama routing | Natural-language prompts dispatched to MCP tools |
+| **Phase 8** | Maintenance tasks | Stale repo detection, health checks, notifications |
 
 ---
 
@@ -585,8 +857,11 @@ jarvis/
 
 | Decision | Status | Notes |
 |----------|--------|-------|
-| Language/runtime | **To decide** | Python recommended; TypeScript and C# are viable alternatives |
-| Windows startup method | **To decide** | Task Scheduler recommended for Phase 1 |
-| Storage engine | **To decide** | SQLite recommended |
-| MCP server approach for GitHub | **To decide** | Pre-built server recommended for Phase 1 |
-| Ollama model | **To decide** | Depends on available hardware; 7-8B models are a good default |
+| Language/runtime | **TypeScript / Node.js** | Easy unit/integration tests, mature SDKs |
+| GUI host | **Electron** | System tray, notifications, startup on boot, web UI |
+| Windows startup method | **Electron `openAtLogin`** | Registry-based, no Task Scheduler needed |
+| Storage engine | **SQLite** (`better-sqlite3`) | Battle-tested, zero config, queryable |
+| GitHub authentication | **OAuth Device Flow** | Frictionless browser-based login |
+| MCP server approach | **Pre-built server first** | Quick start, move to hybrid later |
+| Ollama model | **User selects at onboarding** | Detected from local Ollama installation |
+| Testing framework | **Vitest** | Fast, TypeScript-native |

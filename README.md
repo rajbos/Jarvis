@@ -1,6 +1,6 @@
 # Jarvis
 
-Rob's personal assistant agent — a locally-hosted AI agent that runs on Windows, uses [Ollama](https://ollama.com/) for natural-language understanding, and is extensible via [MCP (Model Context Protocol)](https://modelcontextprotocol.io/).
+Rob's personal assistant agent — a locally-hosted AI agent built with Electron and TypeScript that runs on Windows, uses [Ollama](https://ollama.com/) for natural-language understanding, and is extensible via [MCP (Model Context Protocol)](https://modelcontextprotocol.io/).
 
 ## Status
 
@@ -8,8 +8,9 @@ Rob's personal assistant agent — a locally-hosted AI agent that runs on Window
 
 ## Goals
 
-- Run locally on Windows with automatic startup
+- Run as an Electron app with system tray presence, starting automatically on boot
+- Guided onboarding: discover Ollama models, scan local repos, connect GitHub via OAuth
 - Accept natural-language prompts routed through a local Ollama instance
 - Extend capabilities easily by connecting MCP servers
-- Maintain local persistent storage for indexes, config, and conversation history
+- Maintain local persistent storage (SQLite) for indexes, config, and conversation history
 - Start with GitHub repository and organization maintenance tasks
