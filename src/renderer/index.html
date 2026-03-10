@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; img-src 'self' https://avatars.githubusercontent.com; style-src 'self' 'unsafe-inline';">
+  <title>Jarvis — Setup</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 2rem;
+    }
+
+    .container {
+      max-width: 480px;
+      width: 100%;
+    }
+
+    h1 {
+      font-size: 2rem;
+      margin-bottom: 0.5rem;
+      color: #e94560;
+    }
+
+    .subtitle {
+      color: #888;
+      margin-bottom: 2rem;
+      font-size: 0.95rem;
+    }
+
+    .step {
+      background: #16213e;
+      border: 1px solid #0f3460;
+      border-radius: 8px;
+      padding: 1.25rem;
+      margin-bottom: 1rem;
+    }
+
+    .step h2 {
+      font-size: 1.1rem;
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .step p {
+      font-size: 0.9rem;
+      color: #aaa;
+      margin-bottom: 1rem;
+    }
+
+    .status-badge {
+      font-size: 0.75rem;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-weight: 600;
+    }
+
+    .status-pending {
+      background: #533a00;
+      color: #ffd43b;
+    }
+
+    .status-completed {
+      background: #0a3d1f;
+      color: #51cf66;
+    }
+
+    .status-in-progress {
+      background: #0a2d4d;
+      color: #339af0;
+    }
+
+    button {
+      background: #e94560;
+      color: white;
+      border: none;
+      padding: 0.6rem 1.2rem;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    button:hover {
+      background: #c23152;
+    }
+
+    button:disabled {
+      background: #555;
+      cursor: not-allowed;
+    }
+
+    .user-code {
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 1.8rem;
+      letter-spacing: 0.25rem;
+      text-align: center;
+      padding: 1rem;
+      background: #0f3460;
+      border-radius: 6px;
+      margin: 1rem 0;
+      color: #ffd43b;
+      user-select: all;
+    }
+
+    .code-instructions {
+      text-align: center;
+      font-size: 0.85rem;
+      color: #888;
+    }
+
+    .code-instructions a {
+      color: #339af0;
+      text-decoration: none;
+    }
+
+    .user-info {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.75rem;
+      background: #0a3d1f;
+      border-radius: 6px;
+    }
+
+    .user-info img {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+    }
+
+    .user-info .name {
+      font-weight: 600;
+      color: #51cf66;
+    }
+
+    .user-info .login {
+      font-size: 0.85rem;
+      color: #888;
+    }
+
+    .hidden {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Jarvis</h1>
+    <p class="subtitle">Personal Assistant — First Time Setup</p>
+
+    <!-- GitHub OAuth Step -->
+    <div class="step" id="github-step">
+      <h2>
+        GitHub Account
+        <span class="status-badge status-pending" id="github-status-badge">Pending</span>
+      </h2>
+      <p>Connect your GitHub account to discover organizations and repositories.</p>
+
+      <div id="github-connect">
+        <button id="github-login-btn">
+          Sign in with GitHub
+        </button>
+      </div>
+
+      <div id="github-device-code" class="hidden">
+        <div class="user-code" id="device-user-code"></div>
+        <p class="code-instructions">
+          Enter this code at <a id="verification-link" href="#" target="_blank">github.com/login/device</a>
+        </p>
+        <p class="code-instructions" style="margin-top: 0.5rem;">
+          Waiting for authorization...
+        </p>
+      </div>
+
+      <div id="github-success" class="hidden">
+        <div class="user-info">
+          <img id="user-avatar" src="" alt="avatar">
+          <div>
+            <div class="name" id="user-name"></div>
+            <div class="login" id="user-login"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Future steps (disabled for now) -->
+    <div class="step" style="opacity: 0.5;">
+      <h2>
+        Local Repositories
+        <span class="status-badge status-pending">Later</span>
+      </h2>
+      <p>Scan your local directories for Git repositories.</p>
+    </div>
+
+    <div class="step" style="opacity: 0.5;">
+      <h2>
+        Ollama AI
+        <span class="status-badge status-pending">Later</span>
+      </h2>
+      <p>Connect to your local Ollama instance for AI-powered features.</p>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
