@@ -124,22 +124,7 @@
 
 ---
 
-## 3. Runtime & Language Options
-
-### Option A: Python
-
-| Aspect | Details |
-|--------|---------|
-| **Ollama SDK** | [`ollama-python`](https://github.com/ollama/ollama-python) — mature, official |
-| **MCP SDK** | [`mcp`](https://pypi.org/project/mcp/) — official Anthropic SDK for both client and server |
-| **GitHub SDK** | [`PyGitHub`](https://github.com/PyGithub/PyGithub) or [`githubkit`](https://github.com/yanyongyu/githubkit) |
-| **Storage** | `sqlite3` (stdlib), `sqlmodel`, or `peewee` |
-| **Windows startup** | Task Scheduler, `pythonw.exe`, or packaged with PyInstaller |
-| **Plugin model** | Dynamic module import, entry-points, or MCP servers as subprocesses |
-| **Pros** | Richest AI/ML ecosystem; fastest to prototype; MCP SDK is most mature; huge community |
-| **Cons** | Requires Python runtime or packaging step; virtualenv management |
-
-### Option B: TypeScript / Node.js
+## 3. Runtime & Language implementation in TypeScript / Node.js
 
 | Aspect | Details |
 |--------|---------|
@@ -152,30 +137,6 @@
 | **Pros** | Strong MCP SDK support; good async model; easy to bundle |
 | **Cons** | Node.js runtime needed; slightly less mature for AI workloads |
 
-### Option C: C# / .NET
-
-| Aspect | Details |
-|--------|---------|
-| **Ollama SDK** | [`OllamaSharp`](https://github.com/awaescher/OllamaSharp) |
-| **MCP SDK** | [`ModelContextProtocol`](https://github.com/modelcontextprotocol/csharp-sdk) — official C# SDK |
-| **GitHub SDK** | [`Octokit.net`](https://github.com/octokit/octokit.net) |
-| **Storage** | `Microsoft.Data.Sqlite`, Entity Framework Core |
-| **Windows startup** | Windows Service (native), system tray app (WinForms/WPF), Task Scheduler |
-| **Plugin model** | Assembly loading, MEF/MAF, or MCP servers as subprocesses |
-| **Pros** | First-class Windows citizen; easy Windows Service; strong typing; .NET AOT compilation for fast startup |
-| **Cons** | Slightly more ceremony for rapid prototyping |
-
-### Comparison Matrix
-
-| Criteria | Python | TypeScript | C# / .NET |
-|----------|--------|------------|-----------|
-| Ollama integration maturity | ⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐ |
-| MCP SDK maturity | ⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐ |
-| Windows service support | ⭐⭐ | ⭐⭐ | ⭐⭐⭐ |
-| Ease of extensibility | ⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐ |
-| Packaging / distribution | ⭐⭐ | ⭐⭐ | ⭐⭐⭐ |
-| AI ecosystem breadth | ⭐⭐⭐ | ⭐⭐ | ⭐⭐ |
-| Rapid prototyping speed | ⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐ |
 
 ---
 
@@ -245,22 +206,6 @@ Notifications are used for:
 - Alerts ("3 repos have critical security alerts")
 - Requesting user input ("Click to approve GitHub access")
 
-### Alternative: Tauri
-
-[Tauri](https://tauri.app/) is a lighter-weight alternative to Electron that uses the system webview instead of bundling Chromium. Trade-offs:
-
-| | Electron | Tauri |
-|--|----------|-------|
-| Bundle size | ~150 MB | ~10 MB |
-| Memory usage | Higher | Lower |
-| Backend language | Node.js / TypeScript | Rust (with JS/TS frontend) |
-| System tray | ✅ | ✅ |
-| Notifications | ✅ | ✅ |
-| Ecosystem maturity | ⭐⭐⭐ | ⭐⭐ |
-| Node.js compatibility | Native | Via sidecar |
-
-**Recommendation**: Start with **Electron** for maximum Node.js compatibility and ecosystem maturity. Consider migrating to Tauri later if bundle size or memory becomes a concern.
-
 ---
 
 ## 5. First-Run Onboarding Flow
@@ -271,10 +216,10 @@ On first launch, the agent runs a guided onboarding sequence using native notifi
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                 First Launch                         │
+│                 First Launch                        │
 │                                                     │
-│  Step 1: Ollama Discovery                           │
-│  ├── Probe http://localhost:11434/api/tags           │
+│  Step 3: Ollama Discovery                           │
+│  ├── Probe http://localhost:11434/api/tags          │
 │  ├── If found → notification: "Ollama detected!     │
 │  │   Click to select which models Jarvis can use."  │
 │  ├── If not found → notification: "Ollama not       │
@@ -286,25 +231,24 @@ On first launch, the agent runs a guided onboarding sequence using native notifi
 │  │   repos stored? Click to select folder."         │
 │  ├── User picks folder (e.g. C:\Users\rob\repos)    │
 │  ├── Agent scans for .git directories recursively   │
-│  ├── Reads git remote URLs to identify GitHub repos  │
+│  ├── Reads git remote URLs to identify GitHub repos │
 │  └── Indexes found repos into SQLite                │
 │                                                     │
-│  Step 3: GitHub Account Connection                  │
+│  Step 1: GitHub Account Connection                  │
 │  ├── Notification: "Connect your GitHub account     │
 │  │   to discover orgs and remote repos."            │
 │  ├── Opens GitHub OAuth flow (Device Flow)          │
-│  │   or GitHub App installation flow                │
 │  ├── On success → discover user's orgs & repos      │
 │  ├── Correlate remote repos with local clones       │
 │  └── Store everything in SQLite                     │
 │                                                     │
-│  ✅ Onboarding complete                              │
+│  ✅ Onboarding complete                             │
 │  Notification: "Jarvis is ready! You have X local   │
 │  repos mapped to Y GitHub repos across Z orgs."     │
 └─────────────────────────────────────────────────────┘
 ```
 
-### Step 1: Ollama Discovery
+### Step 3: Ollama Discovery
 
 The agent probes the local Ollama HTTP API:
 
@@ -342,7 +286,7 @@ for (const repo of repos) {
 }
 ```
 
-### Step 3: GitHub OAuth Connection
+### Step 1: GitHub OAuth Connection
 
 Instead of a Personal Access Token, the agent uses **GitHub OAuth Device Flow** for a frictionless login experience:
 
@@ -369,16 +313,6 @@ await db.saveGitHubToken(token); // encrypted with AES-256-GCM before storage
 const orgs = await octokit.orgs.listForAuthenticatedUser();
 const repos = await octokit.repos.listForAuthenticatedUser({ per_page: 100 });
 ```
-
-#### GitHub OAuth vs PAT
-
-| | OAuth Device Flow | Personal Access Token |
-|--|-------------------|----------------------|
-| User experience | Browser-based, guided | Manual token creation |
-| Token rotation | Automatic refresh | Manual renewal |
-| Scoping | Fine-grained via OAuth app | Fine-grained via PAT settings |
-| Security | Token encrypted locally | User responsible for storage |
-| Setup friction | Low (click-through) | Medium (navigate to settings) |
 
 ### Onboarding State Machine
 
@@ -1349,15 +1283,7 @@ Sensitive values (tokens, keys) should come from environment variables, never st
 
 ---
 
-## 14. Recommended Approach
-
-Based on the requirements analysis and feedback, here is the chosen approach:
-
-### Language: TypeScript / Node.js
-
-**Rationale**: TypeScript gives us easy, fast unit and integration testing with established tools (Vitest/Jest). The MCP and Ollama SDKs are both mature for Node.js. Electron provides the GUI shell, system tray, and notifications out of the box.
-
-### Initial Stack
+## 14. Initial Stack
 
 | Component | Choice | Rationale |
 |-----------|--------|-----------|
