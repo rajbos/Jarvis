@@ -216,18 +216,14 @@ describe('GitHub Discovery — runDiscovery', () => {
           makeHeaders(4996),
         );
       }
-      // GET /user/repos?type=owner
-      if (url.includes('/user/repos') && url.includes('type=owner')) {
+      // GET /user/repos?affiliation=owner,collaborator,organization_member
+      if (url.includes('/user/repos') && url.includes('affiliation=owner')) {
         return jsonResponse(
-          [{ full_name: 'me/personal', name: 'personal', default_branch: 'main', archived: false, fork: false, private: false }],
+          [
+            { full_name: 'me/personal', name: 'personal', default_branch: 'main', archived: false, fork: false, private: false, owner: { login: 'me', type: 'User' } },
+            { full_name: 'other/collab-repo', name: 'collab-repo', default_branch: 'main', archived: false, fork: false, private: true, owner: { login: 'other', type: 'User' } },
+          ],
           makeHeaders(4995),
-        );
-      }
-      // GET /user/repos?affiliation=collaborator
-      if (url.includes('/user/repos') && url.includes('affiliation=collaborator')) {
-        return jsonResponse(
-          [{ full_name: 'other/collab-repo', name: 'collab-repo', default_branch: 'main', archived: false, fork: false, private: true }],
-          makeHeaders(4994),
         );
       }
 
@@ -378,7 +374,7 @@ describe('GitHub Discovery — runDiscovery', () => {
     expect(orgRepoFetches.some((u) => u.includes('disabled-org'))).toBe(false);
   });
 
-  it('runLightweightRefresh fetches only orgs and collaborator repos', async () => {
+  it('runLightweightRefresh fetches orgs and personal+collaborator repos', async () => {
     const fetchedUrls: string[] = [];
 
     globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
@@ -391,9 +387,12 @@ describe('GitHub Discovery — runDiscovery', () => {
           makeHeaders(4998),
         );
       }
-      if (url.includes('/user/repos') && url.includes('affiliation=collaborator')) {
+      if (url.includes('/user/repos') && url.includes('affiliation=owner')) {
         return jsonResponse(
-          [{ full_name: 'other/collab', name: 'collab', default_branch: 'main', archived: false, fork: false, private: true }],
+          [
+            { full_name: 'me/my-repo', name: 'my-repo', default_branch: 'main', archived: false, fork: false, private: false, owner: { login: 'me', type: 'User' } },
+            { full_name: 'other/collab', name: 'collab', default_branch: 'main', archived: false, fork: false, private: true, owner: { login: 'other', type: 'User' } },
+          ],
           makeHeaders(4997),
         );
       }
@@ -403,20 +402,19 @@ describe('GitHub Discovery — runDiscovery', () => {
     const progressUpdates: any[] = [];
     await runLightweightRefresh(db, 'fake-token', (p) => progressUpdates.push({ ...p }));
 
-    // Should have fetched orgs and collaborator repos only
+    // Should have fetched orgs and personal+collaborator repos
     expect(fetchedUrls.some((u) => u.includes('/user/orgs'))).toBe(true);
-    expect(fetchedUrls.some((u) => u.includes('affiliation=collaborator'))).toBe(true);
-    // Should NOT have fetched org repos or user-owned repos
+    expect(fetchedUrls.some((u) => u.includes('affiliation=owner,collaborator,organization_member'))).toBe(true);
+    // Should NOT have fetched org repos
     expect(fetchedUrls.some((u) => u.includes('/orgs/'))).toBe(false);
-    expect(fetchedUrls.some((u) => u.includes('type=owner'))).toBe(false);
 
     // Verify org was stored
     const orgs = db.exec('SELECT login FROM github_orgs');
     expect(orgs[0].values.map((v) => v[0])).toEqual(['new-org']);
 
-    // Verify collaborator repo was stored
-    const repos = db.exec('SELECT full_name FROM github_repos');
-    expect(repos[0].values.map((v) => v[0])).toEqual(['other/collab']);
+    // Verify both repos were stored
+    const repos = db.exec('SELECT full_name FROM github_repos ORDER BY full_name');
+    expect(repos[0].values.map((v) => v[0])).toEqual(['me/my-repo', 'other/collab']);
 
     // Verify final progress
     const last = progressUpdates[progressUpdates.length - 1];

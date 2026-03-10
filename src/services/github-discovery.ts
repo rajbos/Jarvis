@@ -20,7 +20,7 @@ export interface DiscoveryState {
 }
 
 export interface DiscoveryProgress {
-  phase: 'orgs' | 'repos' | 'user-repos' | 'collaborator-repos' | 'done';
+  phase: 'orgs' | 'repos' | 'user-repos' | 'done';
   orgsFound: number;
   reposFound: number;
   currentOrg?: string;
@@ -180,7 +180,7 @@ export function listOrgs(db: SqlJsDatabase): { orgs: OrgInfo[]; directRepoCount:
     `SELECT o.id, o.login, o.name, o.discovery_enabled, o.indexed_at,
             (SELECT COUNT(*) FROM github_repos r WHERE r.org_id = o.id) AS repo_count
      FROM github_orgs o
-     ORDER BY o.login`,
+     ORDER BY o.login COLLATE NOCASE`,
   );
   while (stmt.step()) {
     const row = stmt.getAsObject() as any;
@@ -258,6 +258,35 @@ export function upsertRepo(
       repo.updated_at || null,
     ],
   );
+}
+
+// ─── Org-id resolution for Phase 3 repos ───────────────────────────
+
+/**
+ * For a repo returned by /user/repos, determine the correct org_id.
+ * If the repo owner is an Organization, look up or auto-create the org entry.
+ * Returns null for user-owned repos.
+ */
+function resolveOrgId(
+  db: SqlJsDatabase,
+  repo: { owner?: { login?: string; type?: string } },
+): number | null {
+  const owner = repo.owner;
+  if (!owner || owner.type !== 'Organization' || !owner.login) return null;
+
+  // Look up existing org
+  const stmt = db.prepare('SELECT id FROM github_orgs WHERE login = ?');
+  stmt.bind([owner.login]);
+  const found = stmt.step();
+  if (found) {
+    const row = stmt.getAsObject() as { id: number };
+    stmt.free();
+    return row.id;
+  }
+  stmt.free();
+
+  // Auto-create the org (e.g. user has repo-level access but isn't a listed member)
+  return upsertOrg(db, { login: owner.login });
 }
 
 // ─── Main discovery loop ───────────────────────────────────────────
@@ -339,47 +368,25 @@ export async function runDiscovery(
     }
     progress.currentOrg = undefined;
 
-    // ── Phase 3: User-owned repos ───────────────────────────────────
+    // ── Phase 3: User-owned + collaborator + org-member repos
     if (!state.aborted) {
-      console.log('[Discovery] Fetching personal (user-owned) repos…');
+      console.log('[Discovery] Fetching personal + collaborator + org-member repos…');
       progress.phase = 'user-repos';
       onProgress?.({ ...progress });
 
-      const userRepos = await fetchAllPages<Record<string, unknown>>(
+      const directRepos = await fetchAllPages<Record<string, unknown>>(
         accessToken,
-        `${GITHUB_API_BASE}/user/repos?type=owner&per_page=${PER_PAGE}`,
+        `${GITHUB_API_BASE}/user/repos?affiliation=owner,collaborator,organization_member&per_page=${PER_PAGE}`,
         state,
       );
 
-      for (const repo of userRepos) {
-        upsertRepo(db, repo as any, null);
+      for (const repo of directRepos) {
+        const orgId = resolveOrgId(db, repo as any);
+        upsertRepo(db, repo as any, orgId);
       }
 
-      progress.reposFound += userRepos.length;
-      console.log(`[Discovery] Personal repos: ${userRepos.length} (total: ${progress.reposFound})`);
-      onProgress?.({ ...progress });
-
-      saveDatabase();
-    }
-
-    // ── Phase 4: Collaborator repos (direct access, not via org) ─────
-    if (!state.aborted) {
-      console.log('[Discovery] Fetching collaborator repos…');
-      progress.phase = 'collaborator-repos';
-      onProgress?.({ ...progress });
-
-      const collabRepos = await fetchAllPages<Record<string, unknown>>(
-        accessToken,
-        `${GITHUB_API_BASE}/user/repos?affiliation=collaborator&per_page=${PER_PAGE}`,
-        state,
-      );
-
-      for (const repo of collabRepos) {
-        upsertRepo(db, repo as any, null);
-      }
-
-      progress.reposFound += collabRepos.length;
-      console.log(`[Discovery] Collaborator repos: ${collabRepos.length} (total: ${progress.reposFound})`);
+      progress.reposFound += directRepos.length;
+      console.log(`[Discovery] Personal + collaborator + org-member repos: ${directRepos.length} (total: ${progress.reposFound})`);
       onProgress?.({ ...progress });
 
       saveDatabase();
@@ -435,24 +442,25 @@ export async function runLightweightRefresh(
     console.log(`[LightRefresh] ${orgs.length} org(s) synced`);
     onProgress?.({ ...progress });
 
-    // Fetch collaborator repos
-    console.log('[LightRefresh] Updating collaborator repos…');
-    progress.phase = 'collaborator-repos';
+    // Fetch personal + collaborator + org-member repos
+    console.log('[LightRefresh] Updating personal + collaborator + org-member repos…');
+    progress.phase = 'user-repos';
     onProgress?.({ ...progress });
 
-    const collabRepos = await fetchAllPages<Record<string, unknown>>(
+    const directRepos = await fetchAllPages<Record<string, unknown>>(
       accessToken,
-      `${GITHUB_API_BASE}/user/repos?affiliation=collaborator&per_page=${PER_PAGE}`,
+      `${GITHUB_API_BASE}/user/repos?affiliation=owner,collaborator,organization_member&per_page=${PER_PAGE}`,
       state,
     );
 
-    for (const repo of collabRepos) {
-      upsertRepo(db, repo as any, null);
+    for (const repo of directRepos) {
+      const orgId = resolveOrgId(db, repo as any);
+      upsertRepo(db, repo as any, orgId);
     }
 
-    progress.reposFound = collabRepos.length;
+    progress.reposFound = directRepos.length;
     saveDatabase();
-    console.log(`[LightRefresh] ${collabRepos.length} collaborator repo(s) synced`);
+    console.log(`[LightRefresh] ${directRepos.length} personal + collaborator + org-member repo(s) synced`);
 
     progress.phase = 'done';
     onProgress?.({ ...progress });

@@ -1,5 +1,8 @@
 console.log('[Jarvis] renderer.js loaded');
 
+let currentUserLogin = null;
+let lastRepoPanelState = null; // { orgLogin, displayName, repos }
+
 // Check initial status on load
 window.addEventListener('DOMContentLoaded', async () => {
   console.log('[Jarvis] DOMContentLoaded — checking OAuth status');
@@ -120,8 +123,7 @@ function updateDiscoveryUI(progress, finished) {
   const phaseLabels = {
     'orgs': 'Discovering organizations...',
     'repos': `Scanning org repositories... (${progress.reposFound.toLocaleString()} repos so far)`,
-    'user-repos': `Scanning personal repositories... (${progress.reposFound.toLocaleString()} repos so far)`,
-    'collaborator-repos': `Scanning collaborator repositories... (${progress.reposFound.toLocaleString()} repos so far)`,
+    'user-repos': `Scanning personal + collaborator repos... (${progress.reposFound.toLocaleString()} repos so far)`,
   };
   badge.textContent = 'Running';
   badge.className = 'status-badge status-in-progress';
@@ -132,6 +134,7 @@ function updateDiscoveryUI(progress, finished) {
 }
 
 function showGitHubSuccess(login, name, avatarUrl) {
+  currentUserLogin = login;
   document.getElementById('github-connect').classList.add('hidden');
   document.getElementById('github-device-code').classList.add('hidden');
   document.getElementById('github-success').classList.remove('hidden');
@@ -199,9 +202,12 @@ async function refreshOrgList() {
     const checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
     checkbox.checked = org.discoveryEnabled;
-    checkbox.addEventListener('change', async () => {
+    checkbox.addEventListener('change', async (e) => {
+      e.stopPropagation();
       await window.jarvis.setOrgEnabled(org.login, checkbox.checked);
     });
+    // Prevent click from bubbling to org-item
+    toggleLabel.addEventListener('click', (e) => e.stopPropagation());
 
     const slider = document.createElement('span');
     slider.className = 'slider';
@@ -213,6 +219,9 @@ async function refreshOrgList() {
     item.appendChild(meta);
     item.appendChild(toggleLabel);
     orgListEl.appendChild(item);
+
+    // Click to show repos for this org
+    item.addEventListener('click', () => showRepoPanel(org.login, org.login));
   }
 
   // Show direct-access repos (personal + collaborator) if any
@@ -232,8 +241,179 @@ async function refreshOrgList() {
     item.appendChild(label);
     item.appendChild(meta);
     orgListEl.appendChild(item);
+
+    // Click to show direct-access repos
+    item.addEventListener('click', () => showRepoPanel(null, 'Personal & collaborator'));
   }
 }
+
+// ── Repo detail panel ────────────────────────────────────────────────────────
+
+async function showRepoPanel(orgLogin, displayName) {
+  const panel = document.getElementById('repo-panel');
+  const title = document.getElementById('repo-panel-title');
+  const listEl = document.getElementById('repo-panel-list');
+  const filterWrap = document.getElementById('repo-panel-filter');
+  const hideMyCheckbox = document.getElementById('hide-my-repos');
+  if (!panel || !listEl) return;
+
+  // Show/hide filter only for direct repos
+  if (orgLogin === null && filterWrap) {
+    filterWrap.classList.remove('hidden');
+  } else if (filterWrap) {
+    filterWrap.classList.add('hidden');
+  }
+
+  // Highlight selected org item
+  document.querySelectorAll('.org-item').forEach((el) => el.classList.remove('active'));
+  const orgItems = document.querySelectorAll('.org-item');
+  for (const oi of orgItems) {
+    const label = oi.querySelector('.org-label');
+    if (label && label.textContent === displayName) {
+      oi.classList.add('active');
+      break;
+    }
+  }
+
+  title.textContent = displayName;
+  listEl.innerHTML = '<div style="color:#99a;font-size:0.85rem;padding:0.5rem;">Loading…</div>';
+  panel.classList.remove('hidden');
+
+  let repos;
+  try {
+    repos = await window.jarvis.listReposForOrg(orgLogin);
+  } catch (err) {
+    console.error('[Jarvis] Failed to load repos:', err);
+    listEl.innerHTML = '<div style="color:#e94560;font-size:0.85rem;padding:0.5rem;">Failed to load repositories</div>';
+    return;
+  }
+
+  lastRepoPanelState = { orgLogin, displayName, repos };
+  renderRepoCards();
+}
+
+function renderRepoCards() {
+  if (!lastRepoPanelState) return;
+  const { orgLogin, repos } = lastRepoPanelState;
+  const listEl = document.getElementById('repo-panel-list');
+  const hideMyCheckbox = document.getElementById('hide-my-repos');
+  if (!listEl) return;
+
+  listEl.innerHTML = '';
+
+  if (!repos || repos.length === 0) {
+    listEl.innerHTML = '<div style="color:#99a;font-size:0.85rem;padding:0.5rem;">No repositories found</div>';
+    return;
+  }
+
+  // Filter out user's own repos if checkbox is checked (only for direct repos)
+  const hideOwn = orgLogin === null && hideMyCheckbox && hideMyCheckbox.checked && currentUserLogin;
+  const filteredRepos = hideOwn
+    ? repos.filter((r) => !r.full_name.startsWith(currentUserLogin + '/'))
+    : repos;
+
+  if (filteredRepos.length === 0) {
+    listEl.innerHTML = '<div style="color:#99a;font-size:0.85rem;padding:0.5rem;">No repositories (all filtered)</div>';
+    return;
+  }
+
+  for (const repo of filteredRepos) {
+    const card = document.createElement('div');
+    card.className = 'repo-card';
+
+    const nameEl = document.createElement('div');
+    nameEl.className = 'repo-card-name';
+    // Show owner prefix for direct repos (personal & collaborator)
+    if (orgLogin === null && repo.full_name.includes('/')) {
+      const owner = repo.full_name.split('/')[0];
+      const ownerSpan = document.createElement('span');
+      ownerSpan.className = 'repo-card-owner';
+      ownerSpan.textContent = owner + ' / ';
+      nameEl.appendChild(ownerSpan);
+      nameEl.appendChild(document.createTextNode(repo.name));
+    } else {
+      nameEl.textContent = repo.name;
+    }
+    card.appendChild(nameEl);
+
+    if (repo.description) {
+      const descEl = document.createElement('div');
+      descEl.className = 'repo-card-desc';
+      descEl.textContent = repo.description;
+      card.appendChild(descEl);
+    }
+
+    const metaEl = document.createElement('div');
+    metaEl.className = 'repo-card-meta';
+
+    if (repo.language) {
+      const langEl = document.createElement('span');
+      langEl.className = 'repo-card-lang';
+      langEl.textContent = repo.language;
+      metaEl.appendChild(langEl);
+    }
+
+    if (repo.private) {
+      const b = document.createElement('span');
+      b.className = 'repo-card-badge';
+      b.textContent = 'private';
+      metaEl.appendChild(b);
+    }
+
+    if (repo.fork) {
+      const b = document.createElement('span');
+      b.className = 'repo-card-badge';
+      b.textContent = 'fork';
+      metaEl.appendChild(b);
+      if (repo.parent_full_name) {
+        const p = document.createElement('span');
+        p.className = 'repo-card-date';
+        p.textContent = '← ' + repo.parent_full_name;
+        metaEl.appendChild(p);
+      }
+    }
+
+    if (repo.archived) {
+      const b = document.createElement('span');
+      b.className = 'repo-card-badge';
+      b.textContent = 'archived';
+      metaEl.appendChild(b);
+    }
+
+    if (repo.default_branch) {
+      const b = document.createElement('span');
+      b.className = 'repo-card-date';
+      b.textContent = repo.default_branch;
+      metaEl.appendChild(b);
+    }
+
+    if (repo.last_pushed_at) {
+      const d = document.createElement('span');
+      d.className = 'repo-card-date';
+      d.textContent = 'pushed ' + new Date(repo.last_pushed_at).toLocaleDateString();
+      metaEl.appendChild(d);
+    }
+
+    card.appendChild(metaEl);
+    listEl.appendChild(card);
+  }
+}
+
+// Close repo panel + filter toggle
+document.addEventListener('DOMContentLoaded', () => {
+  const closeBtn = document.getElementById('repo-panel-close');
+  if (closeBtn) {
+    closeBtn.addEventListener('click', () => {
+      document.getElementById('repo-panel').classList.add('hidden');
+      document.querySelectorAll('.org-item').forEach((el) => el.classList.remove('active'));
+    });
+  }
+
+  const hideMyCheckbox = document.getElementById('hide-my-repos');
+  if (hideMyCheckbox) {
+    hideMyCheckbox.addEventListener('change', () => renderRepoCards());
+  }
+});
 
 // ── Repo search ──────────────────────────────────────────────────────────────
 

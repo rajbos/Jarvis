@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('jarvis', {
   setOrgEnabled: (orgLogin: string, enabled: boolean) =>
     ipcRenderer.invoke('github:set-org-enabled', orgLogin, enabled),
   searchRepos: (query: string) => ipcRenderer.invoke('github:search-repos', query),
+  listReposForOrg: (orgLogin: string | null) => ipcRenderer.invoke('github:list-repos-for-org', orgLogin),
   onOAuthComplete: (callback: (result: Record<string, string>) => void) => {
     ipcRenderer.on('github:oauth-complete', (_event, result) => callback(result));
   },

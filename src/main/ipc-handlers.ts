@@ -121,6 +121,35 @@ export function registerIpcHandlers(db: SqlJsDatabase, getWindow: () => BrowserW
     return rows;
   });
 
+  ipcMain.handle('github:list-repos-for-org', (_event, orgLogin: string | null) => {
+    let stmt;
+    if (orgLogin === null) {
+      // Direct repos (personal + collaborator)
+      stmt = db.prepare(
+        `SELECT r.full_name, r.name, r.description, r.language, r.private, r.fork, r.archived,
+                r.default_branch, r.parent_full_name, r.last_pushed_at, r.last_updated_at
+         FROM github_repos r
+         WHERE r.org_id IS NULL
+         ORDER BY r.last_pushed_at DESC`,
+      );
+      stmt.bind([]);
+    } else {
+      stmt = db.prepare(
+        `SELECT r.full_name, r.name, r.description, r.language, r.private, r.fork, r.archived,
+                r.default_branch, r.parent_full_name, r.last_pushed_at, r.last_updated_at
+         FROM github_repos r
+         JOIN github_orgs o ON o.id = r.org_id
+         WHERE o.login = ?
+         ORDER BY r.last_pushed_at DESC`,
+      );
+      stmt.bind([orgLogin]);
+    }
+    const rows: Record<string, unknown>[] = [];
+    while (stmt.step()) rows.push(stmt.getAsObject());
+    stmt.free();
+    return rows;
+  });
+
   ipcMain.handle('github:start-oauth', async () => {
     console.log('[IPC] github:start-oauth called');
 
