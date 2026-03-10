@@ -33,6 +33,12 @@ window.addEventListener('DOMContentLoaded', async () => {
   });
   window.jarvis.onDiscoveryComplete((progress) => {
     updateDiscoveryUI(progress, true);
+    // Reset PAT discovery button
+    const btn = document.getElementById('btn-run-pat-discovery');
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Run PAT Discovery';
+    }
   });
 
   const discoveryToggleEl = document.getElementById('discovery-toggle');
@@ -124,6 +130,9 @@ function updateDiscoveryUI(progress, finished) {
     'orgs': 'Discovering organizations...',
     'repos': `Scanning org repositories... (${progress.reposFound.toLocaleString()} repos so far)`,
     'user-repos': `Scanning personal + collaborator repos... (${progress.reposFound.toLocaleString()} repos so far)`,
+    'pat-repos': progress.currentOrg
+      ? `PAT: scanning ${progress.currentOrg}... (${progress.reposFound.toLocaleString()} new repos)`
+      : `PAT: scanning collaborator repos... (${progress.reposFound.toLocaleString()} new repos)`,
   };
   badge.textContent = 'Running';
   badge.className = 'status-badge status-in-progress';
@@ -148,7 +157,39 @@ function showGitHubSuccess(login, name, avatarUrl) {
   const badge = document.getElementById('github-status-badge');
   badge.textContent = 'Connected';
   badge.className = 'status-badge status-completed';
+
+  // Show the PAT discovery button if a PAT is configured
+  refreshPatDiscoveryButton();
 }
+
+async function refreshPatDiscoveryButton() {
+  const btn = document.getElementById('btn-run-pat-discovery');
+  if (!btn) return;
+  try {
+    const { hasPat } = await window.jarvis.getPatStatus();
+    if (hasPat) {
+      btn.classList.remove('hidden');
+    } else {
+      btn.classList.add('hidden');
+    }
+  } catch {
+    btn.classList.add('hidden');
+  }
+}
+
+document.getElementById('btn-run-pat-discovery')?.addEventListener('click', async () => {
+  const btn = document.getElementById('btn-run-pat-discovery');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Running…';
+  }
+  try {
+    await window.jarvis.startPatDiscovery();
+  } catch (err) {
+    console.error('PAT discovery failed:', err);
+  }
+  // Button state will be reset when discovery-complete fires
+});
 
 function toggleOrgPanel() {
   const panel = document.getElementById('org-panel');

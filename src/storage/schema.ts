@@ -26,6 +26,7 @@ export function getSchema(): string {
         refresh_token TEXT,
         scopes        TEXT,
         avatar_url    TEXT,
+        pat           TEXT,
         created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
         expires_at    DATETIME
     );

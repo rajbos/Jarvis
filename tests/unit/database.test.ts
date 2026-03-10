@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import initSqlJs, { Database as SqlJsDatabase } from 'sql.js';
 import { getSchema } from '../../src/storage/schema';
+import { getConfigValue, setConfigValue } from '../../src/storage/database';
 
 describe('Database Schema', () => {
   let db: SqlJsDatabase;
@@ -91,5 +92,20 @@ describe('Database Schema', () => {
 
     const localResult = db.exec("SELECT github_repo_id FROM local_repos WHERE local_path = 'C:\\repos\\repo'");
     expect(localResult[0].values[0][0]).toBe(repoId);
+  });
+
+  it('getConfigValue returns null for non-existent key', () => {
+    expect(getConfigValue(db, 'nonexistent')).toBeNull();
+  });
+
+  it('setConfigValue writes and getConfigValue reads back', () => {
+    setConfigValue(db, 'force_oauth_discovery', '1');
+    expect(getConfigValue(db, 'force_oauth_discovery')).toBe('1');
+
+    setConfigValue(db, 'force_oauth_discovery', '0');
+    expect(getConfigValue(db, 'force_oauth_discovery')).toBe('0');
+
+    setConfigValue(db, 'force_pat_discovery', '1');
+    expect(getConfigValue(db, 'force_pat_discovery')).toBe('1');
   });
 });

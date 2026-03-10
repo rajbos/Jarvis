@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import initSqlJs, { Database as SqlJsDatabase } from 'sql.js';
 import { getSchema } from '../../src/storage/schema';
-import { saveGitHubAuth, loadGitHubAuth } from '../../src/services/github-oauth';
+import { saveGitHubAuth, loadGitHubAuth, saveGitHubPat, loadGitHubPat, deleteGitHubPat } from '../../src/services/github-oauth';
 
 describe('GitHub OAuth — Token Storage', () => {
   let db: SqlJsDatabase;
@@ -58,5 +58,24 @@ describe('GitHub OAuth — Token Storage', () => {
     // Should only have one row
     const result = db.exec('SELECT COUNT(*) as cnt FROM github_auth');
     expect(result[0].values[0][0]).toBe(1);
+  });
+
+  it('should save, load, and delete a PAT', () => {
+    saveGitHubAuth(db, 'user1', 'token1', 'repo');
+    expect(loadGitHubPat(db)).toBeNull();
+
+    saveGitHubPat(db, 'user1', 'ghp_mypat123');
+    expect(loadGitHubPat(db)).toBe('ghp_mypat123');
+
+    // Verify stored encrypted
+    const stmt = db.prepare('SELECT pat FROM github_auth WHERE login = ?');
+    stmt.bind(['user1']);
+    stmt.step();
+    const row = stmt.getAsObject() as { pat: string };
+    stmt.free();
+    expect(row.pat).not.toBe('ghp_mypat123');
+
+    deleteGitHubPat(db, 'user1');
+    expect(loadGitHubPat(db)).toBeNull();
   });
 });

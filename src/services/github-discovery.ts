@@ -20,7 +20,7 @@ export interface DiscoveryState {
 }
 
 export interface DiscoveryProgress {
-  phase: 'orgs' | 'repos' | 'user-repos' | 'done';
+  phase: 'orgs' | 'repos' | 'user-repos' | 'pat-repos' | 'done';
   orgsFound: number;
   reposFound: number;
   currentOrg?: string;
@@ -295,6 +295,7 @@ export async function runDiscovery(
   db: SqlJsDatabase,
   accessToken: string,
   onProgress?: (progress: DiscoveryProgress) => void,
+  pat?: string | null,
 ): Promise<DiscoveryState> {
   const state: DiscoveryState = {
     callsSinceLastPause: 0,
@@ -392,6 +393,15 @@ export async function runDiscovery(
       saveDatabase();
     }
 
+    // ── Phase 4: PAT supplemental pass (repos OAuth can't see) ──────
+    if (!state.aborted && pat) {
+      try {
+        await runPatDiscovery(db, pat, state, progress, onProgress);
+      } catch (err) {
+        console.error('[Discovery] PAT supplemental pass failed (non-fatal):', err);
+      }
+    }
+
     progress.phase = 'done';
     onProgress?.({ ...progress });
     console.log(`[Discovery] Complete — ${progress.orgsFound} orgs, ${progress.reposFound} repos`);
@@ -410,6 +420,7 @@ export async function runLightweightRefresh(
   db: SqlJsDatabase,
   accessToken: string,
   onProgress?: (progress: DiscoveryProgress) => void,
+  pat?: string | null,
 ): Promise<void> {
   const state: DiscoveryState = {
     callsSinceLastPause: 0,
@@ -462,6 +473,15 @@ export async function runLightweightRefresh(
     saveDatabase();
     console.log(`[LightRefresh] ${directRepos.length} personal + collaborator + org-member repo(s) synced`);
 
+    // PAT supplemental pass
+    if (pat) {
+      try {
+        await runPatDiscovery(db, pat, state, progress, onProgress);
+      } catch (err) {
+        console.error('[LightRefresh] PAT supplemental pass failed (non-fatal):', err);
+      }
+    }
+
     progress.phase = 'done';
     onProgress?.({ ...progress });
   } catch (err) {
@@ -479,4 +499,120 @@ export function getLastOrgIndexedAt(db: SqlJsDatabase): string | null {
 
 export function abortDiscovery(state: DiscoveryState): void {
   state.aborted = true;
+}
+
+// ─── Standalone PAT discovery pass ─────────────────────────────────
+
+/**
+ * Smart PAT supplemental pass — only fetches what OAuth couldn't see:
+ *
+ * 1. PAT → /user/orgs: find orgs not in DB or with 0 repos (OAuth got 403)
+ * 2. PAT → /orgs/{org}/repos for each new/empty org: targeted calls
+ * 3. PAT → /user/repos?affiliation=collaborator: direct collaborator repos only
+ *
+ * This avoids re-paginating through thousands of repos already indexed via OAuth.
+ */
+export async function runPatDiscovery(
+  db: SqlJsDatabase,
+  pat: string,
+  state?: DiscoveryState,
+  progress?: DiscoveryProgress,
+  onProgress?: (progress: DiscoveryProgress) => void,
+): Promise<void> {
+  const st: DiscoveryState = state ?? {
+    callsSinceLastPause: 0,
+    aborted: false,
+    lastRateLimit: null,
+  };
+
+  const prog: DiscoveryProgress = progress ?? {
+    phase: 'pat-repos',
+    orgsFound: 0,
+    reposFound: 0,
+  };
+
+  console.log('[PAT Discovery] Starting smart PAT pass…');
+  prog.phase = 'pat-repos';
+  onProgress?.({ ...prog });
+
+  // ── Step 1: Discover orgs via PAT ──────────────────────────────
+  const patOrgs = await fetchAllPages<{ login: string; description?: string | null }>(
+    pat,
+    `${GITHUB_API_BASE}/user/orgs?per_page=${PER_PAGE}`,
+    st,
+  );
+
+  // Build a set of orgs already fully indexed (have repos in DB)
+  const { orgs: existingOrgs } = listOrgs(db);
+  const indexedOrgLogins = new Set(
+    existingOrgs.filter((o) => o.repoCount > 0).map((o) => o.login.toLowerCase()),
+  );
+
+  // Find orgs that are new or had 0 repos (OAuth was blocked)
+  const orgsToScan = patOrgs.filter(
+    (o) => !indexedOrgLogins.has(o.login.toLowerCase()),
+  );
+
+  console.log(
+    `[PAT Discovery] ${patOrgs.length} org(s) via PAT, ` +
+      `${existingOrgs.length} already indexed with repos, ` +
+      `${orgsToScan.length} new/empty org(s) to scan`,
+  );
+
+  // ── Step 2: Fetch repos for new/empty orgs ────────────────────
+  for (const org of orgsToScan) {
+    if (st.aborted) break;
+
+    const orgDbId = upsertOrg(db, org);
+    prog.currentOrg = org.login;
+    onProgress?.({ ...prog });
+
+    console.log(`[PAT Discovery] Fetching repos for org: ${org.login}`);
+    try {
+      const repos = await fetchAllPages<Record<string, unknown>>(
+        pat,
+        `${GITHUB_API_BASE}/orgs/${encodeURIComponent(org.login)}/repos?type=all&per_page=${PER_PAGE}`,
+        st,
+      );
+
+      for (const repo of repos) {
+        upsertRepo(db, repo as any, orgDbId);
+      }
+
+      prog.reposFound += repos.length;
+      prog.orgsFound = (prog.orgsFound || 0) + 1;
+      console.log(`[PAT Discovery]   ${org.login}: ${repos.length} repos`);
+      onProgress?.({ ...prog });
+      saveDatabase();
+    } catch (err) {
+      console.warn(`[PAT Discovery] Skipping org ${org.login} — ${err instanceof Error ? err.message : err}`);
+    }
+  }
+  prog.currentOrg = undefined;
+
+  // ── Step 3: Fetch direct collaborator repos via PAT ───────────
+  // affiliation=collaborator returns only repos where user is an
+  // outside collaborator — much smaller than the full repo list.
+  if (!st.aborted) {
+    console.log('[PAT Discovery] Fetching direct collaborator repos…');
+    onProgress?.({ ...prog });
+
+    const collabRepos = await fetchAllPages<Record<string, unknown>>(
+      pat,
+      `${GITHUB_API_BASE}/user/repos?affiliation=collaborator&per_page=${PER_PAGE}`,
+      st,
+    );
+
+    for (const repo of collabRepos) {
+      const orgId = resolveOrgId(db, repo as any);
+      upsertRepo(db, repo as any, orgId);
+    }
+
+    prog.reposFound += collabRepos.length;
+    console.log(`[PAT Discovery] Collaborator repos: ${collabRepos.length}`);
+    onProgress?.({ ...prog });
+    saveDatabase();
+  }
+
+  console.log(`[PAT Discovery] Complete — ${prog.orgsFound} new orgs, ${prog.reposFound} repos`);
 }

@@ -2,17 +2,21 @@ import { ipcMain, shell, Notification, BrowserWindow } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import { loadConfig } from '../agent/config';
 import { getOnboardingStatus, completeOnboardingStep } from '../agent/onboarding';
-import { saveDatabase } from '../storage/database';
+import { saveDatabase, getConfigValue, setConfigValue } from '../storage/database';
 import {
   requestDeviceCode,
   pollForToken,
   fetchGitHubUser,
   saveGitHubAuth,
   loadGitHubAuth,
+  saveGitHubPat,
+  loadGitHubPat,
+  deleteGitHubPat,
 } from '../services/github-oauth';
 import {
   runDiscovery,
   runLightweightRefresh,
+  runPatDiscovery,
   getLastOrgIndexedAt,
   abortDiscovery,
   listOrgs,
@@ -90,6 +94,29 @@ export function registerIpcHandlers(db: SqlJsDatabase, getWindow: () => BrowserW
     return { started: true };
   });
 
+  ipcMain.handle('github:start-pat-discovery', () => {
+    const pat = loadGitHubPat(db);
+    if (!pat) return { error: 'No PAT configured' };
+
+    runPatDiscovery(db, pat, undefined, undefined, (progress) => {
+      lastDiscoveryProgress = progress;
+      getWindow()?.webContents.send('github:discovery-progress', progress);
+    }).then(() => {
+      const doneProgress: DiscoveryProgress = {
+        phase: 'done',
+        orgsFound: lastDiscoveryProgress?.orgsFound ?? 0,
+        reposFound: lastDiscoveryProgress?.reposFound ?? 0,
+      };
+      lastDiscoveryProgress = doneProgress;
+      getWindow()?.webContents.send('github:discovery-progress', doneProgress);
+      getWindow()?.webContents.send('github:discovery-complete', doneProgress);
+      console.log('[Discovery] PAT-only discovery finished');
+    }).catch((err) => {
+      console.error('[Discovery] PAT-only discovery failed:', err);
+    });
+    return { started: true };
+  });
+
   ipcMain.handle('github:list-orgs', () => {
     return listOrgs(db);
   });
@@ -98,6 +125,38 @@ export function registerIpcHandlers(db: SqlJsDatabase, getWindow: () => BrowserW
     setOrgDiscoveryEnabled(db, orgLogin, enabled);
     saveDatabase();
     return { ok: true };
+  });
+
+  ipcMain.handle('github:save-pat', async (_event, pat: string) => {
+    const auth = loadGitHubAuth(db);
+    if (!auth) return { error: 'Not authenticated' };
+    // Validate the PAT by calling /user
+    try {
+      const user = await fetchGitHubUser(pat);
+      if (user.login.toLowerCase() !== auth.login.toLowerCase()) {
+        return { error: `PAT belongs to ${user.login}, but you are signed in as ${auth.login}` };
+      }
+    } catch {
+      return { error: 'Invalid token — could not authenticate with GitHub' };
+    }
+    saveGitHubPat(db, auth.login, pat);
+    // A new PAT means we should re-discover to pick up repos it can see
+    setConfigValue(db, 'force_pat_discovery', '1');
+    saveDatabase();
+    return { ok: true };
+  });
+
+  ipcMain.handle('github:delete-pat', () => {
+    const auth = loadGitHubAuth(db);
+    if (!auth) return { ok: false };
+    deleteGitHubPat(db, auth.login);
+    saveDatabase();
+    return { ok: true };
+  });
+
+  ipcMain.handle('github:pat-status', () => {
+    const pat = loadGitHubPat(db);
+    return { hasPat: !!pat };
   });
 
   ipcMain.handle('github:search-repos', (_event, query: string) => {
@@ -277,6 +336,56 @@ export function startDiscoveryIfAuthed(
     return;
   }
 
+  // Check config flags for forced re-runs
+  const forceOAuthFlag = getConfigValue(db, 'force_oauth_discovery') === '1';
+  const forcePatFlag = getConfigValue(db, 'force_pat_discovery') === '1';
+
+  if (forceOAuthFlag) {
+    console.log('[Discovery] force_oauth_discovery flag is set — running full discovery');
+    force = true;
+    setConfigValue(db, 'force_oauth_discovery', '0');
+    saveDatabase();
+  }
+
+  // If only the PAT flag is set (no full re-run needed), run just the PAT pass
+  if (!force && forcePatFlag) {
+    const pat = loadGitHubPat(db);
+    if (pat) {
+      console.log('[Discovery] force_pat_discovery flag is set — running PAT-only discovery');
+      setConfigValue(db, 'force_pat_discovery', '0');
+      saveDatabase();
+
+      runPatDiscovery(db, pat, undefined, undefined, (progress) => {
+        lastDiscoveryProgress = progress;
+        getWindow()?.webContents.send('github:discovery-progress', progress);
+      }).then(() => {
+        // Emit done after PAT-only pass
+        const doneProgress: DiscoveryProgress = {
+          phase: 'done',
+          orgsFound: lastDiscoveryProgress?.orgsFound ?? 0,
+          reposFound: lastDiscoveryProgress?.reposFound ?? 0,
+        };
+        lastDiscoveryProgress = doneProgress;
+        getWindow()?.webContents.send('github:discovery-progress', doneProgress);
+        getWindow()?.webContents.send('github:discovery-complete', doneProgress);
+        console.log('[Discovery] PAT-only discovery finished');
+      }).catch((err) => {
+        console.error('[Discovery] PAT-only discovery failed:', err);
+      });
+      return;
+    } else {
+      // No PAT configured, just clear the flag
+      setConfigValue(db, 'force_pat_discovery', '0');
+      saveDatabase();
+    }
+  }
+
+  // Clear PAT flag if doing a full run (full run includes PAT pass)
+  if (force && forcePatFlag) {
+    setConfigValue(db, 'force_pat_discovery', '0');
+    saveDatabase();
+  }
+
   // Skip automatic discovery if orgs already exist (data was persisted from a previous run)
   if (!force) {
     const existing = listOrgs(db);
@@ -288,10 +397,11 @@ export function startDiscoveryIfAuthed(
 
       if (isStale) {
         console.log('[Discovery] Data is stale, running lightweight refresh (orgs + collaborator repos)');
+        const pat = loadGitHubPat(db);
         runLightweightRefresh(db, auth.accessToken, (progress) => {
           lastDiscoveryProgress = progress;
           getWindow()?.webContents.send('github:discovery-progress', progress);
-        }).then(() => {
+        }, pat).then(() => {
           console.log('[Discovery] Lightweight refresh finished');
           getWindow()?.webContents.send('github:discovery-complete', lastDiscoveryProgress);
         }).catch((err) => {
@@ -305,10 +415,11 @@ export function startDiscoveryIfAuthed(
   }
 
   console.log('[Discovery] Starting background discovery for', auth.login);
+  const pat = loadGitHubPat(db);
   runDiscovery(db, auth.accessToken, (progress) => {
     lastDiscoveryProgress = progress;
     getWindow()?.webContents.send('github:discovery-progress', progress);
-  }).then((state) => {
+  }, pat).then((state) => {
     activeDiscovery = null;
     console.log('[Discovery] Finished');
     getWindow()?.webContents.send('github:discovery-complete', lastDiscoveryProgress);

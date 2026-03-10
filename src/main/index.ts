@@ -1,13 +1,15 @@
 import { app, BrowserWindow, Tray, Menu, nativeImage, Notification } from 'electron';
 import path from 'path';
+import pkg from '../../package.json';
 import { getDatabase, closeDatabase } from '../storage/database';
 import { loadConfig } from '../agent/config';
 import { createTray } from './tray';
-import { createOnboardingWindow } from './windows';
+import { createOnboardingWindow, createSettingsWindow } from './windows';
 import { getOnboardingStatus } from '../agent/onboarding';
 import { registerIpcHandlers, startDiscoveryIfAuthed } from './ipc-handlers';
 
 let mainWindow: BrowserWindow | null = null;
+let settingsWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let currentDb: Awaited<ReturnType<typeof getDatabase>> | null = null;
 
@@ -26,9 +28,24 @@ async function initialize(): Promise<void> {
   const onboarding = getOnboardingStatus(db);
   const needsOnboarding = Object.values(onboarding).some((s) => s === 'pending');
 
+  // Build native application menu
+  const appMenu = Menu.buildFromTemplate([
+    {
+      label: pkg.name.charAt(0).toUpperCase() + pkg.name.slice(1),
+      submenu: [
+        { label: 'Settings', click: () => showSettingsWindow() },
+        { type: 'separator' },
+        { role: 'quit' },
+      ],
+    },
+  ]);
+  Menu.setApplicationMenu(appMenu);
+
   // Create system tray
   tray = createTray(() => {
     showMainWindow();
+  }, () => {
+    showSettingsWindow();
   });
 
   if (needsOnboarding) {
@@ -58,6 +75,18 @@ function showMainWindow(): void {
   mainWindow = createOnboardingWindow(currentDb!);
   mainWindow.on('closed', () => {
     mainWindow = null;
+  });
+}
+
+function showSettingsWindow(): void {
+  if (settingsWindow && !settingsWindow.isDestroyed()) {
+    settingsWindow.show();
+    settingsWindow.focus();
+    return;
+  }
+  settingsWindow = createSettingsWindow();
+  settingsWindow.on('closed', () => {
+    settingsWindow = null;
   });
 }
 

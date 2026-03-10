@@ -80,3 +80,23 @@ export function createOnboardingWindow(db: SqlJsDatabase): BrowserWindow {
 
   return win;
 }
+
+export function createSettingsWindow(): BrowserWindow {
+  const win = new BrowserWindow({
+    width: 480,
+    height: 500,
+    title: 'Jarvis — Settings',
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  win.loadFile(path.join(__dirname, '..', 'renderer', 'settings.html'));
+
+  return win;
+}

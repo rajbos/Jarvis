@@ -8,6 +8,7 @@ import {
   setOrgDiscoveryEnabled,
   runDiscovery,
   runLightweightRefresh,
+  runPatDiscovery,
   getLastOrgIndexedAt,
   abortDiscovery,
 } from '../../src/services/github-discovery';
@@ -423,6 +424,176 @@ describe('GitHub Discovery — runDiscovery', () => {
 
   it('getLastOrgIndexedAt returns null when no orgs exist', () => {
     expect(getLastOrgIndexedAt(db)).toBeNull();
+  });
+
+  it('runs PAT supplemental pass when PAT is provided', async () => {
+    const fetchCalls: { url: string; token: string }[] = [];
+
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      const authHeader = (init?.headers as Record<string, string>)?.Authorization ?? '';
+      const token = authHeader.replace('Bearer ', '');
+      fetchCalls.push({ url, token });
+
+      // OAuth: /user/orgs
+      if (url.includes('/user/orgs') && token === 'oauth-token') {
+        return jsonResponse([{ login: 'org1', description: '' }], makeHeaders(4998));
+      }
+      // OAuth: /orgs/org1/repos
+      if (url.includes('/orgs/org1/repos') && token === 'oauth-token') {
+        return jsonResponse(
+          [{ full_name: 'org1/repo-a', name: 'repo-a', default_branch: 'main', archived: false, fork: false, private: false }],
+          makeHeaders(4997),
+        );
+      }
+      // OAuth: /user/repos
+      if (url.includes('/user/repos') && token === 'oauth-token') {
+        return jsonResponse(
+          [{ full_name: 'me/my-repo', name: 'my-repo', default_branch: 'main', archived: false, fork: false, private: false, owner: { login: 'me', type: 'User' } }],
+          makeHeaders(4996),
+        );
+      }
+      // PAT: /user/orgs — returns org1 (already indexed) + secret-org (new)
+      if (url.includes('/user/orgs') && token === 'pat-token') {
+        return jsonResponse([{ login: 'org1', description: '' }, { login: 'secret-org', description: '' }], makeHeaders(4995));
+      }
+      // PAT: /orgs/secret-org/repos — new org's repos
+      if (url.includes('/orgs/secret-org/repos') && token === 'pat-token') {
+        return jsonResponse(
+          [{ full_name: 'secret-org/hidden-repo', name: 'hidden-repo', default_branch: 'main', archived: false, fork: false, private: true }],
+          makeHeaders(4994),
+        );
+      }
+      // PAT should NOT call /orgs/org1/repos (already indexed with repos)
+      if (url.includes('/orgs/org1/repos') && token === 'pat-token') {
+        throw new Error('PAT should not re-fetch already-indexed org repos');
+      }
+      // PAT: /user/repos?affiliation=collaborator
+      if (url.includes('/user/repos') && url.includes('affiliation=collaborator') && token === 'pat-token') {
+        return jsonResponse([], makeHeaders(4993));
+      }
+      return jsonResponse([], makeHeaders(4990));
+    }) as Mock;
+
+    const progressUpdates: any[] = [];
+    await runDiscovery(db, 'oauth-token', (p) => progressUpdates.push({ ...p }), 'pat-token');
+
+    // secret-org should be created
+    const orgs = db.exec('SELECT login FROM github_orgs ORDER BY login COLLATE NOCASE');
+    const orgLogins = orgs[0].values.map(v => v[0]);
+    expect(orgLogins).toContain('org1');
+    expect(orgLogins).toContain('secret-org');
+
+    // hidden-repo and the OAuth repos should all be stored
+    const repos = db.exec('SELECT full_name FROM github_repos ORDER BY full_name');
+    const repoNames = repos[0].values.map(v => v[0]);
+    expect(repoNames).toContain('secret-org/hidden-repo');
+    expect(repoNames).toContain('me/my-repo');
+    expect(repoNames).toContain('org1/repo-a');
+
+    // PAT should NOT have called /orgs/org1/repos (already has repos)
+    const patOrg1Calls = fetchCalls.filter(c => c.token === 'pat-token' && c.url.includes('/orgs/org1/repos'));
+    expect(patOrg1Calls.length).toBe(0);
+
+    // Verify PAT phase appeared in progress
+    expect(progressUpdates.some(p => p.phase === 'pat-repos')).toBe(true);
+    const last = progressUpdates[progressUpdates.length - 1];
+    expect(last.phase).toBe('done');
+  });
+
+  it('runPatDiscovery can run standalone without full discovery', async () => {
+    // Pre-seed an org with repos so PAT skips it
+    const existingOrgId = upsertOrg(db, { login: 'known-org' });
+    upsertRepo(db, { full_name: 'known-org/existing', name: 'existing' }, existingOrgId);
+
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      // /user/orgs returns known-org + secret-org
+      if (url.includes('/user/orgs')) {
+        return jsonResponse(
+          [{ login: 'known-org', description: '' }, { login: 'secret-org', description: '' }],
+          makeHeaders(4999),
+        );
+      }
+      // /orgs/secret-org/repos — new org
+      if (url.includes('/orgs/secret-org/repos')) {
+        return jsonResponse(
+          [{ full_name: 'secret-org/hidden', name: 'hidden', default_branch: 'main', archived: false, fork: false, private: true }],
+          makeHeaders(4998),
+        );
+      }
+      // Should NOT be called for known-org
+      if (url.includes('/orgs/known-org/repos')) {
+        throw new Error('Should not re-fetch known-org repos');
+      }
+      // /user/repos?affiliation=collaborator
+      if (url.includes('/user/repos') && url.includes('affiliation=collaborator')) {
+        return jsonResponse(
+          [{ full_name: 'other/collab-repo', name: 'collab-repo', default_branch: 'main', archived: false, fork: false, private: false, owner: { login: 'other', type: 'User' } }],
+          makeHeaders(4997),
+        );
+      }
+      return jsonResponse([], makeHeaders(4996));
+    }) as Mock;
+
+    const progressUpdates: any[] = [];
+    await runPatDiscovery(db, 'pat-token', undefined, undefined, (p) => progressUpdates.push({ ...p }));
+
+    // secret-org auto-created, repos stored
+    const orgs = db.exec('SELECT login FROM github_orgs ORDER BY login COLLATE NOCASE');
+    expect(orgs[0].values.map(v => v[0])).toContain('secret-org');
+
+    const repos = db.exec('SELECT full_name FROM github_repos ORDER BY full_name');
+    const repoNames = repos[0].values.map(v => v[0]);
+    expect(repoNames).toContain('secret-org/hidden');
+    expect(repoNames).toContain('other/collab-repo');
+    expect(repoNames).toContain('known-org/existing'); // still there
+
+    expect(progressUpdates.some(p => p.phase === 'pat-repos')).toBe(true);
+  });
+
+  it('PAT pass failure does not crash full discovery', async () => {
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      const authHeader = (init?.headers as Record<string, string>)?.Authorization ?? '';
+      const token = authHeader.replace('Bearer ', '');
+
+      // OAuth calls work fine
+      if (url.includes('/user/orgs') && token === 'oauth-token') {
+        return jsonResponse([{ login: 'org1', description: '' }], makeHeaders(4998));
+      }
+      if (url.includes('/orgs/org1/repos') && token === 'oauth-token') {
+        return jsonResponse(
+          [{ full_name: 'org1/repo-a', name: 'repo-a', default_branch: 'main', archived: false, fork: false, private: false }],
+          makeHeaders(4997),
+        );
+      }
+      if (url.includes('/user/repos') && token === 'oauth-token') {
+        return jsonResponse(
+          [{ full_name: 'me/my-repo', name: 'my-repo', default_branch: 'main', archived: false, fork: false, private: false, owner: { login: 'me', type: 'User' } }],
+          makeHeaders(4996),
+        );
+      }
+      // PAT /user/orgs throws a network error
+      if (url.includes('/user/orgs') && token === 'bad-pat') {
+        throw new TypeError('fetch failed');
+      }
+      return jsonResponse([], makeHeaders(4990));
+    }) as Mock;
+
+    const progressUpdates: any[] = [];
+    // Should not throw even though PAT fails
+    const state = await runDiscovery(db, 'oauth-token', (p) => progressUpdates.push({ ...p }), 'bad-pat');
+
+    // OAuth repos should still be stored
+    const repos = db.exec('SELECT full_name FROM github_repos ORDER BY full_name');
+    const repoNames = repos[0].values.map(v => v[0]);
+    expect(repoNames).toContain('me/my-repo');
+    expect(repoNames).toContain('org1/repo-a');
+
+    // Discovery should still reach 'done' phase
+    const last = progressUpdates[progressUpdates.length - 1];
+    expect(last.phase).toBe('done');
   });
 
   it('getLastOrgIndexedAt returns the most recent indexed_at', () => {

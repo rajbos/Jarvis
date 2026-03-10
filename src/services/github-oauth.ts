@@ -172,3 +172,32 @@ export function loadGitHubAuth(db: SqlJsDatabase): { login: string; accessToken:
     avatarUrl: row.avatar_url,
   };
 }
+
+/**
+ * Save an encrypted Personal Access Token for the authenticated user.
+ */
+export function saveGitHubPat(db: SqlJsDatabase, login: string, pat: string): void {
+  const key = getEncryptionKey();
+  const encryptedPat = encrypt(pat, key);
+  db.run('UPDATE github_auth SET pat = ? WHERE login = ?', [encryptedPat, login]);
+}
+
+/**
+ * Load the decrypted Personal Access Token (if any).
+ */
+export function loadGitHubPat(db: SqlJsDatabase): string | null {
+  const stmt = db.prepare('SELECT pat FROM github_auth ORDER BY created_at DESC LIMIT 1');
+  if (!stmt.step()) { stmt.free(); return null; }
+  const row = stmt.getAsObject() as { pat: string | null };
+  stmt.free();
+  if (!row.pat) return null;
+  const key = getEncryptionKey();
+  return decrypt(row.pat, key);
+}
+
+/**
+ * Remove the stored PAT for the authenticated user.
+ */
+export function deleteGitHubPat(db: SqlJsDatabase, login: string): void {
+  db.run('UPDATE github_auth SET pat = NULL WHERE login = ?', [login]);
+}

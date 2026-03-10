@@ -1,7 +1,7 @@
 import { Tray, Menu, nativeImage, app } from 'electron';
 import path from 'path';
 
-export function createTray(onOpen: () => void): Tray {
+export function createTray(onOpen: () => void, onSettings: () => void): Tray {
   // Use a simple default icon — can be replaced with a custom asset later
   const iconPath = path.join(__dirname, '..', '..', 'assets', 'icon.png');
   let icon: Electron.NativeImage;
@@ -17,6 +17,7 @@ export function createTray(onOpen: () => void): Tray {
 
   const contextMenu = Menu.buildFromTemplate([
     { label: 'Open Jarvis', click: onOpen },
+    { label: 'Settings', click: onSettings },
     { type: 'separator' },
     { label: 'Quit', click: () => app.quit() },
   ]);

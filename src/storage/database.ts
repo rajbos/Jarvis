@@ -51,7 +51,7 @@ function initializeSchema(database: SqlJsDatabase): void {
 
   if (userVersion === 0) {
     database.run(getSchema());
-    database.run('PRAGMA user_version = 3');
+    database.run('PRAGMA user_version = 4');
   }
 
   if (userVersion === 1) {
@@ -65,6 +65,12 @@ function initializeSchema(database: SqlJsDatabase): void {
     database.run('ALTER TABLE github_auth ADD COLUMN avatar_url TEXT');
     database.run('PRAGMA user_version = 3');
   }
+
+  if (userVersion === 3) {
+    // Migration v3 → v4: add pat (Personal Access Token) to github_auth
+    database.run('ALTER TABLE github_auth ADD COLUMN pat TEXT');
+    database.run('PRAGMA user_version = 4');
+  }
 }
 
 export function saveDatabase(): void {
@@ -73,6 +79,21 @@ export function saveDatabase(): void {
     const buffer = Buffer.from(data);
     fs.writeFileSync(dbPath, buffer);
   }
+}
+
+export function getConfigValue(database: SqlJsDatabase, key: string): string | null {
+  const stmt = database.prepare('SELECT value FROM config WHERE key = ?');
+  stmt.bind([key]);
+  const value = stmt.step() ? (stmt.getAsObject().value as string) : null;
+  stmt.free();
+  return value;
+}
+
+export function setConfigValue(database: SqlJsDatabase, key: string, value: string): void {
+  database.run(
+    "INSERT INTO config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+    [key, value],
+  );
 }
 
 export function closeDatabase(): void {
