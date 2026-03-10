@@ -51,7 +51,19 @@ function initializeSchema(database: SqlJsDatabase): void {
 
   if (userVersion === 0) {
     database.run(getSchema());
-    database.run('PRAGMA user_version = 1');
+    database.run('PRAGMA user_version = 3');
+  }
+
+  if (userVersion === 1) {
+    // Migration v1 → v2: add discovery_enabled to github_orgs
+    database.run('ALTER TABLE github_orgs ADD COLUMN discovery_enabled INTEGER DEFAULT 1');
+    database.run('PRAGMA user_version = 2');
+  }
+
+  if (userVersion === 2) {
+    // Migration v2 → v3: add avatar_url to github_auth
+    database.run('ALTER TABLE github_auth ADD COLUMN avatar_url TEXT');
+    database.run('PRAGMA user_version = 3');
   }
 }
 

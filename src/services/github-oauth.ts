@@ -133,33 +133,35 @@ export function saveGitHubAuth(
   login: string,
   accessToken: string,
   scopes: string,
+  avatarUrl?: string,
 ): void {
   const key = getEncryptionKey();
   const encryptedToken = encrypt(accessToken, key);
 
   db.run(
-    `INSERT INTO github_auth (login, access_token, scopes)
-     VALUES (?, ?, ?)
+    `INSERT INTO github_auth (login, access_token, scopes, avatar_url)
+     VALUES (?, ?, ?, ?)
      ON CONFLICT(login) DO UPDATE SET
        access_token = excluded.access_token,
        scopes = excluded.scopes,
+       avatar_url = excluded.avatar_url,
        created_at = CURRENT_TIMESTAMP`,
-    [login, encryptedToken, scopes],
+    [login, encryptedToken, scopes, avatarUrl || null],
   );
 }
 
 /**
  * Load the GitHub OAuth token from the database (decrypted).
  */
-export function loadGitHubAuth(db: SqlJsDatabase): { login: string; accessToken: string; scopes: string } | null {
-  const stmt = db.prepare('SELECT login, access_token, scopes FROM github_auth ORDER BY created_at DESC LIMIT 1');
+export function loadGitHubAuth(db: SqlJsDatabase): { login: string; accessToken: string; scopes: string; avatarUrl: string | null } | null {
+  const stmt = db.prepare('SELECT login, access_token, scopes, avatar_url FROM github_auth ORDER BY created_at DESC LIMIT 1');
 
   if (!stmt.step()) {
     stmt.free();
     return null;
   }
 
-  const row = stmt.getAsObject() as { login: string; access_token: string; scopes: string };
+  const row = stmt.getAsObject() as { login: string; access_token: string; scopes: string; avatar_url: string | null };
   stmt.free();
 
   const key = getEncryptionKey();
@@ -167,5 +169,6 @@ export function loadGitHubAuth(db: SqlJsDatabase): { login: string; accessToken:
     login: row.login,
     accessToken: decrypt(row.access_token, key),
     scopes: row.scopes,
+    avatarUrl: row.avatar_url,
   };
 }

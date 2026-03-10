@@ -1,0 +1,474 @@
+import type { Database as SqlJsDatabase } from 'sql.js';
+import { saveDatabase } from '../storage/database';
+
+const GITHUB_API_BASE = 'https://api.github.com';
+const PER_PAGE = 100;
+const CALLS_PER_BATCH = 500;
+const BATCH_PAUSE_MS = 10_000; // 10 seconds between batches
+const LOW_RATE_LIMIT_THRESHOLD = 50;
+
+export interface RateLimitInfo {
+  remaining: number;
+  limit: number;
+  reset: number; // Unix timestamp (seconds)
+}
+
+export interface DiscoveryState {
+  callsSinceLastPause: number;
+  aborted: boolean;
+  lastRateLimit: RateLimitInfo | null;
+}
+
+export interface DiscoveryProgress {
+  phase: 'orgs' | 'repos' | 'user-repos' | 'collaborator-repos' | 'done';
+  orgsFound: number;
+  reposFound: number;
+  currentOrg?: string;
+}
+
+export interface OrgInfo {
+  id: number;
+  login: string;
+  name: string | null;
+  discoveryEnabled: boolean;
+  indexedAt: string | null;
+  repoCount: number;
+}
+
+// ─── Rate-limit helpers ────────────────────────────────────────────
+
+function parseRateLimit(headers: Headers): RateLimitInfo {
+  return {
+    remaining: parseInt(headers.get('x-ratelimit-remaining') || '5000', 10),
+    limit: parseInt(headers.get('x-ratelimit-limit') || '5000', 10),
+    reset: parseInt(headers.get('x-ratelimit-reset') || '0', 10),
+  };
+}
+
+function parseLinkNext(linkHeader: string | null): string | null {
+  if (!linkHeader) return null;
+  const match = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
+  return match ? match[1] : null;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Pause when we've consumed CALLS_PER_BATCH API calls, or when the
+ * remaining rate-limit budget drops below the safety threshold.
+ */
+async function rateLimitAwarePause(state: DiscoveryState): Promise<void> {
+  if (state.aborted) return;
+
+  state.callsSinceLastPause++;
+
+  if (state.callsSinceLastPause >= CALLS_PER_BATCH) {
+    console.log(`[Discovery] Pausing after ${state.callsSinceLastPause} API calls (batch cooldown)…`);
+    await sleep(BATCH_PAUSE_MS);
+    state.callsSinceLastPause = 0;
+  }
+
+  if (state.lastRateLimit && state.lastRateLimit.remaining < LOW_RATE_LIMIT_THRESHOLD) {
+    const waitMs = state.lastRateLimit.reset * 1000 - Date.now() + 1000;
+    if (waitMs > 0) {
+      console.log(
+        `[Discovery] Rate limit low (${state.lastRateLimit.remaining} remaining). ` +
+          `Waiting ${Math.ceil(waitMs / 1000)}s until reset…`,
+      );
+      await sleep(waitMs);
+    }
+  }
+}
+
+// ─── Generic GitHub API fetch with rate-limit tracking ─────────────
+
+async function githubGet<T>(
+  accessToken: string,
+  url: string,
+  state: DiscoveryState,
+): Promise<{ data: T; nextUrl: string | null }> {
+  await rateLimitAwarePause(state);
+
+  if (state.aborted) {
+    throw new Error('Discovery aborted');
+  }
+
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      Accept: 'application/json',
+      'User-Agent': 'Jarvis-Agent/0.1.0',
+    },
+  });
+
+  state.lastRateLimit = parseRateLimit(response.headers);
+  console.log(
+    `[Discovery] ${url.replace(GITHUB_API_BASE, '')} — ` +
+      `rate limit: ${state.lastRateLimit.remaining}/${state.lastRateLimit.limit}`,
+  );
+
+  // Rate-limit exceeded — wait until reset, then retry once
+  if (response.status === 403 && state.lastRateLimit.remaining === 0) {
+    const waitMs = state.lastRateLimit.reset * 1000 - Date.now() + 1000;
+    if (waitMs > 0) {
+      console.log(`[Discovery] Rate limit exceeded. Waiting ${Math.ceil(waitMs / 1000)}s…`);
+      await sleep(waitMs);
+    }
+    state.callsSinceLastPause = 0;
+    return githubGet(accessToken, url, state);
+  }
+
+  if (!response.ok) {
+    throw new Error(`GitHub API error: ${response.status} ${response.statusText} for ${url}`);
+  }
+
+  const data = (await response.json()) as T;
+  const nextUrl = parseLinkNext(response.headers.get('link'));
+  return { data, nextUrl };
+}
+
+async function fetchAllPages<T>(
+  accessToken: string,
+  initialUrl: string,
+  state: DiscoveryState,
+): Promise<T[]> {
+  const results: T[] = [];
+  let url: string | null = initialUrl;
+
+  while (url && !state.aborted) {
+    const result: { data: T[]; nextUrl: string | null } = await githubGet<T[]>(accessToken, url, state);
+    results.push(...result.data);
+    url = result.nextUrl;
+  }
+
+  return results;
+}
+
+// ─── DB upsert helpers ─────────────────────────────────────────────
+
+export function upsertOrg(
+  db: SqlJsDatabase,
+  org: { login: string; name?: string | null; description?: string | null },
+): number {
+  db.run(
+    `INSERT INTO github_orgs (login, name, indexed_at, metadata)
+     VALUES (?, ?, datetime('now'), ?)
+     ON CONFLICT(login) DO UPDATE SET
+       name = excluded.name,
+       indexed_at = excluded.indexed_at,
+       metadata = excluded.metadata`,
+    [
+      org.login,
+      org.name || null,
+      org.description ? JSON.stringify({ description: org.description }) : null,
+    ],
+  );
+
+  const stmt = db.prepare('SELECT id FROM github_orgs WHERE login = ?');
+  stmt.bind([org.login]);
+  stmt.step();
+  const row = stmt.getAsObject() as { id: number };
+  stmt.free();
+  return row.id;
+}
+
+export function listOrgs(db: SqlJsDatabase): { orgs: OrgInfo[]; directRepoCount: number } {
+  const orgs: OrgInfo[] = [];
+  const stmt = db.prepare(
+    `SELECT o.id, o.login, o.name, o.discovery_enabled, o.indexed_at,
+            (SELECT COUNT(*) FROM github_repos r WHERE r.org_id = o.id) AS repo_count
+     FROM github_orgs o
+     ORDER BY o.login`,
+  );
+  while (stmt.step()) {
+    const row = stmt.getAsObject() as any;
+    orgs.push({
+      id: row.id,
+      login: row.login,
+      name: row.name,
+      discoveryEnabled: row.discovery_enabled !== 0,
+      indexedAt: row.indexed_at,
+      repoCount: row.repo_count,
+    });
+  }
+  stmt.free();
+
+  const countStmt = db.prepare('SELECT COUNT(*) AS cnt FROM github_repos WHERE org_id IS NULL');
+  countStmt.step();
+  const directRepoCount = (countStmt.getAsObject() as any).cnt as number;
+  countStmt.free();
+
+  return { orgs, directRepoCount };
+}
+
+export function setOrgDiscoveryEnabled(db: SqlJsDatabase, orgLogin: string, enabled: boolean): void {
+  db.run('UPDATE github_orgs SET discovery_enabled = ? WHERE login = ?', [enabled ? 1 : 0, orgLogin]);
+}
+
+export function upsertRepo(
+  db: SqlJsDatabase,
+  repo: {
+    full_name: string;
+    name: string;
+    description?: string | null;
+    default_branch?: string | null;
+    language?: string | null;
+    archived?: boolean;
+    fork?: boolean;
+    private?: boolean;
+    pushed_at?: string | null;
+    updated_at?: string | null;
+    parent?: { full_name: string } | null;
+  },
+  orgId: number | null,
+): void {
+  db.run(
+    `INSERT INTO github_repos
+       (org_id, full_name, name, description, default_branch, language,
+        archived, fork, parent_full_name, private,
+        last_pushed_at, last_updated_at, indexed_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+     ON CONFLICT(full_name) DO UPDATE SET
+       org_id          = excluded.org_id,
+       name            = excluded.name,
+       description     = excluded.description,
+       default_branch  = excluded.default_branch,
+       language        = excluded.language,
+       archived        = excluded.archived,
+       fork            = excluded.fork,
+       parent_full_name = excluded.parent_full_name,
+       private         = excluded.private,
+       last_pushed_at  = excluded.last_pushed_at,
+       last_updated_at = excluded.last_updated_at,
+       indexed_at      = excluded.indexed_at`,
+    [
+      orgId,
+      repo.full_name,
+      repo.name,
+      repo.description || null,
+      repo.default_branch || null,
+      repo.language || null,
+      repo.archived ? 1 : 0,
+      repo.fork ? 1 : 0,
+      repo.parent?.full_name || null,
+      repo.private ? 1 : 0,
+      repo.pushed_at || null,
+      repo.updated_at || null,
+    ],
+  );
+}
+
+// ─── Main discovery loop ───────────────────────────────────────────
+
+export async function runDiscovery(
+  db: SqlJsDatabase,
+  accessToken: string,
+  onProgress?: (progress: DiscoveryProgress) => void,
+): Promise<DiscoveryState> {
+  const state: DiscoveryState = {
+    callsSinceLastPause: 0,
+    aborted: false,
+    lastRateLimit: null,
+  };
+
+  const progress: DiscoveryProgress = {
+    phase: 'orgs',
+    orgsFound: 0,
+    reposFound: 0,
+  };
+
+  try {
+    // ── Phase 1: Organizations ──────────────────────────────────────
+    console.log('[Discovery] Starting — fetching organizations…');
+    onProgress?.({ ...progress });
+
+    const orgs = await fetchAllPages<{ login: string; description?: string | null }>(
+      accessToken,
+      `${GITHUB_API_BASE}/user/orgs?per_page=${PER_PAGE}`,
+      state,
+    );
+
+    progress.orgsFound = orgs.length;
+    console.log(`[Discovery] Found ${orgs.length} organization(s)`);
+    onProgress?.({ ...progress });
+
+    // Store orgs and map login → DB id
+    const orgIdMap = new Map<string, number>();
+    for (const org of orgs) {
+      const dbId = upsertOrg(db, org);
+      orgIdMap.set(org.login, dbId);
+    }
+    saveDatabase();
+
+    // ── Phase 2: Repos per org (skip disabled orgs) ─────────────────
+    progress.phase = 'repos';
+    const disabledOrgs = new Set(
+      listOrgs(db).orgs.filter((o) => !o.discoveryEnabled).map((o) => o.login),
+    );
+
+    for (const org of orgs) {
+      if (state.aborted) break;
+
+      if (disabledOrgs.has(org.login)) {
+        console.log(`[Discovery] Skipping disabled org: ${org.login}`);
+        continue;
+      }
+
+      progress.currentOrg = org.login;
+      console.log(`[Discovery] Fetching repos for org: ${org.login}`);
+      onProgress?.({ ...progress });
+
+      const repos = await fetchAllPages<Record<string, unknown>>(
+        accessToken,
+        `${GITHUB_API_BASE}/orgs/${encodeURIComponent(org.login)}/repos?type=all&per_page=${PER_PAGE}`,
+        state,
+      );
+
+      const orgDbId = orgIdMap.get(org.login)!;
+      for (const repo of repos) {
+        upsertRepo(db, repo as any, orgDbId);
+      }
+
+      progress.reposFound += repos.length;
+      console.log(`[Discovery]   ${org.login}: ${repos.length} repos (total: ${progress.reposFound})`);
+      onProgress?.({ ...progress });
+
+      saveDatabase();
+    }
+    progress.currentOrg = undefined;
+
+    // ── Phase 3: User-owned repos ───────────────────────────────────
+    if (!state.aborted) {
+      console.log('[Discovery] Fetching personal (user-owned) repos…');
+      progress.phase = 'user-repos';
+      onProgress?.({ ...progress });
+
+      const userRepos = await fetchAllPages<Record<string, unknown>>(
+        accessToken,
+        `${GITHUB_API_BASE}/user/repos?type=owner&per_page=${PER_PAGE}`,
+        state,
+      );
+
+      for (const repo of userRepos) {
+        upsertRepo(db, repo as any, null);
+      }
+
+      progress.reposFound += userRepos.length;
+      console.log(`[Discovery] Personal repos: ${userRepos.length} (total: ${progress.reposFound})`);
+      onProgress?.({ ...progress });
+
+      saveDatabase();
+    }
+
+    // ── Phase 4: Collaborator repos (direct access, not via org) ─────
+    if (!state.aborted) {
+      console.log('[Discovery] Fetching collaborator repos…');
+      progress.phase = 'collaborator-repos';
+      onProgress?.({ ...progress });
+
+      const collabRepos = await fetchAllPages<Record<string, unknown>>(
+        accessToken,
+        `${GITHUB_API_BASE}/user/repos?affiliation=collaborator&per_page=${PER_PAGE}`,
+        state,
+      );
+
+      for (const repo of collabRepos) {
+        upsertRepo(db, repo as any, null);
+      }
+
+      progress.reposFound += collabRepos.length;
+      console.log(`[Discovery] Collaborator repos: ${collabRepos.length} (total: ${progress.reposFound})`);
+      onProgress?.({ ...progress });
+
+      saveDatabase();
+    }
+
+    progress.phase = 'done';
+    onProgress?.({ ...progress });
+    console.log(`[Discovery] Complete — ${progress.orgsFound} orgs, ${progress.reposFound} repos`);
+  } catch (err) {
+    if (!state.aborted) {
+      console.error('[Discovery] Error:', err);
+    }
+  }
+
+  return state;
+}
+
+// ─── Lightweight refresh (orgs + collaborator repos only) ──────────
+
+export async function runLightweightRefresh(
+  db: SqlJsDatabase,
+  accessToken: string,
+  onProgress?: (progress: DiscoveryProgress) => void,
+): Promise<void> {
+  const state: DiscoveryState = {
+    callsSinceLastPause: 0,
+    aborted: false,
+    lastRateLimit: null,
+  };
+
+  const progress: DiscoveryProgress = {
+    phase: 'orgs',
+    orgsFound: 0,
+    reposFound: 0,
+  };
+
+  try {
+    // Fetch current orgs
+    console.log('[LightRefresh] Checking for new organizations…');
+    onProgress?.({ ...progress });
+
+    const orgs = await fetchAllPages<{ login: string; description?: string | null }>(
+      accessToken,
+      `${GITHUB_API_BASE}/user/orgs?per_page=${PER_PAGE}`,
+      state,
+    );
+
+    progress.orgsFound = orgs.length;
+    for (const org of orgs) {
+      upsertOrg(db, org);
+    }
+    saveDatabase();
+    console.log(`[LightRefresh] ${orgs.length} org(s) synced`);
+    onProgress?.({ ...progress });
+
+    // Fetch collaborator repos
+    console.log('[LightRefresh] Updating collaborator repos…');
+    progress.phase = 'collaborator-repos';
+    onProgress?.({ ...progress });
+
+    const collabRepos = await fetchAllPages<Record<string, unknown>>(
+      accessToken,
+      `${GITHUB_API_BASE}/user/repos?affiliation=collaborator&per_page=${PER_PAGE}`,
+      state,
+    );
+
+    for (const repo of collabRepos) {
+      upsertRepo(db, repo as any, null);
+    }
+
+    progress.reposFound = collabRepos.length;
+    saveDatabase();
+    console.log(`[LightRefresh] ${collabRepos.length} collaborator repo(s) synced`);
+
+    progress.phase = 'done';
+    onProgress?.({ ...progress });
+  } catch (err) {
+    console.error('[LightRefresh] Error:', err);
+  }
+}
+
+export function getLastOrgIndexedAt(db: SqlJsDatabase): string | null {
+  const stmt = db.prepare("SELECT MAX(indexed_at) AS last_indexed FROM github_orgs");
+  stmt.step();
+  const row = stmt.getAsObject() as any;
+  stmt.free();
+  return row.last_indexed || null;
+}
+
+export function abortDiscovery(state: DiscoveryState): void {
+  state.aborted = true;
+}

@@ -5,16 +5,18 @@ import { loadConfig } from '../agent/config';
 import { createTray } from './tray';
 import { createOnboardingWindow } from './windows';
 import { getOnboardingStatus } from '../agent/onboarding';
-import { registerIpcHandlers } from './ipc-handlers';
+import { registerIpcHandlers, startDiscoveryIfAuthed } from './ipc-handlers';
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
+let currentDb: Awaited<ReturnType<typeof getDatabase>> | null = null;
 
 async function initialize(): Promise<void> {
   const config = loadConfig();
 
   // Initialize the database (creates it if not present)
   const db = await getDatabase(config.storage.database);
+  currentDb = db;
   console.log('Database initialized at:', config.storage.database);
 
   // Register IPC handlers for renderer ↔ main communication
@@ -33,6 +35,11 @@ async function initialize(): Promise<void> {
     showMainWindow();
   }
 
+  // If GitHub auth is already set up, start background discovery
+  if (!needsOnboarding || onboarding.github_oauth === 'completed') {
+    startDiscoveryIfAuthed(db, () => mainWindow);
+  }
+
   // Register for startup on login
   if (config.electron.openAtLogin) {
     app.setLoginItemSettings({
@@ -48,7 +55,7 @@ function showMainWindow(): void {
     mainWindow.focus();
     return;
   }
-  mainWindow = createOnboardingWindow();
+  mainWindow = createOnboardingWindow(currentDb!);
   mainWindow.on('closed', () => {
     mainWindow = null;
   });

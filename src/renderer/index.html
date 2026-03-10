@@ -25,7 +25,7 @@
     }
 
     .container {
-      max-width: 480px;
+      max-width: 840px;
       width: 100%;
     }
 
@@ -157,6 +157,242 @@
     .hidden {
       display: none;
     }
+
+    .org-list {
+      margin-top: 0.75rem;
+    }
+
+    .org-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 0.65rem;
+      background: #0f3460;
+      border-radius: 6px;
+      margin-bottom: 0.35rem;
+      font-size: 0.85rem;
+    }
+
+    .org-item .org-label {
+      flex: 1;
+      font-weight: 600;
+      color: #e0e0e0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .org-item .org-meta {
+      font-size: 0.78rem;
+      color: #888;
+      text-align: right;
+      width: 6rem;
+      flex-shrink: 0;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    .toggle {
+      position: relative;
+      width: 36px;
+      height: 20px;
+      flex-shrink: 0;
+    }
+
+    .toggle input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .toggle .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: #555;
+      border-radius: 20px;
+      transition: background 0.2s;
+    }
+
+    .toggle .slider::before {
+      content: '';
+      position: absolute;
+      width: 14px;
+      height: 14px;
+      left: 3px;
+      bottom: 3px;
+      background: white;
+      border-radius: 50%;
+      transition: transform 0.2s;
+    }
+
+    .toggle input:checked + .slider {
+      background: #51cf66;
+    }
+
+    .toggle input:checked + .slider::before {
+      transform: translateX(16px);
+    }
+
+    .github-layout {
+      display: flex;
+      gap: 1rem;
+      align-items: flex-start;
+      margin-bottom: 1rem;
+    }
+
+    #github-step {
+      flex: 0 0 440px;
+      margin-bottom: 0;
+    }
+
+    .org-panel {
+      flex: 1;
+      min-width: 0;
+      background: #16213e;
+      border: 1px solid #0f3460;
+      border-radius: 8px;
+      padding: 1.25rem;
+      max-height: 560px;
+      overflow-y: auto;
+    }
+
+    .org-panel-header {
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      color: #e0e0e0;
+    }
+
+    .org-panel .org-list {
+      margin-top: 0;
+    }
+
+    #discovery-toggle {
+      cursor: pointer;
+      border-radius: 4px;
+      padding: 0.25rem;
+      margin: -0.25rem;
+      transition: background 0.15s;
+      user-select: none;
+    }
+
+    #discovery-toggle:hover {
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    #search-wrap {
+      position: relative;
+      margin-bottom: 1.25rem;
+    }
+
+    #search-input {
+      width: 100%;
+      padding: 0.7rem 1rem 0.7rem 2.6rem;
+      background: #16213e;
+      border: 1px solid #0f3460;
+      border-radius: 8px;
+      color: #e0e0e0;
+      font-size: 1rem;
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+
+    #search-input:focus {
+      border-color: #339af0;
+      box-shadow: 0 0 0 2px rgba(51, 154, 240, 0.2);
+    }
+
+    #search-input::placeholder {
+      color: #555;
+    }
+
+    .search-icon {
+      position: absolute;
+      left: 0.8rem;
+      top: 50%;
+      transform: translateY(-50%);
+      color: #555;
+      pointer-events: none;
+      font-size: 1rem;
+    }
+
+    #search-results {
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      right: 0;
+      background: #16213e;
+      border: 1px solid #0f3460;
+      border-radius: 8px;
+      max-height: 340px;
+      overflow-y: auto;
+      z-index: 100;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    }
+
+    .search-result-item {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.55rem 0.9rem;
+      cursor: pointer;
+      border-bottom: 1px solid #0f3460;
+      transition: background 0.1s;
+    }
+
+    .search-result-item:last-child { border-bottom: none; }
+
+    .search-result-item:hover { background: #0f3460; }
+
+    .sri-main {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .sri-name {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: #e0e0e0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .sri-org {
+      font-size: 0.75rem;
+      color: #666;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .sri-side {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      flex-shrink: 0;
+    }
+
+    .sri-lang {
+      font-size: 0.75rem;
+      color: #888;
+    }
+
+    .sri-badge {
+      font-size: 0.68rem;
+      padding: 1px 5px;
+      border-radius: 4px;
+      background: #0a2d4d;
+      color: #888;
+    }
+
+    #search-empty {
+      padding: 0.75rem 0.9rem;
+      font-size: 0.85rem;
+      color: #666;
+      text-align: center;
+    }
   </style>
 </head>
 <body>
@@ -164,6 +400,14 @@
     <h1>Jarvis</h1>
     <p class="subtitle">Personal Assistant — First Time Setup</p>
 
+    <!-- Repo search -->
+    <div id="search-wrap">
+      <span class="search-icon">&#128269;</span>
+      <input id="search-input" type="text" placeholder="Search repositories…" autocomplete="off" spellcheck="false">
+      <div id="search-results" class="hidden"></div>
+    </div>
+
+    <div class="github-layout">
     <!-- GitHub OAuth Step -->
     <div class="step" id="github-step">
       <h2>
@@ -197,7 +441,29 @@
           </div>
         </div>
       </div>
+
+      <!-- Discovery progress (shown after auth) -->
+      <div id="discovery-section" class="hidden" style="margin-top: 1rem;">
+        <div class="discovery-status" id="discovery-toggle">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+            <span style="font-size: 0.9rem; font-weight: 600;">Repository Discovery <span id="discovery-chevron" style="color: #666; font-size: 0.8rem;">›</span></span>
+            <span class="status-badge status-in-progress" id="discovery-badge">Starting...</span>
+          </div>
+          <div class="discovery-details" id="discovery-details" style="font-size: 0.85rem; color: #aaa;">
+            Scanning organizations and repositories...
+          </div>
+          <div class="discovery-rate-limit" id="discovery-rate-limit" style="font-size: 0.75rem; color: #666; margin-top: 0.25rem;"></div>
+        </div>
+
+      </div>
     </div>
+
+    <!-- Org panel — click "Repository Discovery" to open -->
+    <div id="org-panel" class="org-panel hidden">
+      <div class="org-panel-header">Organizations</div>
+      <div id="org-list" class="org-list"></div>
+    </div>
+    </div><!-- end .github-layout -->
 
     <!-- Future steps (disabled for now) -->
     <div class="step" style="opacity: 0.5;">

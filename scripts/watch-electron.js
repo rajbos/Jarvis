@@ -50,6 +50,9 @@ function scheduleRestart() {
   }, 800); // wait 800ms for tsc to finish writing all files
 }
 
+const SRC_RENDERER = path.join(ROOT, 'src', 'renderer');
+const DIST_RENDERER = path.join(ROOT, 'dist', 'renderer');
+
 for (const dir of WATCH_DIRS) {
   if (fs.existsSync(dir)) {
     fs.watch(dir, { recursive: true }, (_event, filename) => {
@@ -58,6 +61,24 @@ for (const dir of WATCH_DIRS) {
       }
     });
   }
+}
+
+// Watch src/renderer/ and copy static files to dist/renderer/ immediately.
+// This means changes to index.html / renderer.js are picked up without a full tsc run.
+if (fs.existsSync(SRC_RENDERER)) {
+  fs.watch(SRC_RENDERER, { recursive: true }, (_event, filename) => {
+    if (!filename) return;
+    const src = path.join(SRC_RENDERER, filename);
+    const dest = path.join(DIST_RENDERER, filename);
+    try {
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      fs.copyFileSync(src, dest);
+      console.log(`[watch-electron] copied ${filename} → dist/renderer/`);
+    } catch (err) {
+      console.warn(`[watch-electron] failed to copy ${filename}:`, err.message);
+    }
+    // scheduleRestart is triggered automatically because dist/renderer/ is in WATCH_DIRS
+  });
 }
 
 startElectron();

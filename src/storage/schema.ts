@@ -25,17 +25,19 @@ export function getSchema(): string {
         access_token  TEXT NOT NULL,
         refresh_token TEXT,
         scopes        TEXT,
+        avatar_url    TEXT,
         created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
         expires_at    DATETIME
     );
 
     -- GitHub organizations being tracked
     CREATE TABLE IF NOT EXISTS github_orgs (
-        id         INTEGER PRIMARY KEY AUTOINCREMENT,
-        login      TEXT NOT NULL UNIQUE,
-        name       TEXT,
-        indexed_at DATETIME,
-        metadata   TEXT
+        id                INTEGER PRIMARY KEY AUTOINCREMENT,
+        login             TEXT NOT NULL UNIQUE,
+        name              TEXT,
+        discovery_enabled INTEGER DEFAULT 1,
+        indexed_at        DATETIME,
+        metadata          TEXT
     );
 
     -- GitHub repositories index (remote)
