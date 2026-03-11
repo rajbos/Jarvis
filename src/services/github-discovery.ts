@@ -386,12 +386,23 @@ export async function runDiscovery(
         state,
       );
 
+      let skippedDisabledOrg = 0;
       for (const repo of directRepos) {
-        const orgId = resolveOrgId(db, repo as any);
-        upsertRepo(db, repo as any, orgId);
+        const repoAny = repo as any;
+        const ownerLogin = repoAny.owner?.login as string | undefined;
+        if (ownerLogin && disabledOrgs.has(ownerLogin)) {
+          skippedDisabledOrg++;
+          continue;
+        }
+        const orgId = resolveOrgId(db, repoAny);
+        upsertRepo(db, repoAny, orgId);
       }
 
-      progress.reposFound += directRepos.length;
+      if (skippedDisabledOrg > 0) {
+        console.log(`[Discovery] Skipped ${skippedDisabledOrg} repos from disabled orgs in user-repos phase`);
+      }
+
+      progress.reposFound += directRepos.length - skippedDisabledOrg;
       console.log(`[Discovery] Personal + collaborator + org-member repos: ${directRepos.length} (total: ${progress.reposFound})`);
       onProgress?.({ ...progress });
 
@@ -463,6 +474,10 @@ export async function runLightweightRefresh(
     console.log(`[LightRefresh] ${orgs.length} org(s) synced`);
     onProgress?.({ ...progress });
 
+    const disabledOrgs = new Set(
+      listOrgs(db).orgs.filter((o) => !o.discoveryEnabled).map((o) => o.login),
+    );
+
     // Fetch personal + collaborator + org-member repos
     console.log('[LightRefresh] Updating personal + collaborator + org-member repos…');
     progress.phase = 'user-repos';
@@ -474,12 +489,23 @@ export async function runLightweightRefresh(
       state,
     );
 
+    let skippedDisabledOrg = 0;
     for (const repo of directRepos) {
-      const orgId = resolveOrgId(db, repo as any);
-      upsertRepo(db, repo as any, orgId);
+      const repoAny = repo as any;
+      const ownerLogin = repoAny.owner?.login as string | undefined;
+      if (ownerLogin && disabledOrgs.has(ownerLogin)) {
+        skippedDisabledOrg++;
+        continue;
+      }
+      const orgId = resolveOrgId(db, repoAny);
+      upsertRepo(db, repoAny, orgId);
     }
 
-    progress.reposFound = directRepos.length;
+    if (skippedDisabledOrg > 0) {
+      console.log(`[LightRefresh] Skipped ${skippedDisabledOrg} repos from disabled orgs in user-repos phase`);
+    }
+
+    progress.reposFound = directRepos.length - skippedDisabledOrg;
     saveDatabase();
     console.log(`[LightRefresh] ${directRepos.length} personal + collaborator + org-member repo(s) synced`);
 
