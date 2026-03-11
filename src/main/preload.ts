@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer } from 'electron';
 
 contextBridge.exposeInMainWorld('jarvis', {
   getOnboardingStatus: () => ipcRenderer.invoke('onboarding:status'),
+  checkOllama: () => ipcRenderer.invoke('ollama:status'),
+  listOllamaModels: () => ipcRenderer.invoke('ollama:list-models'),
   startGitHubOAuth: () => ipcRenderer.invoke('github:start-oauth'),
   getGitHubOAuthStatus: () => ipcRenderer.invoke('github:oauth-status'),
   getDiscoveryStatus: () => ipcRenderer.invoke('github:discovery-status'),
