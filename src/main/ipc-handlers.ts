@@ -25,7 +25,7 @@ import {
   type DiscoveryState,
   type DiscoveryProgress,
 } from '../services/github-discovery';
-import { checkOllama, streamChat, type ChatMessage } from '../services/ollama';
+import { checkOllama, streamChat, chatWithTools, ToolsNotSupportedError, type ChatMessage, type OllamaTool, type OllamaToolCall } from '../services/ollama';
 
 const activeChatAborts = new Map<number, AbortController>();
 
@@ -133,6 +133,108 @@ function buildSystemContext(db: SqlJsDatabase): string {
   return lines.join('\n');
 }
 
+// ── Chat tool: repo search ────────────────────────────────────────────────────
+
+/**
+ * Available tools exposed to the LLM during chat.
+ * The model can call search_repos(query) to query the local database when it
+ * needs richer or more targeted repo data than the system context snapshot.
+ */
+const CHAT_TOOLS: OllamaTool[] = [
+  {
+    type: 'function',
+    function: {
+      name: 'search_repos',
+      description:
+        'Search the locally indexed GitHub repositories by name, org, description, or language. ' +
+        'Use this whenever the user asks about specific repos or you need more detail than the ' +
+        'system context snapshot provides. Supports fuzzy matching: the query is split into words ' +
+        'and every word must appear somewhere in the repo record (in any order).',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: 'One or more search terms (space-separated). All terms must match.',
+          },
+        },
+        required: ['query'],
+      },
+    },
+  },
+];
+
+interface RepoSearchRow {
+  full_name: string;
+  language: string | null;
+  description: string | null;
+  archived: number;
+  fork: number;
+  starred: number;
+  private: number;
+}
+
+/**
+ * Fuzzy multi-word search over indexed repos (enabled orgs only).
+ * Each word in `query` must match at least one of: full_name, description, language.
+ * Returns up to 20 results formatted as a compact text block for the model.
+ */
+function searchReposForChat(db: SqlJsDatabase, query: string): string {
+  const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return 'No search terms provided.';
+
+  // Build a WHERE clause requiring every word to match somewhere in the row
+  const conditions = words.map(() =>
+    `(LOWER(r.full_name) LIKE ? OR LOWER(COALESCE(r.description,'')) LIKE ? OR LOWER(COALESCE(r.language,'')) LIKE ?)`,
+  ).join(' AND ');
+
+  const params = words.flatMap(w => [`%${w}%`, `%${w}%`, `%${w}%`]);
+
+  const sql = `
+    SELECT r.full_name, r.language, r.description, r.archived, r.fork, r.starred, r.private
+    FROM github_repos r
+    WHERE (r.org_id IS NULL OR r.org_id IN (SELECT id FROM github_orgs WHERE discovery_enabled = 1))
+      AND ${conditions}
+    ORDER BY r.last_pushed_at DESC
+    LIMIT 20`;
+
+  const stmt = db.prepare(sql);
+  const rows: RepoSearchRow[] = [];
+  try {
+    stmt.bind(params);
+    while (stmt.step()) rows.push(stmt.getAsObject() as unknown as RepoSearchRow);
+  } finally {
+    stmt.free();
+  }
+
+  if (rows.length === 0) return `No repositories found matching: ${query}`;
+
+  const lines = [`Found ${rows.length} repositor${rows.length === 1 ? 'y' : 'ies'} matching "${query}":`];
+  for (const r of rows) {
+    const meta: string[] = [];
+    if (r.language) meta.push(r.language);
+    if (r.private) meta.push('private');
+    if (r.fork) meta.push('fork');
+    if (r.archived) meta.push('archived');
+    if (r.starred) meta.push('starred');
+    const metaStr = meta.length > 0 ? ` [${meta.join(', ')}]` : '';
+    const desc = r.description ? `: ${r.description.slice(0, 100)}` : '';
+    lines.push(`- ${r.full_name}${metaStr}${desc}`);
+  }
+  return lines.join('\n');
+}
+
+/**
+ * Dispatch a tool call made by the model and return the result string.
+ */
+function dispatchToolCall(db: SqlJsDatabase, call: OllamaToolCall): string {
+  if (call.function.name === 'search_repos') {
+    const query = String(call.function.arguments['query'] ?? '');
+    return searchReposForChat(db, query);
+  }
+  return `Unknown tool: ${call.function.name}`;
+}
+
 export function registerIpcHandlers(
   db: SqlJsDatabase,
   getWindow: () => BrowserWindow | null,
@@ -185,11 +287,70 @@ export function registerIpcHandlers(
 
     void (async () => {
       try {
-        await streamChat(model, messages, (token) => {
-          if (!event.sender.isDestroyed()) {
-            event.sender.send('chat:token', token);
+        // ── Tool-call loop ────────────────────────────────────────────────
+        // Let the model call tools (e.g. search_repos) until it produces a
+        // plain text response, then stream that final answer to the renderer.
+        // Falls back to plain streaming if the model doesn't support tools.
+        const MAX_TOOL_ROUNDS = 5;
+        let round = 0;
+        let toolsSupported = true;
+        while (round < MAX_TOOL_ROUNDS) {
+          round++;
+          let content: string;
+          let tool_calls: OllamaToolCall[];
+          try {
+            ({ content, tool_calls } = await chatWithTools(
+              model, messages, CHAT_TOOLS, controller.signal,
+            ));
+          } catch (err) {
+            if (err instanceof ToolsNotSupportedError) {
+              toolsSupported = false;
+              break;
+            }
+            throw err;
           }
-        }, controller.signal);
+
+          if (tool_calls.length === 0) {
+            // No more tool calls — stream the final content token-by-token
+            // (split on words to give the UI a streaming feel since
+            //  chatWithTools is non-streaming)
+            const words = content.split(/(\s+)/);
+            for (const chunk of words) {
+              if (controller.signal.aborted) return;
+              if (!event.sender.isDestroyed()) {
+                event.sender.send('chat:token', chunk);
+              }
+            }
+            break;
+          }
+
+          // Record the assistant turn that requested tool calls
+          (messages as Array<ChatMessage & { tool_calls?: OllamaToolCall[] }>).push({
+            role: 'assistant',
+            content,
+            tool_calls,
+          });
+
+          // Execute each tool and append the results
+          for (const call of tool_calls) {
+            const result = dispatchToolCall(db, call);
+            (messages as Array<ChatMessage & { name?: string }>).push({
+              role: 'tool' as ChatMessage['role'],
+              content: result,
+              name: call.function.name,
+            });
+          }
+        }
+
+        // Fallback: model doesn't support tools — plain streaming
+        if (!toolsSupported) {
+          await streamChat(model, messages, (token) => {
+            if (!event.sender.isDestroyed()) {
+              event.sender.send('chat:token', token);
+            }
+          }, controller.signal);
+        }
+
         if (!event.sender.isDestroyed()) {
           event.sender.send('chat:done');
         }
