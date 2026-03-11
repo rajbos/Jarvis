@@ -1,0 +1,36 @@
+{
+  "name": "jarvis",
+  "version": "0.1.0",
+  "description": "Jarvis — a locally-hosted personal assistant agent for GitHub repository maintenance",
+  "main": "dist/main/index.js",
+  "scripts": {
+    "build": "tsc && node scripts/build-renderer.js && npm run copy-static",
+    "copy-static": "node -e \"const fs=require('fs');const p=require('path');fs.mkdirSync('dist/renderer',{recursive:true});for(const f of fs.readdirSync('src/renderer')){if(f.endsWith('.html'))fs.cpSync(p.join('src/renderer',f),p.join('dist/renderer',f));}\"",
+    "start": "npm run build && electron dist/main/index.js",
+    "dev:tsc": "tsc --watch --preserveWatchOutput",
+    "dev:esbuild": "node scripts/build-renderer.js --watch",
+    "dev:electron": "node scripts/watch-electron.js",
+    "dev": "npm run build && concurrently --kill-others --names \"TSC,ESBuild,Electron\" --prefix-colors \"blue,yellow,green\" \"npm run dev:tsc\" \"npm run dev:esbuild\" \"npm run dev:electron\"",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "concurrently": "^9.2.1",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0",
+    "electron-reloader": "^1.2.3",
+    "esbuild": "^0.27.3",
+    "nodemon": "^3.1.14",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "dependencies": {
+    "electron-squirrel-startup": "^1.0.1",
+    "octokit": "^4.1.0",
+    "preact": "^10.29.0",
+    "sql.js": "^1.12.0"
+  }
+}
