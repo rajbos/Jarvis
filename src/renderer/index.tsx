@@ -625,7 +625,14 @@ function EmbeddedChatPanel({ visible, selectedModel, onClose }: {
   const [streamText, setStreamText] = useState('');
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const registeredRef = useRef(false);
+
+  const handlePanelClick = (e: MouseEvent) => {
+    const tag = (e.target as HTMLElement).tagName;
+    if (tag === 'BUTTON' || tag === 'TEXTAREA' || tag === 'A') return;
+    inputRef.current?.focus();
+  };
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
 
   const [panelWidth, setPanelWidth] = useState(() => {
@@ -708,7 +715,7 @@ function EmbeddedChatPanel({ visible, selectedModel, onClose }: {
   };
 
   return (
-    <div class={`ec-panel${visible ? '' : ' ec-panel-hidden'}`} style={{ width: `${panelWidth}px` }}>
+    <div class={`ec-panel${visible ? '' : ' ec-panel-hidden'}`} style={{ width: `${panelWidth}px` }} onClick={handlePanelClick}>
       <div class="ec-resize-handle" onMouseDown={handleResizeStart} />
       <div class="ec-header">
         <span class="ec-title">Chat</span>
@@ -738,6 +745,7 @@ function EmbeddedChatPanel({ visible, selectedModel, onClose }: {
       </div>
       <div class="ec-input-row">
         <textarea
+          ref={inputRef}
           class="ec-input"
           rows={2}
           placeholder={streaming ? 'Waiting…' : 'Ask something…'}

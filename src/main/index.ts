@@ -71,7 +71,7 @@ async function initialize(): Promise<void> {
   });
 
   if (needsOnboarding) {
-    showMainWindow();
+    showMainWindowInactive();
   }
 
   // If GitHub auth is already set up, start background discovery
@@ -95,6 +95,18 @@ function showMainWindow(): void {
     return;
   }
   mainWindow = createOnboardingWindow(currentDb!);
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
+}
+
+function showMainWindowInactive(): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.showInactive();
+    return;
+  }
+  mainWindow = createOnboardingWindow(currentDb!);
+  mainWindow.showInactive();
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
