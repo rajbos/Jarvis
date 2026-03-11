@@ -25,7 +25,9 @@ import {
   type DiscoveryState,
   type DiscoveryProgress,
 } from '../services/github-discovery';
-import { checkOllama } from '../services/ollama';
+import { checkOllama, streamChat, type ChatMessage } from '../services/ollama';
+
+const activeChatAborts = new Map<number, AbortController>();
 
 let activeDeviceFlow: {
   deviceCode: string;
@@ -37,7 +39,58 @@ let activeDeviceFlow: {
 let activeDiscovery: DiscoveryState | null = null;
 let lastDiscoveryProgress: DiscoveryProgress | null = null;
 
-export function registerIpcHandlers(db: SqlJsDatabase, getWindow: () => BrowserWindow | null): void {
+function buildSystemContext(db: SqlJsDatabase): string {
+  const lines: string[] = [
+    'You are Jarvis, a personal GitHub repository assistant.',
+    'You have access to the user\'s indexed GitHub data shown below.',
+    'Help the user find repos, understand their codebase, and answer questions about their repositories.',
+    'Be concise and helpful. When listing repos, use the full_name format (org/repo).',
+    '',
+  ];
+
+  const auth = loadGitHubAuth(db);
+  if (auth?.login) lines.push(`GitHub user: ${auth.login}`);
+
+  const { orgs, directRepoCount, starredRepoCount } = listOrgs(db);
+  const totalRepos = orgs.reduce((s, o) => s + o.repoCount, 0) + directRepoCount;
+  if (orgs.length > 0) {
+    lines.push(`Organizations (${orgs.length}): ${orgs.slice(0, 20).map(o => `${o.login} (${o.repoCount} repos)`).join(', ')}`);
+  }
+  lines.push(`Total repositories indexed: ${totalRepos}`);
+  if (starredRepoCount > 0) lines.push(`Starred repositories: ${starredRepoCount}`);
+  if (directRepoCount > 0) lines.push(`Personal/collaborator repositories: ${directRepoCount}`);
+  lines.push('');
+
+  const stmt = db.prepare(
+    `SELECT full_name, language, description, archived, fork, starred
+     FROM github_repos ORDER BY last_pushed_at DESC LIMIT 40`
+  );
+  type RepoRow = { full_name: string; language: string | null; description: string | null; archived: number; fork: number; starred: number };
+  const recent: RepoRow[] = [];
+  while (stmt.step()) recent.push(stmt.getAsObject() as RepoRow);
+  stmt.free();
+
+  if (recent.length > 0) {
+    lines.push(`Recently active repositories (${recent.length} shown of ${totalRepos} total):`);
+    for (const r of recent) {
+      const meta: string[] = [];
+      if (r.language) meta.push(r.language);
+      if (r.fork) meta.push('fork');
+      if (r.archived) meta.push('archived');
+      if (r.starred) meta.push('starred');
+      const metaStr = meta.length > 0 ? ` [${meta.join(', ')}]` : '';
+      const desc = r.description ? `: ${r.description.slice(0, 80)}` : '';
+      lines.push(`- ${r.full_name}${metaStr}${desc}`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
+export function registerIpcHandlers(
+  db: SqlJsDatabase,
+  getWindow: () => BrowserWindow | null,
+): void {
   ipcMain.handle('onboarding:status', () => {
     return getOnboardingStatus(db);
   });
@@ -58,6 +111,69 @@ export function registerIpcHandlers(db: SqlJsDatabase, getWindow: () => BrowserW
   ipcMain.handle('ollama:set-selected-model', (_event, modelName: string) => {
     setConfigValue(db, 'selected_ollama_model', modelName);
     saveDatabase();
+    return { ok: true };
+  });
+
+  ipcMain.handle('chat:send', (event, userMessages: Array<{ role: string; content: string }>) => {
+    const model = getConfigValue(db, 'selected_ollama_model');
+    if (!model) {
+      event.sender.send('chat:error', 'No Ollama model selected. Please select a model in the main window.');
+      return { ok: false };
+    }
+
+    // Abort any in-flight stream for this window
+    const existing = activeChatAborts.get(event.sender.id);
+    if (existing) {
+      existing.abort();
+      activeChatAborts.delete(event.sender.id);
+    }
+
+    const controller = new AbortController();
+    activeChatAborts.set(event.sender.id, controller);
+
+    const systemContext = buildSystemContext(db);
+    const messages: ChatMessage[] = [
+      { role: 'system', content: systemContext },
+      ...userMessages.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
+    ];
+
+    void (async () => {
+      try {
+        await streamChat(model, messages, (token) => {
+          if (!event.sender.isDestroyed()) {
+            event.sender.send('chat:token', token);
+          }
+        }, controller.signal);
+        if (!event.sender.isDestroyed()) {
+          event.sender.send('chat:done');
+        }
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name === 'AbortError') return;
+        if (!event.sender.isDestroyed()) {
+          event.sender.send('chat:error', err instanceof Error ? err.message : String(err));
+        }
+      } finally {
+        activeChatAborts.delete(event.sender.id);
+      }
+    })();
+
+    return { ok: true };
+  });
+
+  ipcMain.handle('chat:abort', (event) => {
+    const ctrl = activeChatAborts.get(event.sender.id);
+    if (ctrl) {
+      ctrl.abort();
+      activeChatAborts.delete(event.sender.id);
+    }
+    return { ok: true };
+  });
+
+  ipcMain.handle('window:adjust-width', (event, delta: number) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return { ok: false };
+    const [w, h] = win.getSize();
+    win.setSize(Math.max(400, w + delta), h);
     return { ok: true };
   });
 

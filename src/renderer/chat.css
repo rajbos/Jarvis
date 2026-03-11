@@ -1,0 +1,295 @@
+/* ── Reset ───────────────────────────────────────────────────────────────── */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #1a1a2e;
+  color: #e0e0e0;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ── Layout ──────────────────────────────────────────────────────────────── */
+.chat-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+.chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.65rem 1rem;
+  background: #16213e;
+  border-bottom: 1px solid #0f3460;
+  flex-shrink: 0;
+  gap: 0.5rem;
+}
+
+.chat-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #e94560;
+  flex-shrink: 0;
+}
+
+.chat-model-badge {
+  font-size: 0.75rem;
+  font-family: 'Consolas', 'Courier New', monospace;
+  background: #0a3d1f;
+  color: #51cf66;
+  border: 1px solid #2b8a3e;
+  border-radius: 4px;
+  padding: 0.15rem 0.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 220px;
+}
+
+.chat-model-badge.none {
+  background: #222;
+  color: #778;
+  border-color: #333;
+}
+
+/* ── Pin button ──────────────────────────────────────────────────────────── */
+.chat-pin-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: #445;
+  font-size: 0.95rem;
+  padding: 0.15rem 0.3rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.chat-pin-btn:hover {
+  color: #99aabb;
+  border-color: #334;
+}
+
+.chat-pin-btn.pinned {
+  color: #51cf66;
+  border-color: #2b8a3e;
+}
+
+/* ── Messages area ───────────────────────────────────────────────────────── */
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  scroll-behavior: smooth;
+}
+
+.chat-messages::-webkit-scrollbar {
+  width: 5px;
+}
+.chat-messages::-webkit-scrollbar-track {
+  background: transparent;
+}
+.chat-messages::-webkit-scrollbar-thumb {
+  background: #0f3460;
+  border-radius: 3px;
+}
+
+/* ── Empty state ─────────────────────────────────────────────────────────── */
+.chat-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  color: #667;
+  font-size: 0.88rem;
+  text-align: center;
+  padding: 2rem;
+}
+
+.chat-empty-icon {
+  font-size: 2rem;
+  margin-bottom: 0.25rem;
+}
+
+.chat-empty p {
+  color: #778;
+  font-size: 0.85rem;
+  max-width: 280px;
+}
+
+/* ── Message bubbles ─────────────────────────────────────────────────────── */
+.message {
+  max-width: 85%;
+  border-radius: 12px;
+  padding: 0.65rem 0.95rem;
+  font-size: 0.88rem;
+  line-height: 1.55;
+  word-break: break-word;
+}
+
+.message.user {
+  align-self: flex-end;
+  background: #0f3460;
+  color: #ddeeff;
+  border-bottom-right-radius: 3px;
+}
+
+.message.assistant {
+  align-self: flex-start;
+  background: #16213e;
+  border: 1px solid #0f3460;
+  color: #e0e0e0;
+  border-bottom-left-radius: 3px;
+}
+
+/* ── Streaming cursor ────────────────────────────────────────────────────── */
+.typing-cursor {
+  display: inline-block;
+  color: #339af0;
+  animation: blink 0.9s step-end infinite;
+  font-size: 0.9rem;
+  line-height: 1;
+  vertical-align: baseline;
+  margin-left: 1px;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+
+/* ── Inline markdown styles ──────────────────────────────────────────────── */
+.message-content pre.code-block {
+  background: #0a1628;
+  border: 1px solid #1a3460;
+  border-radius: 5px;
+  padding: 0.6rem 0.85rem;
+  overflow-x: auto;
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 0.82rem;
+  margin: 0.5rem 0;
+  white-space: pre;
+  line-height: 1.45;
+}
+
+.message-content code.inline-code {
+  background: #0a1628;
+  border: 1px solid #1a3460;
+  border-radius: 3px;
+  padding: 0.1rem 0.3rem;
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 0.85em;
+}
+
+.message-content strong {
+  color: #c8d8f8;
+}
+
+.message-content h3,
+.message-content h4,
+.message-content h5 {
+  color: #a8c8f0;
+  margin: 0.4rem 0 0.2rem;
+  font-size: 0.9rem;
+}
+
+/* ── Error bubble ────────────────────────────────────────────────────────── */
+.chat-error {
+  align-self: center;
+  background: #4d0000;
+  color: #ff8080;
+  border: 1px solid #7a0000;
+  border-radius: 6px;
+  padding: 0.45rem 0.85rem;
+  font-size: 0.83rem;
+  max-width: 90%;
+  text-align: center;
+}
+
+/* ── Input area ──────────────────────────────────────────────────────────── */
+.chat-input-area {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  padding: 0.65rem 0.85rem;
+  background: #16213e;
+  border-top: 1px solid #0f3460;
+  flex-shrink: 0;
+}
+
+.chat-input {
+  flex: 1;
+  background: #0f1f3d;
+  color: #e0e0e0;
+  border: 1px solid #0f3460;
+  border-radius: 8px;
+  padding: 0.55rem 0.75rem;
+  font-family: inherit;
+  font-size: 0.88rem;
+  resize: none;
+  outline: none;
+  line-height: 1.45;
+  min-height: 40px;
+  max-height: 140px;
+  overflow-y: auto;
+}
+
+.chat-input:focus {
+  border-color: #339af0;
+}
+
+.chat-input::placeholder {
+  color: #445;
+}
+
+.chat-input:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.chat-send {
+  background: #e94560;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 0.55rem 1rem;
+  font-size: 0.88rem;
+  cursor: pointer;
+  transition: background 0.15s;
+  flex-shrink: 0;
+  height: 40px;
+  line-height: 1;
+}
+
+.chat-send:hover:not(:disabled) {
+  background: #c23152;
+}
+
+.chat-send:disabled {
+  background: #3a3a4a;
+  cursor: not-allowed;
+  color: #668;
+}
+
+/* ── Hint text below input ───────────────────────────────────────────────── */
+.chat-input-hint {
+  font-size: 0.72rem;
+  color: #445;
+  padding: 0 0.85rem 0.4rem;
+  background: #16213e;
+  flex-shrink: 0;
+}

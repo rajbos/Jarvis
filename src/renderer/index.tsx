@@ -76,6 +76,12 @@ declare const window: Window & {
     listOllamaModels(): Promise<{ available: boolean; models: OllamaModel[]; error?: string }>;
     getSelectedOllamaModel(): Promise<string | null>;
     setSelectedOllamaModel(modelName: string): Promise<{ ok: boolean }>;
+    sendChatMessage(messages: Array<{ role: string; content: string }>): Promise<{ ok: boolean }>;
+    abortChat(): Promise<{ ok: boolean }>;
+    adjustWindowWidth(delta: number): Promise<{ ok: boolean }>;
+    onChatToken(cb: (token: string) => void): void;
+    onChatDone(cb: () => void): void;
+    onChatError(cb: (err: string) => void): void;
     startGitHubOAuth(): Promise<OAuthResult>;
     getGitHubOAuthStatus(): Promise<OAuthStatus>;
     getDiscoveryStatus(): Promise<{ running: boolean; progress?: DiscoveryProgress }>;
@@ -99,7 +105,7 @@ function StatusBadge({ status, label }: { status: 'pending' | 'completed' | 'in-
 
 // ── Ollama step (summary row) ─────────────────────────────────────────────────
 
-function OllamaStep({ ollama, selectedModel, onToggle }: { ollama: OllamaStatus | null; selectedModel: string | null; onToggle: () => void }) {
+function OllamaStep({ ollama, selectedModel, onToggle, onOpenChat }: { ollama: OllamaStatus | null; selectedModel: string | null; onToggle: () => void; onOpenChat?: () => void }) {
   let badgeStatus: 'pending' | 'completed' | 'in-progress' = 'in-progress';
   let badgeLabel = 'Checking...';
   let detail = 'Checking for a local Ollama instance…';
@@ -135,6 +141,16 @@ function OllamaStep({ ollama, selectedModel, onToggle }: { ollama: OllamaStatus 
         )}
       </div>
       <div style={{ fontSize: '0.85rem', color: '#aaa' }}>{detail}</div>
+      {ollama?.available && selectedModel && (
+        <div style={{ marginTop: '0.6rem' }}>
+          <button
+            style={{ fontSize: '0.78rem', padding: '0.25rem 0.75rem', background: '#0a3d1f', color: '#51cf66', border: '1px solid #2b8a3e', borderRadius: '5px', cursor: 'pointer' }}
+            onClick={(e: MouseEvent) => { e.stopPropagation(); onOpenChat?.(); }}
+          >
+            {'💬 Open Chat'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -578,6 +594,179 @@ function GitHubStep({
   );
 }
 
+// ── Embedded Chat Panel ───────────────────────────────────────────────────────
+
+interface ChatMsg {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+function renderChatMarkdown(text: string): string {
+  let out = text.replace(/```[\w]*\n?([\s\S]*?)```/g, (_: string, code: string) =>
+    `<pre class="ec-code-block"><code>${code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code></pre>`,
+  );
+  out = out.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  out = out.replace(/`([^`]+)`/g, '<span class="ec-inline-code">$1</span>');
+  out = out.replace(/^###\s+(.+)$/gm, '<h5 class="ec-heading">$1</h5>');
+  out = out.replace(/^##\s+(.+)$/gm, '<h4 class="ec-heading">$1</h4>');
+  out = out.replace(/^#\s+(.+)$/gm, '<h3 class="ec-heading">$1</h3>');
+  out = out.replace(/\n/g, '<br>');
+  return out;
+}
+
+function EmbeddedChatPanel({ visible, selectedModel, onClose }: {
+  visible: boolean;
+  selectedModel: string | null;
+  onClose: () => void;
+}) {
+  const [messages, setMessages] = useState<ChatMsg[]>([]);
+  const [input, setInput] = useState('');
+  const [streaming, setStreaming] = useState(false);
+  const [streamText, setStreamText] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const registeredRef = useRef(false);
+  const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
+
+  const [panelWidth, setPanelWidth] = useState(() => {
+    const saved = localStorage.getItem('chat-panel-width');
+    return saved ? parseInt(saved, 10) : 380;
+  });
+
+  const handleResizeStart = (e: MouseEvent) => {
+    e.preventDefault();
+    dragRef.current = { startX: e.clientX, startWidth: panelWidth };
+    const onMove = (mv: MouseEvent) => {
+      if (!dragRef.current) return;
+      const newW = Math.min(700, Math.max(250, dragRef.current.startWidth + (dragRef.current.startX - mv.clientX)));
+      setPanelWidth(newW);
+    };
+    const onUp = (mv: MouseEvent) => {
+      if (!dragRef.current) return;
+      const newW = Math.min(700, Math.max(250, dragRef.current.startWidth + (dragRef.current.startX - mv.clientX)));
+      const delta = newW - dragRef.current.startWidth;
+      if (delta !== 0) void window.jarvis.adjustWindowWidth(delta);
+      localStorage.setItem('chat-panel-width', String(newW));
+      dragRef.current = null;
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  };
+
+  const handleClose = () => {
+    void window.jarvis.adjustWindowWidth(-panelWidth);
+    onClose();
+  };
+
+  useEffect(() => {
+    if (registeredRef.current) return;
+    registeredRef.current = true;
+    window.jarvis.onChatToken((token: string) => {
+      setStreamText((prev) => prev + token);
+    });
+    window.jarvis.onChatDone(() => {
+      setStreamText((prev) => {
+        setMessages((msgs) => [...msgs, { role: 'assistant', content: prev }]);
+        return '';
+      });
+      setStreaming(false);
+    });
+    window.jarvis.onChatError((err: string) => {
+      setError(err);
+      setStreaming(false);
+      setStreamText('');
+    });
+  }, []);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, streamText]);
+
+  const handleSend = useCallback(async () => {
+    const text = input.trim();
+    if (!text || streaming) return;
+    setError(null);
+    const newMessages: ChatMsg[] = [...messages, { role: 'user', content: text }];
+    setMessages(newMessages);
+    setInput('');
+    setStreaming(true);
+    try {
+      await window.jarvis.sendChatMessage(newMessages);
+    } catch (e) {
+      setError(String(e));
+      setStreaming(false);
+    }
+  }, [input, messages, streaming]);
+
+  const handleKeyDown = (e: KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      void handleSend();
+    }
+  };
+
+  return (
+    <div class={`ec-panel${visible ? '' : ' ec-panel-hidden'}`} style={{ width: `${panelWidth}px` }}>
+      <div class="ec-resize-handle" onMouseDown={handleResizeStart} />
+      <div class="ec-header">
+        <span class="ec-title">Chat</span>
+        {selectedModel && <span class="ec-model-badge">{selectedModel.split(':')[0]}</span>}
+        <button class="ec-close-btn" title="Close chat" onClick={handleClose}>&times;</button>
+      </div>
+      <div class="ec-messages">
+        {messages.length === 0 && !streaming && (
+          <div class="ec-empty">
+            {selectedModel
+              ? 'Ask anything about your repos, orgs, or starred projects.'
+              : 'Select an Ollama model first to start chatting.'}
+          </div>
+        )}
+        {messages.map((msg, i) => (
+          <div key={i} class={`ec-bubble ${msg.role === 'user' ? 'ec-user' : 'ec-assistant'}`}
+            dangerouslySetInnerHTML={{ __html: renderChatMarkdown(msg.content) }} />
+        ))}
+        {streaming && (
+          <div class="ec-bubble ec-assistant">
+            <span dangerouslySetInnerHTML={{ __html: renderChatMarkdown(streamText) }} />
+            <span class="ec-cursor" />
+          </div>
+        )}
+        {error && <div class="ec-error">⚠ {error}</div>}
+        <div ref={messagesEndRef} />
+      </div>
+      <div class="ec-input-row">
+        <textarea
+          class="ec-input"
+          rows={2}
+          placeholder={streaming ? 'Waiting…' : 'Ask something…'}
+          value={input}
+          disabled={streaming || !selectedModel}
+          onInput={(e) => setInput((e.target as HTMLTextAreaElement).value)}
+          onKeyDown={handleKeyDown}
+        />
+        <button
+          class="ec-send"
+          disabled={streaming || !input.trim() || !selectedModel}
+          onClick={() => void handleSend()}
+        >
+          {streaming ? '…' : '↑'}
+        </button>
+      </div>
+      {streaming && (
+        <div class="ec-hint">
+          <button
+            style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '0.75rem', padding: '0.25rem' }}
+            onClick={() => void window.jarvis.abortChat()}>
+            stop
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── App ──────────────────────────────────────────────────────────────────────
 
 function App() {
@@ -597,6 +786,7 @@ function App() {
   const [ollamaStatus, setOllamaStatus] = useState<OllamaStatus | null>(null);
   const [showOllamaPanel, setShowOllamaPanel] = useState(false);
   const [selectedOllamaModel, setSelectedOllamaModel] = useState<string | null>(null);
+  const [showChatPanel, setShowChatPanel] = useState(false);
 
   const currentUserLogin = oauthStatus?.login ?? null;
 
@@ -630,13 +820,28 @@ function App() {
         setOllamaStatus({ available: false, baseUrl: 'http://127.0.0.1:11434', models: [], error: String(err) });
       });
     window.jarvis.getSelectedOllamaModel()
-      .then(setSelectedOllamaModel)
+      .then((model) => {
+        setSelectedOllamaModel(model);
+        if (model) {
+      const savedWidth = parseInt(localStorage.getItem('chat-panel-width') ?? '380', 10);
+        setShowChatPanel(true);
+        void window.jarvis.adjustWindowWidth(savedWidth);
+        }
+      })
       .catch((err: unknown) => console.error('[Jarvis] getSelectedOllamaModel failed:', err));
   }, []);
 
   const handleSelectOllamaModel = async (modelName: string) => {
     await window.jarvis.setSelectedOllamaModel(modelName);
     setSelectedOllamaModel(modelName);
+  };
+
+  const handleOpenChat = () => {
+    if (!showChatPanel) {
+      const savedWidth = parseInt(localStorage.getItem('chat-panel-width') ?? '380', 10);
+      setShowChatPanel(true);
+      void window.jarvis.adjustWindowWidth(savedWidth);
+    }
   };
 
   // IPC listeners
@@ -714,7 +919,9 @@ function App() {
   };
 
   return (
-    <div class="container">
+    <div class="app-shell">
+      <div class="main-scroll">
+        <div class="container">
       <h1>Jarvis</h1>
       <p class="subtitle">Personal Assistant — First Time Setup</p>
 
@@ -761,7 +968,7 @@ function App() {
 
       <div class="ollama-layout">
         <div class="ollama-step-wrapper">
-          <OllamaStep ollama={ollamaStatus} selectedModel={selectedOllamaModel} onToggle={() => setShowOllamaPanel((p) => !p)} />
+          <OllamaStep ollama={ollamaStatus} selectedModel={selectedOllamaModel} onToggle={() => setShowOllamaPanel((p) => !p)} onOpenChat={handleOpenChat} />
         </div>
         {showOllamaPanel && ollamaStatus?.available && (
           <OllamaPanel
@@ -772,6 +979,13 @@ function App() {
           />
         )}
       </div>
+        </div>
+      </div>
+      <EmbeddedChatPanel
+        visible={showChatPanel}
+        selectedModel={selectedOllamaModel}
+        onClose={() => setShowChatPanel(false)}
+      />
     </div>
   );
 }

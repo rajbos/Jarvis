@@ -6,6 +6,19 @@ contextBridge.exposeInMainWorld('jarvis', {
   listOllamaModels: () => ipcRenderer.invoke('ollama:list-models'),
   getSelectedOllamaModel: () => ipcRenderer.invoke('ollama:get-selected-model'),
   setSelectedOllamaModel: (modelName: string) => ipcRenderer.invoke('ollama:set-selected-model', modelName),
+  sendChatMessage: (messages: Array<{ role: string; content: string }>) =>
+    ipcRenderer.invoke('chat:send', messages),
+  abortChat: () => ipcRenderer.invoke('chat:abort'),
+  adjustWindowWidth: (delta: number) => ipcRenderer.invoke('window:adjust-width', delta),
+  onChatToken: (callback: (token: string) => void) => {
+    ipcRenderer.on('chat:token', (_event, token) => callback(token));
+  },
+  onChatDone: (callback: () => void) => {
+    ipcRenderer.on('chat:done', () => callback());
+  },
+  onChatError: (callback: (error: string) => void) => {
+    ipcRenderer.on('chat:error', (_event, error) => callback(error));
+  },
   startGitHubOAuth: () => ipcRenderer.invoke('github:start-oauth'),
   getGitHubOAuthStatus: () => ipcRenderer.invoke('github:oauth-status'),
   getDiscoveryStatus: () => ipcRenderer.invoke('github:discovery-status'),
