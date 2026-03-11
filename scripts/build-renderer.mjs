@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 // Bundles renderer TSX entry points into dist/renderer/ using esbuild.
-const esbuild = require('esbuild');
-const path = require('path');
+import esbuild from 'esbuild';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const watch = process.argv.includes('--watch');
 
 /** @type {import('esbuild').BuildOptions} */

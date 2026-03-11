@@ -1,17 +1,17 @@
-import { app, BrowserWindow, Tray, Menu, nativeImage, Notification } from 'electron';
-import path from 'path';
-import pkg from '../../package.json';
+import { app, BrowserWindow, Tray, Menu } from 'electron';
 import { getDatabase, closeDatabase } from '../storage/database';
 import { loadConfig } from '../agent/config';
+import pkg from '../../package.json';
 import { createTray } from './tray';
 import { createOnboardingWindow, createSettingsWindow } from './windows';
-import { getOnboardingStatus, completeOnboardingStep, skipOnboardingStep } from '../agent/onboarding';
+import { getOnboardingStatus, completeOnboardingStep } from '../agent/onboarding';
 import { registerIpcHandlers, startDiscoveryIfAuthed } from './ipc-handlers';
 import { checkOllama } from '../services/ollama';
 import { saveDatabase } from '../storage/database';
 
 let mainWindow: BrowserWindow | null = null;
 let settingsWindow: BrowserWindow | null = null;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- held to prevent GC of the Tray icon
 let tray: Tray | null = null;
 let currentDb: Awaited<ReturnType<typeof getDatabase>> | null = null;
 

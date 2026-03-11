@@ -20,7 +20,6 @@ import {
   runPatDiscovery,
   fetchStarredRepos,
   getLastOrgIndexedAt,
-  abortDiscovery,
   listOrgs,
   setOrgDiscoveryEnabled,
   type DiscoveryState,
@@ -499,7 +498,7 @@ export function startDiscoveryIfAuthed(
   runDiscovery(db, auth.accessToken, (progress) => {
     lastDiscoveryProgress = progress;
     getWindow()?.webContents.send('github:discovery-progress', progress);
-  }, pat).then((state) => {
+  }, pat).then((_state) => {
     activeDiscovery = null;
     console.log('[Discovery] Finished');
     getWindow()?.webContents.send('github:discovery-complete', lastDiscoveryProgress);

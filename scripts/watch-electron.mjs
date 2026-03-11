@@ -1,10 +1,14 @@
 #!/usr/bin/env node
 // Spawns Electron, restarts it when dist/ changes, and exits when the user quits the app.
 
-const { spawn } = require('child_process');
-const fs = require('fs');
-const path = require('path');
+import { spawn } from 'child_process';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { createRequire } from 'module';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const require = createRequire(import.meta.url);
 const electronPath = String(require('electron'));
 const ROOT = path.join(__dirname, '..');
 const WATCH_DIRS = [

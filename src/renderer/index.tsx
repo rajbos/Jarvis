@@ -160,7 +160,7 @@ function OllamaPanel({ ollama, onClose }: { ollama: OllamaStatus; onClose: () =>
               {m.details?.quantization_level && (
                 <span class="ollama-model-meta">{m.details.quantization_level}</span>
               )}
-              <span class="ollama-model-meta">{(m.size / 1e9).toFixed(1)} GB</span>
+              <span class="ollama-model-meta">{(m.size / 1e9).toFixed(1)} GB</span>
             </li>
           ))}
         </ul>
@@ -306,7 +306,7 @@ function DiscoverySection({
   let badgeStatus: 'pending' | 'completed' | 'in-progress' = 'in-progress';
   let badgeLabel = 'Starting...';
   let detail = 'Scanning organizations and repositories...';
-  let rateLimit = '';
+  const rateLimit = '';
 
   if (finished || (progress && progress.phase === 'done')) {
     badgeStatus = 'completed';
