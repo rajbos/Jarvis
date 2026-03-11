@@ -39,12 +39,50 @@ let activeDeviceFlow: {
 let activeDiscovery: DiscoveryState | null = null;
 let lastDiscoveryProgress: DiscoveryProgress | null = null;
 
+/**
+ * Builds the system prompt injected into every chat request.
+ *
+ * The prompt has two sections:
+ *
+ * 1. INSTRUCTIONS — static behavioural rules for the model (what role it plays,
+ *    how to format answers, and critically: what to do when the indexed data is
+ *    too thin to answer a question).
+ *
+ * 2. DATA SNAPSHOT — dynamic content queried from the local SQLite database:
+ *    - Authenticated GitHub user
+ *    - Enabled/disabled organisations and their repo counts
+ *    - Up to 40 most-recently-pushed repositories (from enabled orgs only),
+ *      with language, description, fork/archived/starred flags
+ *
+ * Currently stored per-repo: full_name, language, description, archived, fork,
+ * starred, last_pushed_at.  Fields NOT yet stored (topics, README, open issue
+ * count, contributors, CI status, etc.) are what Jarvis should flag to the user
+ * when a question requires them.
+ */
 function buildSystemContext(db: SqlJsDatabase): string {
   const lines: string[] = [
     'You are Jarvis, a personal GitHub repository assistant.',
-    'You have access to the user\'s indexed GitHub data shown below.',
+    'You have access to the user\'s GitHub data that has been indexed into a local database (snapshot shown below).',
     'Help the user find repos, understand their codebase, and answer questions about their repositories.',
     'Be concise and helpful. When listing repos, use the full_name format (org/repo).',
+    '',
+    'IMPORTANT — when the indexed data is insufficient to answer a question fully:',
+    '1. Tell the user clearly what you do and do not know based on the current snapshot.',
+    '2. Specify exactly which additional data would be needed, choosing from this list of fields',
+    '   not yet stored in the database:',
+    '   - Repository topics / tags',
+    '   - README content',
+    '   - Open issue count and recent issue titles',
+    '   - Open pull-request count',
+    '   - Contributor list',
+    '   - CI/CD workflow names and last-run status',
+    '   - Release tags and latest release date',
+    '   - Primary programming language breakdown (beyond the single "language" field)',
+    '   - Repository size (disk / LOC estimate)',
+    '   - Branch protection rules',
+    '3. Suggest the user enables discovery for any organisation that is currently excluded,',
+    '   if the missing repos are likely there.',
+    'Do NOT fabricate data that is not present in the snapshot below.',
     '',
   ];
 
@@ -52,9 +90,14 @@ function buildSystemContext(db: SqlJsDatabase): string {
   if (auth?.login) lines.push(`GitHub user: ${auth.login}`);
 
   const { orgs, directRepoCount, starredRepoCount } = listOrgs(db);
-  const totalRepos = orgs.reduce((s, o) => s + o.repoCount, 0) + directRepoCount;
-  if (orgs.length > 0) {
-    lines.push(`Organizations (${orgs.length}): ${orgs.slice(0, 20).map(o => `${o.login} (${o.repoCount} repos)`).join(', ')}`);
+  const enabledOrgs = orgs.filter(o => o.discoveryEnabled);
+  const disabledOrgs = orgs.filter(o => !o.discoveryEnabled);
+  const totalRepos = enabledOrgs.reduce((s, o) => s + o.repoCount, 0) + directRepoCount;
+  if (enabledOrgs.length > 0) {
+    lines.push(`Organizations (${enabledOrgs.length}): ${enabledOrgs.slice(0, 20).map(o => `${o.login} (${o.repoCount} repos)`).join(', ')}`);
+  }
+  if (disabledOrgs.length > 0) {
+    lines.push(`Excluded organizations (discovery disabled): ${disabledOrgs.map(o => o.login).join(', ')}`);
   }
   lines.push(`Total repositories indexed: ${totalRepos}`);
   if (starredRepoCount > 0) lines.push(`Starred repositories: ${starredRepoCount}`);
@@ -62,8 +105,11 @@ function buildSystemContext(db: SqlJsDatabase): string {
   lines.push('');
 
   const stmt = db.prepare(
-    `SELECT full_name, language, description, archived, fork, starred
-     FROM github_repos ORDER BY last_pushed_at DESC LIMIT 40`
+    `SELECT r.full_name, r.language, r.description, r.archived, r.fork, r.starred
+     FROM github_repos r
+     WHERE r.org_id IS NULL
+        OR r.org_id IN (SELECT id FROM github_orgs WHERE discovery_enabled = 1)
+     ORDER BY r.last_pushed_at DESC LIMIT 40`
   );
   type RepoRow = { full_name: string; language: string | null; description: string | null; archived: number; fork: number; starred: number };
   const recent: RepoRow[] = [];
