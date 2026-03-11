@@ -1,3 +1,4 @@
+/// <reference path="../../src/types/sql.js.d.ts" />
 import { describe, it, expect, beforeEach, afterEach, vi, type Mock } from 'vitest';
 import initSqlJs, { Database as SqlJsDatabase } from 'sql.js';
 import { getSchema } from '../../src/storage/schema';
@@ -238,11 +239,11 @@ describe('GitHub Discovery — runDiscovery', () => {
 
     // Verify orgs stored
     const orgs = db.exec('SELECT login FROM github_orgs');
-    expect(orgs[0].values.map((v) => v[0])).toEqual(['org1']);
+    expect(orgs[0].values.map((v: unknown[]) => v[0])).toEqual(['org1']);
 
     // Verify repos stored
     const repos = db.exec('SELECT full_name FROM github_repos ORDER BY full_name');
-    const repoNames = repos[0].values.map((v) => v[0]);
+    const repoNames = repos[0].values.map((v: unknown[]) => v[0]);
     expect(repoNames).toContain('org1/repo-a');
     expect(repoNames).toContain('org1/repo-b');
     expect(repoNames).toContain('me/personal');
@@ -286,7 +287,7 @@ describe('GitHub Discovery — runDiscovery', () => {
     await runDiscovery(db, 'fake-token');
 
     const orgs = db.exec('SELECT login FROM github_orgs ORDER BY login');
-    expect(orgs[0].values.map((v) => v[0])).toEqual(['paged-org', 'paged-org-2']);
+    expect(orgs[0].values.map((v: unknown[]) => v[0])).toEqual(['paged-org', 'paged-org-2']);
   });
 
   it('can be aborted mid-run', async () => {
@@ -411,11 +412,11 @@ describe('GitHub Discovery — runDiscovery', () => {
 
     // Verify org was stored
     const orgs = db.exec('SELECT login FROM github_orgs');
-    expect(orgs[0].values.map((v) => v[0])).toEqual(['new-org']);
+    expect(orgs[0].values.map((v: unknown[]) => v[0])).toEqual(['new-org']);
 
     // Verify both repos were stored
     const repos = db.exec('SELECT full_name FROM github_repos ORDER BY full_name');
-    expect(repos[0].values.map((v) => v[0])).toEqual(['me/my-repo', 'other/collab']);
+    expect(repos[0].values.map((v: unknown[]) => v[0])).toEqual(['me/my-repo', 'other/collab']);
 
     // Verify final progress
     const last = progressUpdates[progressUpdates.length - 1];
@@ -480,13 +481,13 @@ describe('GitHub Discovery — runDiscovery', () => {
 
     // secret-org should be created
     const orgs = db.exec('SELECT login FROM github_orgs ORDER BY login COLLATE NOCASE');
-    const orgLogins = orgs[0].values.map(v => v[0]);
+    const orgLogins = orgs[0].values.map((v: unknown[]) => v[0]);
     expect(orgLogins).toContain('org1');
     expect(orgLogins).toContain('secret-org');
 
     // hidden-repo and the OAuth repos should all be stored
     const repos = db.exec('SELECT full_name FROM github_repos ORDER BY full_name');
-    const repoNames = repos[0].values.map(v => v[0]);
+    const repoNames = repos[0].values.map((v: unknown[]) => v[0]);
     expect(repoNames).toContain('secret-org/hidden-repo');
     expect(repoNames).toContain('me/my-repo');
     expect(repoNames).toContain('org1/repo-a');
@@ -541,10 +542,10 @@ describe('GitHub Discovery — runDiscovery', () => {
 
     // secret-org auto-created, repos stored
     const orgs = db.exec('SELECT login FROM github_orgs ORDER BY login COLLATE NOCASE');
-    expect(orgs[0].values.map(v => v[0])).toContain('secret-org');
+    expect(orgs[0].values.map((v: unknown[]) => v[0])).toContain('secret-org');
 
     const repos = db.exec('SELECT full_name FROM github_repos ORDER BY full_name');
-    const repoNames = repos[0].values.map(v => v[0]);
+    const repoNames = repos[0].values.map((v: unknown[]) => v[0]);
     expect(repoNames).toContain('secret-org/hidden');
     expect(repoNames).toContain('other/collab-repo');
     expect(repoNames).toContain('known-org/existing'); // still there
@@ -587,7 +588,7 @@ describe('GitHub Discovery — runDiscovery', () => {
 
     // OAuth repos should still be stored
     const repos = db.exec('SELECT full_name FROM github_repos ORDER BY full_name');
-    const repoNames = repos[0].values.map(v => v[0]);
+    const repoNames = repos[0].values.map((v: unknown[]) => v[0]);
     expect(repoNames).toContain('me/my-repo');
     expect(repoNames).toContain('org1/repo-a');
 

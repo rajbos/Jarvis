@@ -1,3 +1,4 @@
+/// <reference path="../../src/types/sql.js.d.ts" />
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import initSqlJs, { Database as SqlJsDatabase } from 'sql.js';
 import { getSchema } from '../../src/storage/schema';
@@ -18,7 +19,7 @@ describe('Database Schema', () => {
 
   it('should create all required tables', () => {
     const result = db.exec("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name");
-    const tableNames = result[0].values.map((row) => row[0] as string);
+    const tableNames = result[0].values.map((row: unknown[]) => row[0] as string);
 
     expect(tableNames).toContain('config');
     expect(tableNames).toContain('onboarding');
@@ -32,7 +33,7 @@ describe('Database Schema', () => {
 
   it('should initialize onboarding steps as pending', () => {
     const result = db.exec('SELECT step, status FROM onboarding ORDER BY step');
-    const rows = result[0].values.map((row) => ({ step: row[0], status: row[1] }));
+    const rows = result[0].values.map((row: unknown[]) => ({ step: row[0], status: row[1] }));
 
     expect(rows).toHaveLength(3);
     expect(rows).toContainEqual({ step: 'github_oauth', status: 'pending' });

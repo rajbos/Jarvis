@@ -83,7 +83,7 @@ export function registerIpcHandlers(db: SqlJsDatabase, getWindow: () => BrowserW
     const { orgs, directRepoCount } = listOrgs(db);
     const totalRepos = orgs.reduce((sum, o) => sum + o.repoCount, 0) + directRepoCount;
     return {
-      running: false,
+      running: activeDiscovery !== null && !activeDiscovery.aborted,
       progress: orgs.length > 0 || directRepoCount > 0
         ? { phase: 'done' as const, orgsFound: orgs.length, reposFound: totalRepos }
         : null,

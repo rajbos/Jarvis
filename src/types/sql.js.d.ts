@@ -1,9 +1,9 @@
 declare module 'sql.js' {
-  interface SqlJsStatic {
+  export interface SqlJsStatic {
     Database: new (data?: ArrayLike<number> | Buffer | null) => Database;
   }
 
-  interface Database {
+  export interface Database {
     run(sql: string, params?: unknown[]): Database;
     exec(sql: string, params?: unknown[]): QueryExecResult[];
     prepare(sql: string): Statement;
@@ -11,18 +11,17 @@ declare module 'sql.js' {
     close(): void;
   }
 
-  interface Statement {
+  export interface Statement {
     bind(params?: unknown[]): boolean;
     step(): boolean;
     getAsObject(params?: Record<string, unknown>): Record<string, unknown>;
     free(): boolean;
   }
 
-  interface QueryExecResult {
+  export interface QueryExecResult {
     columns: string[];
     values: unknown[][];
   }
 
   export default function initSqlJs(config?: Record<string, unknown>): Promise<SqlJsStatic>;
-  export type { Database, Statement, QueryExecResult, SqlJsStatic };
 }
