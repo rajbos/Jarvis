@@ -68,9 +68,19 @@ for (const dir of WATCH_DIRS) {
 if (fs.existsSync(SRC_RENDERER)) {
   fs.watch(SRC_RENDERER, { recursive: true }, (_event, filename) => {
     if (!filename) return;
+    // Only handle actual renderer assets — ignore .db files, editor swap files, etc.
+    if (!/\.(html|js|css)$/.test(filename)) return;
     const src = path.join(SRC_RENDERER, filename);
     const dest = path.join(DIST_RENDERER, filename);
     try {
+      if (!fs.existsSync(src)) return;
+      // Skip copy (and the restart it would trigger) when content is identical.
+      // Windows can fire spurious change events on file reads / metadata updates.
+      if (fs.existsSync(dest)) {
+        const srcBuf = fs.readFileSync(src);
+        const destBuf = fs.readFileSync(dest);
+        if (srcBuf.equals(destBuf)) return;
+      }
       fs.mkdirSync(path.dirname(dest), { recursive: true });
       fs.copyFileSync(src, dest);
       console.log(`[watch-electron] copied ${filename} → dist/renderer/`);
