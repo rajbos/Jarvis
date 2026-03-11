@@ -26,6 +26,7 @@ import {
   type DiscoveryState,
   type DiscoveryProgress,
 } from '../services/github-discovery';
+import { checkOllama } from '../services/ollama';
 
 let activeDeviceFlow: {
   deviceCode: string;
@@ -40,6 +41,15 @@ let lastDiscoveryProgress: DiscoveryProgress | null = null;
 export function registerIpcHandlers(db: SqlJsDatabase, getWindow: () => BrowserWindow | null): void {
   ipcMain.handle('onboarding:status', () => {
     return getOnboardingStatus(db);
+  });
+
+  ipcMain.handle('ollama:status', async () => {
+    return checkOllama();
+  });
+
+  ipcMain.handle('ollama:list-models', async () => {
+    const result = await checkOllama();
+    return { available: result.available, models: result.models, error: result.error };
   });
 
   ipcMain.handle('github:oauth-status', async () => {

@@ -5,8 +5,10 @@ import { getDatabase, closeDatabase } from '../storage/database';
 import { loadConfig } from '../agent/config';
 import { createTray } from './tray';
 import { createOnboardingWindow, createSettingsWindow } from './windows';
-import { getOnboardingStatus } from '../agent/onboarding';
+import { getOnboardingStatus, completeOnboardingStep, skipOnboardingStep } from '../agent/onboarding';
 import { registerIpcHandlers, startDiscoveryIfAuthed } from './ipc-handlers';
+import { checkOllama } from '../services/ollama';
+import { saveDatabase } from '../storage/database';
 
 let mainWindow: BrowserWindow | null = null;
 let settingsWindow: BrowserWindow | null = null;
@@ -23,6 +25,20 @@ async function initialize(): Promise<void> {
 
   // Register IPC handlers for renderer ↔ main communication
   registerIpcHandlers(db, () => mainWindow);
+
+  // Check if Ollama is available and update onboarding step accordingly
+  checkOllama().then((ollama) => {
+    const currentStatus = getOnboardingStatus(db);
+    if (ollama.available && currentStatus.ollama === 'pending') {
+      completeOnboardingStep(db, 'ollama');
+      saveDatabase();
+      console.log('[Ollama] Found with', ollama.models.length, 'model(s) — onboarding step marked complete');
+    } else if (!ollama.available && currentStatus.ollama === 'pending') {
+      console.log('[Ollama] Not found at startup:', ollama.error);
+    }
+  }).catch((err) => {
+    console.error('[Ollama] Startup check failed:', err);
+  });
 
   // Check onboarding status
   const onboarding = getOnboardingStatus(db);
