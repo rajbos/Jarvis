@@ -921,6 +921,9 @@ function App() {
   return (
     <div class="app-shell">
       <div class="main-scroll">
+        {!showChatPanel && selectedOllamaModel && (
+          <button class="chat-reopen-btn" title="Open Chat" onClick={handleOpenChat}>💬</button>
+        )}
         <div class="container">
       <h1>Jarvis</h1>
       <p class="subtitle">Personal Assistant — First Time Setup</p>

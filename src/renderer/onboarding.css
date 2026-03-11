@@ -863,3 +863,28 @@ h1 {
   padding: 0.1rem 0 0.3rem;
   flex-shrink: 0;
 }
+
+.chat-reopen-btn {
+  position: sticky;
+  top: 1rem;
+  float: right;
+  margin: 0.75rem 0.75rem 0 0;
+  background: #0f3460;
+  border: 1px solid #1a4a8a;
+  color: #e0e0e0;
+  border-radius: 50%;
+  width: 2.4rem;
+  height: 2.4rem;
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  z-index: 20;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  transition: background 0.15s, transform 0.1s;
+}
+
+.chat-reopen-btn:hover {
+  background: #1a4a8a;
+  transform: scale(1.08);
+}
