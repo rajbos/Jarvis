@@ -51,6 +51,16 @@ export function registerIpcHandlers(db: SqlJsDatabase, getWindow: () => BrowserW
     return { available: result.available, models: result.models, error: result.error };
   });
 
+  ipcMain.handle('ollama:get-selected-model', () => {
+    return getConfigValue(db, 'selected_ollama_model');
+  });
+
+  ipcMain.handle('ollama:set-selected-model', (_event, modelName: string) => {
+    setConfigValue(db, 'selected_ollama_model', modelName);
+    saveDatabase();
+    return { ok: true };
+  });
+
   ipcMain.handle('github:oauth-status', async () => {
     console.log('[IPC] github:oauth-status called');
     const auth = loadGitHubAuth(db);

@@ -593,3 +593,38 @@ h1 {
   border-radius: 3px;
   padding: 0.1rem 0.4rem;
 }
+
+.ollama-model-selected {
+  background: #0a3d1f;
+  border: 1px solid #2b8a3e;
+}
+
+.ollama-model-select-btn {
+  background: #0f3460;
+  color: #c8c8c8;
+  border: 1px solid #1a4a8a;
+  border-radius: 4px;
+  padding: 0.15rem 0.55rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.ollama-model-select-btn:hover {
+  background: #1a4a8a;
+  color: #e0e0e0;
+}
+
+.ollama-model-select-btn-active {
+  background: #0a3d1f;
+  color: #51cf66;
+  border-color: #2b8a3e;
+  cursor: default;
+}
+
+.ollama-model-select-btn-active:hover {
+  background: #0a3d1f;
+  color: #51cf66;
+}

@@ -4,6 +4,8 @@ contextBridge.exposeInMainWorld('jarvis', {
   getOnboardingStatus: () => ipcRenderer.invoke('onboarding:status'),
   checkOllama: () => ipcRenderer.invoke('ollama:status'),
   listOllamaModels: () => ipcRenderer.invoke('ollama:list-models'),
+  getSelectedOllamaModel: () => ipcRenderer.invoke('ollama:get-selected-model'),
+  setSelectedOllamaModel: (modelName: string) => ipcRenderer.invoke('ollama:set-selected-model', modelName),
   startGitHubOAuth: () => ipcRenderer.invoke('github:start-oauth'),
   getGitHubOAuthStatus: () => ipcRenderer.invoke('github:oauth-status'),
   getDiscoveryStatus: () => ipcRenderer.invoke('github:discovery-status'),

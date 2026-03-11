@@ -74,6 +74,8 @@ declare const window: Window & {
   jarvis: {
     checkOllama(): Promise<OllamaStatus>;
     listOllamaModels(): Promise<{ available: boolean; models: OllamaModel[]; error?: string }>;
+    getSelectedOllamaModel(): Promise<string | null>;
+    setSelectedOllamaModel(modelName: string): Promise<{ ok: boolean }>;
     startGitHubOAuth(): Promise<OAuthResult>;
     getGitHubOAuthStatus(): Promise<OAuthStatus>;
     getDiscoveryStatus(): Promise<{ running: boolean; progress?: DiscoveryProgress }>;
@@ -97,7 +99,7 @@ function StatusBadge({ status, label }: { status: 'pending' | 'completed' | 'in-
 
 // ── Ollama step (summary row) ─────────────────────────────────────────────────
 
-function OllamaStep({ ollama, onToggle }: { ollama: OllamaStatus | null; onToggle: () => void }) {
+function OllamaStep({ ollama, selectedModel, onToggle }: { ollama: OllamaStatus | null; selectedModel: string | null; onToggle: () => void }) {
   let badgeStatus: 'pending' | 'completed' | 'in-progress' = 'in-progress';
   let badgeLabel = 'Checking...';
   let detail = 'Checking for a local Ollama instance…';
@@ -106,7 +108,11 @@ function OllamaStep({ ollama, onToggle }: { ollama: OllamaStatus | null; onToggl
     if (ollama.available) {
       badgeStatus = 'completed';
       badgeLabel = 'Connected';
-      detail = `${ollama.models.length} model${ollama.models.length !== 1 ? 's' : ''} available — click to view`;
+      if (selectedModel) {
+        detail = `Active model: ${selectedModel} — click to change`;
+      } else {
+        detail = `${ollama.models.length} model${ollama.models.length !== 1 ? 's' : ''} available — click to select`;
+      }
     } else {
       badgeStatus = 'pending';
       badgeLabel = 'Not found';
@@ -135,7 +141,12 @@ function OllamaStep({ ollama, onToggle }: { ollama: OllamaStatus | null; onToggl
 
 // ── Ollama panel (side panel) ─────────────────────────────────────────────────
 
-function OllamaPanel({ ollama, onClose }: { ollama: OllamaStatus; onClose: () => void }) {
+function OllamaPanel({ ollama, selectedModel, onSelectModel, onClose }: {
+  ollama: OllamaStatus;
+  selectedModel: string | null;
+  onSelectModel: (modelName: string) => void;
+  onClose: () => void;
+}) {
   return (
     <div class="org-panel ollama-panel">
       <div class="org-panel-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -151,18 +162,28 @@ function OllamaPanel({ ollama, onClose }: { ollama: OllamaStatus; onClose: () =>
         <div style={{ color: '#99a', fontSize: '0.85rem' }}>No models found</div>
       ) : (
         <ul class="ollama-model-list">
-          {ollama.models.map((m) => (
-            <li key={m.name} class="ollama-model-item">
-              <span class="ollama-model-name">{m.name}</span>
-              {m.details?.parameter_size && (
-                <span class="ollama-model-meta">{m.details.parameter_size}</span>
-              )}
-              {m.details?.quantization_level && (
-                <span class="ollama-model-meta">{m.details.quantization_level}</span>
-              )}
-              <span class="ollama-model-meta">{(m.size / 1e9).toFixed(1)} GB</span>
-            </li>
-          ))}
+          {ollama.models.map((m) => {
+            const isSelected = selectedModel === m.name;
+            return (
+              <li key={m.name} class={`ollama-model-item${isSelected ? ' ollama-model-selected' : ''}`}>
+                <span class="ollama-model-name">{m.name}</span>
+                {m.details?.parameter_size && (
+                  <span class="ollama-model-meta">{m.details.parameter_size}</span>
+                )}
+                {m.details?.quantization_level && (
+                  <span class="ollama-model-meta">{m.details.quantization_level}</span>
+                )}
+                <span class="ollama-model-meta">{(m.size / 1e9).toFixed(1)} GB</span>
+                <button
+                  class={`ollama-model-select-btn${isSelected ? ' ollama-model-select-btn-active' : ''}`}
+                  title={isSelected ? 'Currently selected' : 'Use this model'}
+                  onClick={() => onSelectModel(m.name)}
+                >
+                  {isSelected ? '\u2713 Selected' : 'Use'}
+                </button>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>
@@ -575,6 +596,7 @@ function App() {
   const [activeOrg, setActiveOrg] = useState<string | null>(null);
   const [ollamaStatus, setOllamaStatus] = useState<OllamaStatus | null>(null);
   const [showOllamaPanel, setShowOllamaPanel] = useState(false);
+  const [selectedOllamaModel, setSelectedOllamaModel] = useState<string | null>(null);
 
   const currentUserLogin = oauthStatus?.login ?? null;
 
@@ -599,7 +621,7 @@ function App() {
     })();
   }, []);
 
-  // Ollama status check on mount
+  // Ollama status + selected model check on mount
   useEffect(() => {
     window.jarvis.checkOllama()
       .then(setOllamaStatus)
@@ -607,7 +629,15 @@ function App() {
         console.error('[Jarvis] Ollama check failed:', err);
         setOllamaStatus({ available: false, baseUrl: 'http://127.0.0.1:11434', models: [], error: String(err) });
       });
+    window.jarvis.getSelectedOllamaModel()
+      .then(setSelectedOllamaModel)
+      .catch((err: unknown) => console.error('[Jarvis] getSelectedOllamaModel failed:', err));
   }, []);
+
+  const handleSelectOllamaModel = async (modelName: string) => {
+    await window.jarvis.setSelectedOllamaModel(modelName);
+    setSelectedOllamaModel(modelName);
+  };
 
   // IPC listeners
   useEffect(() => {
@@ -731,10 +761,15 @@ function App() {
 
       <div class="ollama-layout">
         <div class="ollama-step-wrapper">
-          <OllamaStep ollama={ollamaStatus} onToggle={() => setShowOllamaPanel((p) => !p)} />
+          <OllamaStep ollama={ollamaStatus} selectedModel={selectedOllamaModel} onToggle={() => setShowOllamaPanel((p) => !p)} />
         </div>
         {showOllamaPanel && ollamaStatus?.available && (
-          <OllamaPanel ollama={ollamaStatus} onClose={() => setShowOllamaPanel(false)} />
+          <OllamaPanel
+            ollama={ollamaStatus}
+            selectedModel={selectedOllamaModel}
+            onSelectModel={handleSelectOllamaModel}
+            onClose={() => setShowOllamaPanel(false)}
+          />
         )}
       </div>
     </div>
