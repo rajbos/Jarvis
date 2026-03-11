@@ -524,3 +524,72 @@ h1 {
   color: #99a;
   text-align: center;
 }
+
+/* ── Ollama layout ───────────────────────────────────────────────────────── */
+.ollama-layout {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+}
+
+.ollama-step-wrapper {
+  flex: 0 0 280px;
+}
+
+.ollama-step-wrapper .step {
+  margin-bottom: 0;
+}
+
+.ollama-step-clickable {
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.ollama-step-clickable:hover {
+  border-color: #339af0;
+}
+
+.ollama-panel {
+  flex: 1;
+  min-width: 0;
+  max-height: 360px;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+/* ── Ollama model list ───────────────────────────────────────────────────── */
+.ollama-model-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.ollama-model-item {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  background: #0f3460;
+  border-radius: 5px;
+  padding: 0.4rem 0.7rem;
+  font-size: 0.85rem;
+  min-width: 0;
+}
+
+.ollama-model-name {
+  flex: 1;
+  font-family: 'Consolas', 'Courier New', monospace;
+  color: #e0e0e0;
+}
+
+.ollama-model-meta {
+  color: #99aabb;
+  font-size: 0.78rem;
+  background: #16213e;
+  border-radius: 3px;
+  padding: 0.1rem 0.4rem;
+}

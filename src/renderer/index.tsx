@@ -26,6 +26,25 @@ interface OAuthStatus {
   avatarUrl?: string;
 }
 
+interface OllamaModel {
+  name: string;
+  model: string;
+  size: number;
+  modified_at: string;
+  details?: {
+    family?: string;
+    parameter_size?: string;
+    quantization_level?: string;
+  };
+}
+
+interface OllamaStatus {
+  available: boolean;
+  baseUrl: string;
+  models: OllamaModel[];
+  error?: string;
+}
+
 interface Org {
   login: string;
   repoCount: number;
@@ -53,6 +72,8 @@ interface Repo {
 
 declare const window: Window & {
   jarvis: {
+    checkOllama(): Promise<OllamaStatus>;
+    listOllamaModels(): Promise<{ available: boolean; models: OllamaModel[]; error?: string }>;
     startGitHubOAuth(): Promise<OAuthResult>;
     getGitHubOAuthStatus(): Promise<OAuthStatus>;
     getDiscoveryStatus(): Promise<{ running: boolean; progress?: DiscoveryProgress }>;
@@ -72,6 +93,80 @@ declare const window: Window & {
 
 function StatusBadge({ status, label }: { status: 'pending' | 'completed' | 'in-progress'; label: string }) {
   return <span class={`status-badge status-${status}`}>{label}</span>;
+}
+
+// ── Ollama step (summary row) ─────────────────────────────────────────────────
+
+function OllamaStep({ ollama, onToggle }: { ollama: OllamaStatus | null; onToggle: () => void }) {
+  let badgeStatus: 'pending' | 'completed' | 'in-progress' = 'in-progress';
+  let badgeLabel = 'Checking...';
+  let detail = 'Checking for a local Ollama instance…';
+
+  if (ollama !== null) {
+    if (ollama.available) {
+      badgeStatus = 'completed';
+      badgeLabel = 'Connected';
+      detail = `${ollama.models.length} model${ollama.models.length !== 1 ? 's' : ''} available — click to view`;
+    } else {
+      badgeStatus = 'pending';
+      badgeLabel = 'Not found';
+      detail = 'Ollama not running. Install and start Ollama to enable local AI features.';
+    }
+  }
+
+  return (
+    <div
+      class={`step${ollama?.available ? ' ollama-step-clickable' : ''}`}
+      id="ollama-step"
+      onClick={ollama?.available ? onToggle : undefined}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
+        <h2 style={{ marginBottom: 0 }}>
+          Ollama AI <StatusBadge status={badgeStatus} label={badgeLabel} />
+        </h2>
+        {ollama?.available && (
+          <span style={{ color: '#99a', fontSize: '0.8rem' }}>{'›'}</span>
+        )}
+      </div>
+      <div style={{ fontSize: '0.85rem', color: '#aaa' }}>{detail}</div>
+    </div>
+  );
+}
+
+// ── Ollama panel (side panel) ─────────────────────────────────────────────────
+
+function OllamaPanel({ ollama, onClose }: { ollama: OllamaStatus; onClose: () => void }) {
+  return (
+    <div class="org-panel ollama-panel">
+      <div class="org-panel-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <span>Ollama</span>
+        <button class="repo-panel-close" title="Close" onClick={onClose}>&times;</button>
+      </div>
+      <div style={{ fontSize: '0.82rem', color: '#99aabb', marginBottom: '0.75rem' }}>
+        <code style={{ background: '#0f3460', padding: '0.1rem 0.4rem', borderRadius: '3px' }}>
+          {ollama.baseUrl}
+        </code>
+      </div>
+      {ollama.models.length === 0 ? (
+        <div style={{ color: '#99a', fontSize: '0.85rem' }}>No models found</div>
+      ) : (
+        <ul class="ollama-model-list">
+          {ollama.models.map((m) => (
+            <li key={m.name} class="ollama-model-item">
+              <span class="ollama-model-name">{m.name}</span>
+              {m.details?.parameter_size && (
+                <span class="ollama-model-meta">{m.details.parameter_size}</span>
+              )}
+              {m.details?.quantization_level && (
+                <span class="ollama-model-meta">{m.details.quantization_level}</span>
+              )}
+              <span class="ollama-model-meta">{(m.size / 1e9).toFixed(1)} GB</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
 }
 
 function RepoCard({ repo, showOwner, onClick }: { repo: Repo; showOwner?: boolean; onClick: () => void }) {
@@ -478,6 +573,8 @@ function App() {
     repos: Repo[];
   } | null>(null);
   const [activeOrg, setActiveOrg] = useState<string | null>(null);
+  const [ollamaStatus, setOllamaStatus] = useState<OllamaStatus | null>(null);
+  const [showOllamaPanel, setShowOllamaPanel] = useState(false);
 
   const currentUserLogin = oauthStatus?.login ?? null;
 
@@ -500,6 +597,16 @@ function App() {
         console.error('[Jarvis] Error checking OAuth status:', err);
       }
     })();
+  }, []);
+
+  // Ollama status check on mount
+  useEffect(() => {
+    window.jarvis.checkOllama()
+      .then(setOllamaStatus)
+      .catch((err: unknown) => {
+        console.error('[Jarvis] Ollama check failed:', err);
+        setOllamaStatus({ available: false, baseUrl: 'http://127.0.0.1:11434', models: [], error: String(err) });
+      });
   }, []);
 
   // IPC listeners
@@ -622,11 +729,13 @@ function App() {
         <p>Scan your local directories for Git repositories.</p>
       </div>
 
-      <div class="step" style={{ opacity: 0.5 }}>
-        <h2>
-          Ollama AI <StatusBadge status="pending" label="Later" />
-        </h2>
-        <p>Connect to your local Ollama instance for AI-powered features.</p>
+      <div class="ollama-layout">
+        <div class="ollama-step-wrapper">
+          <OllamaStep ollama={ollamaStatus} onToggle={() => setShowOllamaPanel((p) => !p)} />
+        </div>
+        {showOllamaPanel && ollamaStatus?.available && (
+          <OllamaPanel ollama={ollamaStatus} onClose={() => setShowOllamaPanel(false)} />
+        )}
       </div>
     </div>
   );
