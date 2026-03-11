@@ -35,6 +35,21 @@ export interface OrgInfo {
   repoCount: number;
 }
 
+interface GitHubRepo {
+  full_name: string;
+  name: string;
+  description?: string | null;
+  default_branch?: string | null;
+  language?: string | null;
+  archived?: boolean;
+  fork?: boolean;
+  private?: boolean;
+  pushed_at?: string | null;
+  updated_at?: string | null;
+  parent?: { full_name: string } | null;
+  owner?: { login?: string; type?: string };
+}
+
 // ─── Rate-limit helpers ────────────────────────────────────────────
 
 function parseRateLimit(headers: Headers): RateLimitInfo {
@@ -183,7 +198,7 @@ export function listOrgs(db: SqlJsDatabase): { orgs: OrgInfo[]; directRepoCount:
      ORDER BY o.login COLLATE NOCASE`,
   );
   while (stmt.step()) {
-    const row = stmt.getAsObject() as any;
+    const row = stmt.getAsObject() as { id: number; login: string; name: string | null; discovery_enabled: number; indexed_at: string | null; repo_count: number };
     orgs.push({
       id: row.id,
       login: row.login,
@@ -197,12 +212,12 @@ export function listOrgs(db: SqlJsDatabase): { orgs: OrgInfo[]; directRepoCount:
 
   const countStmt = db.prepare('SELECT COUNT(*) AS cnt FROM github_repos WHERE org_id IS NULL');
   countStmt.step();
-  const directRepoCount = (countStmt.getAsObject() as any).cnt as number;
+  const directRepoCount = (countStmt.getAsObject() as { cnt: number }).cnt;
   countStmt.free();
 
   const starredStmt = db.prepare('SELECT COUNT(*) AS cnt FROM github_repos WHERE starred = 1');
   starredStmt.step();
-  const starredRepoCount = (starredStmt.getAsObject() as any).cnt as number;
+  const starredRepoCount = (starredStmt.getAsObject() as { cnt: number }).cnt;
   starredStmt.free();
 
   return { orgs, directRepoCount, starredRepoCount };
@@ -355,7 +370,7 @@ export async function runDiscovery(
       console.log(`[Discovery] Fetching repos for org: ${org.login}`);
       onProgress?.({ ...progress });
 
-      const repos = await fetchAllPages<Record<string, unknown>>(
+      const repos = await fetchAllPages<GitHubRepo>(
         accessToken,
         `${GITHUB_API_BASE}/orgs/${encodeURIComponent(org.login)}/repos?type=all&per_page=${PER_PAGE}`,
         state,
@@ -363,7 +378,7 @@ export async function runDiscovery(
 
       const orgDbId = orgIdMap.get(org.login)!;
       for (const repo of repos) {
-        upsertRepo(db, repo as any, orgDbId);
+        upsertRepo(db, repo, orgDbId);
       }
 
       progress.reposFound += repos.length;
@@ -380,18 +395,28 @@ export async function runDiscovery(
       progress.phase = 'user-repos';
       onProgress?.({ ...progress });
 
-      const directRepos = await fetchAllPages<Record<string, unknown>>(
+      const directRepos = await fetchAllPages<GitHubRepo>(
         accessToken,
         `${GITHUB_API_BASE}/user/repos?affiliation=owner,collaborator,organization_member&per_page=${PER_PAGE}`,
         state,
       );
 
+      let skippedDisabledOrg = 0;
       for (const repo of directRepos) {
-        const orgId = resolveOrgId(db, repo as any);
-        upsertRepo(db, repo as any, orgId);
+        const ownerLogin = repo.owner?.login;
+        if (ownerLogin && disabledOrgs.has(ownerLogin)) {
+          skippedDisabledOrg++;
+          continue;
+        }
+        const orgId = resolveOrgId(db, repo);
+        upsertRepo(db, repo, orgId);
       }
 
-      progress.reposFound += directRepos.length;
+      if (skippedDisabledOrg > 0) {
+        console.log(`[Discovery] Skipped ${skippedDisabledOrg} repos from disabled orgs in user-repos phase`);
+      }
+
+      progress.reposFound += directRepos.length - skippedDisabledOrg;
       console.log(`[Discovery] Personal + collaborator + org-member repos: ${directRepos.length} (total: ${progress.reposFound})`);
       onProgress?.({ ...progress });
 
@@ -463,23 +488,37 @@ export async function runLightweightRefresh(
     console.log(`[LightRefresh] ${orgs.length} org(s) synced`);
     onProgress?.({ ...progress });
 
+    const disabledOrgs = new Set(
+      listOrgs(db).orgs.filter((o) => !o.discoveryEnabled).map((o) => o.login),
+    );
+
     // Fetch personal + collaborator + org-member repos
     console.log('[LightRefresh] Updating personal + collaborator + org-member repos…');
     progress.phase = 'user-repos';
     onProgress?.({ ...progress });
 
-    const directRepos = await fetchAllPages<Record<string, unknown>>(
+    const directRepos = await fetchAllPages<GitHubRepo>(
       accessToken,
       `${GITHUB_API_BASE}/user/repos?affiliation=owner,collaborator,organization_member&per_page=${PER_PAGE}`,
       state,
     );
 
+    let skippedDisabledOrg = 0;
     for (const repo of directRepos) {
-      const orgId = resolveOrgId(db, repo as any);
-      upsertRepo(db, repo as any, orgId);
+      const ownerLogin = repo.owner?.login;
+      if (ownerLogin && disabledOrgs.has(ownerLogin)) {
+        skippedDisabledOrg++;
+        continue;
+      }
+      const orgId = resolveOrgId(db, repo);
+      upsertRepo(db, repo, orgId);
     }
 
-    progress.reposFound = directRepos.length;
+    if (skippedDisabledOrg > 0) {
+      console.log(`[LightRefresh] Skipped ${skippedDisabledOrg} repos from disabled orgs in user-repos phase`);
+    }
+
+    progress.reposFound = directRepos.length - skippedDisabledOrg;
     saveDatabase();
     console.log(`[LightRefresh] ${directRepos.length} personal + collaborator + org-member repo(s) synced`);
 
@@ -524,7 +563,7 @@ export async function fetchStarredRepos(
   // Clear stale star flags before re-fetching
   db.run('UPDATE github_repos SET starred = 0');
 
-  const starred = await fetchAllPages<Record<string, unknown>>(
+  const starred = await fetchAllPages<GitHubRepo>(
     accessToken,
     `${GITHUB_API_BASE}/user/starred?per_page=${PER_PAGE}`,
     state,
@@ -532,9 +571,9 @@ export async function fetchStarredRepos(
 
   for (const repo of starred) {
     // Only link to an org if it's already indexed — don't auto-create foreign orgs
-    const orgId = lookupExistingOrgId(db, repo as any);
-    upsertRepo(db, repo as any, orgId);
-    db.run('UPDATE github_repos SET starred = 1 WHERE full_name = ?', [(repo as any).full_name]);
+    const orgId = lookupExistingOrgId(db, repo);
+    upsertRepo(db, repo, orgId);
+    db.run('UPDATE github_repos SET starred = 1 WHERE full_name = ?', [repo.full_name]);
   }
 
   progress.reposFound += starred.length;
@@ -564,7 +603,7 @@ function lookupExistingOrgId(
 export function getLastOrgIndexedAt(db: SqlJsDatabase): string | null {
   const stmt = db.prepare("SELECT MAX(indexed_at) AS last_indexed FROM github_orgs");
   stmt.step();
-  const row = stmt.getAsObject() as any;
+  const row = stmt.getAsObject() as { last_indexed: string | null };
   stmt.free();
   return row.last_indexed || null;
 }
@@ -641,14 +680,14 @@ export async function runPatDiscovery(
 
     console.log(`[PAT Discovery] Fetching repos for org: ${org.login}`);
     try {
-      const repos = await fetchAllPages<Record<string, unknown>>(
+      const repos = await fetchAllPages<GitHubRepo>(
         pat,
         `${GITHUB_API_BASE}/orgs/${encodeURIComponent(org.login)}/repos?type=all&per_page=${PER_PAGE}`,
         st,
       );
 
       for (const repo of repos) {
-        upsertRepo(db, repo as any, orgDbId);
+        upsertRepo(db, repo, orgDbId);
       }
 
       prog.reposFound += repos.length;
@@ -669,15 +708,15 @@ export async function runPatDiscovery(
     console.log('[PAT Discovery] Fetching direct collaborator repos…');
     onProgress?.({ ...prog });
 
-    const collabRepos = await fetchAllPages<Record<string, unknown>>(
+    const collabRepos = await fetchAllPages<GitHubRepo>(
       pat,
       `${GITHUB_API_BASE}/user/repos?affiliation=collaborator&per_page=${PER_PAGE}`,
       st,
     );
 
     for (const repo of collabRepos) {
-      const orgId = resolveOrgId(db, repo as any);
-      upsertRepo(db, repo as any, orgId);
+      const orgId = resolveOrgId(db, repo);
+      upsertRepo(db, repo, orgId);
     }
 
     prog.reposFound += collabRepos.length;
