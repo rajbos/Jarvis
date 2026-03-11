@@ -36,7 +36,7 @@
     }
 
     .subtitle {
-      color: #b0b0b0;
+      color: #c8c8c8;
       margin-bottom: 2rem;
       font-size: 0.95rem;
     }
@@ -59,7 +59,7 @@
 
     .step p {
       font-size: 0.9rem;
-      color: #c0c0c0;
+      color: #d4d4d4;
       margin-bottom: 1rem;
     }
 
@@ -121,7 +121,7 @@
     .code-instructions {
       text-align: center;
       font-size: 0.85rem;
-      color: #b0b0b0;
+      color: #c8c8c8;
     }
 
     .code-instructions a {
@@ -151,7 +151,7 @@
 
     .user-info .login {
       font-size: 0.85rem;
-      color: #b0b0b0;
+      color: #c8c8c8;
     }
 
     .hidden {
@@ -184,7 +184,7 @@
 
     .org-item .org-meta {
       font-size: 0.78rem;
-      color: #b0b0b0;
+      color: #c8c8c8;
       text-align: right;
       width: 6rem;
       flex-shrink: 0;
@@ -302,7 +302,7 @@
 
     .filter-label {
       font-size: 0.8rem;
-      color: #b0b0b0;
+      color: #c8c8c8;
       cursor: pointer;
       display: flex;
       align-items: center;
@@ -319,6 +319,12 @@
       border-radius: 6px;
       margin-bottom: 0.35rem;
       font-size: 0.82rem;
+      cursor: pointer;
+      transition: background 0.1s;
+    }
+
+    .repo-card:hover {
+      background: #1a4a8a;
     }
 
     .repo-card-name {
@@ -329,7 +335,7 @@
     }
 
     .repo-card-desc {
-      color: #b0b0b0;
+      color: #c8c8c8;
       font-size: 0.78rem;
       margin-bottom: 0.3rem;
       display: -webkit-box;
@@ -350,22 +356,22 @@
       padding: 1px 5px;
       border-radius: 4px;
       background: #0a2d4d;
-      color: #b0b0b0;
+      color: #c8c8c8;
     }
 
     .repo-card-lang {
       font-size: 0.72rem;
-      color: #b0b0b0;
+      color: #c8c8c8;
     }
 
     .repo-card-date {
       font-size: 0.72rem;
-      color: #99a;
+      color: #b0b8c8;
     }
 
     .repo-card-owner {
       font-weight: 400;
-      color: #99a;
+      color: #b0b8c8;
     }
 
     .org-item.active {
@@ -429,7 +435,7 @@
     }
 
     #search-input::placeholder {
-      color: #778;
+      color: #8899aa;
     }
 
     .search-icon {
@@ -437,7 +443,7 @@
       left: 0.8rem;
       top: 50%;
       transform: translateY(-50%);
-      color: #778;
+      color: #8899aa;
       pointer-events: none;
       font-size: 1rem;
     }
@@ -564,9 +570,6 @@
             <div class="name" id="user-name"></div>
             <div class="login" id="user-login"></div>
           </div>
-        </div>
-        <div style="margin-top: 0.75rem; display: flex; gap: 0.5rem;">
-          <button id="btn-run-pat-discovery" class="hidden" style="padding: 0.35rem 0.75rem; font-size: 0.8rem; background: #0f3460; color: #e0e0e0; border: 1px solid #e94560; border-radius: 4px; cursor: pointer;">Run PAT Discovery</button>
         </div>
       </div>
 

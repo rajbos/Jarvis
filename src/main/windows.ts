@@ -75,16 +75,13 @@ export function createOnboardingWindow(db: SqlJsDatabase): BrowserWindow {
   win.on('resized', persistBounds);
   win.on('moved', persistBounds);
 
-  // Open DevTools in development
-  win.webContents.openDevTools({ mode: 'bottom' });
-
   return win;
 }
 
 export function createSettingsWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: 480,
-    height: 500,
+    height: 470,
     title: 'Jarvis — Settings',
     resizable: false,
     minimizable: false,

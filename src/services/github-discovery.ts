@@ -20,7 +20,7 @@ export interface DiscoveryState {
 }
 
 export interface DiscoveryProgress {
-  phase: 'orgs' | 'repos' | 'user-repos' | 'pat-repos' | 'done';
+  phase: 'orgs' | 'repos' | 'user-repos' | 'starred' | 'pat-repos' | 'done';
   orgsFound: number;
   reposFound: number;
   currentOrg?: string;
@@ -174,7 +174,7 @@ export function upsertOrg(
   return row.id;
 }
 
-export function listOrgs(db: SqlJsDatabase): { orgs: OrgInfo[]; directRepoCount: number } {
+export function listOrgs(db: SqlJsDatabase): { orgs: OrgInfo[]; directRepoCount: number; starredRepoCount: number } {
   const orgs: OrgInfo[] = [];
   const stmt = db.prepare(
     `SELECT o.id, o.login, o.name, o.discovery_enabled, o.indexed_at,
@@ -200,7 +200,12 @@ export function listOrgs(db: SqlJsDatabase): { orgs: OrgInfo[]; directRepoCount:
   const directRepoCount = (countStmt.getAsObject() as any).cnt as number;
   countStmt.free();
 
-  return { orgs, directRepoCount };
+  const starredStmt = db.prepare('SELECT COUNT(*) AS cnt FROM github_repos WHERE starred = 1');
+  starredStmt.step();
+  const starredRepoCount = (starredStmt.getAsObject() as any).cnt as number;
+  starredStmt.free();
+
+  return { orgs, directRepoCount, starredRepoCount };
 }
 
 export function setOrgDiscoveryEnabled(db: SqlJsDatabase, orgLogin: string, enabled: boolean): void {
@@ -393,7 +398,12 @@ export async function runDiscovery(
       saveDatabase();
     }
 
-    // ── Phase 4: PAT supplemental pass (repos OAuth can't see) ──────
+    // ── Phase 4: Starred repos ────────────────────────────────────────
+    if (!state.aborted) {
+      await fetchStarredRepos(db, accessToken, state, progress, onProgress);
+    }
+
+    // ── Phase 5: PAT supplemental pass (repos OAuth can't see) ──────
     if (!state.aborted && pat) {
       try {
         await runPatDiscovery(db, pat, state, progress, onProgress);
@@ -473,6 +483,9 @@ export async function runLightweightRefresh(
     saveDatabase();
     console.log(`[LightRefresh] ${directRepos.length} personal + collaborator + org-member repo(s) synced`);
 
+    // Fetch starred repos
+    await fetchStarredRepos(db, accessToken, state, progress, onProgress);
+
     // PAT supplemental pass
     if (pat) {
       try {
@@ -487,6 +500,65 @@ export async function runLightweightRefresh(
   } catch (err) {
     console.error('[LightRefresh] Error:', err);
   }
+}
+
+// ─── Fetch starred repos ────────────────────────────────────────────
+
+/**
+ * Fetches repos the authenticated user has starred and marks them with
+ * starred = 1 in the DB. Resets all existing star flags first so that
+ * un-starred repos are cleared. Repos from orgs not previously indexed
+ * are stored with org_id = null (no auto-create of foreign orgs).
+ */
+export async function fetchStarredRepos(
+  db: SqlJsDatabase,
+  accessToken: string,
+  state: DiscoveryState,
+  progress: DiscoveryProgress,
+  onProgress?: (progress: DiscoveryProgress) => void,
+): Promise<void> {
+  console.log('[Discovery] Fetching starred repos…');
+  progress.phase = 'starred';
+  onProgress?.({ ...progress });
+
+  // Clear stale star flags before re-fetching
+  db.run('UPDATE github_repos SET starred = 0');
+
+  const starred = await fetchAllPages<Record<string, unknown>>(
+    accessToken,
+    `${GITHUB_API_BASE}/user/starred?per_page=${PER_PAGE}`,
+    state,
+  );
+
+  for (const repo of starred) {
+    // Only link to an org if it's already indexed — don't auto-create foreign orgs
+    const orgId = lookupExistingOrgId(db, repo as any);
+    upsertRepo(db, repo as any, orgId);
+    db.run('UPDATE github_repos SET starred = 1 WHERE full_name = ?', [(repo as any).full_name]);
+  }
+
+  progress.reposFound += starred.length;
+  console.log(`[Discovery] Starred repos: ${starred.length}`);
+  onProgress?.({ ...progress });
+  saveDatabase();
+}
+
+/**
+ * Like resolveOrgId but never auto-creates an org entry.
+ * Returns the existing org_id if the owning org is already indexed, else null.
+ */
+function lookupExistingOrgId(
+  db: SqlJsDatabase,
+  repo: { owner?: { login?: string; type?: string } },
+): number | null {
+  const owner = repo.owner;
+  if (!owner || owner.type !== 'Organization' || !owner.login) return null;
+  const stmt = db.prepare('SELECT id FROM github_orgs WHERE login = ?');
+  stmt.bind([owner.login]);
+  const found = stmt.step();
+  const row = found ? (stmt.getAsObject() as { id: number }) : null;
+  stmt.free();
+  return row?.id ?? null;
 }
 
 export function getLastOrgIndexedAt(db: SqlJsDatabase): string | null {

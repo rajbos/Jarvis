@@ -13,8 +13,12 @@ contextBridge.exposeInMainWorld('jarvis', {
   savePat: (pat: string) => ipcRenderer.invoke('github:save-pat', pat),
   deletePat: () => ipcRenderer.invoke('github:delete-pat'),
   getPatStatus: () => ipcRenderer.invoke('github:pat-status'),
+  logout: () => ipcRenderer.invoke('github:logout'),
+  startOAuthDiscovery: () => ipcRenderer.invoke('github:start-oauth-discovery'),
   searchRepos: (query: string) => ipcRenderer.invoke('github:search-repos', query),
   listReposForOrg: (orgLogin: string | null) => ipcRenderer.invoke('github:list-repos-for-org', orgLogin),
+  listStarred: () => ipcRenderer.invoke('github:list-starred'),
+  openUrl: (url: string) => ipcRenderer.invoke('github:open-url', url),
   onOAuthComplete: (callback: (result: Record<string, string>) => void) => {
     ipcRenderer.on('github:oauth-complete', (_event, result) => callback(result));
   },

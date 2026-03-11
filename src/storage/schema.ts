@@ -54,6 +54,7 @@ export function getSchema(): string {
         fork            INTEGER DEFAULT 0,
         parent_full_name TEXT,
         private         INTEGER DEFAULT 0,
+        starred         INTEGER DEFAULT 0,
         last_pushed_at  DATETIME,
         last_updated_at DATETIME,
         indexed_at      DATETIME,

@@ -51,7 +51,7 @@ function initializeSchema(database: SqlJsDatabase): void {
 
   if (userVersion === 0) {
     database.run(getSchema());
-    database.run('PRAGMA user_version = 4');
+    database.run('PRAGMA user_version = 5');
   }
 
   if (userVersion === 1) {
@@ -70,6 +70,12 @@ function initializeSchema(database: SqlJsDatabase): void {
     // Migration v3 → v4: add pat (Personal Access Token) to github_auth
     database.run('ALTER TABLE github_auth ADD COLUMN pat TEXT');
     database.run('PRAGMA user_version = 4');
+  }
+
+  if (userVersion === 4) {
+    // Migration v4 → v5: add starred flag to github_repos
+    database.run('ALTER TABLE github_repos ADD COLUMN starred INTEGER DEFAULT 0');
+    database.run('PRAGMA user_version = 5');
   }
 }
 

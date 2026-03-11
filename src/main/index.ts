@@ -35,6 +35,12 @@ async function initialize(): Promise<void> {
       submenu: [
         { label: 'Settings', click: () => showSettingsWindow() },
         { type: 'separator' },
+        {
+          label: 'Toggle Developer Tools',
+          accelerator: process.platform === 'darwin' ? 'Alt+Command+I' : 'Ctrl+Shift+I',
+          click: () => { mainWindow?.webContents.toggleDevTools(); },
+        },
+        { type: 'separator' },
         { role: 'quit' },
       ],
     },

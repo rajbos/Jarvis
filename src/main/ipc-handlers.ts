@@ -12,11 +12,13 @@ import {
   saveGitHubPat,
   loadGitHubPat,
   deleteGitHubPat,
+  deleteGitHubAuth,
 } from '../services/github-oauth';
 import {
   runDiscovery,
   runLightweightRefresh,
   runPatDiscovery,
+  fetchStarredRepos,
   getLastOrgIndexedAt,
   abortDiscovery,
   listOrgs,
@@ -154,27 +156,66 @@ export function registerIpcHandlers(db: SqlJsDatabase, getWindow: () => BrowserW
     return { ok: true };
   });
 
-  ipcMain.handle('github:pat-status', () => {
+  ipcMain.handle('github:logout', () => {
+    deleteGitHubAuth(db);
+    saveDatabase();
+    return { ok: true };
+  });
+
+  ipcMain.handle('github:start-oauth-discovery', () => {
+    setConfigValue(db, 'force_oauth_discovery', '1');
+    saveDatabase();
+    startDiscoveryIfAuthed(db, getWindow);
+    return { ok: true };
+  });
+
+  ipcMain.handle('github:pat-status', async () => {
     const pat = loadGitHubPat(db);
-    return { hasPat: !!pat };
+    if (!pat) return { hasPat: false };
+    try {
+      const user = await fetchGitHubUser(pat);
+      return { hasPat: true, login: user.login, name: user.name, avatarUrl: user.avatar_url };
+    } catch {
+      return { hasPat: true };
+    }
+  });
+
+  ipcMain.handle('github:open-url', (_event, url: string) => {
+    if (typeof url === 'string' && url.startsWith('https://github.com/')) {
+      shell.openExternal(url);
+    }
   });
 
   ipcMain.handle('github:search-repos', (_event, query: string) => {
     if (!query || query.trim().length < 2) return [];
-    const pattern = `%${query.trim()}%`;
-    const stmt = db.prepare(
-      `SELECT r.full_name, r.name, r.description, r.language, r.private, r.fork, r.archived
+
+    // Split into individual words so "myorg reponame" matches across org and repo name
+    const words = query.trim().split(/\s+/).filter((w) => w.length > 0);
+    const bindParams: string[] = [];
+
+    // Each word must appear in full_name OR name (AND between words = narrowing)
+    const conditions = words.map((w) => {
+      bindParams.push(`%${w}%`, `%${w}%`);
+      return `(r.full_name LIKE ? OR r.name LIKE ?)`;
+    }).join(' AND ');
+
+    // For ordering: repos whose name matches the first word rank higher
+    const firstPattern = `%${words[0]}%`;
+    bindParams.push(firstPattern);
+
+    const sql = `SELECT r.full_name, r.name, r.description, r.language, r.private, r.fork, r.archived
        FROM github_repos r
        LEFT JOIN github_orgs o ON o.id = r.org_id
-       WHERE (r.full_name LIKE ? OR r.name LIKE ?)
+       WHERE (${conditions})
          AND (r.org_id IS NULL OR o.discovery_enabled = 1)
        ORDER BY
          CASE WHEN r.name LIKE ? THEN 0 ELSE 1 END,
          r.last_pushed_at DESC
-       LIMIT 50`,
-    );
+       LIMIT 50`;
+
+    const stmt = db.prepare(sql);
     const rows: { full_name: string; name: string; description: string | null; language: string | null; private: number; fork: number; archived: number }[] = [];
-    stmt.bind([pattern, pattern, pattern]);
+    stmt.bind(bindParams);
     while (stmt.step()) rows.push(stmt.getAsObject() as typeof rows[0]);
     stmt.free();
     return rows;
@@ -203,6 +244,20 @@ export function registerIpcHandlers(db: SqlJsDatabase, getWindow: () => BrowserW
       );
       stmt.bind([orgLogin]);
     }
+    const rows: Record<string, unknown>[] = [];
+    while (stmt.step()) rows.push(stmt.getAsObject());
+    stmt.free();
+    return rows;
+  });
+
+  ipcMain.handle('github:list-starred', () => {
+    const stmt = db.prepare(
+      `SELECT full_name, name, description, language, private, fork, archived,
+              default_branch, parent_full_name, last_pushed_at
+       FROM github_repos
+       WHERE starred = 1
+       ORDER BY last_pushed_at DESC`,
+    );
     const rows: Record<string, unknown>[] = [];
     while (stmt.step()) rows.push(stmt.getAsObject());
     stmt.free();
@@ -409,6 +464,21 @@ export function startDiscoveryIfAuthed(
         });
       } else {
         console.log(`[Discovery] Already have ${existing.orgs.length} org(s) in DB and data is fresh, skipping.`);
+
+        // First boot after starred feature was added — fetch stars standalone
+        if (existing.starredRepoCount === 0) {
+          console.log('[Discovery] No starred repos indexed yet — fetching stars now');
+          const starState: DiscoveryState = { callsSinceLastPause: 0, aborted: false, lastRateLimit: null };
+          const starProgress: DiscoveryProgress = { phase: 'starred', orgsFound: 0, reposFound: 0 };
+          fetchStarredRepos(db, auth.accessToken, starState, starProgress, (p) => {
+            lastDiscoveryProgress = p;
+            getWindow()?.webContents.send('github:discovery-progress', p);
+          }).then(() => {
+            const done: DiscoveryProgress = { phase: 'done', orgsFound: 0, reposFound: starProgress.reposFound };
+            lastDiscoveryProgress = done;
+            getWindow()?.webContents.send('github:discovery-complete', done);
+          }).catch((err) => console.error('[Discovery] Starred-only fetch failed:', err));
+        }
       }
       return;
     }

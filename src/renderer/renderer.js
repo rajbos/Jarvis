@@ -33,12 +33,6 @@ window.addEventListener('DOMContentLoaded', async () => {
   });
   window.jarvis.onDiscoveryComplete((progress) => {
     updateDiscoveryUI(progress, true);
-    // Reset PAT discovery button
-    const btn = document.getElementById('btn-run-pat-discovery');
-    if (btn) {
-      btn.disabled = false;
-      btn.textContent = 'Run PAT Discovery';
-    }
   });
 
   const discoveryToggleEl = document.getElementById('discovery-toggle');
@@ -130,6 +124,7 @@ function updateDiscoveryUI(progress, finished) {
     'orgs': 'Discovering organizations...',
     'repos': `Scanning org repositories... (${progress.reposFound.toLocaleString()} repos so far)`,
     'user-repos': `Scanning personal + collaborator repos... (${progress.reposFound.toLocaleString()} repos so far)`,
+    'starred': `Fetching starred repos... (${progress.reposFound.toLocaleString()} repos so far)`,
     'pat-repos': progress.currentOrg
       ? `PAT: scanning ${progress.currentOrg}... (${progress.reposFound.toLocaleString()} new repos)`
       : `PAT: scanning collaborator repos... (${progress.reposFound.toLocaleString()} new repos)`,
@@ -159,37 +154,7 @@ function showGitHubSuccess(login, name, avatarUrl) {
   badge.className = 'status-badge status-completed';
 
   // Show the PAT discovery button if a PAT is configured
-  refreshPatDiscoveryButton();
 }
-
-async function refreshPatDiscoveryButton() {
-  const btn = document.getElementById('btn-run-pat-discovery');
-  if (!btn) return;
-  try {
-    const { hasPat } = await window.jarvis.getPatStatus();
-    if (hasPat) {
-      btn.classList.remove('hidden');
-    } else {
-      btn.classList.add('hidden');
-    }
-  } catch {
-    btn.classList.add('hidden');
-  }
-}
-
-document.getElementById('btn-run-pat-discovery')?.addEventListener('click', async () => {
-  const btn = document.getElementById('btn-run-pat-discovery');
-  if (btn) {
-    btn.disabled = true;
-    btn.textContent = 'Running…';
-  }
-  try {
-    await window.jarvis.startPatDiscovery();
-  } catch (err) {
-    console.error('PAT discovery failed:', err);
-  }
-  // Button state will be reset when discovery-complete fires
-});
 
 function toggleOrgPanel() {
   const panel = document.getElementById('org-panel');
@@ -220,6 +185,7 @@ async function refreshOrgList() {
 
   const orgs = result.orgs || [];
   const directRepoCount = result.directRepoCount || 0;
+  const starredRepoCount = result.starredRepoCount || 0;
 
   if (orgs.length === 0 && directRepoCount === 0) return;
 
@@ -272,7 +238,7 @@ async function refreshOrgList() {
 
     const label = document.createElement('span');
     label.className = 'org-label';
-    label.textContent = 'Personal & collaborator';
+    label.textContent = '\uD83D\uDC64 Personal & collaborator';
     label.style.fontStyle = 'italic';
 
     const meta = document.createElement('span');
@@ -285,6 +251,27 @@ async function refreshOrgList() {
 
     // Click to show direct-access repos
     item.addEventListener('click', () => showRepoPanel(null, 'Personal & collaborator'));
+  }
+
+  // Show starred repos if any
+  if (starredRepoCount > 0) {
+    const item = document.createElement('div');
+    item.className = 'org-item';
+
+    const label = document.createElement('span');
+    label.className = 'org-label';
+    label.textContent = '\u2b50 Starred';
+    label.style.fontStyle = 'italic';
+
+    const meta = document.createElement('span');
+    meta.className = 'org-meta';
+    meta.textContent = `${starredRepoCount.toLocaleString()} repo${starredRepoCount !== 1 ? 's' : ''}`;
+
+    item.appendChild(label);
+    item.appendChild(meta);
+    orgListEl.appendChild(item);
+
+    item.addEventListener('click', () => showRepoPanel('__starred__', '\u2b50 Starred'));
   }
 }
 
@@ -322,7 +309,11 @@ async function showRepoPanel(orgLogin, displayName) {
 
   let repos;
   try {
-    repos = await window.jarvis.listReposForOrg(orgLogin);
+    if (orgLogin === '__starred__') {
+      repos = await window.jarvis.listStarred();
+    } else {
+      repos = await window.jarvis.listReposForOrg(orgLogin);
+    }
   } catch (err) {
     console.error('[Jarvis] Failed to load repos:', err);
     listEl.innerHTML = '<div style="color:#e94560;font-size:0.85rem;padding:0.5rem;">Failed to load repositories</div>';
@@ -364,8 +355,8 @@ function renderRepoCards() {
 
     const nameEl = document.createElement('div');
     nameEl.className = 'repo-card-name';
-    // Show owner prefix for direct repos (personal & collaborator)
-    if (orgLogin === null && repo.full_name.includes('/')) {
+    // Show owner prefix for direct repos (personal & collaborator) and starred repos
+    if ((orgLogin === null || orgLogin === '__starred__') && repo.full_name.includes('/')) {
       const owner = repo.full_name.split('/')[0];
       const ownerSpan = document.createElement('span');
       ownerSpan.className = 'repo-card-owner';
@@ -436,6 +427,12 @@ function renderRepoCards() {
     }
 
     card.appendChild(metaEl);
+
+    card.style.cursor = 'pointer';
+    card.addEventListener('click', () => {
+      window.jarvis.openUrl('https://github.com/' + repo.full_name);
+    });
+
     listEl.appendChild(card);
   }
 }
@@ -544,6 +541,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
       item.appendChild(main);
       item.appendChild(side);
+      item.addEventListener('click', () => {
+        window.jarvis.openUrl('https://github.com/' + repo.full_name);
+        hideResults();
+      });
       resultsEl.appendChild(item);
     }
 

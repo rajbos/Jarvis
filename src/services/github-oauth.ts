@@ -201,3 +201,10 @@ export function loadGitHubPat(db: SqlJsDatabase): string | null {
 export function deleteGitHubPat(db: SqlJsDatabase, login: string): void {
   db.run('UPDATE github_auth SET pat = NULL WHERE login = ?', [login]);
 }
+
+/**
+ * Remove all GitHub OAuth session data (logout).
+ */
+export function deleteGitHubAuth(db: SqlJsDatabase): void {
+  db.run('DELETE FROM github_auth');
+}
