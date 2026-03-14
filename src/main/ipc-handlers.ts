@@ -14,9 +14,12 @@ import { registerHandlers as registerDiscoveryHandlers } from '../plugins/discov
 import { registerHandlers as registerOrgsHandlers } from '../plugins/orgs/handler';
 import { registerHandlers as registerReposHandlers } from '../plugins/repos/handler';
 import { registerHandlers as registerNotificationsHandlers } from '../plugins/notifications/handler';
+import { registerHandlers as registerLocalReposHandlers } from '../plugins/local-repos/handler';
 
 // Re-export startDiscoveryIfAuthed so src/main/index.ts can call it on startup
 export { startDiscoveryIfAuthed } from '../plugins/discovery/handler';
+// Re-export scheduleLocalDiscovery so src/main/index.ts can call it on startup
+export { scheduleLocalDiscovery } from '../plugins/local-repos/handler';
 
 export function registerIpcHandlers(
   db: SqlJsDatabase,
@@ -30,4 +33,5 @@ export function registerIpcHandlers(
   registerOrgsHandlers(db, getWindow);
   registerReposHandlers(db, getWindow);
   registerNotificationsHandlers(db, getWindow);
+  registerLocalReposHandlers(db, getWindow);
 }

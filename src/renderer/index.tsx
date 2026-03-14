@@ -16,6 +16,10 @@ import { NotifRepoPanel } from '../plugins/notifications/NotifRepoPanel';
 import { EmbeddedChatPanel } from '../plugins/chat/EmbeddedChatPanel';
 import { SearchBar } from '../plugins/search/SearchBar';
 import { StatusBadge } from '../plugins/shared/StatusBadge';
+import { LocalReposStep } from '../plugins/local-repos/LocalReposStep';
+import { LocalFolderConfigPanel } from '../plugins/local-repos/LocalFolderConfigPanel';
+import { LocalFolderPanel } from '../plugins/local-repos/LocalFolderPanel';
+import { LocalRepoPanelView } from '../plugins/local-repos/LocalRepoPanelView';
 
 // ── Types (imported from single source of truth in plugins/types.ts) ─────────
 // The global augmentation `Window.jarvis` is declared in plugins/types.ts and
@@ -29,6 +33,9 @@ import type {
   StoredNotification,
   Repo,
   DiscoveryProgress,
+  LocalRepo,
+  ScanFolder,
+  LocalScanProgress,
 } from '../plugins/types';
 import '../plugins/types'; // activate the global Window augmentation
 
@@ -70,6 +77,16 @@ function App() {
   } | null>(null);
   const [refreshingOwners, setRefreshingOwners] = useState<Set<string>>(new Set());
   const [refreshingRepos, setRefreshingRepos] = useState<Set<string>>(new Set());
+
+  // Local repos state
+  const [localFolders, setLocalFolders] = useState<ScanFolder[] | null>(null);
+  const [showLocalPanel, setShowLocalPanel] = useState(false);
+  const [showLocalConfig, setShowLocalConfig] = useState(false);
+  const [activeLocalFolder, setActiveLocalFolder] = useState<string | null>(null);
+  const [localRepoPanel, setLocalRepoPanel] = useState<{ folderPath: string; repos: LocalRepo[] } | null>(null);
+  const [localScanProgress, setLocalScanProgress] = useState<LocalScanProgress | null>(null);
+  const [localScanFinished, setLocalScanFinished] = useState(false);
+  const [localScanning, setLocalScanning] = useState(false);
 
   const currentUserLogin = oauthStatus?.login ?? null;
 
@@ -141,6 +158,27 @@ function App() {
       .catch((err: unknown) => console.error('[Jarvis] getSelectedOllamaModel failed:', err));
   }, []);
 
+  // Local folders check on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const folders = await window.jarvis.localGetFolders();
+        setLocalFolders(folders);
+        const status = await window.jarvis.localGetScanStatus();
+        if (status.running) {
+          setLocalScanning(true);
+          if (status.progress) setLocalScanProgress(status.progress);
+        } else if (status.progress?.phase === 'done') {
+          setLocalScanProgress(status.progress);
+          setLocalScanFinished(true);
+        }
+      } catch (err) {
+        console.error('[Jarvis] Local folders check failed:', err);
+        setLocalFolders([]);
+      }
+    })();
+  }, []);
+
   const handleSelectOllamaModel = async (modelName: string) => {
     await window.jarvis.setSelectedOllamaModel(modelName);
     setSelectedOllamaModel(modelName);
@@ -182,6 +220,19 @@ function App() {
     window.jarvis.onDiscoveryComplete((progress: DiscoveryProgress) => {
       setDiscoveryProgress(progress);
       setDiscoveryFinished(true);
+    });
+
+    window.jarvis.onLocalScanProgress((progress: LocalScanProgress) => {
+      setLocalScanProgress(progress);
+      setLocalScanning(true);
+      setLocalScanFinished(false);
+    });
+
+    window.jarvis.onLocalScanComplete((progress: LocalScanProgress) => {
+      setLocalScanProgress(progress);
+      setLocalScanning(false);
+      setLocalScanFinished(true);
+      window.jarvis.localGetFolders().then(setLocalFolders).catch(console.error);
     });
   }, []);
 
@@ -351,6 +402,70 @@ function App() {
     setActiveOrg(null);
   };
 
+  // ── Local repo handlers ───────────────────────────────────────────────────
+
+  const handleLocalStepClick = () => {
+    if (localFolders && localFolders.length > 0) {
+      setShowLocalPanel((prev) => !prev);
+      setShowLocalConfig(false);
+    } else {
+      setShowLocalConfig((prev) => !prev);
+      setShowLocalPanel(false);
+    }
+  };
+
+  const handleLocalAddFolder = async () => {
+    const result = await window.jarvis.localAddFolder();
+    if (result.canceled || result.error) return;
+    const folders = await window.jarvis.localGetFolders();
+    setLocalFolders(folders);
+  };
+
+  const handleLocalRemoveFolder = async (folderPath: string) => {
+    await window.jarvis.localRemoveFolder(folderPath);
+    const folders = await window.jarvis.localGetFolders();
+    setLocalFolders(folders);
+    if (activeLocalFolder === folderPath) {
+      setActiveLocalFolder(null);
+      setLocalRepoPanel(null);
+    }
+  };
+
+  const handleLocalStartScan = async () => {
+    setLocalScanning(true);
+    await window.jarvis.localStartScan();
+  };
+
+  const handleLocalSelectFolder = async (folderPath: string) => {
+    setActiveLocalFolder(folderPath);
+    try {
+      const repos = await window.jarvis.localListReposForFolder(folderPath);
+      setLocalRepoPanel({ folderPath, repos });
+      setShowLocalPanel(true);
+    } catch (err) {
+      console.error('[Jarvis] Failed to load local repos:', err);
+    }
+  };
+
+  const handleCloseLocalRepos = () => {
+    setLocalRepoPanel(null);
+    setActiveLocalFolder(null);
+  };
+
+  const handleOpenLocalConfig = () => {
+    setShowLocalConfig(true);
+    setShowLocalPanel(false);
+    setLocalRepoPanel(null);
+    setActiveLocalFolder(null);
+  };
+
+  const handleCloseLocalConfig = () => {
+    setShowLocalConfig(false);
+    if (localFolders && localFolders.length > 0) {
+      setShowLocalPanel(true);
+    }
+  };
+
   return (
     <div class="app-shell">
       <div class="main-scroll">
@@ -444,11 +559,43 @@ function App() {
         )}
       </div>
 
-      <div class="step" style={{ opacity: 0.5 }}>
-        <h2>
-          Local Repositories <StatusBadge status="pending" label="Later" />
-        </h2>
-        <p>Scan your local directories for Git repositories.</p>
+      <div class="local-layout">
+        <div class="local-step-wrapper">
+          <LocalReposStep
+            folders={localFolders}
+            scanProgress={localScanProgress}
+            scanFinished={localScanFinished}
+            onToggle={handleLocalStepClick}
+          />
+        </div>
+
+        {showLocalConfig && localFolders !== null && (
+          <LocalFolderConfigPanel
+            folders={localFolders}
+            onAdd={handleLocalAddFolder}
+            onRemove={handleLocalRemoveFolder}
+            onStartScan={handleLocalStartScan}
+            onClose={handleCloseLocalConfig}
+            scanning={localScanning}
+          />
+        )}
+
+        {showLocalPanel && localFolders !== null && !showLocalConfig && (
+          <LocalFolderPanel
+            folders={localFolders}
+            activeFolder={activeLocalFolder}
+            onSelectFolder={handleLocalSelectFolder}
+            onConfigure={handleOpenLocalConfig}
+          />
+        )}
+
+        {localRepoPanel && (
+          <LocalRepoPanelView
+            title={localRepoPanel.folderPath.split(/[\\/]/).filter(Boolean).pop() ?? localRepoPanel.folderPath}
+            repos={localRepoPanel.repos}
+            onClose={handleCloseLocalRepos}
+          />
+        )}
       </div>
 
       <div class="ollama-layout">
