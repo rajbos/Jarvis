@@ -31,7 +31,7 @@ const DEFAULT_CONFIG: JarvisConfig = {
     ),
   },
   electron: {
-    startMinimized: true,
+    startMinimized: false,
     openAtLogin: true,
   },
   preferences: {
