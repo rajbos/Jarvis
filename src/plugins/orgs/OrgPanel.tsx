@@ -53,13 +53,13 @@ export function OrgPanel({
   }
 
   // Sort all items together when sorting by notifications
+  const itemLabel = (i: ListItem) =>
+    i.kind === 'org' ? i.org.login : i.kind === 'personal' ? 'Personal' : 'Starred';
+
   if (sortByNotifs && notifCounts) {
-    items.sort((a, b) => {
-      if (b.notifCount !== a.notifCount) return b.notifCount - a.notifCount;
-      const labelA = a.kind === 'org' ? a.org.login : a.kind === 'personal' ? 'Personal' : 'Starred';
-      const labelB = b.kind === 'org' ? b.org.login : b.kind === 'personal' ? 'Personal' : 'Starred';
-      return labelA.localeCompare(labelB);
-    });
+    items.sort((a, b) =>
+      b.notifCount - a.notifCount || itemLabel(a).localeCompare(itemLabel(b)),
+    );
   }
 
   return (
