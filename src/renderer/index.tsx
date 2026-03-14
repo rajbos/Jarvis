@@ -56,6 +56,7 @@ function App() {
   const [notifCounts, setNotifCounts] = useState<NotificationCounts | null>(null);
   const [notifFetching, setNotifFetching] = useState(false);
   const [sortByNotifs, setSortByNotifs] = useState(false);
+  const [sortByNotifsRepo, setSortByNotifsRepo] = useState(false);
   const [notifDive, setNotifDive] = useState<{
     title: string;
     owner: string;
@@ -316,6 +317,8 @@ function App() {
   const handleSelectOrg = async (orgLogin: string | null, displayName: string) => {
     const key = orgLogin ?? '__direct__';
     setActiveOrg(key);
+    setNotifDive(null);
+    setSortByNotifsRepo(false);
     // Show panel immediately with spinner if the org is expected to have many repos
     const orgRepoCount = orgLogin === '__starred__'
       ? (orgData?.starredRepoCount ?? 0)
@@ -393,8 +396,8 @@ function App() {
             orgLogin={repoPanel.orgLogin}
             currentUserLogin={currentUserLogin}
             notifCounts={notifCounts}
-            sortByNotifs={sortByNotifs}
-            onSortToggle={handleSortToggle}
+            sortByNotifs={sortByNotifsRepo}
+            onSortToggle={() => setSortByNotifsRepo((v) => !v)}
             onClose={handleCloseRepos}
             onOpenRepoNotif={async (repoFullName) => {
               const notifications = await window.jarvis.listNotificationsForRepo(repoFullName);
