@@ -132,8 +132,10 @@ function App() {
       .then((model) => {
         setSelectedOllamaModel(model);
         if (model) {
-          setShowChatPanel(true);
-          localStorage.setItem('chat-panel-open', 'true');
+          const savedOpen = localStorage.getItem('chat-panel-open');
+          // Default to open if no preference has been saved yet; otherwise respect the saved state
+          const shouldOpen = savedOpen !== 'false';
+          setShowChatPanel(shouldOpen);
         }
       })
       .catch((err: unknown) => console.error('[Jarvis] getSelectedOllamaModel failed:', err));
