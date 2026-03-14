@@ -12,6 +12,9 @@ import {
   runPatDiscovery,
   getLastOrgIndexedAt,
   abortDiscovery,
+  resolveCollaborationReason,
+  resolveCollaborationReasons,
+  type DiscoveryState,
 } from '../../src/services/github-discovery';
 
 // Mock saveDatabase — it talks to the filesystem
@@ -604,5 +607,177 @@ describe('GitHub Discovery — runDiscovery', () => {
     const result = getLastOrgIndexedAt(db);
     expect(result).toBeTruthy();
     expect(typeof result).toBe('string');
+  });
+});
+
+// ─── Collaboration reason tests ──────────────────────────────────────
+
+describe('GitHub Discovery — collaboration reason', () => {
+  let db: SqlJsDatabase;
+  let originalFetch: typeof globalThis.fetch;
+
+  beforeEach(async () => {
+    const SQL = await initSqlJs();
+    db = new SQL.Database();
+    db.run(getSchema());
+    originalFetch = globalThis.fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    db.close();
+  });
+
+  it('upsertRepo stores collaboration_reason', () => {
+    upsertRepo(db, { full_name: 'other/collab-repo', name: 'collab-repo' }, null, 'pr');
+
+    const rows = db.exec('SELECT collaboration_reason FROM github_repos WHERE full_name = "other/collab-repo"');
+    expect(rows[0].values[0][0]).toBe('pr');
+  });
+
+  it('upsertRepo preserves existing collaboration_reason when new value is null', () => {
+    upsertRepo(db, { full_name: 'other/collab-repo', name: 'collab-repo' }, null, 'issue');
+    upsertRepo(db, { full_name: 'other/collab-repo', name: 'collab-repo' }, null);
+
+    const rows = db.exec('SELECT collaboration_reason FROM github_repos WHERE full_name = "other/collab-repo"');
+    expect(rows[0].values[0][0]).toBe('issue');
+  });
+
+  it('upsertRepo updates collaboration_reason when new value is provided', () => {
+    upsertRepo(db, { full_name: 'other/collab-repo', name: 'collab-repo' }, null, 'collaborator');
+    upsertRepo(db, { full_name: 'other/collab-repo', name: 'collab-repo' }, null, 'pr,issue');
+
+    const rows = db.exec('SELECT collaboration_reason FROM github_repos WHERE full_name = "other/collab-repo"');
+    expect(rows[0].values[0][0]).toBe('pr,issue');
+  });
+
+  it('resolveCollaborationReason returns "pr" when search finds only PRs', async () => {
+    const state: DiscoveryState = { callsSinceLastPause: 0, aborted: false, lastRateLimit: null };
+
+    globalThis.fetch = vi.fn(async () => {
+      return jsonResponse(
+        { total_count: 2, items: [{ pull_request: {} }, { pull_request: {} }] },
+        makeHeaders(29),
+      );
+    }) as Mock;
+
+    const reason = await resolveCollaborationReason('token', 'me', 'other/repo', state);
+    expect(reason).toBe('pr');
+  });
+
+  it('resolveCollaborationReason returns "issue" when search finds only issues', async () => {
+    const state: DiscoveryState = { callsSinceLastPause: 0, aborted: false, lastRateLimit: null };
+
+    globalThis.fetch = vi.fn(async () => {
+      return jsonResponse(
+        { total_count: 1, items: [{ title: 'Bug report' }] },
+        makeHeaders(29),
+      );
+    }) as Mock;
+
+    const reason = await resolveCollaborationReason('token', 'me', 'other/repo', state);
+    expect(reason).toBe('issue');
+  });
+
+  it('resolveCollaborationReason returns "pr,issue" when search finds both', async () => {
+    const state: DiscoveryState = { callsSinceLastPause: 0, aborted: false, lastRateLimit: null };
+
+    globalThis.fetch = vi.fn(async () => {
+      return jsonResponse(
+        { total_count: 3, items: [{ pull_request: {} }, { title: 'Bug report' }, { pull_request: {} }] },
+        makeHeaders(29),
+      );
+    }) as Mock;
+
+    const reason = await resolveCollaborationReason('token', 'me', 'other/repo', state);
+    expect(reason).toBe('pr,issue');
+  });
+
+  it('resolveCollaborationReason returns "collaborator" when search finds nothing', async () => {
+    const state: DiscoveryState = { callsSinceLastPause: 0, aborted: false, lastRateLimit: null };
+
+    globalThis.fetch = vi.fn(async () => {
+      return jsonResponse(
+        { total_count: 0, items: [] },
+        makeHeaders(29),
+      );
+    }) as Mock;
+
+    const reason = await resolveCollaborationReason('token', 'me', 'other/repo', state);
+    expect(reason).toBe('collaborator');
+  });
+
+  it('resolveCollaborationReason returns "collaborator" on fetch error', async () => {
+    const state: DiscoveryState = { callsSinceLastPause: 0, aborted: false, lastRateLimit: null };
+
+    globalThis.fetch = vi.fn(async () => {
+      throw new Error('Network error');
+    }) as Mock;
+
+    const reason = await resolveCollaborationReason('token', 'me', 'other/repo', state);
+    expect(reason).toBe('collaborator');
+  });
+
+  it('resolveCollaborationReasons assigns owner for own repos, org_member for org repos, and queries external', async () => {
+    const state: DiscoveryState = { callsSinceLastPause: 0, aborted: false, lastRateLimit: null };
+
+    upsertOrg(db, { login: 'myorg' });
+
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/search/issues')) {
+        return jsonResponse(
+          { total_count: 1, items: [{ pull_request: {} }] },
+          makeHeaders(29),
+        );
+      }
+      return jsonResponse([], makeHeaders(4990));
+    }) as Mock;
+
+    const repos = [
+      { full_name: 'me/my-repo', name: 'my-repo', owner: { login: 'me', type: 'User' } },
+      { full_name: 'myorg/org-repo', name: 'org-repo', owner: { login: 'myorg', type: 'Organization' } },
+      { full_name: 'stranger/ext-repo', name: 'ext-repo', owner: { login: 'stranger', type: 'User' } },
+    ];
+
+    const reasons = await resolveCollaborationReasons(db, 'token', 'me', repos, state);
+
+    expect(reasons.get('me/my-repo')).toBe('owner');
+    expect(reasons.get('myorg/org-repo')).toBe('org_member');
+    expect(reasons.get('stranger/ext-repo')).toBe('pr');
+  });
+
+  it('runDiscovery sets collaboration_reason for user repos when userLogin is provided', async () => {
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+
+      if (url.includes('/user/orgs')) {
+        return jsonResponse([], makeHeaders(4998));
+      }
+      if (url.includes('/user/repos') && url.includes('affiliation=owner')) {
+        return jsonResponse(
+          [
+            { full_name: 'me/personal', name: 'personal', owner: { login: 'me', type: 'User' } },
+            { full_name: 'other/collab', name: 'collab', owner: { login: 'other', type: 'User' } },
+          ],
+          makeHeaders(4995),
+        );
+      }
+      if (url.includes('/search/issues')) {
+        return jsonResponse(
+          { total_count: 1, items: [{ title: 'My issue' }] },
+          makeHeaders(4990),
+        );
+      }
+      return jsonResponse([], makeHeaders(4990));
+    }) as Mock;
+
+    await runDiscovery(db, 'fake-token', undefined, undefined, 'me');
+
+    const ownedResult = db.exec('SELECT collaboration_reason FROM github_repos WHERE full_name = "me/personal"');
+    expect(ownedResult[0].values[0][0]).toBe('owner');
+
+    const collabResult = db.exec('SELECT collaboration_reason FROM github_repos WHERE full_name = "other/collab"');
+    expect(collabResult[0].values[0][0]).toBe('issue');
   });
 });

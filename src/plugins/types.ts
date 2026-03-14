@@ -86,6 +86,7 @@ export interface Repo {
   default_branch?: string;
   last_pushed_at?: string;
   parent_full_name?: string;
+  collaboration_reason?: string;
 }
 
 // ── Jarvis preload API contract ───────────────────────────────────────────────

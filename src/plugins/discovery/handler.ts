@@ -51,10 +51,11 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
     const pat = loadGitHubPat(db);
     if (!pat) return { error: 'No PAT configured' };
 
+    const auth = loadGitHubAuth(db);
     runPatDiscovery(db, pat, undefined, undefined, (progress) => {
       setLastDiscoveryProgress(progress);
       getWindow()?.webContents.send('github:discovery-progress', progress);
-    }).then(() => {
+    }, auth?.login).then(() => {
       const doneProgress: DiscoveryProgress = {
         phase: 'done',
         orgsFound: lastDiscoveryProgress?.orgsFound ?? 0,
@@ -104,7 +105,7 @@ export function startDiscoveryIfAuthed(
       runPatDiscovery(db, pat, undefined, undefined, (progress) => {
         setLastDiscoveryProgress(progress);
         getWindow()?.webContents.send('github:discovery-progress', progress);
-      }).then(() => {
+      }, auth.login).then(() => {
         const doneProgress: DiscoveryProgress = {
           phase: 'done',
           orgsFound: lastDiscoveryProgress?.orgsFound ?? 0,
@@ -142,7 +143,7 @@ export function startDiscoveryIfAuthed(
         runLightweightRefresh(db, auth.accessToken, (progress) => {
           setLastDiscoveryProgress(progress);
           getWindow()?.webContents.send('github:discovery-progress', progress);
-        }, pat).then(() => {
+        }, pat, auth.login).then(() => {
           console.log('[Discovery] Lightweight refresh finished');
           getWindow()?.webContents.send('github:discovery-complete', lastDiscoveryProgress);
         }).catch((err) => {
@@ -174,7 +175,7 @@ export function startDiscoveryIfAuthed(
   runDiscovery(db, auth.accessToken, (progress) => {
     setLastDiscoveryProgress(progress);
     getWindow()?.webContents.send('github:discovery-progress', progress);
-  }, pat).then((_state) => {
+  }, pat, auth.login).then((_state) => {
     setActiveDiscovery(null);
     console.log('[Discovery] Finished');
     getWindow()?.webContents.send('github:discovery-complete', lastDiscoveryProgress);
