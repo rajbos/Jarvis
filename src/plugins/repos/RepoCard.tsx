@@ -1,5 +1,18 @@
 import type { Repo } from '../types';
 
+const COLLAB_LABELS: Record<string, string> = {
+  pr: '\uD83D\uDD00 PR',
+  issue: '\uD83D\uDCDD issue',
+  collaborator: '\uD83E\uDD1D collaborator',
+};
+
+function formatCollabReason(reason: string): string {
+  return reason
+    .split(',')
+    .map((r) => COLLAB_LABELS[r.trim()] ?? r.trim())
+    .join(' · ');
+}
+
 interface RepoCardProps {
   repo: Repo;
   showOwner?: boolean;
@@ -36,6 +49,11 @@ export function RepoCard({ repo, showOwner, notifCount, onClick, onNotifClick }:
           <span class="repo-card-date">{'\u2190 ' + repo.parent_full_name}</span>
         )}
         {!!repo.archived && <span class="repo-card-badge">archived</span>}
+        {repo.collaboration_reason && !['owner', 'org_member'].includes(repo.collaboration_reason) && (
+          <span class="repo-card-badge repo-card-collab-badge" title={`Collaboration: ${repo.collaboration_reason}`}>
+            {formatCollabReason(repo.collaboration_reason)}
+          </span>
+        )}
         {repo.default_branch && <span class="repo-card-date">{repo.default_branch}</span>}
         {repo.last_pushed_at && (
           <span class="repo-card-date">

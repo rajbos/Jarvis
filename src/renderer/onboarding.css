@@ -573,6 +573,11 @@ h1 {
   color: #c8c8c8;
 }
 
+.repo-card-collab-badge {
+  background: #1a3a5c;
+  color: #7eb8da;
+}
+
 .repo-card-lang {
   font-size: 0.72rem;
   color: #c8c8c8;
