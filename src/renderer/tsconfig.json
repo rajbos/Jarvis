@@ -11,5 +11,5 @@
     "noEmit": true,
     "lib": ["ES2022", "DOM", "DOM.Iterable"]
   },
-  "include": ["./**/*.tsx", "./**/*.ts"]
+  "include": ["./**/*.tsx", "./**/*.ts", "../plugins/**/*.tsx", "../plugins/**/*.ts"]
 }
