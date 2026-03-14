@@ -59,7 +59,7 @@ export function NotifRepoPanel({ repoFullName, notifications, onClose, onRefresh
             onClick={refreshing ? undefined : onRefresh}
           >{'\u21BB'}</span>
         )}
-        <span class="notif-badge notif-badge-large">{notifications.length}</span>
+        <span class="notif-badge notif-badge-large">{'\uD83D\uDD14'} {notifications.length}</span>
         <button class="repo-panel-close" title="Close" onClick={onClose}>&times;</button>
       </div>
       {notifications.map((n) => (

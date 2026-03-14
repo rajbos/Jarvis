@@ -67,7 +67,7 @@ export function RepoPanelView({
         )}
         {notifCounts && repoNotifTotal > 0 && (
           <span
-            class={`notif-badge notif-badge-clickable${sortByNotifs ? ' notif-badge-active' : ''}`}
+            class={`notif-badge notif-badge-large notif-badge-clickable${sortByNotifs ? ' notif-badge-active' : ''}`}
             title={sortByNotifs ? 'Sorting by notifications \u2014 click to reset' : `${repoNotifTotal} unread \u2014 click to sort`}
             onClick={onSortToggle}
           >
