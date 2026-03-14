@@ -16,6 +16,6 @@ export default tseslint.config(
   },
   {
     // Ignore build output and test compiled output
-    ignores: ['dist/**', 'node_modules/**', 'tests/**/*.js', 'tests/**/*.d.ts'],
+    ignores: ['dist/**', 'node_modules/**', 'tests/**'],
   },
 );
