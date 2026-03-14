@@ -81,6 +81,7 @@ const EXPECTED_CHANNELS = [
   'github:list-notifications-for-repo',
   'github:list-notifications-for-owner',
   'github:list-notifications-for-starred',
+  'github:dismiss-notification',
 ] as const;
 
 describe('IPC handler registration', () => {
