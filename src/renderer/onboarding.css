@@ -42,6 +42,140 @@ button:disabled {
   font-weight: 600;
 }
 
+/* ── Notification badge ──────────────────────────────────────────────────── */
+.notif-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  background: #e94560;
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  border-radius: 9px;
+  flex-shrink: 0;
+  cursor: pointer;
+  line-height: 1;
+  transition: background 0.15s;
+}
+
+.notif-badge:hover {
+  background: #c23152;
+}
+
+.notif-badge-large {
+  font-size: 0.8rem;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 11px;
+}
+
+.notif-badge-clickable {
+  cursor: pointer;
+}
+
+.notif-badge-clickable:hover {
+  background: #c23152;
+  transform: scale(1.1);
+}
+
+.notif-badge-active {
+  background: #a81e40;
+  box-shadow: 0 0 0 2px #e94560;
+}
+
+.notif-refresh-btn {
+  font-size: 0.85rem;
+  color: #8892b0;
+  cursor: pointer;
+  padding: 0 0.15rem;
+  transition: color 0.15s, transform 0.2s;
+  user-select: none;
+}
+
+.notif-refresh-btn:hover {
+  color: #e94560;
+}
+
+.notif-refresh-btn-spinning {
+  color: #556;
+  cursor: default;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.repo-panel-loading {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1.5rem 0.75rem;
+  color: #8892b0;
+  font-size: 0.85rem;
+}
+
+.repo-panel-spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid #334;
+  border-top-color: #e94560;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+.notif-detail-row {
+  padding: 0.45rem 0.5rem;
+  border-bottom: 1px solid #0a1f3e;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.notif-detail-row:hover {
+  background: #163a6a;
+}
+
+.notif-involvement-direct {
+  font-size: 0.65rem;
+  padding: 2px 5px;
+  border-radius: 3px;
+  background: #2a1a5e;
+  color: #b4a4f8;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.notif-involvement-following {
+  font-size: 0.65rem;
+  padding: 2px 5px;
+  border-radius: 3px;
+  background: #1a2e1a;
+  color: #78a878;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.org-meta-combined {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.org-repos-count {
+  font-size: 0.75rem;
+  color: #8892b0;
+}
+
+.notif-row:hover {
+  background: #163a6a !important;
+}
+
 .status-pending {
   background: #533a00;
   color: #ffd43b;
@@ -108,14 +242,15 @@ body.onboarding {
 .main-scroll {
   flex: 1;
   overflow-y: auto;
+  overflow-x: auto;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   padding: 2rem;
 }
 
 .container {
-  max-width: 1200px;
+  min-width: max-content;
   width: 100%;
 }
 
@@ -137,6 +272,8 @@ h1 {
   border-radius: 8px;
   padding: 1.25rem;
   margin-bottom: 1rem;
+  flex: 0 0 370px;
+  width: 370px;
 }
 
 .step h2 {
@@ -266,22 +403,24 @@ h1 {
   transform: translateX(16px);
 }
 
-/* ── GitHub layout (3-column) ────────────────────────────────────────────── */
+/* ── GitHub layout (multi-column, scrolls horizontally) ─────────────────── */
 .github-layout {
   display: flex;
   gap: 1rem;
   align-items: flex-start;
   margin-bottom: 1rem;
+  width: max-content;
 }
 
 #github-step {
-  flex: 0 0 440px;
+  flex: 0 0 370px;
+  width: 370px;
   margin-bottom: 0;
 }
 
 .org-panel {
-  flex: 1;
-  min-width: 0;
+  flex: 0 0 420px;
+  width: 420px;
   background: #16213e;
   border: 1px solid #0f3460;
   border-radius: 8px;
@@ -303,8 +442,8 @@ h1 {
 
 /* ── Repo panel ──────────────────────────────────────────────────────────── */
 .repo-panel {
-  flex: 1;
-  min-width: 0;
+  flex: 0 0 400px;
+  width: 400px;
   background: #16213e;
   border: 1px solid #0f3460;
   border-radius: 8px;
@@ -316,7 +455,7 @@ h1 {
 .repo-panel-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 0.4rem;
   margin-bottom: 0.75rem;
 }
 
@@ -556,7 +695,7 @@ h1 {
 }
 
 .ollama-step-wrapper {
-  flex: 0 0 280px;
+  flex: 0 0 370px;
 }
 
 .ollama-step-wrapper .step {

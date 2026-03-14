@@ -1,6 +1,6 @@
 import { ipcMain, shell, Notification, BrowserWindow } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
-import { loadConfig } from '../agent/config';
+import { loadConfig, saveConfig } from '../agent/config';
 import { getOnboardingStatus, completeOnboardingStep } from '../agent/onboarding';
 import { saveDatabase, getConfigValue, setConfigValue } from '../storage/database';
 import {
@@ -26,6 +26,17 @@ import {
   type DiscoveryProgress,
 } from '../services/github-discovery';
 import { checkOllama, streamChat, chatWithTools, ToolsNotSupportedError, type ChatMessage, type OllamaTool, type OllamaToolCall } from '../services/ollama';
+import {
+  fetchNotifications,
+  fetchNotificationsForRepo,
+  storeNotifications,
+  storeNotificationsForOwner,
+  storeNotificationsForRepo,
+  getNotificationCounts,
+  listNotificationsForRepo,
+  listNotificationsForOwner,
+  listNotificationsForStarred,
+} from '../services/github-notifications';
 
 const activeChatAborts = new Map<number, AbortController>();
 
@@ -528,6 +539,52 @@ export function registerIpcHandlers(
     }
   });
 
+  ipcMain.handle('github:get-run-url-for-check-suite', async (_event, checkSuiteApiUrl: string) => {
+    if (typeof checkSuiteApiUrl !== 'string') return null;
+    const match = checkSuiteApiUrl.match(
+      /^https:\/\/api\.github\.com\/repos\/([^/]+)\/([^/]+)\/check-suites\/(\d+)$/,
+    );
+    if (!match) return null;
+    const [, owner, repo, checkSuiteId] = match;
+    const auth = loadGitHubAuth(db);
+    if (!auth) return null;
+    const headers = {
+      Authorization: `Bearer ${auth.accessToken}`,
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+    };
+    try {
+      // Primary: look up workflow runs associated with this check suite
+      const runsRes = await fetch(
+        `https://api.github.com/repos/${owner}/${repo}/actions/runs?check_suite_id=${checkSuiteId}&per_page=10`,
+        { headers },
+      );
+      if (runsRes.ok) {
+        const data = (await runsRes.json()) as {
+          workflow_runs: Array<{ html_url: string; conclusion: string | null }>;
+        };
+        // Prefer a run that actually failed, otherwise take the first one
+        const failed = data.workflow_runs.find(
+          (r) => r.conclusion === 'failure' || r.conclusion === 'timed_out' || r.conclusion === 'cancelled',
+        );
+        const run = failed ?? data.workflow_runs[0];
+        if (run) return run.html_url;
+      }
+      // Secondary: fetch the check suite itself to get the head branch and build
+      // a filtered actions URL (e.g. ?query=branch:main)
+      const suiteRes = await fetch(checkSuiteApiUrl, { headers });
+      if (suiteRes.ok) {
+        const suite = (await suiteRes.json()) as { head_branch: string | null };
+        if (suite.head_branch) {
+          return `https://github.com/${owner}/${repo}/actions?query=branch%3A${encodeURIComponent(suite.head_branch)}`;
+        }
+      }
+    } catch {
+      // fall through to null
+    }
+    return null;
+  });
+
   ipcMain.handle('github:search-repos', (_event, query: string) => {
     if (!query || query.trim().length < 2) return [];
 
@@ -604,6 +661,77 @@ export function registerIpcHandlers(
     while (stmt.step()) rows.push(stmt.getAsObject());
     stmt.free();
     return rows;
+  });
+
+  ipcMain.handle('app:get-preferences', () => {
+    return loadConfig().preferences;
+  });
+
+  ipcMain.handle('app:set-preferences', (_event, prefs: Partial<{ sortByNotifications: boolean }>) => {
+    const config = loadConfig();
+    config.preferences = { ...config.preferences, ...prefs };
+    saveConfig(config);
+    return { ok: true };
+  });
+
+  ipcMain.handle('github:fetch-notifications', async () => {
+    const auth = loadGitHubAuth(db);
+    if (!auth) return { error: 'Not authenticated' };
+    try {
+      const notifications = await fetchNotifications(auth.accessToken);
+      storeNotifications(db, notifications);
+      saveDatabase();
+      return getNotificationCounts(db);
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('github:notification-counts', () => {
+    return getNotificationCounts(db);
+  });
+
+  ipcMain.handle('github:fetch-notifications-for-owner', async (_event, owner: string) => {
+    if (typeof owner !== 'string' || owner.length === 0) return { error: 'Invalid owner' };
+    const auth = loadGitHubAuth(db);
+    if (!auth) return { error: 'Not authenticated' };
+    try {
+      // Fetch all notifications from GitHub then update only this owner's rows
+      const notifications = await fetchNotifications(auth.accessToken);
+      storeNotificationsForOwner(db, owner, notifications);
+      saveDatabase();
+      return getNotificationCounts(db);
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('github:fetch-notifications-for-repo', async (_event, repoFullName: string) => {
+    if (typeof repoFullName !== 'string' || !repoFullName.includes('/')) return { error: 'Invalid repo' };
+    const auth = loadGitHubAuth(db);
+    if (!auth) return { error: 'Not authenticated' };
+    try {
+      const notifications = await fetchNotificationsForRepo(auth.accessToken, repoFullName);
+      storeNotificationsForRepo(db, repoFullName, notifications);
+      saveDatabase();
+      return getNotificationCounts(db);
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('github:list-notifications-for-repo', (_event, repoFullName: string) => {
+    if (typeof repoFullName !== 'string' || repoFullName.length === 0) return [];
+    return listNotificationsForRepo(db, repoFullName);
+  });
+
+  ipcMain.handle('github:list-notifications-for-owner', (_event, owner: string) => {
+    if (typeof owner !== 'string' || owner.length === 0) return [];
+    return listNotificationsForOwner(db, owner);
+  });
+
+  ipcMain.handle('github:list-notifications-for-starred', () => {
+    return listNotificationsForStarred(db);
   });
 
   ipcMain.handle('github:start-oauth', async () => {

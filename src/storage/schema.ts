@@ -90,5 +90,21 @@ export function getSchema(): string {
         status      TEXT DEFAULT 'pending',
         result      TEXT
     );
+
+    -- GitHub notifications cache
+    CREATE TABLE IF NOT EXISTS github_notifications (
+        id             TEXT PRIMARY KEY,
+        repo_full_name TEXT NOT NULL,
+        repo_owner     TEXT NOT NULL,
+        subject_type   TEXT,
+        subject_title  TEXT,
+        subject_url    TEXT,
+        reason         TEXT,
+        unread         INTEGER DEFAULT 1,
+        updated_at     TEXT,
+        fetched_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_notif_repo ON github_notifications(repo_full_name);
+    CREATE INDEX IF NOT EXISTS idx_notif_owner ON github_notifications(repo_owner);
   `;
 }

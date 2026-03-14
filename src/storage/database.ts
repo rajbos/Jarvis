@@ -51,7 +51,7 @@ function initializeSchema(database: SqlJsDatabase): void {
 
   if (userVersion === 0) {
     database.run(getSchema());
-    database.run('PRAGMA user_version = 5');
+    database.run('PRAGMA user_version = 6');
   }
 
   if (userVersion === 1) {
@@ -76,6 +76,27 @@ function initializeSchema(database: SqlJsDatabase): void {
     // Migration v4 → v5: add starred flag to github_repos
     database.run('ALTER TABLE github_repos ADD COLUMN starred INTEGER DEFAULT 0');
     database.run('PRAGMA user_version = 5');
+  }
+
+  if (userVersion === 5) {
+    // Migration v5 → v6: add github_notifications cache table
+    database.run(`
+      CREATE TABLE IF NOT EXISTS github_notifications (
+        id             TEXT PRIMARY KEY,
+        repo_full_name TEXT NOT NULL,
+        repo_owner     TEXT NOT NULL,
+        subject_type   TEXT,
+        subject_title  TEXT,
+        subject_url    TEXT,
+        reason         TEXT,
+        unread         INTEGER DEFAULT 1,
+        updated_at     TEXT,
+        fetched_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    database.run('CREATE INDEX IF NOT EXISTS idx_notif_repo ON github_notifications(repo_full_name)');
+    database.run('CREATE INDEX IF NOT EXISTS idx_notif_owner ON github_notifications(repo_owner)');
+    database.run('PRAGMA user_version = 6');
   }
 }
 
