@@ -15,5 +15,5 @@
     "sourceMap": true
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "tests", "src/renderer/**/*.tsx"]
+  "exclude": ["node_modules", "dist", "tests", "src/renderer/**/*.tsx", "src/plugins/**/*.tsx"]
 }

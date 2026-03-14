@@ -80,4 +80,6 @@ Scripts for development:
 - **First run**: Use onboarding flow to configure Ollama and GitHub
 - **Extending**: Add new MCP integrations in `src/services/` or as new modules
 - **Testing**: All new code should include unit tests in `tests/unit/`
+- **Run tests after changes**: After making any changes to TypeScript or JavaScript files, always run `npm test` and fix any failing tests before finishing
+- **IPC catalogue**: When adding a new `ipcMain.handle` channel, also add its name to the `EXPECTED_CHANNELS` array in `tests/unit/ipc-registration.test.ts`
 - **Automation**: CI/CD is not configured by default; contributors should run tests locally before PRs

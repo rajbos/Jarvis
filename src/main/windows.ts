@@ -57,6 +57,7 @@ export function createOnboardingWindow(db: SqlJsDatabase): BrowserWindow {
     ...(useSaved ? { x: saved.x, y: saved.y } : {}),
     title: 'Jarvis — Setup',
     resizable: true,
+    show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

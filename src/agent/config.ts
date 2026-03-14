@@ -13,6 +13,9 @@ export interface JarvisConfig {
     startMinimized: boolean;
     openAtLogin: boolean;
   };
+  preferences: {
+    sortByNotifications: boolean;
+  };
 }
 
 const DEFAULT_CONFIG: JarvisConfig = {
@@ -30,6 +33,9 @@ const DEFAULT_CONFIG: JarvisConfig = {
   electron: {
     startMinimized: true,
     openAtLogin: true,
+  },
+  preferences: {
+    sortByNotifications: false,
   },
 };
 
@@ -56,6 +62,7 @@ export function loadConfig(): JarvisConfig {
     github: { ...DEFAULT_CONFIG.github, ...userConfig.github },
     storage: { ...DEFAULT_CONFIG.storage, ...userConfig.storage },
     electron: { ...DEFAULT_CONFIG.electron, ...userConfig.electron },
+    preferences: { ...DEFAULT_CONFIG.preferences, ...userConfig.preferences },
   };
 }
 
