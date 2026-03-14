@@ -318,6 +318,7 @@ function App() {
     const key = orgLogin ?? '__direct__';
     setActiveOrg(key);
     setNotifDive(null);
+    setNotifRepoPanel(null);
     setSortByNotifsRepo(false);
     // Show panel immediately with spinner if the org is expected to have many repos
     const orgRepoCount = orgLogin === '__starred__'
