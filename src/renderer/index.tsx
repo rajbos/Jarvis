@@ -421,6 +421,10 @@ function App() {
             onClose={() => setNotifRepoPanel(null)}
             onRefresh={() => void handleRefreshRepo(notifRepoPanel.repoFullName)}
             refreshing={refreshingRepos.has(notifRepoPanel.repoFullName)}
+            onDismiss={(id) => {
+              setNotifRepoPanel((prev) => prev ? { ...prev, notifications: prev.notifications.filter((n) => n.id !== id) } : null);
+              setNotifCounts((prev) => prev ? { ...prev, total: Math.max(0, prev.total - 1), perRepo: { ...prev.perRepo, [notifRepoPanel.repoFullName]: Math.max(0, (prev.perRepo[notifRepoPanel.repoFullName] ?? 1) - 1) } } : prev);
+            }}
           />
         )}
 
@@ -432,6 +436,10 @@ function App() {
             onClose={() => setNotifDive(null)}
             onRefresh={() => void handleNotifDive(notifDive.owner, notifDive.title, notifDive.kind)}
             refreshing={notifDive.loading}
+            onDismiss={(id) => {
+              setNotifDive((prev) => prev ? { ...prev, notifications: prev.notifications.filter((n) => n.id !== id) } : null);
+              setNotifCounts((prev) => prev ? { ...prev, total: Math.max(0, prev.total - 1) } : prev);
+            }}
           />
         )}
       </div>

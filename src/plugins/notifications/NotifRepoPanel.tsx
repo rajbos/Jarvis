@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'preact/hooks';
 import { relativeAge, notifDescription, isDirect } from '../shared/utils';
 import type { StoredNotification } from '../types';
 
@@ -44,9 +45,25 @@ interface NotifRepoPanelProps {
   onClose: () => void;
   onRefresh?: () => void;
   refreshing?: boolean;
+  onDismiss?: (id: string) => void;
 }
 
-export function NotifRepoPanel({ repoFullName, notifications, onClose, onRefresh, refreshing }: NotifRepoPanelProps) {
+export function NotifRepoPanel({ repoFullName, notifications, onClose, onRefresh, refreshing, onDismiss }: NotifRepoPanelProps) {
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; notifId: string } | null>(null);
+
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const close = () => setCtxMenu(null);
+    window.addEventListener('mousedown', close);
+    return () => window.removeEventListener('mousedown', close);
+  }, [ctxMenu]);
+
+  const handleDismiss = async (id: string) => {
+    setCtxMenu(null);
+    await window.jarvis.dismissNotification(id);
+    onDismiss?.(id);
+  };
+
   return (
     <div class="repo-panel">
       <div class="repo-panel-header">
@@ -68,6 +85,7 @@ export function NotifRepoPanel({ repoFullName, notifications, onClose, onRefresh
           class="org-item"
           style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '0.25rem', cursor: 'pointer' }}
           onClick={() => openNotifUrl(n)}
+          onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY, notifId: n.id }); }}
         >
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', width: '100%' }}>
             <span style={{ flexShrink: 0 }}>{TYPE_ICON[n.subject_type] ?? '\u2022'}</span>
@@ -82,6 +100,18 @@ export function NotifRepoPanel({ repoFullName, notifications, onClose, onRefresh
           </div>
         </div>
       ))}
+
+      {ctxMenu && (
+        <div
+          class="notif-ctx-menu"
+          style={{ top: ctxMenu.y, left: ctxMenu.x }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <button class="notif-ctx-menu-item" onClick={() => handleDismiss(ctxMenu.notifId)}>
+            Dismiss
+          </button>
+        </div>
+      )}
     </div>
   );
 }

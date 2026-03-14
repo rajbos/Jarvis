@@ -320,3 +320,36 @@ export function listNotificationsForStarred(
   stmt.free();
   return rows;
 }
+
+/**
+ * Deletes a single notification from the local database by its ID.
+ */
+export function deleteNotification(db: SqlJsDatabase, id: string): void {
+  db.run('DELETE FROM github_notifications WHERE id = ?', [id]);
+}
+
+/**
+ * Calls the GitHub API to mark a notification thread as done (removes it from GitHub inbox).
+ * DELETE /notifications/threads/{thread_id} — returns 204 No Content.
+ */
+export async function markNotificationRead(
+  accessToken: string,
+  threadId: string,
+): Promise<void> {
+  const response = await fetch(
+    `${GITHUB_API_BASE}/notifications/threads/${encodeURIComponent(threadId)}`,
+    {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    },
+  );
+  if (!response.ok && response.status !== 204) {
+    throw new Error(
+      `GitHub mark-done API error: ${response.status} ${response.statusText}`,
+    );
+  }
+}

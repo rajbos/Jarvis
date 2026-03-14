@@ -119,6 +119,7 @@ export interface JarvisApi {
   listNotificationsForRepo(repoFullName: string): Promise<StoredNotification[]>;
   listNotificationsForOwner(owner: string): Promise<StoredNotification[]>;
   listNotificationsForStarred(): Promise<StoredNotification[]>;
+  dismissNotification(id: string): Promise<void>;
   getRunUrlForCheckSuite(checkSuiteApiUrl: string): Promise<string | null>;
   getPreferences(): Promise<{ sortByNotifications: boolean }>;
   setPreferences(prefs: { sortByNotifications?: boolean }): Promise<{ ok: boolean }>;

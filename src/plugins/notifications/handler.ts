@@ -12,6 +12,8 @@ import {
   listNotificationsForRepo,
   listNotificationsForOwner,
   listNotificationsForStarred,
+  deleteNotification,
+  markNotificationRead,
 } from '../../services/github-notifications';
 import { loadGitHubAuth } from '../../services/github-oauth';
 import { saveDatabase } from '../../storage/database';
@@ -74,5 +76,19 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
 
   ipcMain.handle('github:list-notifications-for-starred', () => {
     return listNotificationsForStarred(db);
+  });
+
+  ipcMain.handle('github:dismiss-notification', async (_event, id: string) => {
+    if (typeof id !== 'string' || id.length === 0) return;
+    const auth = loadGitHubAuth(db);
+    if (auth) {
+      try {
+        await markNotificationRead(auth.accessToken, id);
+      } catch (err) {
+        console.warn('[Jarvis] Could not mark notification as read on GitHub:', err);
+      }
+    }
+    deleteNotification(db, id);
+    saveDatabase();
   });
 }

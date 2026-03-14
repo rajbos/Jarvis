@@ -161,6 +161,35 @@ button:disabled {
   white-space: nowrap;
 }
 
+/* ── Notification right-click context menu ───────────────────────────────── */
+.notif-ctx-menu {
+  position: fixed;
+  z-index: 9999;
+  background: #1a2744;
+  border: 1px solid #0f3460;
+  border-radius: 6px;
+  padding: 0.2rem 0;
+  min-width: 120px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.45);
+}
+
+.notif-ctx-menu-item {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  color: #e0e0e0;
+  font-size: 0.85rem;
+  text-align: left;
+  padding: 0.4rem 0.75rem;
+  cursor: pointer;
+}
+
+.notif-ctx-menu-item:hover {
+  background: #0f3460;
+  color: #fff;
+}
+
 .org-meta-combined {
   display: flex;
   align-items: center;
