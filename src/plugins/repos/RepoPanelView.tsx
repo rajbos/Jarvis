@@ -90,7 +90,7 @@ export function RepoPanelView({
       )}
       {loading && (
         <div class="repo-panel-loading">
-          <span class="repo-panel-spinner" />{' '}Loading repositories\u2026
+          <span class="repo-panel-spinner" />{' '}Loading repositories...
         </div>
       )}
       {!loading && (
