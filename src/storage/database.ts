@@ -51,7 +51,7 @@ function initializeSchema(database: SqlJsDatabase): void {
 
   if (userVersion === 0) {
     database.run(getSchema());
-    database.run('PRAGMA user_version = 7');
+    database.run('PRAGMA user_version = 8');
   }
 
   if (userVersion === 1) {
@@ -121,6 +121,12 @@ function initializeSchema(database: SqlJsDatabase): void {
     `);
     database.run('CREATE INDEX IF NOT EXISTS idx_local_repo_remotes_local_repo_id ON local_repo_remotes(local_repo_id)');
     database.run('PRAGMA user_version = 7');
+  }
+
+  if (userVersion === 7) {
+    // Migration v7 → v8: add collaboration_reason to github_repos
+    database.run('ALTER TABLE github_repos ADD COLUMN collaboration_reason TEXT');
+    database.run('PRAGMA user_version = 8');
   }
 }
 

@@ -5,7 +5,7 @@ const GITHUB_API_BASE = 'https://api.github.com';
 const PER_PAGE = 100;
 const CALLS_PER_BATCH = 500;
 const BATCH_PAUSE_MS = 10_000; // 10 seconds between batches
-const LOW_RATE_LIMIT_THRESHOLD = 50;
+const LOW_RATE_LIMIT_THRESHOLD = 5;
 
 export interface RateLimitInfo {
   remaining: number;
@@ -243,13 +243,14 @@ export function upsertRepo(
     parent?: { full_name: string } | null;
   },
   orgId: number | null,
+  collaborationReason?: string | null,
 ): void {
   db.run(
     `INSERT INTO github_repos
        (org_id, full_name, name, description, default_branch, language,
         archived, fork, parent_full_name, private,
-        last_pushed_at, last_updated_at, indexed_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        last_pushed_at, last_updated_at, indexed_at, collaboration_reason)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)
      ON CONFLICT(full_name) DO UPDATE SET
        org_id          = excluded.org_id,
        name            = excluded.name,
@@ -262,7 +263,8 @@ export function upsertRepo(
        private         = excluded.private,
        last_pushed_at  = excluded.last_pushed_at,
        last_updated_at = excluded.last_updated_at,
-       indexed_at      = excluded.indexed_at`,
+       indexed_at      = excluded.indexed_at,
+       collaboration_reason = COALESCE(excluded.collaboration_reason, github_repos.collaboration_reason)`,
     [
       orgId,
       repo.full_name,
@@ -276,6 +278,7 @@ export function upsertRepo(
       repo.private ? 1 : 0,
       repo.pushed_at || null,
       repo.updated_at || null,
+      collaborationReason || null,
     ],
   );
 }
@@ -316,6 +319,7 @@ export async function runDiscovery(
   accessToken: string,
   onProgress?: (progress: DiscoveryProgress) => void,
   pat?: string | null,
+  userLogin?: string | null,
 ): Promise<DiscoveryState> {
   const state: DiscoveryState = {
     callsSinceLastPause: 0,
@@ -401,6 +405,24 @@ export async function runDiscovery(
         state,
       );
 
+      // Resolve collaboration reasons for repos where the user is not the owner
+      let collabReasons: Map<string, string> | null = null;
+      if (userLogin && !state.aborted) {
+        const externalRepos = directRepos.filter((r) => {
+          const ownerLogin = r.owner?.login;
+          if (!ownerLogin) return false;
+          if (disabledOrgs.has(ownerLogin)) return false;
+          if (ownerLogin.toLowerCase() === userLogin.toLowerCase()) return false;
+          if (r.owner?.type === 'Organization') return false;
+          return true;
+        });
+
+        if (externalRepos.length > 0) {
+          console.log(`[Discovery] Resolving collaboration reasons for ${externalRepos.length} external repos…`);
+          collabReasons = await resolveCollaborationReasons(db, accessToken, userLogin, externalRepos, state);
+        }
+      }
+
       let skippedDisabledOrg = 0;
       for (const repo of directRepos) {
         const ownerLogin = repo.owner?.login;
@@ -409,7 +431,18 @@ export async function runDiscovery(
           continue;
         }
         const orgId = resolveOrgId(db, repo);
-        upsertRepo(db, repo, orgId);
+        let reason: string | null = null;
+        if (userLogin) {
+          reason = collabReasons?.get(repo.full_name) ?? null;
+          if (!reason) {
+            if (ownerLogin && ownerLogin.toLowerCase() === userLogin.toLowerCase()) {
+              reason = 'owner';
+            } else if (orgId !== null) {
+              reason = 'org_member';
+            }
+          }
+        }
+        upsertRepo(db, repo, orgId, reason);
       }
 
       if (skippedDisabledOrg > 0) {
@@ -456,6 +489,7 @@ export async function runLightweightRefresh(
   accessToken: string,
   onProgress?: (progress: DiscoveryProgress) => void,
   pat?: string | null,
+  userLogin?: string | null,
 ): Promise<void> {
   const state: DiscoveryState = {
     callsSinceLastPause: 0,
@@ -503,6 +537,24 @@ export async function runLightweightRefresh(
       state,
     );
 
+    // Resolve collaboration reasons for external repos
+    let collabReasons: Map<string, string> | null = null;
+    if (userLogin && !state.aborted) {
+      const externalRepos = directRepos.filter((r) => {
+        const ownerLogin = r.owner?.login;
+        if (!ownerLogin) return false;
+        if (disabledOrgs.has(ownerLogin)) return false;
+        if (ownerLogin.toLowerCase() === userLogin.toLowerCase()) return false;
+        if (r.owner?.type === 'Organization') return false;
+        return true;
+      });
+
+      if (externalRepos.length > 0) {
+        console.log(`[LightRefresh] Resolving collaboration reasons for ${externalRepos.length} external repos…`);
+        collabReasons = await resolveCollaborationReasons(db, accessToken, userLogin, externalRepos, state);
+      }
+    }
+
     let skippedDisabledOrg = 0;
     for (const repo of directRepos) {
       const ownerLogin = repo.owner?.login;
@@ -511,7 +563,18 @@ export async function runLightweightRefresh(
         continue;
       }
       const orgId = resolveOrgId(db, repo);
-      upsertRepo(db, repo, orgId);
+      let reason: string | null = null;
+      if (userLogin) {
+        reason = collabReasons?.get(repo.full_name) ?? null;
+        if (!reason) {
+          if (ownerLogin && ownerLogin.toLowerCase() === userLogin.toLowerCase()) {
+            reason = 'owner';
+          } else if (orgId !== null) {
+            reason = 'org_member';
+          }
+        }
+      }
+      upsertRepo(db, repo, orgId, reason);
     }
 
     if (skippedDisabledOrg > 0) {
@@ -600,6 +663,114 @@ function lookupExistingOrgId(
   return row?.id ?? null;
 }
 
+// ─── Collaboration reason detection ────────────────────────────────
+
+interface GitHubSearchResult {
+  total_count: number;
+  items: Array<{ pull_request?: unknown }>;
+}
+
+/**
+ * Determines how the authenticated user collaborates with a repo.
+ * Returns a comma-separated string of reasons, e.g. "issue", "pr", "issue,pr",
+ * or "collaborator" as fallback when no issues/PRs are found.
+ *
+ * Uses the GitHub Search API: GET /search/issues?q=author:{user}+repo:{full_name}
+ */
+export async function resolveCollaborationReason(
+  accessToken: string,
+  userLogin: string,
+  repoFullName: string,
+  state: DiscoveryState,
+): Promise<string> {
+  try {
+    const q = encodeURIComponent(`author:${userLogin} repo:${repoFullName}`);
+    const { data } = await githubGet<GitHubSearchResult>(
+      accessToken,
+      `${GITHUB_API_BASE}/search/issues?q=${q}&per_page=30`,
+      state,
+    );
+
+    if (data.total_count === 0) {
+      return 'collaborator';
+    }
+
+    const hasIssue = data.items.some((item) => !item.pull_request);
+    const hasPR = data.items.some((item) => !!item.pull_request);
+
+    const reasons: string[] = [];
+    if (hasPR) reasons.push('pr');
+    if (hasIssue) reasons.push('issue');
+
+    return reasons.length > 0 ? reasons.join(',') : 'collaborator';
+  } catch {
+    // Search API failure is non-fatal — fall back to generic reason
+    return 'collaborator';
+  }
+}
+
+/**
+ * For a list of repos, determine collaboration reasons for repos where the
+ * user is not the owner and the repo is not part of one of their orgs.
+ *
+ * Repos owned by the user get "owner", org-member repos get "org_member",
+ * and external repos get checked via the Search API.
+ */
+export async function resolveCollaborationReasons(
+  db: SqlJsDatabase,
+  accessToken: string,
+  userLogin: string,
+  repos: GitHubRepo[],
+  state: DiscoveryState,
+): Promise<Map<string, string>> {
+  const reasons = new Map<string, string>();
+  const memberOrgLogins = new Set(
+    listOrgs(db).orgs.map((o) => o.login.toLowerCase()),
+  );
+
+  // Load already-known collaboration reasons from the DB to avoid redundant Search API calls
+  const knownReasons = new Map<string, string>();
+  try {
+    const stmt = db.prepare('SELECT full_name, collaboration_reason FROM github_repos WHERE collaboration_reason IS NOT NULL');
+    while (stmt.step()) {
+      const row = stmt.getAsObject() as { full_name: string; collaboration_reason: string };
+      knownReasons.set(row.full_name, row.collaboration_reason);
+    }
+    stmt.free();
+  } catch {
+    // Non-fatal: if the query fails we just skip the optimization
+  }
+
+  for (const repo of repos) {
+    if (state.aborted) break;
+
+    const ownerLogin = repo.owner?.login;
+
+    if (ownerLogin && ownerLogin.toLowerCase() === userLogin.toLowerCase()) {
+      reasons.set(repo.full_name, 'owner');
+    } else if (
+      ownerLogin &&
+      repo.owner?.type === 'Organization' &&
+      memberOrgLogins.has(ownerLogin.toLowerCase())
+    ) {
+      reasons.set(repo.full_name, 'org_member');
+    } else if (knownReasons.has(repo.full_name)) {
+      // Already resolved in a previous run — reuse the stored value
+      reasons.set(repo.full_name, knownReasons.get(repo.full_name)!);
+    } else {
+      const reason = await resolveCollaborationReason(
+        accessToken,
+        userLogin,
+        repo.full_name,
+        state,
+      );
+      reasons.set(repo.full_name, reason);
+    }
+  }
+
+  return reasons;
+}
+
 export function getLastOrgIndexedAt(db: SqlJsDatabase): string | null {
   const stmt = db.prepare("SELECT MAX(indexed_at) AS last_indexed FROM github_orgs");
   stmt.step();
@@ -629,6 +800,7 @@ export async function runPatDiscovery(
   state?: DiscoveryState,
   progress?: DiscoveryProgress,
   onProgress?: (progress: DiscoveryProgress) => void,
+  userLogin?: string | null,
 ): Promise<void> {
   const st: DiscoveryState = state ?? {
     callsSinceLastPause: 0,
@@ -714,9 +886,17 @@ export async function runPatDiscovery(
       st,
     );
 
+    // Resolve collaboration reasons for PAT collaborator repos
+    let collabReasons: Map<string, string> | null = null;
+    if (userLogin && !st.aborted && collabRepos.length > 0) {
+      console.log(`[PAT Discovery] Resolving collaboration reasons for ${collabRepos.length} collaborator repos…`);
+      collabReasons = await resolveCollaborationReasons(db, pat, userLogin, collabRepos, st);
+    }
+
     for (const repo of collabRepos) {
       const orgId = resolveOrgId(db, repo);
-      upsertRepo(db, repo, orgId);
+      const reason = collabReasons?.get(repo.full_name) ?? 'collaborator';
+      upsertRepo(db, repo, orgId, reason);
     }
 
     prog.reposFound += collabRepos.length;
