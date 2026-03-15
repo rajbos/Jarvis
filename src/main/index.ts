@@ -88,10 +88,12 @@ async function initialize(): Promise<void> {
   // Schedule periodic local-repo scanning
   scheduleLocalDiscovery(db, () => mainWindow);
 
-  // Register for startup on login
-  if (config.electron.openAtLogin) {
+  // Register for startup on login (only when packaged — in dev mode the bare
+  // electron.exe would be registered without the app path, causing the default
+  // Electron splash screen to appear on every Windows boot)
+  if (app.isPackaged) {
     app.setLoginItemSettings({
-      openAtLogin: true,
+      openAtLogin: config.electron.openAtLogin,
       openAsHidden: true,
     });
   }
