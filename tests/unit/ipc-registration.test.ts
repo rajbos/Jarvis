@@ -19,7 +19,8 @@ vi.mock('electron', () => ({
     on: vi.fn(),
     removeHandler: vi.fn(),
   },
-  shell: { openExternal: vi.fn() },
+  shell: { openExternal: vi.fn(), openPath: vi.fn() },
+  dialog: { showOpenDialog: vi.fn() },
   Notification: vi.fn().mockImplementation(() => ({ show: vi.fn() })),
   BrowserWindow: {
     fromWebContents: vi.fn(),
@@ -82,6 +83,16 @@ const EXPECTED_CHANNELS = [
   'github:list-notifications-for-owner',
   'github:list-notifications-for-starred',
   'github:dismiss-notification',
+  // local-repos plugin
+  'local:get-folders',
+  'local:add-folder',
+  'local:remove-folder',
+  'local:get-scan-status',
+  'local:start-scan',
+  'local:list-repos',
+  'local:list-repos-for-folder',
+  'local:link-repo',
+  'local:open-folder',
 ] as const;
 
 describe('IPC handler registration', () => {

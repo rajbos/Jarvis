@@ -715,6 +715,133 @@ h1 {
   text-align: center;
 }
 
+/* ── Local repos layout ──────────────────────────────────────────────────── */
+.local-layout {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+  width: max-content;
+}
+
+.local-step-wrapper {
+  flex: 0 0 370px;
+  width: 370px;
+}
+
+.local-step-wrapper .step {
+  margin-bottom: 0;
+}
+
+.local-repos-step-clickable {
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.local-repos-step-clickable:hover {
+  border-color: #339af0;
+}
+
+/* ── Local folder config panel ───────────────────────────────────────────── */
+.local-config-panel {
+  flex: 0 0 420px;
+  width: 420px;
+}
+
+.local-add-folder-btn {
+  background: #0a2d4d;
+  border: 1px dashed #339af0;
+  color: #339af0;
+}
+
+.local-add-folder-btn:hover {
+  background: #0f3460;
+}
+
+.local-folder-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.local-folder-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.65rem;
+  background: #0f3460;
+  border-radius: 6px;
+  font-size: 0.82rem;
+}
+
+.local-folder-path {
+  flex: 1;
+  color: #e0e0e0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 0.78rem;
+}
+
+.local-folder-count {
+  font-size: 0.75rem;
+  color: #c8c8c8;
+  flex-shrink: 0;
+}
+
+.local-folder-remove {
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 0 0.2rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.local-folder-remove:hover {
+  color: #e94560;
+  background: none;
+}
+
+/* ── Local repo card extras ───────────────────────────────────────────────── */
+.local-linked-badge {
+  font-size: 0.68rem;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #0a3d1f;
+  color: #51cf66;
+}
+
+/* ── Local sort select ───────────────────────────────────────────────────── */
+.local-panel-count {
+  font-size: 0.75rem;
+  color: #8892b0;
+  margin-left: 0.4rem;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.local-sort-select {
+  background: #0f3460;
+  color: #e0e0e0;
+  border: 1px solid #1a4a8a;
+  border-radius: 4px;
+  padding: 0.15rem 0.4rem;
+  font-size: 0.78rem;
+  outline: none;
+  cursor: pointer;
+}
+
+.local-sort-select:focus {
+  border-color: #339af0;
+}
+
 /* ── Ollama layout ───────────────────────────────────────────────────────── */
 .ollama-layout {
   display: flex;

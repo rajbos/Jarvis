@@ -15,6 +15,8 @@ export interface JarvisConfig {
   };
   preferences: {
     sortByNotifications: boolean;
+    localSortByNotifs: boolean;
+    localRepoSortKey: 'name' | 'scanned' | 'notifs';
   };
 }
 
@@ -31,11 +33,13 @@ const DEFAULT_CONFIG: JarvisConfig = {
     ),
   },
   electron: {
-    startMinimized: true,
+    startMinimized: false,
     openAtLogin: true,
   },
   preferences: {
     sortByNotifications: false,
+    localSortByNotifs: false,
+    localRepoSortKey: 'name' as const,
   },
 };
 

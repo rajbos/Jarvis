@@ -88,6 +88,36 @@ export interface Repo {
   parent_full_name?: string;
 }
 
+export interface LocalRemote {
+  name: string;
+  url: string;
+  githubRepoId?: number | null;
+}
+
+export interface LocalRepo {
+  id: number;
+  localPath: string;
+  name: string;
+  remotes: LocalRemote[];
+  discoveredAt: string;
+  lastScanned: string | null;
+  linkedGithubRepoId: number | null;
+}
+
+export interface ScanFolder {
+  id: number;
+  path: string;
+  addedAt: string;
+  repoCount?: number;
+}
+
+export interface LocalScanProgress {
+  phase: 'scanning' | 'done';
+  foldersScanned: number;
+  reposFound: number;
+  currentFolder?: string;
+}
+
 // ── Jarvis preload API contract ───────────────────────────────────────────────
 // This augments the global Window type so all plugin components get full
 // type-checking on window.jarvis calls without re-declaring it everywhere.
@@ -121,12 +151,24 @@ export interface JarvisApi {
   listNotificationsForStarred(): Promise<StoredNotification[]>;
   dismissNotification(id: string): Promise<void>;
   getRunUrlForCheckSuite(checkSuiteApiUrl: string): Promise<string | null>;
-  getPreferences(): Promise<{ sortByNotifications: boolean }>;
-  setPreferences(prefs: { sortByNotifications?: boolean }): Promise<{ ok: boolean }>;
+  getPreferences(): Promise<{ sortByNotifications: boolean; localSortByNotifs: boolean; localRepoSortKey: 'name' | 'scanned' | 'notifs' }>;
+  setPreferences(prefs: { sortByNotifications?: boolean; localSortByNotifs?: boolean; localRepoSortKey?: 'name' | 'scanned' | 'notifs' }): Promise<{ ok: boolean }>;
   onOpenChat(cb: () => void): void;
   onOAuthComplete(cb: (result: OAuthResult) => void): void;
   onDiscoveryProgress(cb: (progress: DiscoveryProgress) => void): void;
   onDiscoveryComplete(cb: (progress: DiscoveryProgress) => void): void;
+  // Local repos
+  localGetFolders(): Promise<ScanFolder[]>;
+  localAddFolder(folderPath?: string): Promise<{ ok?: boolean; path?: string; canceled?: boolean; error?: string }>;
+  localRemoveFolder(folderPath: string): Promise<{ ok: boolean }>;
+  localGetScanStatus(): Promise<{ running: boolean; progress: LocalScanProgress | null }>;
+  localStartScan(): Promise<{ started: boolean }>;
+  localListRepos(): Promise<LocalRepo[]>;
+  localListReposForFolder(folderPath: string): Promise<LocalRepo[]>;
+  localLinkRepo(localRepoId: number, githubRepoId: number | null): Promise<{ ok: boolean }>;
+  localOpenFolder(folderPath: string): Promise<void>;
+  onLocalScanProgress(cb: (progress: LocalScanProgress) => void): void;
+  onLocalScanComplete(cb: (progress: LocalScanProgress) => void): void;
 }
 
 declare global {

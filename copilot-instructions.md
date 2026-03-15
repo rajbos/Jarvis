@@ -58,6 +58,7 @@ Scripts for development:
 ## Conventions
 
 - **Strict TypeScript**: All code is type-checked with strict settings
+- **Panel layout — always append, never replace**: The UI is a horizontally-scrolling layout (`width: max-content`). When a user action opens a new sub-panel (e.g. drilling into a folder, opening notifications), render it **to the right** of the current panel — never hide or replace the panel that triggered it. If horizontal space runs out the container scrolls. The only exception is a deliberate "back" navigation where the child panel closes and the parent is already visible.
 - **Separation of concerns**: Main process, renderer, agent logic, and services are in separate folders
 - **No cloud dependencies**: All core features run locally
 - **Extensibility**: New features should be added as modules/services, following the MCP protocol where possible
