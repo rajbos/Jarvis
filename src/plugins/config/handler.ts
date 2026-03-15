@@ -14,7 +14,7 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
     return loadConfig().preferences;
   });
 
-  ipcMain.handle('app:set-preferences', (_event, prefs: Partial<{ sortByNotifications: boolean }>) => {
+  ipcMain.handle('app:set-preferences', (_event, prefs: Partial<{ sortByNotifications: boolean; localSortByNotifs: boolean; localRepoSortKey: string }>) => {
     const config = loadConfig();
     config.preferences = { ...config.preferences, ...prefs };
     saveConfig(config);

@@ -21,9 +21,8 @@ export function LocalFolderPanel({
           class="repo-panel-close"
           title="Configure folders"
           onClick={onConfigure}
-          style={{ fontSize: '0.85rem', padding: '0.1rem 0.4rem' }}
         >
-          ⚙
+          &#9881;
         </button>
       </div>
       <div class="org-list">

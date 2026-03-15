@@ -76,8 +76,8 @@ async function initialize(): Promise<void> {
   const loginSettings = app.getLoginItemSettings();
   const startedHidden = loginSettings.wasOpenedAsHidden || config.electron.startMinimized;
 
-  if (needsOnboarding && !startedHidden) {
-    showMainWindowInactive();
+  if (!startedHidden) {
+    showMainWindow();
   }
 
   // If GitHub auth is already set up, start background discovery

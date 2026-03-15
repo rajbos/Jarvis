@@ -159,9 +159,9 @@ export function getScanFolders(db: SqlJsDatabase): ScanFolder[] {
             COUNT(r.id) AS repo_count
      FROM local_scan_folders f
      LEFT JOIN local_repos r ON (
-       r.local_path = f.path OR r.local_path LIKE (
-         CASE WHEN f.path LIKE '%/' OR f.path LIKE '%\\' THEN f.path ELSE f.path || '/' END || '%'
-       )
+       r.local_path = f.path
+       OR r.local_path LIKE (f.path || '/%')
+       OR r.local_path LIKE (f.path || '\%')
      )
      GROUP BY f.id, f.path, f.added_at
      ORDER BY f.added_at ASC`,

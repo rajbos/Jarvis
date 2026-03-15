@@ -19,7 +19,9 @@ import { StatusBadge } from '../plugins/shared/StatusBadge';
 import { LocalReposStep } from '../plugins/local-repos/LocalReposStep';
 import { LocalFolderConfigPanel } from '../plugins/local-repos/LocalFolderConfigPanel';
 import { LocalFolderPanel } from '../plugins/local-repos/LocalFolderPanel';
+import { LocalSubfolderPanel } from '../plugins/local-repos/LocalSubfolderPanel';
 import { LocalRepoPanelView } from '../plugins/local-repos/LocalRepoPanelView';
+import { getReposUnder, hasDeepRepos } from '../plugins/shared/utils';
 
 // ── Types (imported from single source of truth in plugins/types.ts) ─────────
 // The global augmentation `Window.jarvis` is declared in plugins/types.ts and
@@ -82,8 +84,12 @@ function App() {
   const [localFolders, setLocalFolders] = useState<ScanFolder[] | null>(null);
   const [showLocalPanel, setShowLocalPanel] = useState(false);
   const [showLocalConfig, setShowLocalConfig] = useState(false);
-  const [activeLocalFolder, setActiveLocalFolder] = useState<string | null>(null);
-  const [localRepoPanel, setLocalRepoPanel] = useState<{ folderPath: string; repos: LocalRepo[] } | null>(null);
+  const [localNavStack, setLocalNavStack] = useState<{ path: string; repos: LocalRepo[] }[]>([]);
+  const [localLeafFolder, setLocalLeafFolder] = useState<{ path: string; repos: LocalRepo[] } | null>(null);
+  const localNavStackRef = useRef<{ path: string; repos: LocalRepo[] }[]>([]);
+  const [localNotifRepoPanel, setLocalNotifRepoPanel] = useState<{ repoFullName: string; notifications: StoredNotification[] } | null>(null);
+  const [localSortByNotifs, setLocalSortByNotifs] = useState(false);
+  const [localRepoSortKey, setLocalRepoSortKey] = useState<'name' | 'scanned' | 'notifs'>('name');
   const [localScanProgress, setLocalScanProgress] = useState<LocalScanProgress | null>(null);
   const [localScanFinished, setLocalScanFinished] = useState(false);
   const [localScanning, setLocalScanning] = useState(false);
@@ -127,6 +133,8 @@ function App() {
           try {
             const prefs = await window.jarvis.getPreferences();
             setSortByNotifs(prefs.sortByNotifications ?? false);
+            setLocalSortByNotifs(prefs.localSortByNotifs ?? false);
+            setLocalRepoSortKey((prefs.localRepoSortKey as 'name' | 'scanned' | 'notifs') ?? 'name');
           } catch (e) {
             console.warn('[Jarvis] Could not load preferences:', e);
           }
@@ -233,6 +241,13 @@ function App() {
       setLocalScanning(false);
       setLocalScanFinished(true);
       window.jarvis.localGetFolders().then(setLocalFolders).catch(console.error);
+      // Reload repos in nav stack so counts stay fresh after scan
+      const stack = localNavStackRef.current;
+      if (stack.length > 0) {
+        window.jarvis.localListReposForFolder(stack[0].path)
+          .then((repos) => { setLocalNavStack([{ path: stack[0].path, repos }]); setLocalLeafFolder(null); })
+          .catch(console.error);
+      }
     });
   }, []);
 
@@ -296,6 +311,7 @@ function App() {
   useEffect(() => { notifDiveRef.current = notifDive; }, [notifDive]);
   const notifRepoPanelRef = useRef(notifRepoPanel);
   useEffect(() => { notifRepoPanelRef.current = notifRepoPanel; }, [notifRepoPanel]);
+  useEffect(() => { localNavStackRef.current = localNavStack; }, [localNavStack]);
 
   // When notifCounts changes (any refresh), re-read the DB for open panels so
   // their list + header counter stays in sync with the updated counts.
@@ -405,12 +421,24 @@ function App() {
   // ── Local repo handlers ───────────────────────────────────────────────────
 
   const handleLocalStepClick = () => {
-    if (localFolders && localFolders.length > 0) {
-      setShowLocalPanel((prev) => !prev);
-      setShowLocalConfig(false);
-    } else {
-      setShowLocalConfig((prev) => !prev);
+    if (showLocalPanel || showLocalConfig) {
+      // Toggle everything off
       setShowLocalPanel(false);
+      setShowLocalConfig(false);
+      setLocalNavStack([]);
+      setLocalLeafFolder(null);
+    } else if (localFolders && localFolders.length > 0) {
+      setShowLocalPanel(true);
+      setShowLocalConfig(false);
+      if (localFolders.length === 1) {
+        // Auto-navigate into the single configured folder
+        void window.jarvis.localListReposForFolder(localFolders[0].path)
+          .then((repos) => setLocalNavStack([{ path: localFolders[0].path, repos }]))
+          .catch(console.error);
+      }
+    } else {
+      setShowLocalConfig(true);
+      setShowLocalPanel(true);
     }
   };
 
@@ -425,9 +453,9 @@ function App() {
     await window.jarvis.localRemoveFolder(folderPath);
     const folders = await window.jarvis.localGetFolders();
     setLocalFolders(folders);
-    if (activeLocalFolder === folderPath) {
-      setActiveLocalFolder(null);
-      setLocalRepoPanel(null);
+    if (localNavStack.length > 0 && localNavStack[0].path === folderPath) {
+      setLocalNavStack([]);
+      setLocalLeafFolder(null);
     }
   };
 
@@ -437,26 +465,54 @@ function App() {
   };
 
   const handleLocalSelectFolder = async (folderPath: string) => {
-    setActiveLocalFolder(folderPath);
     try {
       const repos = await window.jarvis.localListReposForFolder(folderPath);
-      setLocalRepoPanel({ folderPath, repos });
-      setShowLocalPanel(true);
+      setLocalNavStack([{ path: folderPath, repos }]);
+      setLocalLeafFolder(null);
     } catch (err) {
       console.error('[Jarvis] Failed to load local repos:', err);
     }
   };
 
+  const handleLocalSubfolderClick = (childPath: string) => {
+    const parentRepos = localNavStack[localNavStack.length - 1]?.repos ?? [];
+    const childRepos = getReposUnder(childPath, parentRepos);
+    if (hasDeepRepos(childPath, childRepos)) {
+      setLocalNavStack((prev) => [...prev, { path: childPath, repos: childRepos }]);
+      setLocalLeafFolder(null);
+    } else {
+      setLocalLeafFolder({ path: childPath, repos: childRepos });
+    }
+  };
+
+  const handleLocalNavBack = () => {
+    if (localLeafFolder) {
+      setLocalLeafFolder(null);
+    } else if (localNavStack.length > 1) {
+      setLocalNavStack((prev) => prev.slice(0, -1));
+    } else {
+      setLocalNavStack([]);
+      if ((localFolders?.length ?? 0) <= 1) {
+        setShowLocalPanel(false);
+      }
+    }
+  };
+
   const handleCloseLocalRepos = () => {
-    setLocalRepoPanel(null);
-    setActiveLocalFolder(null);
+    setLocalLeafFolder(null);
+    setLocalNotifRepoPanel(null);
+  };
+
+  const handleOpenLocalRepoNotif = async (repoFullName: string) => {
+    setLocalNotifRepoPanel(null);
+    const notifications = await window.jarvis.listNotificationsForRepo(repoFullName);
+    setLocalNotifRepoPanel({ repoFullName, notifications });
   };
 
   const handleOpenLocalConfig = () => {
     setShowLocalConfig(true);
-    setShowLocalPanel(false);
-    setLocalRepoPanel(null);
-    setActiveLocalFolder(null);
+    setLocalNavStack([]);
+    setLocalLeafFolder(null);
   };
 
   const handleCloseLocalConfig = () => {
@@ -580,20 +636,56 @@ function App() {
           />
         )}
 
-        {showLocalPanel && localFolders !== null && !showLocalConfig && (
+        {/* Folder list — only shown when multiple folders and not yet drilled in */}
+        {showLocalPanel && localFolders !== null && !showLocalConfig && localNavStack.length === 0 && localFolders.length > 1 && (
           <LocalFolderPanel
             folders={localFolders}
-            activeFolder={activeLocalFolder}
+            activeFolder={null}
             onSelectFolder={handleLocalSelectFolder}
             onConfigure={handleOpenLocalConfig}
           />
         )}
 
-        {localRepoPanel && (
+        {/* Subfolder drill-down panel */}
+        {showLocalPanel && !showLocalConfig && localNavStack.length > 0 && (
+          <LocalSubfolderPanel
+            path={localNavStack[localNavStack.length - 1].path}
+            repos={localNavStack[localNavStack.length - 1].repos}
+            notifCounts={notifCounts}
+            canGoBack={(localFolders?.length ?? 0) > 1 || localNavStack.length > 1}
+            initialSortByNotifs={localSortByNotifs}
+            onSelectChild={handleLocalSubfolderClick}
+            onBack={handleLocalNavBack}
+            onConfigure={handleOpenLocalConfig}
+            onClearNotif={() => setLocalNotifRepoPanel(null)}
+            onSortChange={(v) => { setLocalSortByNotifs(v); void window.jarvis.setPreferences({ localSortByNotifs: v }); }}
+          />
+        )}
+
+        {localLeafFolder && (
           <LocalRepoPanelView
-            title={localRepoPanel.folderPath.split(/[\\/]/).filter(Boolean).pop() ?? localRepoPanel.folderPath}
-            repos={localRepoPanel.repos}
+            title={localLeafFolder.path.split(/[\\/]/).filter(Boolean).pop() ?? localLeafFolder.path}
+            repos={localLeafFolder.repos}
+            notifCounts={notifCounts}
+            initialSortKey={localRepoSortKey}
+            onOpenRepoNotif={handleOpenLocalRepoNotif}
+            onClearNotif={() => setLocalNotifRepoPanel(null)}
+            onSortChange={(k) => { setLocalRepoSortKey(k); void window.jarvis.setPreferences({ localRepoSortKey: k }); }}
             onClose={handleCloseLocalRepos}
+          />
+        )}
+
+        {localNotifRepoPanel && (
+          <NotifRepoPanel
+            repoFullName={localNotifRepoPanel.repoFullName}
+            notifications={localNotifRepoPanel.notifications}
+            onClose={() => setLocalNotifRepoPanel(null)}
+            onRefresh={() => void handleRefreshRepo(localNotifRepoPanel.repoFullName)}
+            refreshing={refreshingRepos.has(localNotifRepoPanel.repoFullName)}
+            onDismiss={(id) => {
+              setLocalNotifRepoPanel((prev) => prev ? { ...prev, notifications: prev.notifications.filter((n) => n.id !== id) } : null);
+              setNotifCounts((prev) => prev ? { ...prev, total: Math.max(0, prev.total - 1), perRepo: { ...prev.perRepo, [localNotifRepoPanel.repoFullName]: Math.max(0, (prev.perRepo[localNotifRepoPanel.repoFullName] ?? 1) - 1) } } : prev);
+            }}
           />
         )}
       </div>
