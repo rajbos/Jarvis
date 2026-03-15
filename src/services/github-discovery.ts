@@ -6,6 +6,7 @@ const PER_PAGE = 100;
 const CALLS_PER_BATCH = 500;
 const BATCH_PAUSE_MS = 10_000; // 10 seconds between batches
 const LOW_RATE_LIMIT_THRESHOLD = 5;
+const PARALLEL_PAGE_CONCURRENCY = 10; // max simultaneous page requests
 
 export interface RateLimitInfo {
   remaining: number;
@@ -66,6 +67,13 @@ function parseLinkNext(linkHeader: string | null): string | null {
   return match ? match[1] : null;
 }
 
+/** Extracts the page number from the `last` link in a GitHub Link header. */
+function parseLinkLastPage(linkHeader: string | null): number | null {
+  if (!linkHeader) return null;
+  const match = linkHeader.match(/<[^>]+[?&]page=(\d+)[^>]*>;\s*rel="last"/);
+  return match ? parseInt(match[1], 10) : null;
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -103,7 +111,9 @@ async function githubGet<T>(
   accessToken: string,
   url: string,
   state: DiscoveryState,
-): Promise<{ data: T; nextUrl: string | null }> {
+  pageNum?: number,
+  totalPages?: number,
+): Promise<{ data: T; nextUrl: string | null; lastPage: number | null }> {
   await rateLimitAwarePause(state);
 
   if (state.aborted) {
@@ -119,8 +129,11 @@ async function githubGet<T>(
   });
 
   state.lastRateLimit = parseRateLimit(response.headers);
+  const pageInfo = pageNum !== undefined && totalPages !== undefined
+    ? ` — ${pageNum}/${totalPages} pages`
+    : '';
   console.log(
-    `[Discovery] ${url.replace(GITHUB_API_BASE, '')} — ` +
+    `[Discovery] ${url.replace(GITHUB_API_BASE, '')}${pageInfo} — ` +
       `rate limit: ${state.lastRateLimit.remaining}/${state.lastRateLimit.limit}`,
   );
 
@@ -132,7 +145,7 @@ async function githubGet<T>(
       await sleep(waitMs);
     }
     state.callsSinceLastPause = 0;
-    return githubGet(accessToken, url, state);
+    return githubGet(accessToken, url, state, pageNum, totalPages);
   }
 
   if (!response.ok) {
@@ -140,8 +153,10 @@ async function githubGet<T>(
   }
 
   const data = (await response.json()) as T;
-  const nextUrl = parseLinkNext(response.headers.get('link'));
-  return { data, nextUrl };
+  const linkHeader = response.headers.get('link');
+  const nextUrl = parseLinkNext(linkHeader);
+  const lastPage = parseLinkLastPage(linkHeader);
+  return { data, nextUrl, lastPage };
 }
 
 async function fetchAllPages<T>(
@@ -149,12 +164,44 @@ async function fetchAllPages<T>(
   initialUrl: string,
   state: DiscoveryState,
 ): Promise<T[]> {
-  const results: T[] = [];
-  let url: string | null = initialUrl;
+  // ── Page 1: establishes total page count ──────────────────────
+  const first = await githubGet<T[]>(accessToken, initialUrl, state, 1);
+  const results: T[] = [...first.data];
 
+  if (!first.nextUrl || state.aborted) return results;
+
+  const totalPages = first.lastPage ?? null;
+
+  // ── If total is known, fetch all remaining pages in parallel batches
+  if (totalPages !== null) {
+    const remainingPages = Array.from({ length: totalPages - 1 }, (_, i) => i + 2);
+
+    for (let batchStart = 0; batchStart < remainingPages.length && !state.aborted; batchStart += PARALLEL_PAGE_CONCURRENCY) {
+      const batch = remainingPages.slice(batchStart, batchStart + PARALLEL_PAGE_CONCURRENCY);
+
+      const pageResults = await Promise.all(
+        batch.map((page) => {
+          const pageUrl = initialUrl.includes('?')
+            ? `${initialUrl}&page=${page}`
+            : `${initialUrl}?page=${page}`;
+          return githubGet<T[]>(accessToken, pageUrl, state, page, totalPages);
+        }),
+      );
+
+      for (const r of pageResults) {
+        results.push(...r.data);
+      }
+    }
+    return results;
+  }
+
+  // ── Fallback: no `last` link — paginate sequentially via next links
+  let url: string | null = first.nextUrl;
+  let pageNum = 1;
   while (url && !state.aborted) {
-    const result: { data: T[]; nextUrl: string | null } = await githubGet<T[]>(accessToken, url, state);
+    const result = await githubGet<T[]>(accessToken, url, state);
     results.push(...result.data);
+    pageNum++;
     url = result.nextUrl;
   }
 
@@ -356,6 +403,39 @@ export async function runDiscovery(
     }
     saveDatabase();
 
+    // ── Phase 1.5: PAT org discovery (orgs blocked from OAuth) ──────
+    // Fetch the PAT org list right after OAuth so we can include any newly
+    // discovered orgs in the Phase 2 repo scan rather than deferring to Phase 5.
+    const oauthOrgLogins = new Set(orgs.map((o) => o.login.toLowerCase()));
+    let patOnlyOrgs: { login: string; description?: string | null }[] = [];
+    if (!state.aborted && pat) {
+      console.log('[Discovery] Checking for orgs visible only via PAT…');
+      try {
+        const patOrgs = await fetchAllPages<{ login: string; description?: string | null }>(
+          pat,
+          `${GITHUB_API_BASE}/user/orgs?per_page=${PER_PAGE}`,
+          state,
+        );
+        patOnlyOrgs = patOrgs.filter((o) => !oauthOrgLogins.has(o.login.toLowerCase()));
+        if (patOnlyOrgs.length > 0) {
+          console.log(
+            `[Discovery] Found ${patOnlyOrgs.length} org(s) only visible via PAT: ${patOnlyOrgs.map((o) => o.login).join(', ')}`,
+          );
+          for (const org of patOnlyOrgs) {
+            const dbId = upsertOrg(db, org);
+            orgIdMap.set(org.login, dbId);
+          }
+          progress.orgsFound += patOnlyOrgs.length;
+          onProgress?.({ ...progress });
+          saveDatabase();
+        } else {
+          console.log('[Discovery] No additional orgs found via PAT');
+        }
+      } catch (err) {
+        console.warn('[Discovery] PAT org check failed (non-fatal):', err);
+      }
+    }
+
     // ── Phase 2: Repos per org (skip disabled orgs) ─────────────────
     progress.phase = 'repos';
     const disabledOrgs = new Set(
@@ -391,6 +471,41 @@ export async function runDiscovery(
 
       saveDatabase();
     }
+
+    // Scan PAT-only orgs (OAuth was blocked) with the PAT token
+    for (const org of patOnlyOrgs) {
+      if (state.aborted) break;
+
+      if (disabledOrgs.has(org.login)) {
+        console.log(`[Discovery] Skipping disabled PAT-only org: ${org.login}`);
+        continue;
+      }
+
+      progress.currentOrg = org.login;
+      console.log(`[Discovery] Fetching repos for PAT-only org: ${org.login}`);
+      onProgress?.({ ...progress });
+
+      try {
+        const repos = await fetchAllPages<GitHubRepo>(
+          pat!,
+          `${GITHUB_API_BASE}/orgs/${encodeURIComponent(org.login)}/repos?type=all&per_page=${PER_PAGE}`,
+          state,
+        );
+
+        const orgDbId = orgIdMap.get(org.login)!;
+        for (const repo of repos) {
+          upsertRepo(db, repo, orgDbId);
+        }
+
+        progress.reposFound += repos.length;
+        console.log(`[Discovery]   ${org.login} (PAT): ${repos.length} repos (total: ${progress.reposFound})`);
+        onProgress?.({ ...progress });
+        saveDatabase();
+      } catch (err) {
+        console.warn(`[Discovery] Skipping PAT-only org ${org.login} — ${err instanceof Error ? err.message : err}`);
+      }
+    }
+
     progress.currentOrg = undefined;
 
     // ── Phase 3: User-owned + collaborator + org-member repos
@@ -464,8 +579,14 @@ export async function runDiscovery(
     // ── Phase 5: PAT supplemental pass (repos OAuth can't see) ──────
     if (!state.aborted && pat) {
       try {
-        const oauthOrgLogins = new Set(orgs.map((o) => o.login.toLowerCase()));
-        await runPatDiscovery(db, pat, state, progress, onProgress, userLogin, oauthOrgLogins);
+        // Tell runPatDiscovery which orgs were already scanned in Phase 2
+        // (both OAuth orgs and the PAT-only orgs we just scanned above) so
+        // it skips them and only handles any remaining gaps.
+        const allScannedOrgLogins = new Set([
+          ...orgs.map((o) => o.login.toLowerCase()),
+          ...patOnlyOrgs.map((o) => o.login.toLowerCase()),
+        ]);
+        await runPatDiscovery(db, pat, state, progress, onProgress, userLogin, allScannedOrgLogins);
       } catch (err) {
         console.error('[Discovery] PAT supplemental pass failed (non-fatal):', err);
       }
