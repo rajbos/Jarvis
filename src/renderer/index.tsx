@@ -15,7 +15,6 @@ import { OrgNotifPanel } from '../plugins/notifications/OrgNotifPanel';
 import { NotifRepoPanel } from '../plugins/notifications/NotifRepoPanel';
 import { EmbeddedChatPanel } from '../plugins/chat/EmbeddedChatPanel';
 import { SearchBar } from '../plugins/search/SearchBar';
-import { StatusBadge } from '../plugins/shared/StatusBadge';
 import { LocalReposStep } from '../plugins/local-repos/LocalReposStep';
 import { LocalFolderConfigPanel } from '../plugins/local-repos/LocalFolderConfigPanel';
 import { LocalFolderPanel } from '../plugins/local-repos/LocalFolderPanel';

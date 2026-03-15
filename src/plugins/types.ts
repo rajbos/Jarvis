@@ -151,8 +151,8 @@ export interface JarvisApi {
   listNotificationsForStarred(): Promise<StoredNotification[]>;
   dismissNotification(id: string): Promise<void>;
   getRunUrlForCheckSuite(checkSuiteApiUrl: string): Promise<string | null>;
-  getPreferences(): Promise<{ sortByNotifications: boolean; localSortByNotifs: boolean; localRepoSortKey: string }>;
-  setPreferences(prefs: { sortByNotifications?: boolean; localSortByNotifs?: boolean; localRepoSortKey?: string }): Promise<{ ok: boolean }>;
+  getPreferences(): Promise<{ sortByNotifications: boolean; localSortByNotifs: boolean; localRepoSortKey: 'name' | 'scanned' | 'notifs' }>;
+  setPreferences(prefs: { sortByNotifications?: boolean; localSortByNotifs?: boolean; localRepoSortKey?: 'name' | 'scanned' | 'notifs' }): Promise<{ ok: boolean }>;
   onOpenChat(cb: () => void): void;
   onOAuthComplete(cb: (result: OAuthResult) => void): void;
   onDiscoveryProgress(cb: (progress: DiscoveryProgress) => void): void;

@@ -113,20 +113,6 @@ function showMainWindow(): void {
   });
 }
 
-function showMainWindowInactive(): void {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.showInactive();
-    return;
-  }
-  mainWindow = createOnboardingWindow(currentDb!);
-  mainWindow.once('ready-to-show', () => {
-    mainWindow?.showInactive();
-  });
-  mainWindow.on('closed', () => {
-    mainWindow = null;
-  });
-}
-
 function showSettingsWindow(): void {
   if (settingsWindow && !settingsWindow.isDestroyed()) {
     settingsWindow.show();

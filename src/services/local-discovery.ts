@@ -161,7 +161,7 @@ export function getScanFolders(db: SqlJsDatabase): ScanFolder[] {
      LEFT JOIN local_repos r ON (
        r.local_path = f.path
        OR r.local_path LIKE (f.path || '/%')
-       OR r.local_path LIKE (f.path || '\%')
+       OR r.local_path LIKE (f.path || '\\%')
      )
      GROUP BY f.id, f.path, f.added_at
      ORDER BY f.added_at ASC`,
