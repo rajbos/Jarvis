@@ -464,7 +464,8 @@ export async function runDiscovery(
     // ── Phase 5: PAT supplemental pass (repos OAuth can't see) ──────
     if (!state.aborted && pat) {
       try {
-        await runPatDiscovery(db, pat, state, progress, onProgress);
+        const oauthOrgLogins = new Set(orgs.map((o) => o.login.toLowerCase()));
+        await runPatDiscovery(db, pat, state, progress, onProgress, userLogin, oauthOrgLogins);
       } catch (err) {
         console.error('[Discovery] PAT supplemental pass failed (non-fatal):', err);
       }
@@ -591,7 +592,8 @@ export async function runLightweightRefresh(
     // PAT supplemental pass
     if (pat) {
       try {
-        await runPatDiscovery(db, pat, state, progress, onProgress);
+        const oauthOrgLogins = new Set(orgs.map((o) => o.login.toLowerCase()));
+        await runPatDiscovery(db, pat, state, progress, onProgress, userLogin, oauthOrgLogins);
       } catch (err) {
         console.error('[LightRefresh] PAT supplemental pass failed (non-fatal):', err);
       }
@@ -801,6 +803,7 @@ export async function runPatDiscovery(
   progress?: DiscoveryProgress,
   onProgress?: (progress: DiscoveryProgress) => void,
   userLogin?: string | null,
+  oauthOrgLogins?: ReadonlySet<string>,
 ): Promise<void> {
   const st: DiscoveryState = state ?? {
     callsSinceLastPause: 0,
@@ -831,15 +834,30 @@ export async function runPatDiscovery(
     existingOrgs.filter((o) => o.repoCount > 0).map((o) => o.login.toLowerCase()),
   );
 
-  // Find orgs that are new or had 0 repos (OAuth was blocked)
-  const orgsToScan = patOrgs.filter(
-    (o) => !indexedOrgLogins.has(o.login.toLowerCase()),
-  );
+  // Find orgs that are new, had 0 repos (OAuth was blocked), or are visible
+  // to the PAT but were NOT visible to OAuth (OAuth app blocked by org policy).
+  const orgsToScan = patOrgs.filter((o) => {
+    const login = o.login.toLowerCase();
+    if (!indexedOrgLogins.has(login)) return true; // new or empty
+    if (oauthOrgLogins && !oauthOrgLogins.has(login)) return true; // PAT sees it, OAuth didn't
+    return false;
+  });
+
+  if (oauthOrgLogins) {
+    const oauthBlocked = patOrgs.filter(
+      (o) => !oauthOrgLogins.has(o.login.toLowerCase()),
+    );
+    if (oauthBlocked.length > 0) {
+      console.log(
+        `[PAT Discovery] Orgs blocked from OAuth (will rescan via PAT): ${oauthBlocked.map((o) => o.login).join(', ')}`,
+      );
+    }
+  }
 
   console.log(
     `[PAT Discovery] ${patOrgs.length} org(s) via PAT, ` +
       `${existingOrgs.length} already indexed with repos, ` +
-      `${orgsToScan.length} new/empty org(s) to scan`,
+      `${orgsToScan.length} new/empty/OAuth-blocked org(s) to scan`,
   );
 
   // ── Step 2: Fetch repos for new/empty orgs ────────────────────
