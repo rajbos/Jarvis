@@ -5,7 +5,7 @@ const GITHUB_API_BASE = 'https://api.github.com';
 const PER_PAGE = 100;
 const CALLS_PER_BATCH = 500;
 const BATCH_PAUSE_MS = 10_000; // 10 seconds between batches
-const LOW_RATE_LIMIT_THRESHOLD = 50;
+const LOW_RATE_LIMIT_THRESHOLD = 5;
 
 export interface RateLimitInfo {
   remaining: number;
@@ -728,6 +728,19 @@ export async function resolveCollaborationReasons(
     listOrgs(db).orgs.map((o) => o.login.toLowerCase()),
   );
 
+  // Load already-known collaboration reasons from the DB to avoid redundant Search API calls
+  const knownReasons = new Map<string, string>();
+  try {
+    const stmt = db.prepare('SELECT full_name, collaboration_reason FROM github_repos WHERE collaboration_reason IS NOT NULL');
+    while (stmt.step()) {
+      const row = stmt.getAsObject() as { full_name: string; collaboration_reason: string };
+      knownReasons.set(row.full_name, row.collaboration_reason);
+    }
+    stmt.free();
+  } catch {
+    // Non-fatal: if the query fails we just skip the optimization
+  }
+
   for (const repo of repos) {
     if (state.aborted) break;
 
@@ -741,6 +754,9 @@ export async function resolveCollaborationReasons(
       memberOrgLogins.has(ownerLogin.toLowerCase())
     ) {
       reasons.set(repo.full_name, 'org_member');
+    } else if (knownReasons.has(repo.full_name)) {
+      // Already resolved in a previous run — reuse the stored value
+      reasons.set(repo.full_name, knownReasons.get(repo.full_name)!);
     } else {
       const reason = await resolveCollaborationReason(
         accessToken,
