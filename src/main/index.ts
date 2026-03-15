@@ -5,7 +5,7 @@ import pkg from '../../package.json';
 import { createTray } from './tray';
 import { createOnboardingWindow, createSettingsWindow } from './windows';
 import { getOnboardingStatus, completeOnboardingStep } from '../agent/onboarding';
-import { registerIpcHandlers, startDiscoveryIfAuthed } from './ipc-handlers';
+import { registerIpcHandlers, startDiscoveryIfAuthed, scheduleLocalDiscovery } from './ipc-handlers';
 import { checkOllama } from '../services/ollama';
 import { saveDatabase } from '../storage/database';
 
@@ -73,14 +73,20 @@ async function initialize(): Promise<void> {
     showSettingsWindow();
   }, openChat);
 
-  if (needsOnboarding) {
-    showMainWindowInactive();
+  const loginSettings = app.getLoginItemSettings();
+  const startedHidden = loginSettings.wasOpenedAsHidden || config.electron.startMinimized;
+
+  if (!startedHidden) {
+    showMainWindow();
   }
 
   // If GitHub auth is already set up, start background discovery
   if (!needsOnboarding || onboarding.github_oauth === 'completed') {
     startDiscoveryIfAuthed(db, () => mainWindow);
   }
+
+  // Schedule periodic local-repo scanning
+  scheduleLocalDiscovery(db, () => mainWindow);
 
   // Register for startup on login
   if (config.electron.openAtLogin) {
@@ -98,18 +104,10 @@ function showMainWindow(): void {
     return;
   }
   mainWindow = createOnboardingWindow(currentDb!);
-  mainWindow.on('closed', () => {
-    mainWindow = null;
+  mainWindow.once('ready-to-show', () => {
+    mainWindow?.show();
+    mainWindow?.focus();
   });
-}
-
-function showMainWindowInactive(): void {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.showInactive();
-    return;
-  }
-  mainWindow = createOnboardingWindow(currentDb!);
-  mainWindow.showInactive();
   mainWindow.on('closed', () => {
     mainWindow = null;
   });

@@ -62,16 +62,35 @@ export function getSchema(): string {
         metadata        TEXT
     );
 
+    -- Folders configured for local repo scanning
+    CREATE TABLE IF NOT EXISTS local_scan_folders (
+        id       INTEGER PRIMARY KEY AUTOINCREMENT,
+        path     TEXT NOT NULL UNIQUE,
+        added_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
     -- Local repository clones
     CREATE TABLE IF NOT EXISTS local_repos (
         id             INTEGER PRIMARY KEY AUTOINCREMENT,
         local_path     TEXT NOT NULL UNIQUE,
+        name           TEXT,
         remote_url     TEXT,
         github_repo_id INTEGER REFERENCES github_repos(id),
         discovered_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
         last_scanned   DATETIME
     );
     CREATE INDEX IF NOT EXISTS idx_local_repos_github_repo_id ON local_repos(github_repo_id);
+
+    -- Git remotes for local repos (supports multiple remotes per repo)
+    CREATE TABLE IF NOT EXISTS local_repo_remotes (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        local_repo_id  INTEGER NOT NULL REFERENCES local_repos(id) ON DELETE CASCADE,
+        name           TEXT NOT NULL,
+        url            TEXT NOT NULL,
+        github_repo_id INTEGER REFERENCES github_repos(id),
+        UNIQUE(local_repo_id, name)
+    );
+    CREATE INDEX IF NOT EXISTS idx_local_repo_remotes_local_repo_id ON local_repo_remotes(local_repo_id);
 
     -- Conversation / interaction log
     CREATE TABLE IF NOT EXISTS conversations (

@@ -51,7 +51,7 @@ function initializeSchema(database: SqlJsDatabase): void {
 
   if (userVersion === 0) {
     database.run(getSchema());
-    database.run('PRAGMA user_version = 7');
+    database.run('PRAGMA user_version = 8');
   }
 
   if (userVersion === 1) {
@@ -100,9 +100,33 @@ function initializeSchema(database: SqlJsDatabase): void {
   }
 
   if (userVersion === 6) {
-    // Migration v6 → v7: add collaboration_reason to github_repos
-    database.run('ALTER TABLE github_repos ADD COLUMN collaboration_reason TEXT');
+    // Migration v6 → v7: add local repo scanning tables
+    database.run('ALTER TABLE local_repos ADD COLUMN name TEXT');
+    database.run(`
+      CREATE TABLE IF NOT EXISTS local_scan_folders (
+        id       INTEGER PRIMARY KEY AUTOINCREMENT,
+        path     TEXT NOT NULL UNIQUE,
+        added_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    database.run(`
+      CREATE TABLE IF NOT EXISTS local_repo_remotes (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        local_repo_id  INTEGER NOT NULL REFERENCES local_repos(id) ON DELETE CASCADE,
+        name           TEXT NOT NULL,
+        url            TEXT NOT NULL,
+        github_repo_id INTEGER REFERENCES github_repos(id),
+        UNIQUE(local_repo_id, name)
+      )
+    `);
+    database.run('CREATE INDEX IF NOT EXISTS idx_local_repo_remotes_local_repo_id ON local_repo_remotes(local_repo_id)');
     database.run('PRAGMA user_version = 7');
+  }
+
+  if (userVersion === 7) {
+    // Migration v7 → v8: add collaboration_reason to github_repos
+    database.run('ALTER TABLE github_repos ADD COLUMN collaboration_reason TEXT');
+    database.run('PRAGMA user_version = 8');
   }
 }
 

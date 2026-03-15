@@ -32,6 +32,70 @@ export function isDirect(reason: string): boolean {
   return ['assign', 'review_requested', 'mention', 'team_mention', 'author', 'security_alert'].includes(reason);
 }
 
+// ── Local repo path helpers ───────────────────────────────────────────────────
+
+import type { LocalRepo } from '../types';
+
+/** Returns all repos whose localPath is at or under the given parentPath. */
+export function getReposUnder(parentPath: string, repos: LocalRepo[]): LocalRepo[] {
+  const norm = parentPath.replace(/[\\/]+$/, '');
+  return repos.filter((r) => {
+    const nr = r.localPath;
+    return nr === norm || nr.startsWith(norm + '/') || nr.startsWith(norm + '\\');
+  });
+}
+
+/**
+ * Given a parent path and repos under it, returns the immediate child
+ * directories (one path segment deeper), each with a repo count.
+ */
+export function getImmediateChildren(
+  parentPath: string,
+  repos: LocalRepo[],
+): { path: string; name: string; repoCount: number }[] {
+  const norm = parentPath.replace(/[\\/]+$/, '');
+  const sep = norm.includes('\\') ? '\\' : '/';
+  const map = new Map<string, number>();
+  for (const repo of repos) {
+    if (repo.localPath === norm) continue; // repo IS the parent
+    const rel = repo.localPath.slice(norm.length).replace(/^[\\/]+/, '');
+    const firstSeg = rel.split(/[\\/]/)[0];
+    if (!firstSeg) continue;
+    const childPath = norm + sep + firstSeg;
+    map.set(childPath, (map.get(childPath) ?? 0) + 1);
+  }
+  return Array.from(map.entries())
+    .map(([path, count]) => ({
+      path,
+      name: path.split(/[\\/]/).filter(Boolean).pop() ?? path,
+      repoCount: count,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Returns true if any repo under parentPath is nested deeper than one level. */
+export function hasDeepRepos(parentPath: string, repos: LocalRepo[]): boolean {
+  const norm = parentPath.replace(/[\\/]+$/, '');
+  return repos.some((r) => {
+    if (r.localPath === norm) return false;
+    const rel = r.localPath.slice(norm.length).replace(/^[\\/]+/, '');
+    return /[\\/]/.test(rel);
+  });
+}
+
+/**
+ * Parse a git remote URL and extract `owner/repo` for GitHub remotes.
+ * Works in the renderer (no node builtins). Returns null for non-GitHub URLs.
+ */
+export function normalizeGitHubUrl(url: string): string | null {
+  if (!url) return null;
+  const https = url.match(/https?:\/\/(?:[^@]+@)?github\.com\/([^/]+\/[^/]+?)(?:\.git)?\/?$/);
+  if (https) return https[1];
+  const ssh = url.match(/git@github\.com:([^/]+\/[^/]+?)(?:\.git)?\/?$/);
+  if (ssh) return ssh[1];
+  return null;
+}
+
 /** Lightweight Markdown → HTML renderer (no external dependency). */
 export function renderChatMarkdown(text: string): string {
   let out = text.replace(/```[\w]*\n?([\s\S]*?)```/g, (_: string, code: string) =>

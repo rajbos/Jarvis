@@ -54,6 +54,17 @@ contextBridge.exposeInMainWorld('jarvis', {
     ipcRenderer.invoke('github:dismiss-notification', id),
   getRunUrlForCheckSuite: (checkSuiteApiUrl: string) =>
     ipcRenderer.invoke('github:get-run-url-for-check-suite', checkSuiteApiUrl),
+  // Local repos
+  localGetFolders: () => ipcRenderer.invoke('local:get-folders'),
+  localAddFolder: (folderPath?: string) => ipcRenderer.invoke('local:add-folder', folderPath),
+  localRemoveFolder: (folderPath: string) => ipcRenderer.invoke('local:remove-folder', folderPath),
+  localGetScanStatus: () => ipcRenderer.invoke('local:get-scan-status'),
+  localStartScan: () => ipcRenderer.invoke('local:start-scan'),
+  localListRepos: () => ipcRenderer.invoke('local:list-repos'),
+  localListReposForFolder: (folderPath: string) => ipcRenderer.invoke('local:list-repos-for-folder', folderPath),
+  localLinkRepo: (localRepoId: number, githubRepoId: number | null) =>
+    ipcRenderer.invoke('local:link-repo', localRepoId, githubRepoId),
+  localOpenFolder: (folderPath: string) => ipcRenderer.invoke('local:open-folder', folderPath),
   onOpenChat: (callback: () => void) => {
     ipcRenderer.on('chat:open', () => callback());
   },
@@ -65,5 +76,11 @@ contextBridge.exposeInMainWorld('jarvis', {
   },
   onDiscoveryComplete: (callback: (progress: Record<string, unknown>) => void) => {
     ipcRenderer.on('github:discovery-complete', (_event, progress) => callback(progress));
+  },
+  onLocalScanProgress: (callback: (progress: Record<string, unknown>) => void) => {
+    ipcRenderer.on('local:scan-progress', (_event, progress) => callback(progress));
+  },
+  onLocalScanComplete: (callback: (progress: Record<string, unknown>) => void) => {
+    ipcRenderer.on('local:scan-complete', (_event, progress) => callback(progress));
   },
 });
