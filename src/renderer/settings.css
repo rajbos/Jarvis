@@ -179,3 +179,51 @@ code {
 .hidden {
   display: none !important;
 }
+
+/* ── Agent Prompts editor ──────────────────────────────────────────────────── */
+.agent-tab-row {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.25rem;
+}
+
+.btn-agent-tab {
+  background: transparent;
+  border: 1px solid #334;
+  color: #b0b8c8;
+  padding: 0.25rem 0.65rem;
+  font-size: 0.78rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.btn-agent-tab:hover {
+  background: #0f3460;
+  border-color: #557;
+}
+
+.btn-agent-tab.active {
+  background: #0f3460;
+  border-color: #4a70a8;
+  color: #e0e0e0;
+}
+
+.agent-prompt-editor {
+  width: 100%;
+  background: #0d1b2c;
+  border: 1px solid #1a3060;
+  border-radius: 6px;
+  color: #c8d8e8;
+  font-family: 'Consolas', 'Fira Mono', monospace;
+  font-size: 0.77rem;
+  line-height: 1.5;
+  padding: 0.6rem 0.75rem;
+  resize: vertical;
+  min-height: 200px;
+}
+
+.agent-prompt-editor:focus {
+  outline: none;
+  border-color: #4a70a8;
+}

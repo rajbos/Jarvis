@@ -126,5 +126,82 @@ export function getSchema(): string {
     );
     CREATE INDEX IF NOT EXISTS idx_notif_repo ON github_notifications(repo_full_name);
     CREATE INDEX IF NOT EXISTS idx_notif_owner ON github_notifications(repo_owner);
+
+    -- Cached GitHub Actions workflow runs
+    CREATE TABLE IF NOT EXISTS github_workflow_runs (
+        id              TEXT PRIMARY KEY,
+        repo_full_name  TEXT NOT NULL,
+        workflow_name   TEXT,
+        workflow_id     TEXT,
+        head_branch     TEXT,
+        head_sha        TEXT,
+        event           TEXT,
+        status          TEXT,
+        conclusion      TEXT,
+        run_number      INTEGER,
+        run_started_at  DATETIME,
+        updated_at      DATETIME,
+        html_url        TEXT,
+        fetched_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_wf_runs_repo ON github_workflow_runs(repo_full_name);
+    CREATE INDEX IF NOT EXISTS idx_wf_runs_conclusion ON github_workflow_runs(repo_full_name, conclusion);
+
+    -- Per-job details for a workflow run (identifies failing step + log excerpt)
+    CREATE TABLE IF NOT EXISTS github_workflow_jobs (
+        id              TEXT PRIMARY KEY,
+        run_id          TEXT NOT NULL,
+        repo_full_name  TEXT NOT NULL,
+        name            TEXT,
+        status          TEXT,
+        conclusion      TEXT,
+        started_at      DATETIME,
+        completed_at    DATETIME,
+        log_excerpt     TEXT,
+        fetched_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_wf_jobs_run ON github_workflow_jobs(run_id);
+
+    -- Configurable LLM agent use cases
+    CREATE TABLE IF NOT EXISTS agent_definitions (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        name          TEXT NOT NULL UNIQUE,
+        description   TEXT,
+        system_prompt TEXT NOT NULL,
+        tools_allowed TEXT,
+        created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Agent run sessions
+    CREATE TABLE IF NOT EXISTS agent_sessions (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        agent_id      INTEGER NOT NULL REFERENCES agent_definitions(id),
+        scope_type    TEXT NOT NULL,
+        scope_value   TEXT,
+        status        TEXT DEFAULT 'pending',
+        started_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+        completed_at  DATETIME,
+        summary       TEXT,
+        raw_result    TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_agent_sessions_agent ON agent_sessions(agent_id);
+
+    -- Structured findings emitted by an agent session
+    CREATE TABLE IF NOT EXISTS agent_findings (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id    INTEGER NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE,
+        finding_type  TEXT NOT NULL,
+        subject       TEXT,
+        reason        TEXT,
+        pattern       TEXT,
+        action_type   TEXT,
+        action_data   TEXT,
+        approved      INTEGER,
+        approved_at   DATETIME,
+        executed_at   DATETIME,
+        execution_error TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_findings_session ON agent_findings(session_id);
   `;
 }

@@ -157,6 +157,38 @@ describe('renderChatMarkdown', () => {
     expect(out).toContain('<br>');
   });
 
+  it('does not add <br> between block elements', () => {
+    const out = renderChatMarkdown('## Section\nSome text');
+    expect(out).not.toMatch(/<\/h4><br>/);
+    expect(out).toContain('<h4 class="ec-heading">Section</h4>');
+  });
+
+  it('converts unordered list items to <ul><li>', () => {
+    const out = renderChatMarkdown('- alpha\n- beta\n- gamma');
+    expect(out).toContain('<ul class="ec-list">');
+    expect(out).toContain('<li>alpha</li>');
+    expect(out).toContain('<li>beta</li>');
+    expect(out).toContain('</ul>');
+  });
+
+  it('converts ordered list items to <ol><li>', () => {
+    const out = renderChatMarkdown('1. first\n2. second');
+    expect(out).toContain('<ol class="ec-list">');
+    expect(out).toContain('<li>first</li>');
+    expect(out).toContain('</ol>');
+  });
+
+  it('converts *italic* to <em>', () => {
+    expect(renderChatMarkdown('*hello*')).toContain('<em>hello</em>');
+  });
+
+  it('converts markdown links to <a>', () => {
+    const out = renderChatMarkdown('[GitHub](https://github.com)');
+    expect(out).toContain('<a href="https://github.com"');
+    expect(out).toContain('target="_blank"');
+    expect(out).toContain('GitHub');
+  });
+
   it('does not crash on empty string', () => {
     expect(() => renderChatMarkdown('')).not.toThrow();
   });

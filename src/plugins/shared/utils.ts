@@ -98,14 +98,77 @@ export function normalizeGitHubUrl(url: string): string | null {
 
 /** Lightweight Markdown → HTML renderer (no external dependency). */
 export function renderChatMarkdown(text: string): string {
-  let out = text.replace(/```[\w]*\n?([\s\S]*?)```/g, (_: string, code: string) =>
-    `<pre class="ec-code-block"><code>${code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code></pre>`,
-  );
-  out = out.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-  out = out.replace(/`([^`]+)`/g, '<span class="ec-inline-code">$1</span>');
-  out = out.replace(/^###\s+(.+)$/gm, '<h5 class="ec-heading">$1</h5>');
-  out = out.replace(/^##\s+(.+)$/gm, '<h4 class="ec-heading">$1</h4>');
-  out = out.replace(/^#\s+(.+)$/gm, '<h3 class="ec-heading">$1</h3>');
-  out = out.replace(/\n/g, '<br>');
+  // 1. Extract fenced code blocks so their content is never processed as Markdown.
+  const blocks: string[] = [];
+  let out = text.replace(/```[\w]*\n?([\s\S]*?)```/g, (_: string, code: string) => {
+    blocks.push(
+      `<pre class="ec-code-block"><code>${code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code></pre>`,
+    );
+    return `\x00B${blocks.length - 1}\x00`;
+  });
+
+  // Inline formatter — protects code spans before applying bold/italic/links.
+  const inline = (s: string): string => {
+    const codeSpans: string[] = [];
+    s = s.replace(/`([^`]+)`/g, (_: string, c: string) => {
+      codeSpans.push(`<span class="ec-inline-code">${c}</span>`);
+      return `\x00CS${codeSpans.length - 1}\x00`;
+    });
+    s = s.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    s = s.replace(/\*(.*?)\*/g, '<em>$1</em>');
+    s = s.replace(
+      /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,
+      '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>',
+    );
+    s = s.replace(/\x00CS(\d+)\x00/g, (_: string, i: string) => codeSpans[parseInt(i, 10)]);
+    return s;
+  };
+
+  // 2. Process line-by-line for block elements (headings, lists, HR).
+  const lines = out.split('\n');
+  const parts: string[] = [];
+  let listTag: 'ul' | 'ol' | null = null;
+
+  const closeList = (): void => {
+    if (listTag) { parts.push(listTag === 'ul' ? '</ul>' : '</ol>'); listTag = null; }
+  };
+
+  for (const raw of lines) {
+    let m: RegExpMatchArray | null;
+    if (/^\x00B\d+\x00$/.test(raw))       { closeList(); parts.push(raw);                                              continue; }
+    if (/^-{3,}\s*$/.test(raw))            { closeList(); parts.push('<hr class="ec-hr">');                            continue; }
+    if ((m = raw.match(/^###\s+(.*)/)))    { closeList(); parts.push(`<h5 class="ec-heading">${inline(m[1])}</h5>`);  continue; }
+    if ((m = raw.match(/^##\s+(.*)/)))     { closeList(); parts.push(`<h4 class="ec-heading">${inline(m[1])}</h4>`);  continue; }
+    if ((m = raw.match(/^#\s+(.*)/)))      { closeList(); parts.push(`<h3 class="ec-heading">${inline(m[1])}</h3>`);  continue; }
+    if ((m = raw.match(/^[-*+] (.*)/)))    {
+      if (listTag !== 'ul') { closeList(); parts.push('<ul class="ec-list">'); listTag = 'ul'; }
+      parts.push(`<li>${inline(m[1])}</li>`);                                                                          continue;
+    }
+    if ((m = raw.match(/^\d+\. (.*)/)))    {
+      if (listTag !== 'ol') { closeList(); parts.push('<ol class="ec-list">'); listTag = 'ol'; }
+      parts.push(`<li>${inline(m[1])}</li>`);                                                                          continue;
+    }
+    if (raw.trim() === '')                 { closeList(); parts.push('');                                              continue; }
+    closeList();
+    parts.push(inline(raw));
+  }
+  closeList();
+
+  // 3. Join: insert <br> only between consecutive non-block, non-empty lines.
+  const BLOCK = /^(<h[3-5]|<[uo]l|<\/[uo]l>|<li|<hr|\x00B)/;
+  const joined: string[] = [];
+  for (let i = 0; i < parts.length; i++) {
+    const curr = parts[i];
+    const next = parts[i + 1];
+    joined.push(curr);
+    if (next !== undefined && curr !== '' && next !== '' && !BLOCK.test(curr) && !BLOCK.test(next)) {
+      joined.push('<br>');
+    }
+  }
+  out = joined.join('');
+
+  // 4. Restore code blocks.
+  out = out.replace(/\x00B(\d+)\x00/g, (_: string, i: string) => blocks[parseInt(i, 10)]);
   return out;
 }
+

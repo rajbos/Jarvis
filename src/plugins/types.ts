@@ -119,6 +119,83 @@ export interface LocalScanProgress {
   currentFolder?: string;
 }
 
+// ── Agent framework types ─────────────────────────────────────────────────────
+
+export interface AgentDefinition {
+  id: number;
+  name: string;
+  description: string;
+  system_prompt: string;
+  tools_allowed: string; // JSON array of IPC channel names
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WorkflowRun {
+  id: string;
+  repo_full_name: string;
+  workflow_name: string;
+  workflow_id: string;
+  head_branch: string;
+  head_sha: string;
+  event: string;
+  status: string;
+  conclusion: string | null;
+  run_number: number;
+  run_started_at: string;
+  updated_at: string;
+  html_url: string;
+  fetched_at: string;
+}
+
+export interface WorkflowJob {
+  id: string;
+  run_id: string;
+  repo_full_name: string;
+  name: string;
+  status: string;
+  conclusion: string | null;
+  started_at: string;
+  completed_at: string | null;
+  log_excerpt: string | null;
+  fetched_at: string;
+}
+
+export interface WorkflowRunSummary {
+  repo_full_name: string;
+  total_runs: number;
+  recent_runs: WorkflowRun[];
+  jobs_by_run: Record<string, WorkflowJob[]>; // run_id → jobs
+}
+
+export interface AgentFinding {
+  id: number;
+  session_id: number;
+  finding_type: 'ignore' | 'investigate' | 'action_required';
+  subject: string;
+  reason: string;
+  pattern: string | null;
+  action_type: 'close_notifications' | 'create_issue' | 'clone_repo' | 'none';
+  action_data: Record<string, unknown> | null;
+  approved: number | null; // null = pending; 1 = approved; 0 = rejected
+  approved_at: string | null;
+  executed_at: string | null;
+  execution_error: string | null;
+}
+
+export interface AgentSession {
+  id: number;
+  agent_id: number;
+  agent_name: string;
+  scope_type: 'repo' | 'org' | 'global';
+  scope_value: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  started_at: string;
+  completed_at: string | null;
+  summary: string | null;
+  findings: AgentFinding[];
+}
+
 // ── Jarvis preload API contract ───────────────────────────────────────────────
 // This augments the global Window type so all plugin components get full
 // type-checking on window.jarvis calls without re-declaring it everywhere.
@@ -170,6 +247,25 @@ export interface JarvisApi {
   localOpenFolder(folderPath: string): Promise<void>;
   onLocalScanProgress(cb: (progress: LocalScanProgress) => void): void;
   onLocalScanComplete(cb: (progress: LocalScanProgress) => void): void;
+  // Agents
+  agentsList(): Promise<AgentDefinition[]>;
+  agentsUpdate(agentId: number, systemPrompt: string): Promise<{ ok: boolean; error?: string }>;
+  agentsRun(agentId: number, scopeType: 'repo' | 'org' | 'global', scopeValue: string, workflowFilter?: string): Promise<{ sessionId: number; error?: string }>;
+  agentsGetSession(sessionId: number): Promise<AgentSession | null>;
+  agentsApproveFinding(findingId: number): Promise<{ ok: boolean }>;
+  agentsRejectFinding(findingId: number): Promise<{ ok: boolean }>;
+  agentsExecuteFinding(findingId: number): Promise<{ ok: boolean; error?: string; dismissedIds?: string[] }>;
+  onAgentSessionStarting(cb: (data: { sessionId: number; agentName: string; scopeType: string; scopeValue: string; workflowRunCount: number }) => void): void;
+  onAgentDebugContext(cb: (data: { sessionId: number; systemPrompt: string; userMessage: string }) => void): void;
+  onAgentToken(cb: (token: string) => void): void;
+  onAgentAnalysisComplete(cb: (data: { sessionId: number }) => void): void;
+  onAgentPhase2Error(cb: (data: { sessionId: number; message: string }) => void): void;
+  onAgentSessionComplete(cb: (result: { sessionId: number }) => void): void;
+  onAgentSessionError(cb: (error: { sessionId: number; message: string }) => void): void;
+  // Workflow data
+  githubFetchWorkflowRuns(repoFullName: string): Promise<{ ok: boolean; count?: number; error?: string }>;
+  githubGetWorkflowSummary(repoFullName: string): Promise<WorkflowRunSummary>;
+  githubGetCachedWorkflowInfo(repoFullName: string): Promise<{ fetchedAt: string | null; runCount: number }>;
 }
 
 declare global {

@@ -268,6 +268,7 @@ body.onboarding {
   width: 100%;
 }
 
+
 .main-scroll {
   flex: 1;
   overflow-y: auto;
@@ -875,6 +876,8 @@ h1 {
 .ollama-panel {
   flex: 1;
   min-width: 0;
+  max-width: 600px;
+  width: 100%;
   max-height: 360px;
   overflow-x: hidden;
   overflow-y: auto;
@@ -1097,6 +1100,30 @@ h1 {
   font-size: 0.85em;
 }
 
+.ec-heading {
+  color: #a8d8ff;
+  margin: 0.5rem 0 0.2rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+h3.ec-heading { font-size: 0.95rem; }
+h4.ec-heading { font-size: 0.9rem; }
+h5.ec-heading { font-size: 0.85rem; }
+
+.ec-list {
+  margin: 0.2rem 0 0.3rem 1.2rem;
+  padding: 0;
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+.ec-list li { margin-bottom: 0.1rem; }
+
+.ec-hr {
+  border: none;
+  border-top: 1px solid #2a3a5a;
+  margin: 0.5rem 0;
+}
+
 .ec-error {
   color: #ff6b6b;
   font-size: 0.8rem;
@@ -1188,3 +1215,547 @@ h1 {
   background: #1a4a8a;
   transform: scale(1.08);
 }
+
+/* ── Notification Analyse button ─────────────────────────────────────────── */
+.notif-analyse-btn {
+  background: #2a1a5e;
+  border: 1px solid #5a3ab8;
+  color: #b4a4f8;
+  border-radius: 5px;
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  cursor: pointer;
+  margin-right: 0.25rem;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+.notif-analyse-btn:hover {
+  background: #3d2a8a;
+  color: #d4c8ff;
+}
+
+/* inline variant sits inside the workflow group header — no extra margin */
+.notif-analyse-btn--inline {
+  margin-right: 0;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* ── Workflow notification groups ────────────────────────────────────────── */
+.notif-workflow-group {
+  border-top: 1px solid #1a2a44;
+}
+.notif-workflow-group + .notif-workflow-group {
+  border-top: 1px solid #1a2a44;
+}
+.notif-workflow-group-header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.75rem;
+  background: #0c1a2e;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #8bafd8;
+  user-select: none;
+}
+.notif-workflow-group-icon {
+  flex-shrink: 0;
+  font-size: 0.85em;
+}
+.notif-workflow-group-name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #c8daf0;
+}
+.notif-workflow-group-count {
+  background: #1c3050;
+  color: #7ab3f5;
+  border-radius: 10px;
+  padding: 0 0.45rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+/* scope workflow badge in the AgentSelector modal */
+.agent-scope-workflow {
+  color: #b4a4f8;
+  background: #2a1a4e;
+  border-radius: 4px;
+  padding: 0 0.35rem;
+  font-size: 0.82rem;
+}
+
+/* ── Agent Selector Modal ─────────────────────────────────────────────────── */
+.agent-selector-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+}
+
+.agent-selector-modal {
+  background: #16213e;
+  border: 1px solid #1a4a8a;
+  border-radius: 10px;
+  padding: 1.5rem;
+  width: 420px;
+  max-width: 95vw;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+}
+
+.agent-selector-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.agent-selector-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #e0e0e0;
+}
+
+.agent-selector-close {
+  background: none;
+  border: none;
+  color: #8892b0;
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+}
+.agent-selector-close:hover { background: #0f3460; color: #e94560; }
+
+.agent-selector-scope {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+}
+.agent-scope-label { color: #8892b0; }
+.agent-scope-value { color: #e0e0e0; font-family: monospace; background: #0f3460; padding: 1px 6px; border-radius: 4px; }
+
+.agent-selector-loading, .agent-selector-empty {
+  color: #8892b0;
+  font-size: 0.85rem;
+}
+
+.agent-selector-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.agent-selector-label {
+  font-size: 0.8rem;
+  color: #8892b0;
+  font-weight: 600;
+}
+
+.agent-selector-select {
+  background: #0f3460;
+  border: 1px solid #1a4a8a;
+  color: #e0e0e0;
+  border-radius: 5px;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.88rem;
+}
+
+.agent-selector-description {
+  font-size: 0.82rem;
+  color: #c8c8c8;
+  font-style: italic;
+  margin: 0;
+}
+
+.agent-workflow-fetch {
+  background: #0c1c35;
+  border: 1px solid #0f3460;
+  border-radius: 6px;
+  padding: 0.65rem 0.8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.agent-workflow-hint {
+  font-size: 0.8rem;
+  color: #8892b0;
+  margin: 0;
+}
+.agent-workflow-stale {
+  color: #e9a02a;
+}
+.agent-workflow-fresh {
+  color: #51cf66;
+}
+
+.agent-fetch-btn {
+  background: #0f3460;
+  border: 1px solid #1a4a8a;
+  color: #e0e0e0;
+  border-radius: 5px;
+  font-size: 0.82rem;
+  padding: 0.3rem 0.7rem;
+  cursor: pointer;
+  align-self: flex-start;
+  transition: background 0.15s;
+}
+.agent-fetch-btn:hover:not(:disabled) { background: #1a4a8a; }
+.agent-fetch-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.agent-fetch-btn.done { background: #0a3d1f; border-color: #51cf66; color: #51cf66; }
+
+.agent-selector-error {
+  color: #e94560;
+  font-size: 0.82rem;
+  background: #240c14;
+  border: 1px solid #e94560;
+  border-radius: 5px;
+  padding: 0.35rem 0.65rem;
+}
+
+.agent-selector-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.agent-cancel-btn {
+  background: none;
+  border: 1px solid #0f3460;
+  color: #8892b0;
+  border-radius: 5px;
+  padding: 0.4rem 0.9rem;
+  cursor: pointer;
+  font-size: 0.88rem;
+  transition: background 0.15s;
+}
+.agent-cancel-btn:hover:not(:disabled) { background: #0f3460; color: #e0e0e0; }
+
+.agent-start-btn {
+  background: #e94560;
+  border: none;
+  color: #fff;
+  border-radius: 5px;
+  padding: 0.4rem 0.9rem;
+  cursor: pointer;
+  font-size: 0.88rem;
+  font-weight: 600;
+  transition: background 0.15s;
+}
+.agent-start-btn:hover:not(:disabled) { background: #c23152; }
+.agent-start-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Agent mode banner in EmbeddedChatPanel ───────────────────────────────── */
+.ec-agent-banner {
+  background: #1a0a40;
+  border-bottom: 1px solid #3d2a8a;
+  color: #b4a4f8;
+  font-size: 0.78rem;
+  padding: 0.3rem 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.ec-agent-spinner {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border: 2px solid #3d2a8a;
+  border-top-color: #b4a4f8;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  margin-left: auto;
+}
+
+.ec-bubble.ec-agent-stream {
+  border-left: 2px solid #5a3ab8;
+}
+
+.ec-bubble.ec-agent-thinking {
+  border-left: 2px solid #5a3ab8;
+  opacity: 0.7;
+  font-style: italic;
+  color: #8899bb;
+}
+
+.ec-bubble.ec-extracting {
+  border-left-color: #3a7bd5;
+  color: #7ab3f5;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-style: normal;
+  opacity: 0.85;
+}
+
+.ec-bubble.ec-extracting--error {
+  border-left-color: #e94560;
+  color: #f08090;
+  opacity: 1;
+}
+
+.ec-extracting-icon {
+  font-style: normal;
+  flex-shrink: 0;
+}
+
+/* ── Agent debug context viewer ───────────────────────────────────────────── */
+.ec-debug-section {
+  border-top: 1px solid #1a3060;
+  background: #08121e;
+  flex-shrink: 0;
+}
+
+.ec-debug-toggle {
+  width: 100%;
+  text-align: left;
+  padding: 5px 12px;
+  background: transparent;
+  border: none;
+  color: #5580a8;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.ec-debug-toggle:hover {
+  color: #88aacc;
+  background: #0e1e30;
+}
+
+.ec-debug-body {
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 0 10px 10px;
+}
+
+.ec-debug-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #5580a8;
+  margin: 8px 0 3px;
+}
+
+.ec-debug-pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 11px;
+  color: #99b8cc;
+  background: #0c1a28;
+  border: 1px solid #1a3060;
+  border-radius: 4px;
+  padding: 6px 8px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+/* ── Agent Approval Panel ─────────────────────────────────────────────────── */
+.agent-approval-panel {
+  border-top: 1px solid #1a4a8a;
+  background: #0c1c35;
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  max-height: 300px;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+.agent-approval-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.agent-approval-title {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #e0e0e0;
+}
+
+.agent-approval-meta {
+  font-size: 0.75rem;
+  color: #8892b0;
+  font-family: monospace;
+}
+
+.agent-findings-section-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #8892b0;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0.3rem 0 0.4rem;
+}
+
+.agent-findings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.agent-no-findings {
+  font-size: 0.82rem;
+  color: #8892b0;
+  font-style: italic;
+}
+
+.agent-finding {
+  background: #16213e;
+  border: 1px solid #0f3460;
+  border-radius: 6px;
+  padding: 0.65rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.agent-finding--ignore { border-left: 3px solid #51cf66; }
+.agent-finding--investigate { border-left: 3px solid #ffd43b; }
+.agent-finding--action_required { border-left: 3px solid #e94560; }
+
+.agent-finding-header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.agent-finding-subject {
+  flex: 1;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #e0e0e0;
+}
+
+.agent-finding-badge {
+  font-size: 0.68rem;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.agent-finding-badge--ignore { background: #0a3d1f; color: #51cf66; }
+.agent-finding-badge--investigate { background: #3d3000; color: #ffd43b; }
+.agent-finding-badge--action_required { background: #3d0a14; color: #e94560; }
+
+.agent-finding-reason {
+  font-size: 0.8rem;
+  color: #c8c8c8;
+  margin: 0;
+}
+
+.agent-finding-pattern {
+  font-size: 0.78rem;
+  color: #8892b0;
+  margin: 0;
+  font-style: italic;
+}
+
+.agent-finding-issue-preview {
+  background: #0c1c35;
+  border: 1px solid #0f3460;
+  border-radius: 4px;
+  padding: 0.4rem 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.agent-finding-issue-title {
+  font-size: 0.78rem;
+  color: #c8c8c8;
+}
+
+.agent-toggle-body-btn {
+  background: none;
+  border: none;
+  color: #339af0;
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
+.agent-toggle-body-btn:hover { text-decoration: underline; }
+
+.agent-issue-body {
+  font-size: 0.75rem;
+  color: #c8c8c8;
+  background: #0f3460;
+  border-radius: 4px;
+  padding: 0.4rem;
+  white-space: pre-wrap;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.agent-finding-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.1rem;
+}
+
+.agent-action-label {
+  font-size: 0.85rem;
+  color: #ccd6f6;
+  font-weight: 500;
+  flex: 1;
+}
+
+.agent-finding-btns {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.agent-approve-btn {
+  background: #0a3d1f;
+  border: 1px solid #51cf66;
+  color: #51cf66;
+  border-radius: 5px;
+  font-size: 0.78rem;
+  padding: 0.25rem 0.6rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.agent-approve-btn:hover:not(:disabled) { background: #0f5c2e; }
+.agent-approve-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.agent-reject-btn {
+  background: #240c14;
+  border: 1px solid #8892b0;
+  color: #8892b0;
+  border-radius: 5px;
+  font-size: 0.78rem;
+  padding: 0.25rem 0.6rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.agent-reject-btn:hover:not(:disabled) { background: #3d1a26; border-color: #e94560; color: #e94560; }
+.agent-reject-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.agent-finding-state {
+  font-size: 0.75rem;
+  color: #8892b0;
+  font-style: italic;
+}
+.agent-finding-state.done { color: #51cf66; }
+.agent-finding-state.skipped { color: #8892b0; }
+

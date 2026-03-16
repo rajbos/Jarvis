@@ -93,6 +93,18 @@ const EXPECTED_CHANNELS = [
   'local:list-repos-for-folder',
   'local:link-repo',
   'local:open-folder',
+  // agents plugin
+  'agents:list',
+  'agents:update',
+  'agents:run',
+  'agents:get-session',
+  'agents:approve-finding',
+  'agents:reject-finding',
+  'agents:execute-finding',
+  // workflow data (agents plugin)
+  'github:fetch-workflow-runs',
+  'github:get-workflow-summary',
+  'github:get-cached-workflow-info',
 ] as const;
 
 describe('IPC handler registration', () => {

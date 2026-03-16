@@ -83,4 +83,42 @@ contextBridge.exposeInMainWorld('jarvis', {
   onLocalScanComplete: (callback: (progress: Record<string, unknown>) => void) => {
     ipcRenderer.on('local:scan-complete', (_event, progress) => callback(progress));
   },
+  // Agents
+  agentsList: () => ipcRenderer.invoke('agents:list'),
+  agentsUpdate: (agentId: number, systemPrompt: string) =>
+    ipcRenderer.invoke('agents:update', agentId, systemPrompt),
+  agentsRun: (agentId: number, scopeType: 'repo' | 'org' | 'global', scopeValue: string, workflowFilter?: string) =>
+    ipcRenderer.invoke('agents:run', agentId, scopeType, scopeValue, workflowFilter),
+  agentsGetSession: (sessionId: number) => ipcRenderer.invoke('agents:get-session', sessionId),
+  agentsApproveFinding: (findingId: number) => ipcRenderer.invoke('agents:approve-finding', findingId),
+  agentsRejectFinding: (findingId: number) => ipcRenderer.invoke('agents:reject-finding', findingId),
+  agentsExecuteFinding: (findingId: number) => ipcRenderer.invoke('agents:execute-finding', findingId),
+  onAgentSessionStarting: (callback: (data: Record<string, unknown>) => void) => {
+    ipcRenderer.on('agent:session-starting', (_event, data) => callback(data));
+  },
+  onAgentToken: (callback: (token: string) => void) => {
+    ipcRenderer.on('agent:token', (_event, token) => callback(token));
+  },
+  onAgentAnalysisComplete: (callback: (data: Record<string, unknown>) => void) => {
+    ipcRenderer.on('agent:analysis-complete', (_event, data) => callback(data));
+  },
+  onAgentPhase2Error: (callback: (data: Record<string, unknown>) => void) => {
+    ipcRenderer.on('agent:phase2-error', (_event, data) => callback(data));
+  },
+  onAgentSessionComplete: (callback: (result: Record<string, unknown>) => void) => {
+    ipcRenderer.on('agent:session-complete', (_event, result) => callback(result));
+  },
+  onAgentSessionError: (callback: (error: Record<string, unknown>) => void) => {
+    ipcRenderer.on('agent:session-error', (_event, error) => callback(error));
+  },
+  onAgentDebugContext: (callback: (data: Record<string, unknown>) => void) => {
+    ipcRenderer.on('agent:debug-context', (_event, data) => callback(data));
+  },
+  // Workflow data
+  githubFetchWorkflowRuns: (repoFullName: string) =>
+    ipcRenderer.invoke('github:fetch-workflow-runs', repoFullName),
+  githubGetWorkflowSummary: (repoFullName: string) =>
+    ipcRenderer.invoke('github:get-workflow-summary', repoFullName),
+  githubGetCachedWorkflowInfo: (repoFullName: string) =>
+    ipcRenderer.invoke('github:get-cached-workflow-info', repoFullName),
 });

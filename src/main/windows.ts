@@ -81,10 +81,12 @@ export function createOnboardingWindow(db: SqlJsDatabase): BrowserWindow {
 
 export function createSettingsWindow(): BrowserWindow {
   const win = new BrowserWindow({
-    width: 480,
-    height: 470,
+    width: 520,
+    height: 700,
+    minWidth: 400,
+    minHeight: 500,
     title: 'Jarvis — Settings',
-    resizable: false,
+    resizable: true,
     minimizable: false,
     maximizable: false,
     webPreferences: {
