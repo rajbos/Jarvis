@@ -93,6 +93,10 @@ const EXPECTED_CHANNELS = [
   'local:list-repos-for-folder',
   'local:link-repo',
   'local:open-folder',
+  // secrets plugin
+  'secrets:scan',
+  'secrets:list-for-repo',
+  'secrets:list-all',
 ] as const;
 
 describe('IPC handler registration', () => {

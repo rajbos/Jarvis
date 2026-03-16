@@ -37,7 +37,7 @@ export function GitHubStep({
       <h2>
         GitHub Account <StatusBadge status={badgeStatus} label={badgeLabel} />
       </h2>
-      <p>Connect your GitHub account to discover organizations and repositories.</p>
+      {!authenticated && <p>Connect your GitHub account to discover organizations and repositories.</p>}
 
       {!authenticated && !deviceCode && (
         <button onClick={onLogin} disabled={loginDisabled}>
