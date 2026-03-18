@@ -128,7 +128,10 @@ function showSettingsWindow(): void {
 }
 
 app.whenReady().then(() => {
-  initialize();
+  initialize().catch((err) => {
+    console.error('[Main] Fatal initialization error:', err);
+    app.quit();
+  });
 });
 
 app.on('window-all-closed', () => {

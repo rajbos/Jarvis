@@ -14,6 +14,10 @@ const ROOT = path.join(__dirname, '..');
 const WATCH_DIRS = [
   path.join(ROOT, 'dist', 'main'),
   path.join(ROOT, 'dist', 'renderer'),
+  path.join(ROOT, 'dist', 'plugins'),
+  path.join(ROOT, 'dist', 'services'),
+  path.join(ROOT, 'dist', 'storage'),
+  path.join(ROOT, 'dist', 'agent'),
 ];
 
 let electronProcess = null;

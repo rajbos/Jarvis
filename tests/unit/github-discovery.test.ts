@@ -430,6 +430,85 @@ describe('GitHub Discovery — runDiscovery', () => {
     expect(getLastOrgIndexedAt(db)).toBeNull();
   });
 
+  it('discovers PAT-only orgs in Phase 1.5 and scans their repos in Phase 2', async () => {
+    const fetchCalls: { url: string; token: string }[] = [];
+
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      const authHeader = (init?.headers as Record<string, string>)?.Authorization ?? '';
+      const token = authHeader.replace('Bearer ', '');
+      fetchCalls.push({ url, token });
+
+      // OAuth: /user/orgs — only sees org1
+      if (url.includes('/user/orgs') && token === 'oauth-token') {
+        return jsonResponse([{ login: 'org1', description: '' }], makeHeaders(4998));
+      }
+      // PAT: /user/orgs — also sees xebia (blocked from OAuth)
+      if (url.includes('/user/orgs') && token === 'pat-token') {
+        return jsonResponse(
+          [{ login: 'org1', description: '' }, { login: 'xebia', description: '' }],
+          makeHeaders(4997),
+        );
+      }
+      // OAuth: /orgs/org1/repos
+      if (url.includes('/orgs/org1/repos') && token === 'oauth-token') {
+        return jsonResponse(
+          [{ full_name: 'org1/repo-a', name: 'repo-a', default_branch: 'main', archived: false, fork: false, private: false }],
+          makeHeaders(4996),
+        );
+      }
+      // PAT: /orgs/xebia/repos — called in Phase 2 for the PAT-only org
+      if (url.includes('/orgs/xebia/repos') && token === 'pat-token') {
+        return jsonResponse(
+          [
+            { full_name: 'xebia/repo-x', name: 'repo-x', default_branch: 'main', archived: false, fork: false, private: true },
+            { full_name: 'xebia/repo-y', name: 'repo-y', default_branch: 'main', archived: false, fork: false, private: true },
+          ],
+          makeHeaders(4995),
+        );
+      }
+      // Phase 5 (runPatDiscovery) should NOT re-scan xebia or org1
+      if (url.includes('/orgs/xebia/repos') && token !== 'pat-token') {
+        throw new Error('xebia should only be scanned with PAT');
+      }
+      // OAuth: /user/repos
+      if (url.includes('/user/repos') && token === 'oauth-token') {
+        return jsonResponse([], makeHeaders(4993));
+      }
+      // PAT: /user/repos?affiliation=collaborator (from Phase 5)
+      if (url.includes('/user/repos') && url.includes('affiliation=collaborator') && token === 'pat-token') {
+        return jsonResponse([], makeHeaders(4992));
+      }
+      return jsonResponse([], makeHeaders(4990));
+    }) as Mock;
+
+    const progressUpdates: any[] = [];
+    await runDiscovery(db, 'oauth-token', (p) => progressUpdates.push({ ...p }), 'pat-token');
+
+    // Both orgs should be in the DB
+    const orgs = db.exec('SELECT login FROM github_orgs ORDER BY login COLLATE NOCASE');
+    const orgLogins = orgs[0].values.map((v: unknown[]) => v[0]);
+    expect(orgLogins).toContain('org1');
+    expect(orgLogins).toContain('xebia');
+
+    // xebia repos should be stored (scanned in Phase 2 via PAT)
+    const repos = db.exec('SELECT full_name FROM github_repos ORDER BY full_name');
+    const repoNames = repos[0].values.map((v: unknown[]) => v[0]);
+    expect(repoNames).toContain('org1/repo-a');
+    expect(repoNames).toContain('xebia/repo-x');
+    expect(repoNames).toContain('xebia/repo-y');
+
+    // PAT should have scanned xebia repos in Phase 2 (before Phase 5)
+    const phase2XebiaCalls = fetchCalls.filter(
+      (c) => c.token === 'pat-token' && c.url.includes('/orgs/xebia/repos'),
+    );
+    expect(phase2XebiaCalls.length).toBeGreaterThan(0);
+
+    // Phase 5 runPatDiscovery should NOT have re-scanned xebia (already has repos + was in scannedSet)
+    // The first PAT /orgs/xebia/repos call is from Phase 2; there should be exactly one.
+    expect(phase2XebiaCalls.length).toBe(1);
+  });
+
   it('runs PAT supplemental pass when PAT is provided', async () => {
     const fetchCalls: { url: string; token: string }[] = [];
 
@@ -598,6 +677,77 @@ describe('GitHub Discovery — runDiscovery', () => {
     // Discovery should still reach 'done' phase
     const last = progressUpdates[progressUpdates.length - 1];
     expect(last.phase).toBe('done');
+  });
+
+  it('rescans OAuth-blocked orgs that already have repos in DB', async () => {
+    // Pre-seed xebia with repos to simulate a previous PAT run (repoCount > 0)
+    const xebiaId = upsertOrg(db, { login: 'xebia' });
+    upsertRepo(db, { full_name: 'xebia/old-repo', name: 'old-repo', default_branch: 'main', archived: false, fork: false, private: true }, xebiaId);
+
+    const fetchCalls: { url: string; token: string }[] = [];
+
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      const authHeader = (init?.headers as Record<string, string>)?.Authorization ?? '';
+      const token = authHeader.replace('Bearer ', '');
+      fetchCalls.push({ url, token });
+
+      // OAuth: /user/orgs — does NOT return xebia (org blocks OAuth apps)
+      if (url.includes('/user/orgs') && token === 'oauth-token') {
+        return jsonResponse([{ login: 'org1', description: '' }], makeHeaders(4998));
+      }
+      // OAuth: /orgs/org1/repos
+      if (url.includes('/orgs/org1/repos') && token === 'oauth-token') {
+        return jsonResponse(
+          [{ full_name: 'org1/repo-a', name: 'repo-a', default_branch: 'main', archived: false, fork: false, private: false }],
+          makeHeaders(4997),
+        );
+      }
+      // OAuth: /user/repos
+      if (url.includes('/user/repos') && token === 'oauth-token') {
+        return jsonResponse([], makeHeaders(4996));
+      }
+      // PAT: /user/orgs — returns org1 (OAuth saw it) + xebia (OAuth blocked)
+      if (url.includes('/user/orgs') && token === 'pat-token') {
+        return jsonResponse(
+          [{ login: 'org1', description: '' }, { login: 'xebia', description: '' }],
+          makeHeaders(4995),
+        );
+      }
+      // PAT should NOT re-fetch org1/repos (OAuth already indexed it with repos)
+      if (url.includes('/orgs/org1/repos') && token === 'pat-token') {
+        throw new Error('PAT should not re-fetch org already indexed by OAuth');
+      }
+      // PAT: /orgs/xebia/repos — OAuth-blocked org, PAT must rescan
+      if (url.includes('/orgs/xebia/repos') && token === 'pat-token') {
+        return jsonResponse(
+          [
+            { full_name: 'xebia/old-repo', name: 'old-repo', default_branch: 'main', archived: false, fork: false, private: true },
+            { full_name: 'xebia/new-repo', name: 'new-repo', default_branch: 'main', archived: false, fork: false, private: true },
+          ],
+          makeHeaders(4994),
+        );
+      }
+      // PAT: /user/repos?affiliation=collaborator
+      if (url.includes('/user/repos') && url.includes('affiliation=collaborator') && token === 'pat-token') {
+        return jsonResponse([], makeHeaders(4993));
+      }
+      return jsonResponse([], makeHeaders(4990));
+    }) as Mock;
+
+    const progressUpdates: any[] = [];
+    await runDiscovery(db, 'oauth-token', (p) => progressUpdates.push({ ...p }), 'pat-token');
+
+    // xebia's new repo should be in DB
+    const repos = db.exec('SELECT full_name FROM github_repos ORDER BY full_name');
+    const repoNames = repos[0].values.map((v: unknown[]) => v[0]);
+    expect(repoNames).toContain('xebia/old-repo');
+    expect(repoNames).toContain('xebia/new-repo');
+    expect(repoNames).toContain('org1/repo-a');
+
+    // PAT must have called /orgs/xebia/repos
+    const patXebiaCalls = fetchCalls.filter(c => c.token === 'pat-token' && c.url.includes('/orgs/xebia/repos'));
+    expect(patXebiaCalls.length).toBeGreaterThan(0);
   });
 
   it('getLastOrgIndexedAt returns the most recent indexed_at', () => {
