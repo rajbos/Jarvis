@@ -97,6 +97,9 @@ const EXPECTED_CHANNELS = [
   'secrets:scan',
   'secrets:list-for-repo',
   'secrets:list-all',
+  'secrets:list-favorites',
+  'secrets:add-favorite',
+  'secrets:remove-favorite',
 ] as const;
 
 describe('IPC handler registration', () => {
