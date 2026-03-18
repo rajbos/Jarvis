@@ -89,7 +89,7 @@ export async function streamChat(
   const response = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model, messages, stream: true }),
+    body: JSON.stringify({ model, messages, stream: true, options: { num_ctx: 16384 } }),
     signal,
   });
 
@@ -176,7 +176,7 @@ export async function chatWithTools(
   const response = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model, messages, tools, stream: false }),
+    body: JSON.stringify({ model, messages, tools, stream: false, options: { num_ctx: 16384 } }),
     signal,
   });
 
