@@ -120,6 +120,7 @@ export function renderChatMarkdown(text: string): string {
       /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,
       '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>',
     );
+    // eslint-disable-next-line no-control-regex
     s = s.replace(/\x00CS(\d+)\x00/g, (_: string, i: string) => codeSpans[parseInt(i, 10)]);
     return s;
   };
@@ -135,6 +136,7 @@ export function renderChatMarkdown(text: string): string {
 
   for (const raw of lines) {
     let m: RegExpMatchArray | null;
+    // eslint-disable-next-line no-control-regex
     if (/^\x00B\d+\x00$/.test(raw))       { closeList(); parts.push(raw);                                              continue; }
     if (/^-{3,}\s*$/.test(raw))            { closeList(); parts.push('<hr class="ec-hr">');                            continue; }
     if ((m = raw.match(/^###\s+(.*)/)))    { closeList(); parts.push(`<h5 class="ec-heading">${inline(m[1])}</h5>`);  continue; }
@@ -155,6 +157,7 @@ export function renderChatMarkdown(text: string): string {
   closeList();
 
   // 3. Join: insert <br> only between consecutive non-block, non-empty lines.
+  // eslint-disable-next-line no-control-regex
   const BLOCK = /^(<h[3-5]|<[uo]l|<\/[uo]l>|<li|<hr|\x00B)/;
   const joined: string[] = [];
   for (let i = 0; i < parts.length; i++) {
@@ -168,6 +171,7 @@ export function renderChatMarkdown(text: string): string {
   out = joined.join('');
 
   // 4. Restore code blocks.
+  // eslint-disable-next-line no-control-regex
   out = out.replace(/\x00B(\d+)\x00/g, (_: string, i: string) => blocks[parseInt(i, 10)]);
   return out;
 }
