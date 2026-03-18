@@ -847,6 +847,59 @@ h1 {
   border-color: #339af0;
 }
 
+/* ── Favorite star ───────────────────────────────────────────────────────── */
+.fav-star {
+  font-size: 0.95rem;
+  color: #556;
+  cursor: pointer;
+  flex-shrink: 0;
+  line-height: 1;
+  transition: color 0.15s, transform 0.15s;
+  user-select: none;
+}
+
+.fav-star:hover {
+  color: #f0c040;
+  transform: scale(1.2);
+}
+
+.fav-star-active {
+  color: #f0c040;
+}
+
+/* ── Secrets layout ──────────────────────────────────────────────────────── */
+.secrets-layout {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+}
+
+.secrets-step-wrapper {
+  flex: 0 0 370px;
+}
+
+.secrets-step-wrapper .step {
+  margin-bottom: 0;
+}
+
+.secrets-step-clickable {
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.secrets-step-clickable:hover {
+  border-color: #339af0;
+}
+
+.secrets-panel {
+  flex: 1;
+  min-width: 0;
+  max-height: 480px;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
 /* ── Ollama layout ───────────────────────────────────────────────────────── */
 .ollama-layout {
   display: flex;
@@ -1008,6 +1061,26 @@ h1 {
   border: 1px solid #2b8a3e;
   padding: 0.1rem 0.4rem;
   border-radius: 4px;
+}
+
+.ec-clear-btn {
+  background: none;
+  border: none;
+  color: #99a;
+  font-size: 1rem;
+  padding: 0 0.25rem;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.ec-clear-btn:hover:not(:disabled) {
+  color: #e0e0e0;
+  background: none;
+}
+
+.ec-clear-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
 }
 
 .ec-close-btn {

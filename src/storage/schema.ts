@@ -126,5 +126,23 @@ export function getSchema(): string {
     );
     CREATE INDEX IF NOT EXISTS idx_notif_repo ON github_notifications(repo_full_name);
     CREATE INDEX IF NOT EXISTS idx_notif_owner ON github_notifications(repo_owner);
+
+    -- GitHub Actions secrets scanned per repo
+    CREATE TABLE IF NOT EXISTS repo_secrets (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        github_repo_id INTEGER NOT NULL REFERENCES github_repos(id) ON DELETE CASCADE,
+        secret_name    TEXT NOT NULL,
+        scanned_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(github_repo_id, secret_name)
+    );
+    CREATE INDEX IF NOT EXISTS idx_repo_secrets_repo_id ON repo_secrets(github_repo_id);
+
+    -- Orgs/repos favorited for extended secrets scanning
+    CREATE TABLE IF NOT EXISTS secret_scan_favorites (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        target_type TEXT NOT NULL CHECK(target_type IN ('org', 'repo')),
+        target_name TEXT NOT NULL UNIQUE,
+        added_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `;
 }

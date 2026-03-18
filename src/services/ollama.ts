@@ -89,7 +89,7 @@ export async function streamChat(
   const response = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model, messages, stream: true }),
+    body: JSON.stringify({ model, messages, stream: true, options: { num_ctx: 16384 } }),
     signal,
   });
 
@@ -176,7 +176,7 @@ export async function chatWithTools(
   const response = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model, messages, tools, stream: false }),
+    body: JSON.stringify({ model, messages, tools, stream: false, options: { num_ctx: 16384 } }),
     signal,
   });
 
@@ -192,8 +192,57 @@ export async function chatWithTools(
     message?: { content?: string; tool_calls?: OllamaToolCall[] };
   };
 
-  return {
-    content: data.message?.content ?? '',
-    tool_calls: data.message?.tool_calls ?? [],
-  };
+  const content = data.message?.content ?? '';
+  const structuredToolCalls = data.message?.tool_calls ?? [];
+
+  // Some small models (e.g. llama3.2:3b) emit tool calls as raw JSON text in
+  // `content` rather than in the structured `tool_calls` field. Detect and
+  // parse that fallback so they still work.
+  if (structuredToolCalls.length === 0 && content.trim()) {
+    const extracted = extractTextToolCalls(content, tools);
+    if (extracted.length > 0) {
+      return { content: '', tool_calls: extracted };
+    }
+  }
+
+  return { content, tool_calls: structuredToolCalls };
+}
+
+/**
+ * Try to extract tool calls from plain-text content when the model emits them
+ * as JSON rather than using the structured tool_calls field.
+ * Handles both {"name":...,"parameters":{...}} and {"function":{...}} shapes.
+ */
+function extractTextToolCalls(
+  content: string,
+  tools: OllamaTool[],
+): OllamaToolCall[] {
+  const toolNames = new Set(tools.map((t) => t.function.name));
+  const results: OllamaToolCall[] = [];
+
+  // Find all {...} blocks and try to parse them as tool calls
+  const jsonRegex = /\{[\s\S]*?\}/g;
+  let match: RegExpExecArray | null;
+  while ((match = jsonRegex.exec(content)) !== null) {
+    try {
+      const obj = JSON.parse(match[0]) as Record<string, unknown>;
+
+      // Shape 1: {"name": "search_secrets", "parameters": {"pattern": "PAT"}}
+      if (typeof obj['name'] === 'string' && toolNames.has(obj['name'])) {
+        const args = (obj['parameters'] ?? obj['arguments'] ?? {}) as Record<string, unknown>;
+        results.push({ function: { name: obj['name'], arguments: args } });
+        continue;
+      }
+
+      // Shape 2: {"function": {"name": "search_secrets", "parameters": {...}}}
+      const fn = obj['function'] as Record<string, unknown> | undefined;
+      if (fn && typeof fn['name'] === 'string' && toolNames.has(fn['name'])) {
+        const args = (fn['parameters'] ?? fn['arguments'] ?? {}) as Record<string, unknown>;
+        results.push({ function: { name: fn['name'], arguments: args } });
+      }
+    } catch {
+      // not valid JSON, keep scanning
+    }
+  }
+  return results;
 }
