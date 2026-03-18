@@ -10,11 +10,13 @@ interface RepoPanelViewProps {
   currentUserLogin: string | null;
   notifCounts: NotificationCounts | null;
   sortByNotifs: boolean;
+  favoritedRepos?: Set<string>;
   onSortToggle: () => void;
   onClose: () => void;
   onOpenRepoNotif: (repoFullName: string) => void;
   onRefreshAll?: () => void;
   refreshingAll?: boolean;
+  onToggleFavoriteRepo?: (repoFullName: string) => void;
 }
 
 export function RepoPanelView({
@@ -25,11 +27,13 @@ export function RepoPanelView({
   currentUserLogin,
   notifCounts,
   sortByNotifs,
+  favoritedRepos,
   onSortToggle,
   onClose,
   onOpenRepoNotif,
   onRefreshAll,
   refreshingAll,
+  onToggleFavoriteRepo,
 }: RepoPanelViewProps) {
   const [hideMyRepos, setHideMyRepos] = useState(true);
 
@@ -107,10 +111,14 @@ export function RepoPanelView({
                 repo={repo}
                 showOwner={showOwner}
                 notifCount={nc}
+                favorited={favoritedRepos?.has(repo.full_name)}
                 onClick={nc > 0
                   ? () => void onOpenRepoNotif(repo.full_name)
                   : () => window.jarvis.openUrl('https://github.com/' + repo.full_name)}
                 onNotifClick={nc > 0 ? (e: MouseEvent) => { e.stopPropagation(); void onOpenRepoNotif(repo.full_name); } : undefined}
+                onToggleFavorite={onToggleFavoriteRepo
+                  ? (e: MouseEvent) => { e.stopPropagation(); onToggleFavoriteRepo(repo.full_name); }
+                  : undefined}
               />
             );
           })

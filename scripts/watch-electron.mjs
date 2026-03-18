@@ -14,6 +14,10 @@ const ROOT = path.join(__dirname, '..');
 const WATCH_DIRS = [
   path.join(ROOT, 'dist', 'main'),
   path.join(ROOT, 'dist', 'renderer'),
+  path.join(ROOT, 'dist', 'plugins'),
+  path.join(ROOT, 'dist', 'services'),
+  path.join(ROOT, 'dist', 'storage'),
+  path.join(ROOT, 'dist', 'agent'),
 ];
 
 let electronProcess = null;
@@ -24,30 +28,22 @@ let debounceTimer = null;
 const STARTUP_GRACE_MS = 4000;
 let graceUntil = 0;
 
-// Per-file content cache so we only restart when a file actually changed.
-const fileContents = new Map();
+// Track last-known content of watched dist/ files so we can ignore spurious
+// write events from tsc/esbuild initial builds that produce identical output.
+const knownContents = new Map();
 
-function seedContentCache(dir) {
+function preloadDir(dir) {
   if (!fs.existsSync(dir)) return;
-  for (const entry of fs.readdirSync(dir, { recursive: true, withFileTypes: true })) {
-    if (!entry.isFile()) continue;
-    const filename = entry.name;
-    if (!/\.(js|html|css)$/.test(filename)) continue;
-    const fullPath = path.join(entry.parentPath ?? entry.path ?? dir, filename);
-    try { fileContents.set(fullPath, fs.readFileSync(fullPath)); } catch { /* skip */ }
-  }
-}
-
-function contentChanged(filePath) {
   try {
-    const current = fs.readFileSync(filePath);
-    const prev = fileContents.get(filePath);
-    fileContents.set(filePath, current);
-    if (prev && prev.equals(current)) return false;
-    return true;
-  } catch {
-    return true; // file unreadable — assume changed
-  }
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        preloadDir(fullPath);
+      } else if (/\.(js|html|css)$/.test(entry.name)) {
+        try { knownContents.set(fullPath, fs.readFileSync(fullPath)); } catch { /* ignore */ }
+      }
+    }
+  } catch { /* ignore */ }
 }
 
 function startElectron() {
@@ -89,12 +85,26 @@ function scheduleRestart() {
 const SRC_RENDERER = path.join(ROOT, 'src', 'renderer');
 const DIST_RENDERER = path.join(ROOT, 'dist', 'renderer');
 
+for (const dir of WATCH_DIRS) preloadDir(dir);
+
 for (const dir of WATCH_DIRS) {
   if (fs.existsSync(dir)) {
     fs.watch(dir, { recursive: true }, (_event, filename) => {
       if (!filename || !/\.(js|html|css)$/.test(filename)) return;
       const fullPath = path.join(dir, filename);
-      if (!contentChanged(fullPath)) return;
+      try {
+        if (!fs.existsSync(fullPath)) {
+          // File deleted — only restart if we knew about it
+          if (knownContents.has(fullPath)) { knownContents.delete(fullPath); scheduleRestart(); }
+          return;
+        }
+        const newBuf = fs.readFileSync(fullPath);
+        const prevBuf = knownContents.get(fullPath);
+        if (prevBuf && prevBuf.equals(newBuf)) return; // content unchanged, ignore
+        knownContents.set(fullPath, newBuf);
+      } catch {
+        // Can't read file — fall through and restart to be safe
+      }
       scheduleRestart();
     });
   }
@@ -127,10 +137,5 @@ if (fs.existsSync(SRC_RENDERER)) {
     // scheduleRestart is triggered automatically because dist/renderer/ is in WATCH_DIRS
   });
 }
-
-// Pre-seed the content cache from whatever is already in dist/ right now.
-// This means any subsequent tsc/esbuild rewrite with identical bytes is
-// correctly treated as "no change" rather than "first time seen".
-for (const dir of WATCH_DIRS) seedContentCache(dir);
 
 startElectron();

@@ -105,6 +105,13 @@ const EXPECTED_CHANNELS = [
   'github:fetch-workflow-runs',
   'github:get-workflow-summary',
   'github:get-cached-workflow-info',
+  // secrets plugin
+  'secrets:scan',
+  'secrets:list-for-repo',
+  'secrets:list-all',
+  'secrets:list-favorites',
+  'secrets:add-favorite',
+  'secrets:remove-favorite',
 ] as const;
 
 describe('IPC handler registration', () => {

@@ -9,10 +9,12 @@ interface OrgPanelProps {
   notifFetching: boolean;
   sortByNotifs: boolean;
   currentUserLogin: string | null;
+  favoritedOrgs: Set<string>;
   onSelectOrg: (orgLogin: string | null, displayName: string) => void;
   onNotifDive: (owner: string, displayName: string, kind: 'owner' | 'starred') => void;
   onSortToggle: () => void;
   onRefresh: () => void;
+  onToggleFavoriteOrg: (orgLogin: string) => void;
 }
 
 export function OrgPanel({
@@ -24,10 +26,12 @@ export function OrgPanel({
   notifFetching,
   sortByNotifs,
   currentUserLogin,
+  favoritedOrgs,
   onSelectOrg,
   onNotifDive,
   onSortToggle,
   onRefresh,
+  onToggleFavoriteOrg,
 }: OrgPanelProps) {
   const sorted = sortByNotifs && notifCounts
     ? [...orgs].sort((a, b) => {
@@ -77,6 +81,7 @@ export function OrgPanel({
       <div class="org-list">
         {sorted.map((org) => {
           const nc = notifCounts?.perOrg[org.login] ?? 0;
+          const isFav = favoritedOrgs.has(org.login);
           return (
             <div
               key={org.login}
@@ -95,6 +100,13 @@ export function OrgPanel({
                   </span>
                 )}
                 <span class="org-repos-count">{org.repoCount.toLocaleString()} repo{org.repoCount !== 1 ? 's' : ''}</span>
+              </span>
+              <span
+                class={`fav-star${isFav ? ' fav-star-active' : ''}`}
+                title={isFav ? 'Remove from secrets scan favorites' : 'Add to secrets scan favorites'}
+                onClick={(e: MouseEvent) => { e.stopPropagation(); onToggleFavoriteOrg(org.login); }}
+              >
+                {isFav ? '\u2605' : '\u2606'}
               </span>
               <label class="toggle" onClick={(e: MouseEvent) => e.stopPropagation()}>
                 <input

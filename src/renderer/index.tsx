@@ -21,6 +21,8 @@ import { LocalFolderPanel } from '../plugins/local-repos/LocalFolderPanel';
 import { LocalSubfolderPanel } from '../plugins/local-repos/LocalSubfolderPanel';
 import { LocalRepoPanelView } from '../plugins/local-repos/LocalRepoPanelView';
 import { getReposUnder, hasDeepRepos } from '../plugins/shared/utils';
+import { SecretsStep } from '../plugins/secrets/SecretsStep';
+import { SecretsScanPanel } from '../plugins/secrets/SecretsScanPanel';
 
 // ── Types (imported from single source of truth in plugins/types.ts) ─────────
 // The global augmentation `Window.jarvis` is declared in plugins/types.ts and
@@ -37,6 +39,10 @@ import type {
   LocalRepo,
   ScanFolder,
   LocalScanProgress,
+  RepoSecret,
+  SecretsScanResult,
+  SecretFavorite,
+  SecretsScanProgress,
 } from '../plugins/types';
 import '../plugins/types'; // activate the global Window augmentation
 
@@ -92,6 +98,16 @@ function App() {
   const [localScanProgress, setLocalScanProgress] = useState<LocalScanProgress | null>(null);
   const [localScanFinished, setLocalScanFinished] = useState(false);
   const [localScanning, setLocalScanning] = useState(false);
+
+  // Secrets state
+  const [showSecretsPanel, setShowSecretsPanel] = useState(false);
+  const [secretsScanning, setSecretsScanning] = useState(false);
+  const [secretsScanned, setSecretsScanned] = useState(false);
+  const [secretsLastResult, setSecretsLastResult] = useState<SecretsScanResult | null>(null);
+  const [secretsScanProgress, setSecretsScanProgress] = useState<SecretsScanProgress | null>(null);
+  const [secretsList, setSecretsList] = useState<RepoSecret[]>([]);
+  const [favoritedOrgs, setFavoritedOrgs] = useState<Set<string>>(new Set());
+  const [favoritedRepos, setFavoritedRepos] = useState<Set<string>>(new Set());
 
   const currentUserLogin = oauthStatus?.login ?? null;
 
@@ -182,6 +198,34 @@ function App() {
       } catch (err) {
         console.error('[Jarvis] Local folders check failed:', err);
         setLocalFolders([]);
+      }
+    })();
+  }, []);
+
+  // Load persisted secrets from DB on mount + register progress listener
+  useEffect(() => {
+    window.jarvis.onSecretsProgress((progress: SecretsScanProgress) => {
+      setSecretsScanProgress(progress);
+    });
+
+    (async () => {
+      try {
+        const persisted = await window.jarvis.listAllSecrets();
+        if (persisted.length > 0) {
+          setSecretsList(persisted);
+          setSecretsScanned(true);
+        }
+      } catch (err) {
+        console.warn('[Jarvis] Could not load persisted secrets:', err);
+      }
+      try {
+        const favs = await window.jarvis.listSecretFavorites();
+        const orgs = new Set(favs.filter((f: SecretFavorite) => f.target_type === 'org').map((f: SecretFavorite) => f.target_name));
+        const repos = new Set(favs.filter((f: SecretFavorite) => f.target_type === 'repo').map((f: SecretFavorite) => f.target_name));
+        setFavoritedOrgs(orgs);
+        setFavoritedRepos(repos);
+      } catch (err) {
+        console.warn('[Jarvis] Could not load secret favorites:', err);
       }
     })();
   }, []);
@@ -544,6 +588,56 @@ function App() {
     });
   }, [repoPanel, notifRepoPanel, notifDive, showLocalPanel, showLocalConfig, localNavStack, localLeafFolder, localNotifRepoPanel, showOllamaPanel]);
 
+  // ── Secrets handlers ────────────────────────────────────────────────────────
+
+  const handleSecretsStartScan = async () => {
+    setSecretsScanning(true);
+    setSecretsLastResult(null);
+    setSecretsScanProgress(null);
+    try {
+      const result = await window.jarvis.scanRepoSecrets();
+      setSecretsLastResult(result);
+      setSecretsScanned(true);
+      // Reload full list after scan
+      const allSecrets = await loadAllSecrets();
+      setSecretsList(allSecrets);
+    } catch (err) {
+      setSecretsLastResult({ error: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setSecretsScanning(false);
+    }
+  };
+
+  const loadAllSecrets = async (): Promise<RepoSecret[]> => {
+    try {
+      return await window.jarvis.listAllSecrets();
+    } catch {
+      return [];
+    }
+  };
+
+  const handleSecretsToggle = () => setShowSecretsPanel((v) => !v);
+
+  const handleToggleFavoriteOrg = async (orgLogin: string) => {
+    if (favoritedOrgs.has(orgLogin)) {
+      await window.jarvis.removeSecretFavorite(orgLogin);
+      setFavoritedOrgs((prev) => { const next = new Set(prev); next.delete(orgLogin); return next; });
+    } else {
+      await window.jarvis.addSecretFavorite('org', orgLogin);
+      setFavoritedOrgs((prev) => new Set(prev).add(orgLogin));
+    }
+  };
+
+  const handleToggleFavoriteRepo = async (repoFullName: string) => {
+    if (favoritedRepos.has(repoFullName)) {
+      await window.jarvis.removeSecretFavorite(repoFullName);
+      setFavoritedRepos((prev) => { const next = new Set(prev); next.delete(repoFullName); return next; });
+    } else {
+      await window.jarvis.addSecretFavorite('repo', repoFullName);
+      setFavoritedRepos((prev) => new Set(prev).add(repoFullName));
+    }
+  };
+
   return (
     <div class="app-shell">
       <div class="main-scroll" ref={mainScrollRef}>
@@ -581,6 +675,8 @@ function App() {
             onNotifDive={handleNotifDive}
             onSortToggle={handleSortToggle}
             onRefresh={doFetchNotifications}
+            favoritedOrgs={favoritedOrgs}
+            onToggleFavoriteOrg={handleToggleFavoriteOrg}
           />
         )}
 
@@ -604,6 +700,8 @@ function App() {
               : undefined}
             refreshingAll={repoPanel.orgLogin !== '__starred__' &&
               refreshingOwners.has(repoPanel.orgLogin ?? (currentUserLogin ?? ''))}
+            favoritedRepos={favoritedRepos}
+            onToggleFavoriteRepo={handleToggleFavoriteRepo}
           />
         )}
 
@@ -708,6 +806,29 @@ function App() {
               setLocalNotifRepoPanel((prev) => prev ? { ...prev, notifications: prev.notifications.filter((n) => n.id !== id) } : null);
               setNotifCounts((prev) => prev ? { ...prev, total: Math.max(0, prev.total - 1), perRepo: { ...prev.perRepo, [localNotifRepoPanel.repoFullName]: Math.max(0, (prev.perRepo[localNotifRepoPanel.repoFullName] ?? 1) - 1) } } : prev);
             }}
+          />
+        )}
+      </div>
+
+      <div class="secrets-layout">
+        <div class="secrets-step-wrapper">
+          <SecretsStep
+            scanned={secretsScanned}
+            scanning={secretsScanning}
+            secretCount={secretsList.length}
+            repoCount={new Set(secretsList.map((s) => s.full_name)).size}
+            onToggle={handleSecretsToggle}
+          />
+        </div>
+
+        {showSecretsPanel && (
+          <SecretsScanPanel
+            scanning={secretsScanning}
+            scanProgress={secretsScanProgress}
+            lastResult={secretsLastResult}
+            secrets={secretsList}
+            onScan={handleSecretsStartScan}
+            onClose={() => setShowSecretsPanel(false)}
           />
         )}
       </div>

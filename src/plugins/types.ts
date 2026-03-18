@@ -112,6 +112,32 @@ export interface ScanFolder {
   repoCount?: number;
 }
 
+export interface RepoSecret {
+  full_name: string;
+  secret_name: string;
+  scanned_at: string;
+}
+
+export interface SecretFavorite {
+  id: number;
+  target_type: 'org' | 'repo';
+  target_name: string;
+  added_at: string;
+}
+
+export interface SecretsScanProgress {
+  done: number;
+  total: number;
+  secretsFound: number;
+}
+
+export interface SecretsScanResult {
+  scanned?: number;
+  secretsFound?: number;
+  errors?: string[];
+  error?: string;
+}
+
 export interface LocalScanProgress {
   phase: 'scanning' | 'done';
   foldersScanned: number;
@@ -245,6 +271,14 @@ export interface JarvisApi {
   localListReposForFolder(folderPath: string): Promise<LocalRepo[]>;
   localLinkRepo(localRepoId: number, githubRepoId: number | null): Promise<{ ok: boolean }>;
   localOpenFolder(folderPath: string): Promise<void>;
+  // Secrets
+  scanRepoSecrets(): Promise<SecretsScanResult>;
+  listSecretsForRepo(repoFullName: string): Promise<RepoSecret[]>;
+  listAllSecrets(): Promise<RepoSecret[]>;
+  listSecretFavorites(): Promise<SecretFavorite[]>;
+  addSecretFavorite(targetType: 'org' | 'repo', targetName: string): Promise<{ ok: boolean }>;
+  removeSecretFavorite(targetName: string): Promise<{ ok: boolean }>;
+  onSecretsProgress(cb: (progress: SecretsScanProgress) => void): void;
   onLocalScanProgress(cb: (progress: LocalScanProgress) => void): void;
   onLocalScanComplete(cb: (progress: LocalScanProgress) => void): void;
   // Agents

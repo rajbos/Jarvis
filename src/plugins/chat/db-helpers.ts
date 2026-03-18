@@ -78,6 +78,45 @@ export function buildSystemContext(db: SqlJsDatabase): string {
     }
   }
 
+  // Secrets — embed inline when dataset is small enough, otherwise hint to use the tool
+  const secretsStmt = db.prepare(
+    `SELECT r.full_name, s.secret_name
+     FROM repo_secrets s
+     JOIN github_repos r ON r.id = s.github_repo_id
+     ORDER BY r.full_name, s.secret_name`,
+  );
+  const secretRows: { full_name: string; secret_name: string }[] = [];
+  try {
+    while (secretsStmt.step()) secretRows.push(secretsStmt.getAsObject() as { full_name: string; secret_name: string });
+  } finally {
+    secretsStmt.free();
+  }
+
+  if (secretRows.length > 0) {
+    lines.push('');
+    const byRepo = new Map<string, string[]>();
+    for (const s of secretRows) {
+      const list = byRepo.get(s.full_name) ?? [];
+      list.push(s.secret_name);
+      byRepo.set(s.full_name, list);
+    }
+    lines.push(`GitHub Actions secrets (${secretRows.length} total across ${byRepo.size} repos):`);
+    for (const [repo, names] of byRepo) {
+      lines.push(`- ${repo}: ${names.join(', ')}`);
+    }
+  } else {
+    // Check if table exists and scan has been run with zero results
+    try {
+      const check = db.exec('SELECT COUNT(*) FROM repo_secrets');
+      if (check.length > 0) {
+        lines.push('');
+        lines.push('GitHub Actions secrets: scan has been run, 0 secrets found.');
+      }
+    } catch {
+      // table doesn't exist yet, omit the section
+    }
+  }
+
   return lines.join('\n');
 }
 
@@ -132,6 +171,49 @@ export function searchReposForChat(db: SqlJsDatabase, query: string): string {
     const metaStr = meta.length > 0 ? ` [${meta.join(', ')}]` : '';
     const desc = r.description ? `: ${r.description.slice(0, 100)}` : '';
     lines.push(`- ${r.full_name}${metaStr}${desc}`);
+  }
+  return lines.join('\n');
+}
+
+// ── Secrets search ────────────────────────────────────────────────────────────
+
+export function searchSecretsForChat(db: SqlJsDatabase, pattern: string): string {
+  if (!pattern.trim()) return 'No pattern provided.';
+
+  const stmt = db.prepare(
+    `SELECT r.full_name, s.secret_name
+     FROM repo_secrets s
+     JOIN github_repos r ON r.id = s.github_repo_id
+     WHERE LOWER(s.secret_name) LIKE LOWER(?)
+     ORDER BY r.full_name, s.secret_name`,
+  );
+  const rows: { full_name: string; secret_name: string }[] = [];
+  try {
+    stmt.bind([`%${pattern}%`]);
+    while (stmt.step()) rows.push(stmt.getAsObject() as { full_name: string; secret_name: string });
+  } finally {
+    stmt.free();
+  }
+
+  if (rows.length === 0) {
+    const countStmt = db.prepare('SELECT COUNT(*) as cnt FROM repo_secrets');
+    countStmt.step();
+    const total = (countStmt.getAsObject() as { cnt: number }).cnt;
+    countStmt.free();
+    if (total === 0) return 'No secrets have been scanned yet. Ask the user to run a secrets scan first.';
+    return `No secrets matching "${pattern}" found across ${total} scanned secret(s).`;
+  }
+
+  const byRepo = new Map<string, string[]>();
+  for (const r of rows) {
+    const list = byRepo.get(r.full_name) ?? [];
+    list.push(r.secret_name);
+    byRepo.set(r.full_name, list);
+  }
+
+  const lines = [`Found ${rows.length} secret(s) matching "${pattern}" across ${byRepo.size} repo(s):`];
+  for (const [repo, secrets] of byRepo) {
+    lines.push(`- ${repo}: ${secrets.join(', ')}`);
   }
   return lines.join('\n');
 }
