@@ -65,6 +65,16 @@ contextBridge.exposeInMainWorld('jarvis', {
   localLinkRepo: (localRepoId: number, githubRepoId: number | null) =>
     ipcRenderer.invoke('local:link-repo', localRepoId, githubRepoId),
   localOpenFolder: (folderPath: string) => ipcRenderer.invoke('local:open-folder', folderPath),
+  // Secrets
+  scanRepoSecrets: () => ipcRenderer.invoke('secrets:scan'),
+  listSecretsForRepo: (repoFullName: string) => ipcRenderer.invoke('secrets:list-for-repo', repoFullName),
+  listAllSecrets: () => ipcRenderer.invoke('secrets:list-all'),
+  listSecretFavorites: () => ipcRenderer.invoke('secrets:list-favorites'),
+  addSecretFavorite: (targetType: string, targetName: string) => ipcRenderer.invoke('secrets:add-favorite', targetType, targetName),
+  removeSecretFavorite: (targetName: string) => ipcRenderer.invoke('secrets:remove-favorite', targetName),
+  onSecretsProgress: (callback: (progress: Record<string, number>) => void) => {
+    ipcRenderer.on('secrets:scan-progress', (_event, progress) => callback(progress));
+  },
   onOpenChat: (callback: () => void) => {
     ipcRenderer.on('chat:open', () => callback());
   },

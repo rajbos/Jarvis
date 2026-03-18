@@ -161,6 +161,43 @@ async function fetchAllPages<T>(
   return results;
 }
 
+/**
+ * Like fetchAllPages, but the URL must include `sort=updated&direction=desc`.
+ * When a sinceDate is provided, pagination stops as soon as the oldest repo
+ * on a page was last updated before that date — no older repos can appear on
+ * subsequent pages, so fetching them would be wasteful.
+ */
+async function fetchPagesSortedSince(
+  accessToken: string,
+  initialUrl: string,
+  state: DiscoveryState,
+  sinceDate: Date | null,
+): Promise<GitHubRepo[]> {
+  const results: GitHubRepo[] = [];
+  let url: string | null = initialUrl;
+  let pagesFetched = 0;
+
+  while (url && !state.aborted) {
+    const result: { data: GitHubRepo[]; nextUrl: string | null } = await githubGet<GitHubRepo[]>(accessToken, url, state);
+    results.push(...result.data);
+    pagesFetched++;
+
+    if (sinceDate && result.data.length > 0) {
+      const oldestOnPage = result.data[result.data.length - 1];
+      if (oldestOnPage.updated_at && new Date(oldestOnPage.updated_at) < sinceDate) {
+        console.log(
+          `[Discovery] Early-stop after ${pagesFetched} page(s): oldest updated_at ${oldestOnPage.updated_at} < cutoff ${sinceDate.toISOString()}`,
+        );
+        break;
+      }
+    }
+
+    url = result.nextUrl;
+  }
+
+  return results;
+}
+
 // ─── DB upsert helpers ─────────────────────────────────────────────
 
 export function upsertOrg(
@@ -225,6 +262,23 @@ export function listOrgs(db: SqlJsDatabase): { orgs: OrgInfo[]; directRepoCount:
 
 export function setOrgDiscoveryEnabled(db: SqlJsDatabase, orgLogin: string, enabled: boolean): void {
   db.run('UPDATE github_orgs SET discovery_enabled = ? WHERE login = ?', [enabled ? 1 : 0, orgLogin]);
+}
+
+function getConfigValue(db: SqlJsDatabase, key: string): string | null {
+  try {
+    const stmt = db.prepare('SELECT value FROM config WHERE key = ?');
+    stmt.bind([key]);
+    const found = stmt.step();
+    const value = found ? (stmt.getAsObject() as { value: string }).value : null;
+    stmt.free();
+    return value;
+  } catch {
+    return null;
+  }
+}
+
+function setConfigValue(db: SqlJsDatabase, key: string, value: string): void {
+  db.run('INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)', [key, value]);
 }
 
 export function upsertRepo(
@@ -527,14 +581,23 @@ export async function runLightweightRefresh(
     );
 
     // Fetch personal + collaborator + org-member repos
+    // Sort by updated desc so we can stop early once we've seen everything
+    // newer than the last refresh — avoiding hundreds of pages of stale data.
     console.log('[LightRefresh] Updating personal + collaborator + org-member repos…');
     progress.phase = 'user-repos';
     onProgress?.({ ...progress });
 
-    const directRepos = await fetchAllPages<GitHubRepo>(
+    const lastRefreshRaw = getConfigValue(db, 'last_user_repos_refresh');
+    // Subtract 5 minutes buffer to handle clock skew / in-flight updates
+    const sinceDate = lastRefreshRaw
+      ? new Date(new Date(lastRefreshRaw).getTime() - 5 * 60 * 1000)
+      : null;
+
+    const directRepos = await fetchPagesSortedSince(
       accessToken,
-      `${GITHUB_API_BASE}/user/repos?affiliation=owner,collaborator,organization_member&per_page=${PER_PAGE}`,
+      `${GITHUB_API_BASE}/user/repos?affiliation=owner,collaborator,organization_member&per_page=${PER_PAGE}&sort=updated&direction=desc`,
       state,
+      sinceDate,
     );
 
     // Resolve collaboration reasons for external repos
@@ -582,6 +645,7 @@ export async function runLightweightRefresh(
     }
 
     progress.reposFound = directRepos.length - skippedDisabledOrg;
+    setConfigValue(db, 'last_user_repos_refresh', new Date().toISOString());
     saveDatabase();
     console.log(`[LightRefresh] ${directRepos.length} personal + collaborator + org-member repo(s) synced`);
 

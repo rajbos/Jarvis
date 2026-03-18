@@ -17,11 +17,13 @@ interface RepoCardProps {
   repo: Repo;
   showOwner?: boolean;
   notifCount?: number;
+  favorited?: boolean;
   onClick: () => void;
   onNotifClick?: (e: MouseEvent) => void;
+  onToggleFavorite?: (e: MouseEvent) => void;
 }
 
-export function RepoCard({ repo, showOwner, notifCount, onClick, onNotifClick }: RepoCardProps) {
+export function RepoCard({ repo, showOwner, notifCount, favorited, onClick, onNotifClick, onToggleFavorite }: RepoCardProps) {
   const owner = repo.full_name.split('/')[0];
   return (
     <div class="repo-card" onClick={onClick}>
@@ -30,15 +32,26 @@ export function RepoCard({ repo, showOwner, notifCount, onClick, onNotifClick }:
           {showOwner && <span class="repo-card-owner">{owner} / </span>}
           {repo.name}
         </span>
-        {notifCount != null && notifCount > 0 && (
-          <span
-            class="notif-badge"
-            title={`${notifCount} unread notification${notifCount !== 1 ? 's' : ''} \u2014 click to view`}
-            onClick={onNotifClick}
-          >
-            {notifCount}
-          </span>
-        )}
+        <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+          {onToggleFavorite != null && (
+            <span
+              class={`fav-star${favorited ? ' fav-star-active' : ''}`}
+              title={favorited ? 'Remove from secrets scan favorites' : 'Add to secrets scan favorites'}
+              onClick={onToggleFavorite}
+            >
+              {favorited ? '\u2605' : '\u2606'}
+            </span>
+          )}
+          {notifCount != null && notifCount > 0 && (
+            <span
+              class="notif-badge"
+              title={`${notifCount} unread notification${notifCount !== 1 ? 's' : ''} \u2014 click to view`}
+              onClick={onNotifClick}
+            >
+              {notifCount}
+            </span>
+          )}
+        </span>
       </div>
       {repo.description && <div class="repo-card-desc">{repo.description}</div>}
       <div class="repo-card-meta">

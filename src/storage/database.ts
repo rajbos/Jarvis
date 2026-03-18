@@ -51,7 +51,7 @@ function initializeSchema(database: SqlJsDatabase): void {
 
   if (userVersion === 0) {
     database.run(getSchema());
-    database.run('PRAGMA user_version = 8');
+    database.run('PRAGMA user_version = 11');
   }
 
   if (userVersion === 1) {
@@ -127,6 +127,49 @@ function initializeSchema(database: SqlJsDatabase): void {
     // Migration v7 → v8: add collaboration_reason to github_repos
     database.run('ALTER TABLE github_repos ADD COLUMN collaboration_reason TEXT');
     database.run('PRAGMA user_version = 8');
+  }
+
+  if (userVersion === 8) {
+    // Migration v8 → v9: add repo_secrets table for GitHub Actions secret names
+    database.run(`
+      CREATE TABLE IF NOT EXISTS repo_secrets (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        github_repo_id INTEGER NOT NULL REFERENCES github_repos(id) ON DELETE CASCADE,
+        secret_name    TEXT NOT NULL,
+        scanned_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(github_repo_id, secret_name)
+      )
+    `);
+    database.run('CREATE INDEX IF NOT EXISTS idx_repo_secrets_repo_id ON repo_secrets(github_repo_id)');
+    database.run('PRAGMA user_version = 9');
+  }
+
+  if (userVersion === 9) {
+    // Migration v9 → v10: add repo_secrets table (DB already at v9 via other migration path)
+    database.run(`
+      CREATE TABLE IF NOT EXISTS repo_secrets (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        github_repo_id INTEGER NOT NULL REFERENCES github_repos(id) ON DELETE CASCADE,
+        secret_name    TEXT NOT NULL,
+        scanned_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(github_repo_id, secret_name)
+      )
+    `);
+    database.run('CREATE INDEX IF NOT EXISTS idx_repo_secrets_repo_id ON repo_secrets(github_repo_id)');
+    database.run('PRAGMA user_version = 10');
+  }
+
+  if (userVersion === 10) {
+    // Migration v10 → v11: add secret_scan_favorites table
+    database.run(`
+      CREATE TABLE IF NOT EXISTS secret_scan_favorites (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        target_type TEXT NOT NULL CHECK(target_type IN ('org', 'repo')),
+        target_name TEXT NOT NULL UNIQUE,
+        added_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    database.run('PRAGMA user_version = 11');
   }
 }
 

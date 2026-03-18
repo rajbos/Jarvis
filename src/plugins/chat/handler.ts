@@ -10,13 +10,33 @@ import {
   type OllamaToolCall,
 } from '../../services/ollama';
 import { getConfigValue } from '../../storage/database';
-import { buildSystemContext, searchReposForChat } from './db-helpers';
+import { buildSystemContext, searchReposForChat, searchSecretsForChat } from './db-helpers';
 
 const activeChatAborts = new Map<number, AbortController>();
 
 // ── Chat tools ────────────────────────────────────────────────────────────────
 
 const CHAT_TOOLS: OllamaTool[] = [
+  {
+    type: 'function',
+    function: {
+      name: 'search_secrets',
+      description:
+        'Search for GitHub Actions secret names across the user\'s personal repositories. ' +
+        'Use this when the user asks about secrets, tokens, PATs, credentials, or any named ' +
+        'secret stored as a GitHub Actions secret. Supports partial matching on the secret name.',
+      parameters: {
+        type: 'object',
+        properties: {
+          pattern: {
+            type: 'string',
+            description: 'Partial or full secret name to search for (e.g. "PAT", "TOKEN", "AWS").',
+          },
+        },
+        required: ['pattern'],
+      },
+    },
+  },
   {
     type: 'function',
     function: {
@@ -44,6 +64,10 @@ function dispatchToolCall(db: SqlJsDatabase, call: OllamaToolCall): string {
   if (call.function.name === 'search_repos') {
     const query = String(call.function.arguments['query'] ?? '');
     return searchReposForChat(db, query);
+  }
+  if (call.function.name === 'search_secrets') {
+    const pattern = String(call.function.arguments['pattern'] ?? '');
+    return searchSecretsForChat(db, pattern);
   }
   return `Unknown tool: ${call.function.name}`;
 }
