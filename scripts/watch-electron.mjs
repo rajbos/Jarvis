@@ -23,6 +23,10 @@ const WATCH_DIRS = [
 let electronProcess = null;
 let intentionalRestart = false;
 let debounceTimer = null;
+// Ignore file-change events for this many ms after (re)starting electron.
+// Covers tsc --watch and esbuild --watch doing their initial output writes.
+const STARTUP_GRACE_MS = 4000;
+let graceUntil = 0;
 
 // Track last-known content of watched dist/ files so we can ignore spurious
 // write events from tsc/esbuild initial builds that produce identical output.
@@ -44,6 +48,7 @@ function preloadDir(dir) {
 
 function startElectron() {
   intentionalRestart = false;
+  graceUntil = Date.now() + STARTUP_GRACE_MS;
   console.log('[watch-electron] starting electron...');
   electronProcess = spawn(electronPath, ['dist/main/index.js'], {
     stdio: 'inherit',
@@ -63,6 +68,7 @@ function startElectron() {
 }
 
 function scheduleRestart() {
+  if (Date.now() < graceUntil) return; // still in startup grace window
   if (debounceTimer) clearTimeout(debounceTimer);
   debounceTimer = setTimeout(() => {
     if (electronProcess) {

@@ -423,7 +423,16 @@ function App() {
   };
 
   const handleToggleOrgs = () => {
-    setShowOrgPanel((prev) => !prev);
+    setShowOrgPanel((prev) => {
+      if (prev) {
+        // Closing — clear all child panels
+        setRepoPanel(null);
+        setActiveOrg(null);
+        setNotifRepoPanel(null);
+        setNotifDive(null);
+      }
+      return !prev;
+    });
   };
 
   const handleSelectOrg = async (orgLogin: string | null, displayName: string) => {
@@ -470,6 +479,7 @@ function App() {
       setShowLocalConfig(false);
       setLocalNavStack([]);
       setLocalLeafFolder(null);
+      setLocalNotifRepoPanel(null);
     } else if (localFolders && localFolders.length > 0) {
       setShowLocalPanel(true);
       setShowLocalConfig(false);
@@ -565,6 +575,19 @@ function App() {
     }
   };
 
+  // Ref for main-scroll to enable scroll-into-view for right-hand panels
+  const mainScrollRef = useRef<HTMLDivElement>(null);
+
+  // Scroll rightmost panel into view when a new right-hand panel is opened
+  useEffect(() => {
+    if (!mainScrollRef.current) return;
+    const main = mainScrollRef.current;
+    // Defer until after the DOM has reflowed so scrollWidth is correct
+    requestAnimationFrame(() => {
+      main.scrollTo({ left: main.scrollWidth, behavior: 'smooth' });
+    });
+  }, [repoPanel, notifRepoPanel, notifDive, showLocalPanel, showLocalConfig, localNavStack, localLeafFolder, localNotifRepoPanel, showOllamaPanel]);
+
   // ── Secrets handlers ────────────────────────────────────────────────────────
 
   const handleSecretsStartScan = async () => {
@@ -617,7 +640,7 @@ function App() {
 
   return (
     <div class="app-shell">
-      <div class="main-scroll">
+      <div class="main-scroll" ref={mainScrollRef}>
         {!showChatPanel && selectedOllamaModel && (
           <button class="chat-reopen-btn" title="Open Chat" onClick={handleOpenChat}>💬</button>
         )}
@@ -829,6 +852,27 @@ function App() {
         visible={showChatPanel}
         selectedModel={selectedOllamaModel}
         onClose={() => { setShowChatPanel(false); localStorage.setItem('chat-panel-open', 'false'); }}
+        onAgentStart={handleOpenChat}
+        onNotificationsDismissed={(ids) => {
+          const idSet = new Set(ids);
+          const removeIds = (notifs: StoredNotification[]) => notifs.filter((n) => !idSet.has(n.id));
+          setNotifRepoPanel((prev) => prev ? { ...prev, notifications: removeIds(prev.notifications) } : null);
+          setLocalNotifRepoPanel((prev) => prev ? { ...prev, notifications: removeIds(prev.notifications) } : null);
+          setNotifDive((prev) => prev ? { ...prev, notifications: removeIds(prev.notifications) } : null);
+          setNotifCounts((prev) => {
+            if (!prev) return prev;
+            const newPerRepo = { ...prev.perRepo };
+            for (const id of ids) {
+              // find which repo owns this notification from current panel state
+              const repo =
+                notifRepoPanel?.notifications.find((n) => n.id === id)?.repo_full_name ??
+                localNotifRepoPanel?.notifications.find((n) => n.id === id)?.repo_full_name ??
+                notifDive?.notifications.find((n) => n.id === id)?.repo_full_name;
+              if (repo) newPerRepo[repo] = Math.max(0, (newPerRepo[repo] ?? 1) - 1);
+            }
+            return { ...prev, total: Math.max(0, prev.total - ids.length), perRepo: newPerRepo };
+          });
+        }}
       />
     </div>
   );

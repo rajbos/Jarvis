@@ -19,9 +19,40 @@ const WATCH_DIRS = [
 let electronProcess = null;
 let intentionalRestart = false;
 let debounceTimer = null;
+// Ignore file-change events for this many ms after (re)starting electron.
+// Covers tsc --watch and esbuild --watch doing their initial output writes.
+const STARTUP_GRACE_MS = 4000;
+let graceUntil = 0;
+
+// Per-file content cache so we only restart when a file actually changed.
+const fileContents = new Map();
+
+function seedContentCache(dir) {
+  if (!fs.existsSync(dir)) return;
+  for (const entry of fs.readdirSync(dir, { recursive: true, withFileTypes: true })) {
+    if (!entry.isFile()) continue;
+    const filename = entry.name;
+    if (!/\.(js|html|css)$/.test(filename)) continue;
+    const fullPath = path.join(entry.parentPath ?? entry.path ?? dir, filename);
+    try { fileContents.set(fullPath, fs.readFileSync(fullPath)); } catch { /* skip */ }
+  }
+}
+
+function contentChanged(filePath) {
+  try {
+    const current = fs.readFileSync(filePath);
+    const prev = fileContents.get(filePath);
+    fileContents.set(filePath, current);
+    if (prev && prev.equals(current)) return false;
+    return true;
+  } catch {
+    return true; // file unreadable — assume changed
+  }
+}
 
 function startElectron() {
   intentionalRestart = false;
+  graceUntil = Date.now() + STARTUP_GRACE_MS;
   console.log('[watch-electron] starting electron...');
   electronProcess = spawn(electronPath, ['dist/main/index.js'], {
     stdio: 'inherit',
@@ -41,6 +72,7 @@ function startElectron() {
 }
 
 function scheduleRestart() {
+  if (Date.now() < graceUntil) return; // still in startup grace window
   if (debounceTimer) clearTimeout(debounceTimer);
   debounceTimer = setTimeout(() => {
     if (electronProcess) {
@@ -60,9 +92,10 @@ const DIST_RENDERER = path.join(ROOT, 'dist', 'renderer');
 for (const dir of WATCH_DIRS) {
   if (fs.existsSync(dir)) {
     fs.watch(dir, { recursive: true }, (_event, filename) => {
-      if (filename && /\.(js|html|css)$/.test(filename)) {
-        scheduleRestart();
-      }
+      if (!filename || !/\.(js|html|css)$/.test(filename)) return;
+      const fullPath = path.join(dir, filename);
+      if (!contentChanged(fullPath)) return;
+      scheduleRestart();
     });
   }
 }
@@ -94,5 +127,10 @@ if (fs.existsSync(SRC_RENDERER)) {
     // scheduleRestart is triggered automatically because dist/renderer/ is in WATCH_DIRS
   });
 }
+
+// Pre-seed the content cache from whatever is already in dist/ right now.
+// This means any subsequent tsc/esbuild rewrite with identical bytes is
+// correctly treated as "no change" rather than "first time seen".
+for (const dir of WATCH_DIRS) seedContentCache(dir);
 
 startElectron();

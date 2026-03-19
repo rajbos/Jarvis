@@ -26,6 +26,8 @@ declare const window: Window & {
     logout(): Promise<void>;
     startOAuthDiscovery(): Promise<void>;
     startPatDiscovery(): Promise<void>;
+    agentsList(): Promise<Array<{ id: number; name: string; description: string; system_prompt: string }>>;
+    agentsUpdate(agentId: number, systemPrompt: string): Promise<{ ok: boolean; error?: string }>;
   };
 };
 
@@ -217,6 +219,103 @@ function PatSection() {
   );
 }
 
+// ── Agent Prompts section ─────────────────────────────────────────────
+
+interface AgentDef {
+  id: number;
+  name: string;
+  description: string;
+  system_prompt: string;
+}
+
+function AgentPromptsSection() {
+  const [agents, setAgents] = useState<AgentDef[]>([]);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [prompt, setPrompt] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saveState, setSaveState] = useState<'idle' | 'saved' | 'error'>('idle');
+  const [saveError, setSaveError] = useState('');
+
+  useEffect(() => {
+    window.jarvis.agentsList().then((list) => {
+      setAgents(list);
+      if (list.length > 0) {
+        setSelectedId(list[0].id);
+        setPrompt(list[0].system_prompt);
+      }
+    }).catch(console.error);
+  }, []);
+
+  const selectAgent = (id: number) => {
+    const agent = agents.find((a) => a.id === id);
+    if (!agent) return;
+    setSelectedId(id);
+    setPrompt(agent.system_prompt);
+    setSaveState('idle');
+  };
+
+  const handleSave = async () => {
+    if (!selectedId) return;
+    setSaving(true);
+    setSaveState('idle');
+    const result = await window.jarvis.agentsUpdate(selectedId, prompt);
+    setSaving(false);
+    if (result.ok) {
+      setSaveState('saved');
+      setAgents((prev) => prev.map((a) => a.id === selectedId ? { ...a, system_prompt: prompt } : a));
+    } else {
+      setSaveState('error');
+      setSaveError(result.error ?? 'Unknown error');
+    }
+  };
+
+  const handleReset = () => {
+    const agent = agents.find((a) => a.id === selectedId);
+    if (agent) setPrompt(agent.system_prompt);
+    setSaveState('idle');
+  };
+
+  const selected = agents.find((a) => a.id === selectedId);
+
+  return (
+    <div class="section">
+      <h2>Agent Prompts</h2>
+      <div class="agent-tab-row">
+        {agents.map((a) => (
+          <button
+            key={a.id}
+            class={`btn-agent-tab${selectedId === a.id ? ' active' : ''}`}
+            onClick={() => selectAgent(a.id)}
+          >
+            {a.name}
+          </button>
+        ))}
+      </div>
+      {selected && (
+        <>
+          <p class="hint" style={{ marginTop: '0.4rem', marginBottom: '0.5rem' }}>{selected.description}</p>
+          <textarea
+            class="agent-prompt-editor"
+            value={prompt}
+            rows={18}
+            spellcheck={false}
+            onInput={(e) => { setPrompt((e.target as HTMLTextAreaElement).value); setSaveState('idle'); }}
+          />
+          <div class="btn-row" style={{ marginTop: '0.5rem' }}>
+            <button class="btn-save" onClick={handleSave} disabled={saving}>
+              {saving ? 'Saving…' : saveState === 'saved' ? '\u2713 Saved' : 'Save Prompt'}
+            </button>
+            <button class="btn-secondary" onClick={handleReset} disabled={saving}>
+              Reset
+            </button>
+          </div>
+          {saveState === 'error' && <div class="pat-error" style={{ marginTop: '0.4rem' }}>{saveError}</div>}
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── App ──────────────────────────────────────────────────────────────────────
 
 function App() {
@@ -225,6 +324,7 @@ function App() {
       <h1>Settings</h1>
       <OAuthSection />
       <PatSection />
+      <AgentPromptsSection />
     </>
   );
 }
