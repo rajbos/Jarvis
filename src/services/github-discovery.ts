@@ -198,7 +198,7 @@ async function fetchAllPages<T>(
   // ── Fallback: no `last` link — paginate sequentially via next links
   let url: string | null = first.nextUrl;
   while (url && !state.aborted) {
-    const result = await githubGet<T[]>(accessToken, url, state);
+    const result: { data: T[]; nextUrl: string | null; lastPage: number | null } = await githubGet<T[]>(accessToken, url, state);
     results.push(...result.data);
     url = result.nextUrl;
   }

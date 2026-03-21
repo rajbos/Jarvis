@@ -422,17 +422,34 @@ function App() {
     });
   };
 
+  // ── Panel mutual-exclusivity ─────────────────────────────────────────────────
+  // Clicking any step should close all other steps' panels (detail + sub-panels).
+  // This prevents sticky sub-panels when switching between steps.
+  const closeAllPanels = () => {
+    // GitHub
+    setShowOrgPanel(false);
+    setRepoPanel(null);
+    setActiveOrg(null);
+    setNotifRepoPanel(null);
+    setNotifDive(null);
+    // Local repos
+    setShowLocalPanel(false);
+    setShowLocalConfig(false);
+    setLocalNavStack([]);
+    setLocalLeafFolder(null);
+    setLocalNotifRepoPanel(null);
+    // Secrets
+    setShowSecretsPanel(false);
+    // Ollama + Chat sub-panel
+    setShowOllamaPanel(false);
+    setShowChatPanel(false);
+    localStorage.setItem('chat-panel-open', 'false');
+  };
+
   const handleToggleOrgs = () => {
-    setShowOrgPanel((prev) => {
-      if (prev) {
-        // Closing — clear all child panels
-        setRepoPanel(null);
-        setActiveOrg(null);
-        setNotifRepoPanel(null);
-        setNotifDive(null);
-      }
-      return !prev;
-    });
+    const wasOpen = showOrgPanel;
+    closeAllPanels();
+    if (!wasOpen) setShowOrgPanel(true);
   };
 
   const handleSelectOrg = async (orgLogin: string | null, displayName: string) => {
@@ -473,25 +490,21 @@ function App() {
   // ── Local repo handlers ───────────────────────────────────────────────────
 
   const handleLocalStepClick = () => {
-    if (showLocalPanel || showLocalConfig) {
-      // Toggle everything off
-      setShowLocalPanel(false);
-      setShowLocalConfig(false);
-      setLocalNavStack([]);
-      setLocalLeafFolder(null);
-      setLocalNotifRepoPanel(null);
-    } else if (localFolders && localFolders.length > 0) {
-      setShowLocalPanel(true);
-      setShowLocalConfig(false);
-      if (localFolders.length === 1) {
-        // Auto-navigate into the single configured folder
-        void window.jarvis.localListReposForFolder(localFolders[0].path)
-          .then((repos) => setLocalNavStack([{ path: localFolders[0].path, repos }]))
-          .catch(console.error);
+    const wasOpen = showLocalPanel || showLocalConfig;
+    closeAllPanels();
+    if (!wasOpen) {
+      if (localFolders && localFolders.length > 0) {
+        setShowLocalPanel(true);
+        if (localFolders.length === 1) {
+          // Auto-navigate into the single configured folder
+          void window.jarvis.localListReposForFolder(localFolders[0].path)
+            .then((repos) => setLocalNavStack([{ path: localFolders[0].path, repos }]))
+            .catch(console.error);
+        }
+      } else {
+        setShowLocalConfig(true);
+        setShowLocalPanel(true);
       }
-    } else {
-      setShowLocalConfig(true);
-      setShowLocalPanel(true);
     }
   };
 
@@ -616,7 +629,17 @@ function App() {
     }
   };
 
-  const handleSecretsToggle = () => setShowSecretsPanel((v) => !v);
+  const handleSecretsToggle = () => {
+    const wasOpen = showSecretsPanel;
+    closeAllPanels();
+    if (!wasOpen) setShowSecretsPanel(true);
+  };
+
+  const handleOllamaToggle = () => {
+    const wasOpen = showOllamaPanel;
+    closeAllPanels();
+    if (!wasOpen) setShowOllamaPanel(true);
+  };
 
   const handleToggleFavoriteOrg = async (orgLogin: string) => {
     if (favoritedOrgs.has(orgLogin)) {
@@ -835,7 +858,7 @@ function App() {
 
       <div class="ollama-layout">
         <div class="ollama-step-wrapper">
-          <OllamaStep ollama={ollamaStatus} selectedModel={selectedOllamaModel} onToggle={() => setShowOllamaPanel((p) => !p)} onOpenChat={handleOpenChat} />
+          <OllamaStep ollama={ollamaStatus} selectedModel={selectedOllamaModel} onToggle={handleOllamaToggle} onOpenChat={handleOpenChat} />
         </div>
         {showOllamaPanel && ollamaStatus?.available && (
           <OllamaPanel
