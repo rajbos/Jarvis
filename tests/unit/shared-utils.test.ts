@@ -193,3 +193,120 @@ describe('renderChatMarkdown', () => {
     expect(() => renderChatMarkdown('')).not.toThrow();
   });
 });
+
+// ── getReposUnder ─────────────────────────────────────────────────────────────
+import {
+  getReposUnder,
+  getImmediateChildren,
+  hasDeepRepos,
+  normalizeGitHubUrl,
+} from '../../src/plugins/shared/utils';
+import type { LocalRepo } from '../../src/plugins/types';
+
+function makeRepo(localPath: string): LocalRepo {
+  return { id: 0, localPath, remoteUrl: null, fullName: null, scannedAt: '' };
+}
+
+describe('getReposUnder', () => {
+  const repos = [
+    makeRepo('/home/user/projects/frontend'),
+    makeRepo('/home/user/projects/backend'),
+    makeRepo('/home/user/other/tool'),
+    makeRepo('/home/user/projects'),
+  ];
+
+  it('returns repos directly at the given path', () => {
+    const result = getReposUnder('/home/user/projects', repos);
+    expect(result.map((r) => r.localPath)).toContain('/home/user/projects');
+  });
+
+  it('returns repos nested under the given path', () => {
+    const result = getReposUnder('/home/user/projects', repos);
+    expect(result.map((r) => r.localPath)).toContain('/home/user/projects/frontend');
+    expect(result.map((r) => r.localPath)).toContain('/home/user/projects/backend');
+  });
+
+  it('excludes repos outside the given path', () => {
+    const result = getReposUnder('/home/user/projects', repos);
+    expect(result.map((r) => r.localPath)).not.toContain('/home/user/other/tool');
+  });
+
+  it('strips trailing slashes from the parent path', () => {
+    const result = getReposUnder('/home/user/projects/', repos);
+    expect(result).toHaveLength(3);
+  });
+});
+
+describe('getImmediateChildren', () => {
+  const repos = [
+    makeRepo('/projects/frontend'),
+    makeRepo('/projects/frontend/sub'),
+    makeRepo('/projects/backend'),
+    makeRepo('/projects/tools/linter'),
+  ];
+
+  it('returns immediate child directories with repo counts', () => {
+    const children = getImmediateChildren('/projects', repos);
+    const names = children.map((c) => c.name);
+    expect(names).toContain('frontend');
+    expect(names).toContain('backend');
+    expect(names).toContain('tools');
+  });
+
+  it('counts all repos nested under each child', () => {
+    const children = getImmediateChildren('/projects', repos);
+    const frontend = children.find((c) => c.name === 'frontend');
+    expect(frontend?.repoCount).toBe(2);
+  });
+
+  it('sorts children alphabetically', () => {
+    const children = getImmediateChildren('/projects', repos);
+    const names = children.map((c) => c.name);
+    expect(names).toEqual([...names].sort());
+  });
+
+  it('skips repos whose path equals the parent path', () => {
+    const reposWithParent = [...repos, makeRepo('/projects')];
+    const children = getImmediateChildren('/projects', reposWithParent);
+    expect(children.every((c) => c.path !== '/projects')).toBe(true);
+  });
+});
+
+describe('hasDeepRepos', () => {
+  it('returns true when a repo is nested more than one level deep', () => {
+    const repos = [makeRepo('/projects/a/deep/repo')];
+    expect(hasDeepRepos('/projects', repos)).toBe(true);
+  });
+
+  it('returns false when all repos are exactly one level deep', () => {
+    const repos = [makeRepo('/projects/frontend'), makeRepo('/projects/backend')];
+    expect(hasDeepRepos('/projects', repos)).toBe(false);
+  });
+
+  it('returns false when the repo path equals the parent path', () => {
+    const repos = [makeRepo('/projects')];
+    expect(hasDeepRepos('/projects', repos)).toBe(false);
+  });
+});
+
+describe('normalizeGitHubUrl (renderer version)', () => {
+  it('parses HTTPS GitHub URLs', () => {
+    expect(normalizeGitHubUrl('https://github.com/owner/repo')).toBe('owner/repo');
+  });
+
+  it('parses HTTPS URLs ending in .git', () => {
+    expect(normalizeGitHubUrl('https://github.com/owner/repo.git')).toBe('owner/repo');
+  });
+
+  it('parses SSH GitHub URLs', () => {
+    expect(normalizeGitHubUrl('git@github.com:owner/repo.git')).toBe('owner/repo');
+  });
+
+  it('returns null for non-GitHub URLs', () => {
+    expect(normalizeGitHubUrl('https://gitlab.com/owner/repo')).toBeNull();
+  });
+
+  it('returns null for empty string', () => {
+    expect(normalizeGitHubUrl('')).toBeNull();
+  });
+});
