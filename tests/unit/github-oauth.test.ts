@@ -79,3 +79,124 @@ describe('GitHub OAuth — Token Storage', () => {
     expect(loadGitHubPat(db)).toBeNull();
   });
 });
+
+// ── OAuth Device Flow — fetch-based functions ─────────────────────────────────
+import { vi } from 'vitest';
+import {
+  requestDeviceCode,
+  pollForToken,
+  fetchGitHubUser,
+  deleteGitHubAuth,
+} from '../../src/services/github-oauth';
+
+describe('requestDeviceCode', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('returns device code response on success', async () => {
+    const mockResponse = { device_code: 'abc', user_code: 'XYZ-123', verification_uri: 'https://github.com/login/device', expires_in: 900, interval: 5 };
+    globalThis.fetch = vi.fn(async () =>
+      new Response(JSON.stringify(mockResponse), { status: 200 }),
+    );
+
+    const result = await requestDeviceCode('client-id', ['repo']);
+    expect(result.device_code).toBe('abc');
+    expect(result.user_code).toBe('XYZ-123');
+  });
+
+  it('throws on non-OK response', async () => {
+    globalThis.fetch = vi.fn(async () =>
+      new Response('Bad Request', { status: 400, statusText: 'Bad Request' }),
+    );
+    await expect(requestDeviceCode('client-id', ['repo'])).rejects.toThrow('Failed to request device code: 400');
+  });
+});
+
+describe('pollForToken', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('returns null when authorization is pending', async () => {
+    globalThis.fetch = vi.fn(async () =>
+      new Response(JSON.stringify({ error: 'authorization_pending' }), { status: 200 }),
+    );
+    const result = await pollForToken('client-id', 'device-code');
+    expect(result).toBeNull();
+  });
+
+  it('returns null and adjusts interval on slow_down', async () => {
+    globalThis.fetch = vi.fn(async () =>
+      new Response(JSON.stringify({ error: 'slow_down', interval: '10' }), { status: 200 }),
+    );
+    const flow = { intervalMs: 5000 };
+    const result = await pollForToken('client-id', 'device-code', flow);
+    expect(result).toBeNull();
+    expect(flow.intervalMs).toBeGreaterThan(5000);
+  });
+
+  it('returns the token on success', async () => {
+    globalThis.fetch = vi.fn(async () =>
+      new Response(JSON.stringify({ access_token: 'gho_abc', token_type: 'bearer', scope: 'repo' }), { status: 200 }),
+    );
+    const result = await pollForToken('client-id', 'device-code');
+    expect(result?.access_token).toBe('gho_abc');
+  });
+
+  it('throws on OAuth error response', async () => {
+    globalThis.fetch = vi.fn(async () =>
+      new Response(JSON.stringify({ error: 'expired_token', error_description: 'The device code has expired' }), { status: 200 }),
+    );
+    await expect(pollForToken('client-id', 'device-code')).rejects.toThrow('OAuth error: expired_token');
+  });
+
+  it('throws on non-OK HTTP status', async () => {
+    globalThis.fetch = vi.fn(async () =>
+      new Response('Server Error', { status: 500 }),
+    );
+    await expect(pollForToken('client-id', 'device-code')).rejects.toThrow('Token poll failed: 500');
+  });
+});
+
+describe('fetchGitHubUser', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('returns user data on success', async () => {
+    globalThis.fetch = vi.fn(async () =>
+      new Response(JSON.stringify({ login: 'octocat', name: 'Octocat', avatar_url: 'https://avatars.example.com/octocat' }), { status: 200 }),
+    );
+    const user = await fetchGitHubUser('gho_token');
+    expect(user.login).toBe('octocat');
+  });
+
+  it('throws on non-OK response', async () => {
+    globalThis.fetch = vi.fn(async () =>
+      new Response('Unauthorized', { status: 401 }),
+    );
+    await expect(fetchGitHubUser('bad-token')).rejects.toThrow('Failed to fetch user: 401');
+  });
+});
+
+describe('deleteGitHubAuth', () => {
+  let db: SqlJsDatabase;
+
+  beforeEach(async () => {
+    process.env.JARVIS_ENCRYPTION_KEY = 'test-key-for-delete';
+    const SQL = await initSqlJs();
+    db = new SQL.Database();
+    db.run(getSchema());
+  });
+
+  afterEach(() => {
+    db.close();
+    delete process.env.JARVIS_ENCRYPTION_KEY;
+  });
+
+  it('removes all github_auth rows', () => {
+    saveGitHubAuth(db, 'octocat', 'token123', 'repo');
+    deleteGitHubAuth(db);
+    const result = loadGitHubAuth(db);
+    expect(result).toBeNull();
+  });
+
+  it('does not throw when no auth exists', () => {
+    expect(() => deleteGitHubAuth(db)).not.toThrow();
+  });
+});

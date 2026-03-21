@@ -28,3 +28,6 @@ Desktop.ini
 # Local storage (runtime data, not tracked)
 *.db
 logs/
+
+# Test coverage reports
+coverage/

@@ -1,7 +1,7 @@
 {
   "name": "jarvis",
   "version": "0.1.0",
-  "description": "Jarvis — a locally-hosted personal assistant agent for GitHub repository maintenance",
+  "description": "Jarvis \u2014 a locally-hosted personal assistant agent for GitHub repository maintenance",
   "main": "dist/main/index.js",
   "scripts": {
     "build": "tsc && node scripts/build-renderer.mjs && npm run copy-static",
@@ -13,13 +13,15 @@
     "dev": "npm run build && concurrently --kill-others --names \"TSC,ESBuild,Electron\" --prefix-colors \"blue,yellow,green\" \"npm run dev:tsc\" \"npm run dev:esbuild\" \"npm run dev:electron\"",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint src"
+    "lint": "eslint src",
+    "test:coverage": "vitest run --coverage"
   },
   "author": "",
   "license": "MIT",
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^25.4.0",
+    "@vitest/coverage-v8": "^4.1.0",
     "concurrently": "^9.2.1",
     "electron": "^41.0.0",
     "electron-builder": "^26.8.1",
