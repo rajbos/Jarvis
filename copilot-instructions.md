@@ -59,6 +59,7 @@ Scripts for development:
 
 - **Strict TypeScript**: All code is type-checked with strict settings
 - **Panel layout — always append, never replace**: The UI is a horizontally-scrolling layout (`width: max-content`). When a user action opens a new sub-panel (e.g. drilling into a folder, opening notifications), render it **to the right** of the current panel — never hide or replace the panel that triggered it. If horizontal space runs out the container scrolls. The only exception is a deliberate "back" navigation where the child panel closes and the parent is already visible.
+- **Step mutual exclusivity — close all panels before opening a new step**: Each top-level step tile (GitHub, Local Repos, Secrets, Ollama) acts as a toggle. When a step is opened, **all** other steps' panels — including every sub-panel in their hierarchy — must be closed first. Implement a single `closeAllPanels()` helper that resets every panel-related state variable (including nested sub-panel states and any `localStorage` entries for persistent panels such as chat). Pass the saved `wasOpen` flag to decide whether to re-open the step or leave everything closed. This prevents "sticky" sub-panels that remain visible after switching to a different step.
 - **Separation of concerns**: Main process, renderer, agent logic, and services are in separate folders
 - **No cloud dependencies**: All core features run locally
 - **Extensibility**: New features should be added as modules/services, following the MCP protocol where possible
