@@ -23,6 +23,7 @@ import { LocalRepoPanelView } from '../plugins/local-repos/LocalRepoPanelView';
 import { getReposUnder, hasDeepRepos } from '../plugins/shared/utils';
 import { SecretsStep } from '../plugins/secrets/SecretsStep';
 import { SecretsScanPanel } from '../plugins/secrets/SecretsScanPanel';
+import { DashboardPanel } from '../plugins/dashboard/DashboardPanel';
 
 // ── Types (imported from single source of truth in plugins/types.ts) ─────────
 // The global augmentation `Window.jarvis` is declared in plugins/types.ts and
@@ -45,6 +46,8 @@ import type {
   SecretsScanProgress,
 } from '../plugins/types';
 import '../plugins/types'; // activate the global Window augmentation
+
+type AppTab = 'dashboard' | 'setup';
 
 // ── App ──────────────────────────────────────────────────────────────────────
 
@@ -110,6 +113,9 @@ function App() {
   const [favoritedRepos, setFavoritedRepos] = useState<Set<string>>(new Set());
 
   const currentUserLogin = oauthStatus?.login ?? null;
+
+  // Tab state
+  const [activeTab, setActiveTab] = useState<AppTab>('dashboard');
 
 
   // Initial status check
@@ -669,9 +675,29 @@ function App() {
         )}
         <div class="container">
       <h1>Jarvis</h1>
-      <p class="subtitle">Personal Assistant — First Time Setup</p>
+      <p class="subtitle">Personal Assistant</p>
 
       <SearchBar />
+
+      {/* ── Tab bar ──────────────────────────────────────────────────────── */}
+      <div class="tab-bar">
+        <button
+          class={`tab-btn ${activeTab === 'dashboard' ? 'tab-active' : ''}`}
+          onClick={() => setActiveTab('dashboard')}
+        >📊 Dashboard</button>
+        <button
+          class={`tab-btn ${activeTab === 'setup' ? 'tab-active' : ''}`}
+          onClick={() => setActiveTab('setup')}
+        >⚙️ Setup</button>
+      </div>
+
+      {/* ── Dashboard tab ────────────────────────────────────────────────── */}
+      {activeTab === 'dashboard' && (
+        <DashboardPanel />
+      )}
+
+      {/* ── Setup tab (original content) ─────────────────────────────────── */}
+      {activeTab === 'setup' && (<>
 
       <div class="github-layout">
         <GitHubStep
@@ -869,6 +895,8 @@ function App() {
           />
         )}
       </div>
+
+      </>)}
         </div>
       </div>
       <EmbeddedChatPanel

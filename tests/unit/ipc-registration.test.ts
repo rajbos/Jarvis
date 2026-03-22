@@ -112,6 +112,10 @@ const EXPECTED_CHANNELS = [
   'secrets:list-favorites',
   'secrets:add-favorite',
   'secrets:remove-favorite',
+  // dashboard plugin
+  'dashboard:get-summary',
+  'dashboard:get-recent-failed-runs',
+  'dashboard:push-branch-upstream',
 ] as const;
 
 describe('IPC handler registration', () => {

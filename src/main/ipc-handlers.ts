@@ -17,6 +17,7 @@ import { registerHandlers as registerNotificationsHandlers } from '../plugins/no
 import { registerHandlers as registerLocalReposHandlers } from '../plugins/local-repos/handler';
 import { registerHandlers as registerAgentsHandlers } from '../plugins/agents/handler';
 import { registerHandlers as registerSecretsHandlers } from '../plugins/secrets/handler';
+import { registerHandlers as registerDashboardHandlers } from '../plugins/dashboard/handler';
 
 // Re-export startDiscoveryIfAuthed so src/main/index.ts can call it on startup
 export { startDiscoveryIfAuthed } from '../plugins/discovery/handler';
@@ -38,4 +39,5 @@ export function registerIpcHandlers(
   registerLocalReposHandlers(db, getWindow);
   registerAgentsHandlers(db, getWindow);
   registerSecretsHandlers(db, getWindow);
+  registerDashboardHandlers(db, getWindow);
 }
