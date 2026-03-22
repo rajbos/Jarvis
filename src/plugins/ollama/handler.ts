@@ -20,6 +20,7 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
   });
 
   ipcMain.handle('ollama:set-selected-model', (_event, modelName: string) => {
+    if (typeof modelName !== 'string' || modelName.length === 0) return { ok: false, error: 'Invalid model name' };
     setConfigValue(db, 'selected_ollama_model', modelName);
     saveDatabase();
     return { ok: true };
