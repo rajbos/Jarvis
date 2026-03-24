@@ -70,6 +70,7 @@ function App() {
   const [showOllamaPanel, setShowOllamaPanel] = useState(false);
   const [selectedOllamaModel, setSelectedOllamaModel] = useState<string | null>(null);
   const [showChatPanel, setShowChatPanel] = useState(false);
+  const [dismissedNotifIds, setDismissedNotifIds] = useState<ReadonlySet<string>>(new Set());
   const [notifCounts, setNotifCounts] = useState<NotificationCounts | null>(null);
   const [notifFetching, setNotifFetching] = useState(false);
   const [sortByNotifs, setSortByNotifs] = useState(false);
@@ -693,7 +694,7 @@ function App() {
 
       {/* ── Dashboard tab ────────────────────────────────────────────────── */}
       {activeTab === 'dashboard' && (
-        <DashboardPanel />
+        <DashboardPanel dismissedNotifIds={dismissedNotifIds} />
       )}
 
       {/* ── Setup tab (original content) ─────────────────────────────────── */}
@@ -905,7 +906,14 @@ function App() {
         onClose={() => { setShowChatPanel(false); localStorage.setItem('chat-panel-open', 'false'); }}
         onAgentStart={handleOpenChat}
         onNotificationsDismissed={(ids) => {
+          console.log('[App] onNotificationsDismissed called with ids:', ids);
           const idSet = new Set(ids);
+          setDismissedNotifIds((prev) => {
+            const next = new Set(prev);
+            for (const id of ids) next.add(id);
+            console.log('[App] dismissedNotifIds updated, size:', next.size);
+            return next;
+          });
           const removeIds = (notifs: StoredNotification[]) => notifs.filter((n) => !idSet.has(n.id));
           setNotifRepoPanel((prev) => prev ? { ...prev, notifications: removeIds(prev.notifications) } : null);
           setLocalNotifRepoPanel((prev) => prev ? { ...prev, notifications: removeIds(prev.notifications) } : null);

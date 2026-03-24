@@ -112,6 +112,9 @@ button:disabled {
   border-radius: 6px;
   cursor: pointer;
   transition: background 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
 }
 
 .dash-refresh-btn:hover {
@@ -121,6 +124,21 @@ button:disabled {
 .dash-refresh-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.dash-refresh-icon {
+  width: 0.9rem;
+  height: 0.9rem;
+  flex-shrink: 0;
+  transition: transform 0.2s;
+}
+
+@keyframes dash-spin {
+  to { transform: rotate(360deg); }
+}
+
+.dash-refresh-icon--spinning {
+  animation: dash-spin 0.7s linear infinite;
 }
 
 /* Summary cards row */
@@ -882,6 +900,25 @@ button:disabled {
   opacity: 0.7;
   background: #0d3320;
   color: #4eca8a;
+}
+
+.dash-analyse-btn {
+  background: #0d1f3c;
+  border: 1px solid #2a5298;
+  color: #6ba3e8;
+  border-radius: 5px;
+  font-size: 0.68rem;
+  line-height: 1.4;
+  padding: 0.1rem 0.45rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+
+.dash-analyse-btn:hover {
+  background: #152b52;
+  color: #9ec0f5;
 }
 
 /* ── Dismiss-group spinner ────────────────────────────────────────────────── */
@@ -2358,6 +2395,38 @@ h5.ec-heading { font-size: 0.85rem; }
   opacity: 0.7;
   background: #0d3320;
   color: #4eca8a;
+}
+
+/* ── Failure hint row (below group header, above notification rows) ───────── */
+.notif-failure-hint,
+.dash-failure-hint {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.3rem 0.75rem 0.3rem 2.1rem;
+  background: #1a0c0c;
+  border-bottom: 1px solid #3a1a1a;
+  font-size: 0.72rem;
+}
+.notif-failure-hint-job,
+.dash-failure-hint-job {
+  color: #c88080;
+  font-weight: 600;
+}
+.notif-failure-hint-error,
+.dash-failure-hint-error {
+  display: block;
+  color: #f8a0a0;
+  background: #2a0f0f;
+  border-left: 2px solid #f87171;
+  padding: 0.2rem 0.5rem;
+  border-radius: 0 3px 3px 0;
+  font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+  font-size: 0.68rem;
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.5;
+  overflow: hidden;
 }
 
 /* scope workflow badge in the AgentSelector modal */

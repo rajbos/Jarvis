@@ -4,7 +4,36 @@ import type { StoredNotification } from '../types';
 import { AgentSelector } from '../agents/AgentSelector';
 
 // Minimum notifications in a group to show the Analyse button
-const ANALYSE_THRESHOLD = 2;
+const ANALYSE_THRESHOLD = 1;
+
+// ── Failure hint extraction ───────────────────────────────────────────────────
+
+interface FailureHint {
+  failingJob: string | null;
+  errorHint: string | null;
+}
+
+/**
+ * Extract the most useful single error line from a GitHub Actions log excerpt.
+ * Strips the leading ISO timestamp that Actions prepends to every line.
+ */
+function extractErrorHint(logExcerpt: string | null): string | null {
+  if (!logExcerpt) return null;
+  const stripTs = /^\d{4}-\d{2}-\d{2}T[\d:.]+Z\s*/;
+  const errorRe = /##\[error\]|error:|failed to |exception:|fatal:/i;
+  const lines = logExcerpt.split('\n');
+  // Prefer a line that looks like an explicit error
+  for (const raw of lines) {
+    const line = raw.replace(stripTs, '').trim();
+    if (line && errorRe.test(line)) return line.slice(0, 140);
+  }
+  // Fall back to the first non-empty line
+  for (const raw of lines) {
+    const line = raw.replace(stripTs, '').trim();
+    if (line) return line.slice(0, 140);
+  }
+  return null;
+}
 
 // Subject types treated as workflow/CI notifications for grouping purposes
 const WORKFLOW_TYPES = new Set(['CheckSuite', 'WorkflowRun']);
@@ -150,6 +179,7 @@ export function NotifRepoPanel({ repoFullName, notifications, onClose, onRefresh
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; notifId: string } | null>(null);
   const [agentTarget, setAgentTarget] = useState<{ workflowFilter?: string } | null>(null);
   const [recoveryMap, setRecoveryMap] = useState<Map<string, boolean>>(new Map());
+  const [failureHintMap, setFailureHintMap] = useState<Map<string, FailureHint>>(new Map());
   const [checkingRecovery, setCheckingRecovery] = useState(false);
   const [dismissingGroup, setDismissingGroup] = useState<string | null>(null);
 
@@ -180,6 +210,7 @@ export function NotifRepoPanel({ repoFullName, notifications, onClose, onRefresh
         if (cancelled) return;
 
         const newMap = new Map<string, boolean>();
+        const newHints = new Map<string, FailureHint>();
         for (const group of ciGroups) {
           const latestNotifTime = Math.max(...group.notifications.map((n) => new Date(n.updated_at).getTime()));
           const recovered = summary.recent_runs.some(
@@ -190,8 +221,26 @@ export function NotifRepoPanel({ repoFullName, notifications, onClose, onRefresh
               new Date(r.run_started_at).getTime() > latestNotifTime,
           );
           newMap.set(group.workflowName!, recovered);
+          if (!recovered) {
+            // Find most recent failed run for this workflow and extract a hint
+            const failedRun = summary.recent_runs.find(
+              (r) =>
+                r.workflow_name === group.workflowName &&
+                (group.branch === null || r.head_branch === group.branch) &&
+                r.conclusion !== 'success',
+            );
+            if (failedRun) {
+              const jobs = summary.jobs_by_run[failedRun.id] ?? [];
+              const failedJob = jobs.find((j) => j.conclusion === 'failure' || j.conclusion === 'cancelled') ?? null;
+              newHints.set(group.workflowName!, {
+                failingJob: failedJob?.name ?? null,
+                errorHint: extractErrorHint(failedJob?.log_excerpt ?? null),
+              });
+            }
+          }
         }
         setRecoveryMap(newMap);
+        setFailureHintMap(newHints);
       } catch {
         // recovery check is best-effort; silently ignore errors
       } finally {
@@ -290,6 +339,17 @@ export function NotifRepoPanel({ repoFullName, notifications, onClose, onRefresh
                 </button>
               )}
             </div>
+            {/* Failure hint: show failing job + first error line from cached logs */}
+            {group.workflowName && !checkingRecovery && recoveryMap.get(group.workflowName) === false && (() => {
+              const hint = failureHintMap.get(group.workflowName!);
+              if (!hint) return null;
+              return (
+                <div class="notif-failure-hint">
+                  {hint.failingJob && <span class="notif-failure-hint-job">Job: {hint.failingJob}</span>}
+                  {hint.errorHint && <code class="notif-failure-hint-error">{hint.errorHint}</code>}
+                </div>
+              );
+            })()}
             {group.notifications.map((n) => (
               <NotifRow
                 key={n.id}

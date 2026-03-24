@@ -143,8 +143,27 @@ export function AgentApprovalPanel({ session, onFindingUpdate, onNotificationsDi
     }
     // Use the server-confirmed dismissed IDs (avoids relying on LLM-generated action_data)
     if (execResult.ok && finding.action_type === 'close_notifications') {
-      const ids = execResult.dismissedIds ?? (finding.action_data?.notification_ids as string[] | undefined) ?? [];
-      if (ids.length > 0) onNotificationsDismissed?.(ids);
+      // Fall back to action_data IDs if the server returned an empty array
+      const serverIds = execResult.dismissedIds ?? [];
+      const ids = serverIds.length > 0
+        ? serverIds
+        : (finding.action_data?.notification_ids as string[] | undefined) ?? [];
+      console.log('[AgentApproval] close_notifications executed, dismissedIds:', ids);
+      if (ids.length > 0) {
+        onNotificationsDismissed?.(ids);
+        // Auto-reject any other pending close_notifications findings that overlap
+        // the same IDs — they're now stale and would be no-ops if executed.
+        const dismissedSet = new Set(ids);
+        for (const other of session.findings) {
+          if (other.id === finding.id) continue;
+          if (other.action_type !== 'close_notifications') continue;
+          if (other.approved !== null || other.executed_at) continue; // already decided
+          const otherIds = (other.action_data?.notification_ids as string[] | undefined) ?? [];
+          if (otherIds.some((id) => dismissedSet.has(id))) {
+            await window.jarvis.agentsRejectFinding(other.id);
+          }
+        }
+      }
     }
     onFindingUpdate(session.id);
   };

@@ -5,7 +5,29 @@ import type {
   HealthWarning,
   StoredNotification,
 } from '../types';
+import { AgentSelector } from '../agents/AgentSelector';
+// ── Failure hint helpers ──────────────────────────────────────────────────────────
 
+interface FailureHint {
+  failingJob: string | null;
+  errorHint: string | null;
+}
+
+function extractErrorHint(logExcerpt: string | null): string | null {
+  if (!logExcerpt) return null;
+  const stripTs = /^\d{4}-\d{2}-\d{2}T[\d:.]+Z\s*/;
+  const errorRe = /##\[error\]|error:|failed to |exception:|fatal:/i;
+  const lines = logExcerpt.split('\n');
+  for (const raw of lines) {
+    const line = raw.replace(stripTs, '').trim();
+    if (line && errorRe.test(line)) return line.slice(0, 140);
+  }
+  for (const raw of lines) {
+    const line = raw.replace(stripTs, '').trim();
+    if (line) return line.slice(0, 140);
+  }
+  return null;
+}
 // ── Recoverable notifications banner ─────────────────────────────────────────
 
 interface RecoverableEntry {
@@ -232,12 +254,14 @@ function groupDashNotifications(notifications: StoredNotification[]): { groups: 
 }
 
 /** Lazily loads and displays notifications for a single repo, grouped by workflow. */
-function NotificationList({ repoFullName }: { repoFullName: string }) {
+function NotificationList({ repoFullName, dismissedNotifIds }: { repoFullName: string; dismissedNotifIds?: ReadonlySet<string> }) {
   const [notifications, setNotifications] = useState<StoredNotification[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [recoveryMap, setRecoveryMap] = useState<Map<string, boolean>>(new Map());
   const [checkingRecovery, setCheckingRecovery] = useState(false);
+  const [failureHintMap, setFailureHintMap] = useState<Map<string, FailureHint>>(new Map());
   const [dismissingGroup, setDismissingGroup] = useState<string | null>(null);
+  const [agentTarget, setAgentTarget] = useState<{ workflowFilter?: string } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -274,6 +298,7 @@ function NotificationList({ repoFullName }: { repoFullName: string }) {
         if (cancelled) return;
 
         const newMap = new Map<string, boolean>();
+        const newHints = new Map<string, FailureHint>();
         for (const group of ciGroups) {
           const latestNotifTime = Math.max(...group.notifications.map((n) => new Date(n.updated_at).getTime()));
           const recovered = summary.recent_runs.some(
@@ -284,8 +309,25 @@ function NotificationList({ repoFullName }: { repoFullName: string }) {
               new Date(r.run_started_at).getTime() > latestNotifTime,
           );
           newMap.set(group.workflowName!, recovered);
+          if (!recovered) {
+            const failedRun = summary.recent_runs.find(
+              (r) =>
+                r.workflow_name === group.workflowName &&
+                (group.branch === null || r.head_branch === group.branch) &&
+                r.conclusion !== 'success',
+            );
+            if (failedRun) {
+              const jobs = summary.jobs_by_run[failedRun.id] ?? [];
+              const failedJob = jobs.find((j) => j.conclusion === 'failure' || j.conclusion === 'cancelled') ?? null;
+              newHints.set(group.workflowName!, {
+                failingJob: failedJob?.name ?? null,
+                errorHint: extractErrorHint(failedJob?.log_excerpt ?? null),
+              });
+            }
+          }
         }
         setRecoveryMap(newMap);
+        setFailureHintMap(newHints);
       } catch {
         // best-effort; ignore errors
       } finally {
@@ -332,7 +374,20 @@ function NotificationList({ repoFullName }: { repoFullName: string }) {
     return <div class="dash-notif-empty">No notifications</div>;
   }
 
-  const { groups, isGrouped } = groupDashNotifications(notifications);
+  // Filter out any notifications dismissed externally (e.g. from the agent chat panel)
+  const visible = dismissedNotifIds?.size
+    ? notifications.filter((n) => !dismissedNotifIds.has(n.id))
+    : notifications;
+
+  if (dismissedNotifIds?.size) {
+    console.log('[NotificationList] filtering', repoFullName, 'dismissed:', [...dismissedNotifIds], 'notifications:', notifications.map((n) => n.id), 'visible:', visible.length);
+  }
+
+  if (visible.length === 0) {
+    return <div class="dash-notif-empty">No notifications</div>;
+  }
+
+  const { groups, isGrouped } = groupDashNotifications(visible);
 
   const renderRow = (n: StoredNotification) => (
     <div key={n.id} class="dash-notif-item">
@@ -360,8 +415,9 @@ function NotificationList({ repoFullName }: { repoFullName: string }) {
   );
 
   return (
+    <>
     <div class="dash-notif-list">
-      <div class="dash-notif-header">🔔 Notifications ({notifications.length})</div>
+      <div class="dash-notif-header">🔔 Notifications ({visible.length})</div>
       {isGrouped ? (
         groups.map((group) => (
           <div key={group.workflowName ?? '__other__'} class="dash-notif-group">
@@ -378,7 +434,16 @@ function NotificationList({ repoFullName }: { repoFullName: string }) {
                 <span class="dash-group-status dash-group-status--checking">checking…</span>
               )}
               {group.workflowName && !checkingRecovery && recoveryMap.get(group.workflowName) === false && (
-                <span class="dash-group-status dash-group-status--failing">✗ Still failing</span>
+                <>
+                  <span class="dash-group-status dash-group-status--failing">✗ Still failing</span>
+                  <button
+                    class="dash-analyse-btn"
+                    title={`Analyse "${group.workflowName}" with an LLM agent`}
+                    onClick={() => setAgentTarget({ workflowFilter: group.workflowName! })}
+                  >
+                    {'🤖 Analyse'}
+                  </button>
+                </>
               )}
               {group.workflowName && !checkingRecovery && recoveryMap.get(group.workflowName) === true && (
                 <>
@@ -393,13 +458,34 @@ function NotificationList({ repoFullName }: { repoFullName: string }) {
                 </>
               )}
             </div>
+            {/* Failure hint: failing job + first error line from cached logs */}
+            {group.workflowName && !checkingRecovery && recoveryMap.get(group.workflowName) === false && (() => {
+              const hint = failureHintMap.get(group.workflowName!);
+              if (!hint) return null;
+              return (
+                <div class="dash-failure-hint">
+                  {hint.failingJob && <span class="dash-failure-hint-job">Job: {hint.failingJob}</span>}
+                  {hint.errorHint && <code class="dash-failure-hint-error">{hint.errorHint}</code>}
+                </div>
+              );
+            })()}
             {group.notifications.map(renderRow)}
           </div>
         ))
       ) : (
-        notifications.map(renderRow)
+        visible.map(renderRow)
       )}
     </div>
+
+    {agentTarget !== null && (
+      <AgentSelector
+        repoFullName={repoFullName}
+        workflowFilter={agentTarget.workflowFilter}
+        onClose={() => setAgentTarget(null)}
+        onSessionStarted={() => setAgentTarget(null)}
+      />
+    )}
+  </>
   );
 }
 
@@ -476,6 +562,7 @@ function RepoHealthRow({
   onOpenFolder,
   onOpenGitHub,
   onPushBranch,
+  dismissedNotifIds,
 }: {
   status: RepoHealthStatus;
   warnings: HealthWarning[];
@@ -485,6 +572,7 @@ function RepoHealthRow({
   onOpenFolder: (localPath: string) => void;
   onOpenGitHub: (repoFullName: string) => void;
   onPushBranch: (localPath: string, branch: string) => void;
+  dismissedNotifIds?: ReadonlySet<string>;
 }) {
   return (
     <div id={`dash-repo-${status.localRepoId}`} class={`dash-repo-row ${warnings.length > 0 ? 'dash-repo-warn' : ''} ${expanded ? 'dash-repo-expanded' : ''}`}>
@@ -548,7 +636,7 @@ function RepoHealthRow({
 
           {/* Inline notification list */}
           {status.notificationCount > 0 && status.linkedGithubRepo && (
-            <NotificationList repoFullName={status.linkedGithubRepo} />
+            <NotificationList repoFullName={status.linkedGithubRepo} dismissedNotifIds={dismissedNotifIds} />
           )}
 
           {/* Actionable guidance per warning */}
@@ -656,7 +744,7 @@ function emptyMessage(card: CardFilter): string {
 
 // ── Main Dashboard ────────────────────────────────────────────────────────────
 
-export function DashboardPanel() {
+export function DashboardPanel({ dismissedNotifIds }: { dismissedNotifIds?: ReadonlySet<string> }) {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [cardFilter, setCardFilter] = useState<CardFilter>('all');
@@ -767,7 +855,16 @@ export function DashboardPanel() {
         <div class="dash-header-right">
           <span class="dash-updated">Last updated: {new Date(summary.generatedAt).toLocaleTimeString()}</span>
           <button class="dash-refresh-btn" onClick={load} disabled={loading} title="Refresh">
-            {loading ? '⏳' : '🔄'} Refresh
+            <svg
+              class={loading ? 'dash-refresh-icon dash-refresh-icon--spinning' : 'dash-refresh-icon'}
+              viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+              stroke-linecap="round" stroke-linejoin="round"
+            >
+              <path d="M23 4v6h-6" />
+              <path d="M1 20v-6h6" />
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+            </svg>
+            {loading ? 'Refreshing…' : 'Refresh'}
           </button>
         </div>
       </div>
@@ -820,10 +917,19 @@ export function DashboardPanel() {
               warnings={warningMap.get(repo.localRepoId) ?? []}
               expanded={expandedId === repo.localRepoId}
               pushState={pushStates[repo.localRepoId] ?? 'idle'}
-              onToggle={() => setExpandedId(expandedId === repo.localRepoId ? null : repo.localRepoId)}
+              onToggle={() => {
+                const newId = expandedId === repo.localRepoId ? null : repo.localRepoId;
+                setExpandedId(newId);
+                if (newId !== null) {
+                  requestAnimationFrame(() => {
+                    document.getElementById(`dash-repo-${newId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  });
+                }
+              }}
               onOpenFolder={handleOpenFolder}
               onOpenGitHub={handleOpenGitHub}
               onPushBranch={handlePushBranch}
+              dismissedNotifIds={dismissedNotifIds}
             />
           ))}
         </div>
