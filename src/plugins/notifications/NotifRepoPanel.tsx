@@ -9,6 +9,25 @@ const ANALYSE_THRESHOLD = 2;
 // Subject types treated as workflow/CI notifications for grouping purposes
 const WORKFLOW_TYPES = new Set(['CheckSuite', 'WorkflowRun']);
 
+/**
+ * Extract the base workflow name from a notification subject_title.
+ * "Upgrade C# dependencies workflow run, Attempt #2 failed for main branch"
+ * → "Upgrade C# dependencies"
+ */
+function normalizeWorkflowName(title: string): string {
+  const m = title.match(/^(.+?)\s+workflow\s+run/i);
+  return m ? m[1].trim() : title;
+}
+
+/**
+ * Extract the branch name from a notification subject_title.
+ * "… failed for main branch" → "main"
+ */
+function extractBranchFromTitle(title: string): string | null {
+  const m = title.match(/\bfor\s+(\S+)\s+branch\b/i);
+  return m ? m[1] : null;
+}
+
 const TYPE_ICON: Record<string, string> = {
   Issue: '\uD83D\uDC1B',
   PullRequest: '\uD83D\uDD00',
@@ -21,8 +40,10 @@ const TYPE_ICON: Record<string, string> = {
 // ── Workflow grouping ─────────────────────────────────────────────────────────
 
 interface NotifGroup {
-  /** Workflow name (subject_title) for CI groups, null for the "other" catch-all */
+  /** Normalised workflow name for CI groups, null for the "other" catch-all */
   workflowName: string | null;
+  /** Branch extracted from the notification title (e.g. "main") */
+  branch: string | null;
   notifications: StoredNotification[];
 }
 
@@ -34,26 +55,27 @@ function groupNotifications(notifications: StoredNotification[]): { groups: Noti
   const workflowNotifs = notifications.filter((n) => WORKFLOW_TYPES.has(n.subject_type));
   const otherNotifs = notifications.filter((n) => !WORKFLOW_TYPES.has(n.subject_type));
 
-  const byWorkflow = new Map<string, StoredNotification[]>();
+  // Group by normalised workflow name so "Attempt #2" variants merge with their parent
+  const byWorkflow = new Map<string, { notifs: StoredNotification[]; branch: string | null }>();
   for (const n of workflowNotifs) {
-    const name = n.subject_title;
-    if (!byWorkflow.has(name)) byWorkflow.set(name, []);
-    byWorkflow.get(name)!.push(n);
+    const name = normalizeWorkflowName(n.subject_title);
+    if (!byWorkflow.has(name)) byWorkflow.set(name, { notifs: [], branch: extractBranchFromTitle(n.subject_title) });
+    byWorkflow.get(name)!.notifs.push(n);
   }
 
-  // Only split into groups when there are 2+ distinct workflow names
-  const isGrouped = byWorkflow.size >= 2 || (byWorkflow.size >= 1 && otherNotifs.length > 0);
+  // Show grouped view whenever there is at least one CI workflow notification
+  const isGrouped = workflowNotifs.length >= 1 || otherNotifs.length > 0;
 
   if (!isGrouped) {
-    return { groups: [{ workflowName: null, notifications }], isGrouped: false };
+    return { groups: [{ workflowName: null, branch: null, notifications }], isGrouped: false };
   }
 
   const groups: NotifGroup[] = [];
-  for (const [name, notifs] of byWorkflow) {
-    groups.push({ workflowName: name, notifications: notifs });
+  for (const [name, { notifs, branch }] of byWorkflow) {
+    groups.push({ workflowName: name, branch, notifications: notifs });
   }
   if (otherNotifs.length > 0) {
-    groups.push({ workflowName: null, notifications: otherNotifs });
+    groups.push({ workflowName: null, branch: null, notifications: otherNotifs });
   }
   return { groups, isGrouped: true };
 }
@@ -127,6 +149,9 @@ interface NotifRepoPanelProps {
 export function NotifRepoPanel({ repoFullName, notifications, onClose, onRefresh, refreshing, onDismiss, onAgentSessionStarted }: NotifRepoPanelProps) {
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; notifId: string } | null>(null);
   const [agentTarget, setAgentTarget] = useState<{ workflowFilter?: string } | null>(null);
+  const [recoveryMap, setRecoveryMap] = useState<Map<string, boolean>>(new Map());
+  const [checkingRecovery, setCheckingRecovery] = useState(false);
+  const [dismissingGroup, setDismissingGroup] = useState<string | null>(null);
 
   useEffect(() => {
     if (!ctxMenu) return;
@@ -135,10 +160,62 @@ export function NotifRepoPanel({ repoFullName, notifications, onClose, onRefresh
     return () => window.removeEventListener('mousedown', close);
   }, [ctxMenu]);
 
+  // Check whether each CI workflow group has since recovered on the same branch.
+  // Uses cached workflow run data; fetches from GitHub if the cache is empty.
+  useEffect(() => {
+    const { groups: g, isGrouped: ig } = groupNotifications(notifications);
+    const ciGroups = g.filter((gr) => gr.workflowName !== null);
+    if (!ig || ciGroups.length === 0) return;
+
+    let cancelled = false;
+    setCheckingRecovery(true);
+
+    const check = async () => {
+      try {
+        let summary = await window.jarvis.githubGetWorkflowSummary(repoFullName);
+        if (summary.total_runs === 0) {
+          await window.jarvis.githubFetchWorkflowRuns(repoFullName);
+          summary = await window.jarvis.githubGetWorkflowSummary(repoFullName);
+        }
+        if (cancelled) return;
+
+        const newMap = new Map<string, boolean>();
+        for (const group of ciGroups) {
+          const latestNotifTime = Math.max(...group.notifications.map((n) => new Date(n.updated_at).getTime()));
+          const recovered = summary.recent_runs.some(
+            (r) =>
+              r.workflow_name === group.workflowName &&
+              (group.branch === null || r.head_branch === group.branch) &&
+              r.conclusion === 'success' &&
+              new Date(r.run_started_at).getTime() > latestNotifTime,
+          );
+          newMap.set(group.workflowName!, recovered);
+        }
+        setRecoveryMap(newMap);
+      } catch {
+        // recovery check is best-effort; silently ignore errors
+      } finally {
+        if (!cancelled) setCheckingRecovery(false);
+      }
+    };
+
+    void check();
+    return () => { cancelled = true; };
+  }, [repoFullName]);
+
   const handleDismiss = async (id: string) => {
     setCtxMenu(null);
     await window.jarvis.dismissNotification(id);
     onDismiss?.(id);
+  };
+
+  const handleDismissGroup = async (workflowName: string, ids: string[]) => {
+    setDismissingGroup(workflowName);
+    for (const id of ids) {
+      await window.jarvis.dismissNotification(id);
+      onDismiss?.(id);
+    }
+    setDismissingGroup(null);
   };
 
   const { groups, isGrouped } = groupNotifications(notifications);
@@ -179,8 +256,30 @@ export function NotifRepoPanel({ repoFullName, notifications, onClose, onRefresh
               </span>
               <span class="notif-workflow-group-name">
                 {group.workflowName ?? 'Other notifications'}
+                {group.workflowName && group.branch && (
+                  <span class="notif-workflow-group-branch">{group.branch}</span>
+                )}
               </span>
               <span class="notif-workflow-group-count">{group.notifications.length}</span>
+              {/* Recovery status — shown while checking or after check completes */}
+              {group.workflowName && checkingRecovery && (
+                <span class="notif-group-status notif-group-status--checking">checking…</span>
+              )}
+              {group.workflowName && !checkingRecovery && recoveryMap.get(group.workflowName) === false && (
+                <span class="notif-group-status notif-group-status--failing">✗ Still failing</span>
+              )}
+              {group.workflowName && !checkingRecovery && recoveryMap.get(group.workflowName) === true && (
+                <>
+                  <span class="notif-group-status notif-group-status--recovered">✓ Recovered</span>
+                  <button
+                    class={`notif-dismiss-group-btn${dismissingGroup === group.workflowName ? ' notif-dismiss-group-btn--busy' : ''}`}
+                    disabled={dismissingGroup === group.workflowName}
+                    onClick={() => handleDismissGroup(group.workflowName!, group.notifications.map((n) => n.id))}
+                  >
+                    {dismissingGroup === group.workflowName ? <span class="dismiss-spinner" /> : 'Dismiss all'}
+                  </button>
+                </>
+              )}
               {group.workflowName && group.notifications.length >= ANALYSE_THRESHOLD && (
                 <button
                   class="notif-analyse-btn notif-analyse-btn--inline"

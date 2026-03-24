@@ -5,7 +5,7 @@ import pkg from '../../package.json';
 import { createTray } from './tray';
 import { createOnboardingWindow, createSettingsWindow } from './windows';
 import { getOnboardingStatus, completeOnboardingStep } from '../agent/onboarding';
-import { registerIpcHandlers, startDiscoveryIfAuthed, scheduleLocalDiscovery } from './ipc-handlers';
+import { registerIpcHandlers, startDiscoveryIfAuthed, scheduleLocalDiscovery, runBootWorkflowCheck } from './ipc-handlers';
 import { checkOllama } from '../services/ollama';
 import { saveDatabase } from '../storage/database';
 
@@ -83,6 +83,10 @@ async function initialize(): Promise<void> {
   // If GitHub auth is already set up, start background discovery
   if (!needsOnboarding || onboarding.github_oauth === 'completed') {
     startDiscoveryIfAuthed(db, () => mainWindow);
+    // Pre-warm workflow run cache so recovery status is ready when panels open
+    runBootWorkflowCheck(db).catch((err) => {
+      console.warn('[Boot] Workflow check failed:', err instanceof Error ? err.message : String(err));
+    });
   }
 
   // Schedule periodic local-repo scanning

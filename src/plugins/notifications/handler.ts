@@ -17,6 +17,7 @@ import {
 } from '../../services/github-notifications';
 import { loadGitHubAuth } from '../../services/github-oauth';
 import { saveDatabase } from '../../storage/database';
+import { fetchAndStoreWorkflowData } from '../../services/github-workflows';
 
 export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWindow | null): void {
   ipcMain.handle('github:fetch-notifications', async () => {
@@ -91,4 +92,37 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
     deleteNotification(db, id);
     saveDatabase();
   });
+}
+
+/**
+ * On app boot, pre-warm the workflow run cache for every repo that has
+ * CI-type notifications stored locally. This ensures the recovery check in
+ * the UI can resolve immediately without a user-triggered fetch.
+ */
+export async function runBootWorkflowCheck(db: SqlJsDatabase): Promise<void> {
+  const auth = loadGitHubAuth(db);
+  if (!auth) return;
+
+  // Find distinct repos with CheckSuite or WorkflowRun notifications
+  const result = db.exec(
+    `SELECT DISTINCT repo_full_name FROM github_notifications
+     WHERE subject_type IN ('CheckSuite', 'WorkflowRun')`,
+  );
+
+  const repos: string[] = result[0]?.values.map((row) => row[0] as string) ?? [];
+  if (repos.length === 0) return;
+
+  console.log(`[Boot] Pre-warming workflow cache for ${repos.length} repo(s) with CI notifications…`);
+
+  for (const repo of repos) {
+    try {
+      const { runsStored } = await fetchAndStoreWorkflowData(db, auth.accessToken, repo);
+      console.log(`[Boot] Cached ${runsStored} workflow run(s) for ${repo}`);
+    } catch (err) {
+      // Non-fatal — the UI will fall back to fetching on demand
+      console.warn(`[Boot] Could not fetch workflow runs for ${repo}:`, err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  saveDatabase();
 }
