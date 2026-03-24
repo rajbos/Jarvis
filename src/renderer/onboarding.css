@@ -139,6 +139,7 @@ button:disabled {
   border-radius: 8px;
   padding: 1rem;
   text-align: center;
+  position: relative;
 }
 
 .dash-card-clickable {
@@ -153,9 +154,30 @@ button:disabled {
 
 .dash-card-selected {
   border-width: 2px;
-  border-color: #c0c0d0 !important;
-  background: rgba(255, 255, 255, 0.06);
-  box-shadow: 0 0 0 1px rgba(192, 192, 208, 0.25);
+  border-color: #ffffff !important;
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35), 0 4px 16px rgba(0, 0, 0, 0.4);
+  transform: translateY(-2px);
+}
+
+.dash-card-selected .dash-card-label {
+  color: #d0d0e8;
+}
+
+/* Selected card arrow indicator */
+.dash-card-selected-icon {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  font-size: 0.95rem;
+  line-height: 1;
+  color: #ffffff;
+  background: rgba(255,255,255,0.06);
+  padding: 6px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.12);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.45);
+  transform: none;
 }
 
 .dash-card-warn {
@@ -205,6 +227,94 @@ button:disabled {
 /* Section */
 .dash-section {
   margin-bottom: 1.25rem;
+}
+
+/* ── Recoverable notifications banner ───────────────────────────────────── */
+.dash-recoverable-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.9rem;
+  margin-bottom: 0.85rem;
+  background: #0d2a1a;
+  border: 1px solid #1a7a44;
+  border-radius: 7px;
+}
+
+.dash-recoverable-icon {
+  font-size: 1.1rem;
+  color: #4eca8a;
+  flex-shrink: 0;
+}
+
+.dash-recoverable-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.dash-recoverable-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #4eca8a;
+}
+
+.dash-recoverable-detail {
+  font-size: 0.74rem;
+  color: #5a9a74;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dash-recoverable-btn {
+  background: #0d3320;
+  border: 1px solid #1a7a44;
+  color: #4eca8a;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.4;
+  padding: 0.25rem 0.75rem;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
+}
+
+.dash-recoverable-btn:hover {
+  background: #154d30;
+  color: #7aebb0;
+}
+
+.dash-recoverable-btn--busy,
+.dash-recoverable-btn--busy:hover {
+  cursor: default;
+  opacity: 0.7;
+  background: #0d3320;
+  color: #4eca8a;
+}
+
+.dash-recoverable-nav-btn {
+  background: transparent;
+  border: 1px solid #1a4a6a;
+  color: #5a9fd4;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.4;
+  padding: 0.25rem 0.75rem;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
+}
+
+.dash-recoverable-nav-btn:hover {
+  background: #0d2040;
+  color: #7ab3f5;
 }
 
 .dash-section h3 {
@@ -387,35 +497,45 @@ button:disabled {
   padding: 0.75rem 0.9rem;
 }
 
-.dash-detail-grid {
+.dash-detail-bar {
   display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
   margin-bottom: 0.65rem;
 }
 
-.dash-detail-row {
-  display: flex;
-  gap: 0.75rem;
-  font-size: 0.82rem;
-  line-height: 1.4;
-}
-
-.dash-detail-label {
-  color: #6a6a7a;
-  min-width: 90px;
-  flex-shrink: 0;
-}
-
-.dash-detail-value {
+.dash-detail-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.8rem;
   color: #c8c8c8;
-  word-break: break-all;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 0.2rem 0.55rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 320px;
 }
 
-.dash-detail-path {
+.dash-detail-chip.dash-detail-path {
   font-family: 'Consolas', 'Courier New', monospace;
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   color: #8a8a9a;
+  max-width: 400px;
+}
+
+.dash-detail-chip-warn {
+  border-color: rgba(233, 160, 69, 0.35);
+  color: #e9a045;
+}
+
+.dash-detail-chip-danger {
+  border-color: rgba(233, 69, 96, 0.35);
+  color: #e94560;
 }
 
 .dash-detail-ok {
@@ -619,6 +739,126 @@ button:disabled {
   padding: 0.15rem 0.4rem;
   font-size: 0.75rem;
   min-width: unset;
+}
+
+/* ── Dashboard notification groups ──────────────────────────────────────── */
+.dash-notif-group + .dash-notif-group {
+  margin-top: 0.5rem;
+}
+
+.dash-notif-group-header {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.5rem;
+  background: #0c1a2e;
+  border-radius: 4px 4px 0 0;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: #8bafd8;
+  margin-bottom: 0.15rem;
+}
+
+.dash-notif-group-icon {
+  flex-shrink: 0;
+}
+
+.dash-notif-group-name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #c8daf0;
+}
+
+.dash-notif-group-branch {
+  display: inline-block;
+  margin-left: 0.3rem;
+  background: #0c2240;
+  color: #5a9fd4;
+  border-radius: 4px;
+  padding: 0 0.3rem;
+  font-size: 0.66rem;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+.dash-notif-group-count {
+  background: #1c3050;
+  color: #7ab3f5;
+  border-radius: 10px;
+  padding: 0.1rem 0.4rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  line-height: 1.4;
+}
+
+.dash-group-status {
+  font-size: 0.68rem;
+  border-radius: 4px;
+  padding: 0.1rem 0.4rem;
+  line-height: 1.4;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.dash-group-status--checking {
+  color: #6a96c8;
+  font-style: italic;
+  padding: 0;
+  line-height: inherit;
+}
+
+.dash-group-status--failing {
+  color: #f87171;
+  background: #2c1010;
+}
+.dash-group-status--recovered {
+  color: #4eca8a;
+  background: #0d3320;
+  border: 1px solid #1a7a44;
+}
+
+.dash-dismiss-group-btn {
+  background: #0d3320;
+  border: 1px solid #1a7a44;
+  color: #4eca8a;
+  border-radius: 5px;
+  font-size: 0.68rem;
+  line-height: 1.4;
+  padding: 0.1rem 0.45rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+
+.dash-dismiss-group-btn:hover {
+  background: #154d30;
+  color: #7aebb0;
+}
+.dash-dismiss-group-btn--busy,
+.dash-dismiss-group-btn--busy:hover {
+  cursor: default;
+  opacity: 0.7;
+  background: #0d3320;
+  color: #4eca8a;
+}
+
+/* ── Dismiss-group spinner ────────────────────────────────────────────────── */
+@keyframes dismiss-spin {
+  to { transform: rotate(360deg); }
+}
+.dismiss-spinner {
+  display: inline-block;
+  width: 0.7rem;
+  height: 0.7rem;
+  border: 2px solid rgba(78, 202, 138, 0.25);
+  border-top-color: #4eca8a;
+  border-radius: 50%;
+  animation: dismiss-spin 0.65s linear infinite;
+  vertical-align: middle;
 }
 
 /* Failed workflow runs */
@@ -2013,10 +2253,73 @@ h5.ec-heading { font-size: 0.85rem; }
   background: #1c3050;
   color: #7ab3f5;
   border-radius: 10px;
-  padding: 0 0.45rem;
+  padding: 0.1rem 0.45rem;
   font-size: 0.72rem;
   font-weight: 700;
   flex-shrink: 0;
+  line-height: 1.4;
+}
+
+/* branch label inside the workflow group name */
+.notif-workflow-group-branch {
+  display: inline-block;
+  margin-left: 0.35rem;
+  background: #0c2240;
+  color: #5a9fd4;
+  border-radius: 4px;
+  padding: 0 0.35rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+/* ── Workflow group recovery status & dismiss-all button ─────────────────── */
+.notif-group-status {
+  font-size: 0.7rem;
+  border-radius: 4px;
+  padding: 0.1rem 0.45rem;
+  line-height: 1.4;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.notif-group-status--checking {
+  color: #6a96c8;
+  font-style: italic;
+  padding: 0;
+  line-height: inherit;
+}
+.notif-group-status--failing {
+  color: #f87171;
+  background: #2c1010;
+}
+.notif-group-status--recovered {
+  color: #4eca8a;
+  background: #0d3320;
+  border: 1px solid #1a7a44;
+}
+.notif-dismiss-group-btn {
+  background: #0d3320;
+  border: 1px solid #1a7a44;
+  color: #4eca8a;
+  border-radius: 5px;
+  font-size: 0.7rem;
+  line-height: 1.4;
+  padding: 0.1rem 0.5rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+.notif-dismiss-group-btn:hover {
+  background: #154d30;
+  color: #7aebb0;
+}
+.notif-dismiss-group-btn--busy,
+.notif-dismiss-group-btn--busy:hover {
+  cursor: default;
+  opacity: 0.7;
+  background: #0d3320;
+  color: #4eca8a;
 }
 
 /* scope workflow badge in the AgentSelector modal */

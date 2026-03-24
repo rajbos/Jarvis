@@ -156,7 +156,9 @@ export function registerHandlers(
       repos,
       warnings,
       totalRepos: repos.length,
-      reposWithWarnings: warnings.length,
+      reposWithWarnings: warnings.filter(({ warnings: w }) =>
+        w.some((h) => h.kind === 'branch-no-upstream' || h.kind === 'no-remote'),
+      ).length,
       totalNotifications,
       totalFailedRuns,
       generatedAt: new Date().toISOString(),

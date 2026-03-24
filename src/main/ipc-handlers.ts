@@ -23,6 +23,8 @@ import { registerHandlers as registerDashboardHandlers } from '../plugins/dashbo
 export { startDiscoveryIfAuthed } from '../plugins/discovery/handler';
 // Re-export scheduleLocalDiscovery so src/main/index.ts can call it on startup
 export { scheduleLocalDiscovery } from '../plugins/local-repos/handler';
+// Re-export runBootWorkflowCheck so src/main/index.ts can call it on startup
+export { runBootWorkflowCheck } from '../plugins/notifications/handler';
 
 export function registerIpcHandlers(
   db: SqlJsDatabase,
