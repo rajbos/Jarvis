@@ -375,12 +375,13 @@ function NotificationList({ repoFullName, dismissedNotifIds }: { repoFullName: s
   }
 
   // Filter out any notifications dismissed externally (e.g. from the agent chat panel)
+  // Use String() coercion because sql.js returns numeric-looking TEXT IDs as JS numbers
   const visible = dismissedNotifIds?.size
-    ? notifications.filter((n) => !dismissedNotifIds.has(n.id))
+    ? notifications.filter((n) => !dismissedNotifIds.has(String(n.id)))
     : notifications;
 
   if (dismissedNotifIds?.size) {
-    console.log('[NotificationList] filtering', repoFullName, 'dismissed:', [...dismissedNotifIds], 'notifications:', notifications.map((n) => n.id), 'visible:', visible.length);
+    console.log('[NotificationList] filtering', repoFullName, 'dismissed:', [...dismissedNotifIds], 'notifications:', notifications.map((n) => String(n.id)), 'visible:', visible.length);
   }
 
   if (visible.length === 0) {
