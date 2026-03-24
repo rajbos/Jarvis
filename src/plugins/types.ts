@@ -248,6 +248,10 @@ export interface RepoHealthStatus {
   linkedGithubRepo: string | null;
   failedWorkflowRuns: number;
   exists: boolean;
+  /** ISO timestamp of the most recent local commit (from .git/logs/HEAD) */
+  lastCommitAt: string | null;
+  /** ISO timestamp of the most recent push to GitHub (from github_repos.last_pushed_at) */
+  lastPushedAt: string | null;
 }
 
 export interface DashboardSummary {

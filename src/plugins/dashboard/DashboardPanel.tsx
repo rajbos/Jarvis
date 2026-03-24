@@ -406,6 +406,8 @@ function NotificationList({ repoFullName }: { repoFullName: string }) {
 /** The active card filter drives what appears below the cards. */
 type CardFilter = 'all' | 'healthy' | 'warnings' | 'notifications' | 'failed-runs';
 
+type SortMode = 'attention' | 'local-activity' | 'remote-activity';
+
 function SummaryCards({
   summary,
   healthyCount,
@@ -658,6 +660,7 @@ export function DashboardPanel() {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [cardFilter, setCardFilter] = useState<CardFilter>('all');
+  const [sortMode, setSortMode] = useState<SortMode>('attention');
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [pushStates, setPushStates] = useState<Record<number, 'idle' | 'pushing' | 'done' | 'error'>>({});
 
@@ -735,8 +738,21 @@ export function DashboardPanel() {
   // Filter repos based on the selected card
   const displayRepos = filterRepos(summary.repos, warningMap, cardFilter);
 
-  // Sort: repos with warnings first, then alphabetical
+  // Sort based on selected mode
   const sorted = [...displayRepos].sort((a, b) => {
+    if (sortMode === 'local-activity') {
+      // Most recent local commit first; null goes to bottom
+      const aT = a.lastCommitAt ? new Date(a.lastCommitAt).getTime() : 0;
+      const bT = b.lastCommitAt ? new Date(b.lastCommitAt).getTime() : 0;
+      return bT - aT;
+    }
+    if (sortMode === 'remote-activity') {
+      // Most recent GitHub push first; null goes to bottom
+      const aT = a.lastPushedAt ? new Date(a.lastPushedAt).getTime() : 0;
+      const bT = b.lastPushedAt ? new Date(b.lastPushedAt).getTime() : 0;
+      return bT - aT;
+    }
+    // 'attention': repos with warnings first, then alphabetical
     const aW = warningMap.get(a.localRepoId)?.length ?? 0;
     const bW = warningMap.get(b.localRepoId)?.length ?? 0;
     if (aW > 0 && bW === 0) return -1;
@@ -778,7 +794,21 @@ export function DashboardPanel() {
 
       {/* Repo health list — filtered by selected card */}
       <div class="dash-section">
-        <h3>{sectionTitle(cardFilter, sorted.length)}</h3>
+        <div class="dash-section-header">
+          <h3>{sectionTitle(cardFilter, sorted.length)}</h3>
+          <div class="dash-sort-controls">
+            <span class="dash-sort-label">Sort:</span>
+            {(['attention', 'local-activity', 'remote-activity'] as SortMode[]).map((mode) => (
+              <button
+                key={mode}
+                class={`dash-sort-btn${sortMode === mode ? ' dash-sort-btn--active' : ''}`}
+                onClick={() => setSortMode(mode)}
+              >
+                {mode === 'attention' ? '⚠️ Attention' : mode === 'local-activity' ? '💻 Local activity' : '☁️ Remote activity'}
+              </button>
+            ))}
+          </div>
+        </div>
         <div class="dash-repo-list">
           {sorted.length === 0 && (
             <div class="dash-empty">{emptyMessage(cardFilter)}</div>
