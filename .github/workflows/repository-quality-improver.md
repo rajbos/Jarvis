@@ -7,7 +7,7 @@ on:
 permissions:
   contents: read
   actions: read
-  issues: read
+  issues: write
   pull-requests: read
 
 tools:
@@ -24,6 +24,9 @@ safe-outputs:
     expires: 2d
     labels: [quality, automated-analysis]
     max: 1
+  comment-issue:
+    labels: [quality, automated-analysis]
+    max: 1
 
 timeout-minutes: 20
 source: githubnext/agentics/workflows/repository-quality-improver.md@d88ca0e8ee2b080fcba4490ac5b657c98a0eb26b
@@ -36,7 +39,7 @@ You are the Repository Quality Improvement Agent — an expert system that perio
 
 ## Mission
 
-Daily or on-demand, select a focus area for repository improvement, conduct analysis, and produce a single issue with actionable tasks. Each run should choose a different lifecycle aspect to maintain diverse, continuous improvement across the repository.
+Daily or on-demand, select a focus area for repository improvement, conduct analysis, and produce actionable findings. If an existing open quality issue already exists, add new findings as a comment on that issue instead of creating a duplicate. Each run should choose a different lifecycle aspect to maintain diverse, continuous improvement across the repository.
 
 ## Current Context
 
@@ -114,6 +117,58 @@ Choose a focus area based on the following strategy to maximize diversity and re
 - **Else if number ≤ 90**: Select a standard category that hasn't been used in the last 3 runs
 - **Else**: Reuse the most common or impactful focus area from the last 10 runs
 - Update the history file with the selected focus area, whether it was custom, and a brief description
+
+## Phase 0.5: Check for Existing Open Issues
+
+Before conducting analysis, check whether there is already an open issue from a previous run of this workflow. This avoids duplicate issues and ensures we build on prior findings instead of creating noise.
+
+### 0.5.1 Search for Existing Issues
+
+Use the GitHub CLI to search for open issues with the `quality` and `automated-analysis` labels:
+
+```bash
+gh issue list \
+  --repo "${{ github.repository }}" \
+  --label "quality" \
+  --label "automated-analysis" \
+  --state open \
+  --json number,title,body,createdAt,labels \
+  --limit 10 \
+  > /tmp/existing_quality_issues.json
+
+EXISTING_COUNT=$(jq length /tmp/existing_quality_issues.json)
+echo "Found $EXISTING_COUNT existing open quality improvement issue(s)"
+
+if [ "$EXISTING_COUNT" -gt 0 ]; then
+  echo "Existing issues:"
+  jq -r '.[] | "  #\(.number): \(.title) (created \(.createdAt))"' /tmp/existing_quality_issues.json
+fi
+```
+
+### 0.5.2 Determine Action Mode
+
+Based on the search results, decide how to proceed:
+
+- **If no existing open issues are found**: Proceed normally — conduct analysis and create a new issue.
+- **If one or more existing open issues are found**: Set the mode to **update**. Continue with the analysis in Phase 1, but in Phase 2, compare findings with the most recent existing issue's body. If there are new insights or tasks, add a comment to that issue instead of creating a new one.
+
+```bash
+if [ "$EXISTING_COUNT" -eq 0 ]; then
+  echo "MODE=create" > /tmp/quality_action_mode.env
+  echo "Action mode: CREATE new issue"
+else
+  EXISTING_ISSUE_NUMBER=$(jq -r '.[0].number' /tmp/existing_quality_issues.json)
+  EXISTING_ISSUE_TITLE=$(jq -r '.[0].title' /tmp/existing_quality_issues.json)
+  echo "MODE=update" > /tmp/quality_action_mode.env
+  echo "EXISTING_ISSUE_NUMBER=$EXISTING_ISSUE_NUMBER" >> /tmp/quality_action_mode.env
+  echo "Action mode: UPDATE existing issue #$EXISTING_ISSUE_NUMBER ($EXISTING_ISSUE_TITLE)"
+
+  # Save the existing issue body for comparison in Phase 2
+  jq -r '.[0].body' /tmp/existing_quality_issues.json > /tmp/existing_issue_body.md
+fi
+```
+
+**Important**: Even in update mode, still proceed with Phase 1 analysis. The goal is to identify *new* findings that complement or extend what's already been reported.
 
 ## Phase 1: Conduct Analysis
 
@@ -276,7 +331,16 @@ find .github/workflows -name "*.yml" -exec wc -l {} \; | sort -rn | head -5
 
 ## Phase 2: Generate Improvement Report
 
-Write a comprehensive report as a GitHub issue with the following structure:
+Before writing the report, check the action mode determined in Phase 0.5:
+
+```bash
+source /tmp/quality_action_mode.env
+echo "Action mode: $MODE"
+```
+
+### If MODE is `create`
+
+Write a comprehensive report as a **new** GitHub issue with the following structure:
 
 **Report Formatting**: Use h3 (###) or lower for all headers in the report to maintain proper document hierarchy. The issue title serves as h1, so start section headers at h3.
 
@@ -364,6 +428,59 @@ The following actionable tasks address the findings above.
 *Next analysis: [Tomorrow's date] — Focus area selected based on diversity algorithm*
 ```
 
+### If MODE is `update`
+
+When an existing open issue was found, compare your new analysis findings against the existing issue body to determine what's new:
+
+1. **Read the existing issue body** from `/tmp/existing_issue_body.md`
+2. **Identify new findings**: Compare the focus areas, metrics, and tasks in your new analysis with those already in the existing issue. Look for:
+   - A different focus area than what the existing issue covers
+   - New metrics or worsened/improved metrics in an area already covered
+   - New actionable tasks not already listed
+   - Updated context (e.g., new code changes since the last analysis)
+3. **If there are new findings**, add a comment to the existing issue with the following structure:
+
+```markdown
+### 🔄 Quality Update — [FOCUS AREA] ([DATE])
+
+**Strategy Type**: [Custom/Standard/Reused]
+
+### New Findings
+
+[Summarize what is new or changed compared to the existing issue]
+
+### Additional Tasks
+
+- [ ] [New Task 1] — Priority: [High/Medium/Low]
+- [ ] [New Task 2] — Priority: [High/Medium/Low]
+
+### Updated Metrics
+
+| Metric | Previous | Current | Trend |
+|--------|----------|---------|-------|
+| [Metric] | [Old Value] | [New Value] | ⬆️/⬇️/➡️ |
+
+---
+
+*Updated by Repository Quality Improvement Agent — $(date +%Y-%m-%d)*
+```
+
+Use the GitHub CLI to add the comment:
+
+```bash
+source /tmp/quality_action_mode.env
+gh issue comment "$EXISTING_ISSUE_NUMBER" \
+  --repo "${{ github.repository }}" \
+  --body-file /tmp/quality_update_comment.md
+echo "Commented on existing issue #$EXISTING_ISSUE_NUMBER with new findings"
+```
+
+4. **If there are no meaningful new findings**, skip creating a comment and log that the existing issue already covers the current state:
+
+```bash
+echo "No new findings to add — existing issue #$EXISTING_ISSUE_NUMBER already covers the current state"
+```
+
 ## Phase 3: Update Cache Memory
 
 After generating the report, update the focus area history:
@@ -384,14 +501,17 @@ The JSON should include:
 A successful quality improvement run:
 - ✅ Selects a focus area using the diversity algorithm (60% custom, 30% standard, 10% reuse)
 - ✅ Determines the repository's primary language(s) and adapts analysis accordingly
+- ✅ Checks for existing open issues before creating a new one
 - ✅ Conducts thorough analysis of the selected area
-- ✅ Generates exactly one issue with the report
-- ✅ Includes 3–5 actionable tasks
+- ✅ Creates a new issue **only** if no existing open quality issue is found
+- ✅ Comments on an existing issue with new findings if one already exists
+- ✅ Includes 3–5 actionable tasks (in either the new issue or the update comment)
 - ✅ Updates cache memory with run history
 - ✅ Maintains high diversity rate (aim for 60%+ custom or varied strategies)
 
 ## Important Guidelines
 
+- **Avoid Duplicate Issues**: Always check for existing open issues before creating a new one. Build on prior findings rather than duplicating them.
 - **Prioritize Custom Areas**: 60% of runs should invent new, repository-specific focus areas
 - **Avoid Repetition**: Don't select the same area in consecutive runs
 - **Be Creative**: Think beyond the standard categories — what unique aspects of this project need attention?
