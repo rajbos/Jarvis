@@ -273,6 +273,23 @@ export interface FailedWorkflowRun {
 // ── Jarvis preload API contract ───────────────────────────────────────────────
 // This augments the global Window type so all plugin components get full
 // type-checking on window.jarvis calls without re-declaring it everywhere.
+import type {
+  AgentSessionStartingPayload,
+  AgentAnalysisCompletePayload,
+  AgentPhase2ErrorPayload,
+  AgentSessionCompletePayload,
+  AgentSessionErrorPayload,
+  AgentDebugContextPayload,
+} from '../types/ipc-payloads';
+
+export type {
+  AgentSessionStartingPayload,
+  AgentAnalysisCompletePayload,
+  AgentPhase2ErrorPayload,
+  AgentSessionCompletePayload,
+  AgentSessionErrorPayload,
+  AgentDebugContextPayload,
+} from '../types/ipc-payloads';
 
 export interface JarvisApi {
   checkOllama(): Promise<OllamaStatus>;
@@ -337,13 +354,13 @@ export interface JarvisApi {
   agentsApproveFinding(findingId: number): Promise<{ ok: boolean }>;
   agentsRejectFinding(findingId: number): Promise<{ ok: boolean }>;
   agentsExecuteFinding(findingId: number): Promise<{ ok: boolean; error?: string; dismissedIds?: string[] }>;
-  onAgentSessionStarting(cb: (data: { sessionId: number; agentName: string; scopeType: string; scopeValue: string; workflowRunCount: number }) => void): () => void;
-  onAgentDebugContext(cb: (data: { sessionId: number; systemPrompt: string; userMessage: string }) => void): () => void;
+  onAgentSessionStarting(cb: (data: AgentSessionStartingPayload) => void): () => void;
+  onAgentDebugContext(cb: (data: AgentDebugContextPayload) => void): () => void;
   onAgentToken(cb: (token: string) => void): () => void;
-  onAgentAnalysisComplete(cb: (data: { sessionId: number }) => void): () => void;
-  onAgentPhase2Error(cb: (data: { sessionId: number; message: string }) => void): () => void;
-  onAgentSessionComplete(cb: (result: { sessionId: number }) => void): () => void;
-  onAgentSessionError(cb: (error: { sessionId: number; message: string }) => void): () => void;
+  onAgentAnalysisComplete(cb: (data: AgentAnalysisCompletePayload) => void): () => void;
+  onAgentPhase2Error(cb: (data: AgentPhase2ErrorPayload) => void): () => void;
+  onAgentSessionComplete(cb: (result: AgentSessionCompletePayload) => void): () => void;
+  onAgentSessionError(cb: (error: AgentSessionErrorPayload) => void): () => void;
   // Workflow data
   githubFetchWorkflowRuns(repoFullName: string): Promise<{ ok: boolean; count?: number; error?: string }>;
   githubGetWorkflowSummary(repoFullName: string): Promise<WorkflowRunSummary>;
