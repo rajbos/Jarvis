@@ -4,11 +4,16 @@ description: Daily analysis of repository quality focusing on a different softwa
 on:
   schedule: daily
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/repository-quality-improver.md'
+      - '.github/workflows/repository-quality-improver.lock.yml'
 permissions:
   contents: read
   actions: read
-  issues: write
+  issues: read
   pull-requests: read
+
 
 tools:
   bash: ["*"]
@@ -24,8 +29,7 @@ safe-outputs:
     expires: 2d
     labels: [quality, automated-analysis]
     max: 1
-  comment-issue:
-    labels: [quality, automated-analysis]
+  add-comment:
     max: 1
 
 timeout-minutes: 20
