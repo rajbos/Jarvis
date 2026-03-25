@@ -76,6 +76,12 @@ function dispatchToolCall(db: SqlJsDatabase, call: OllamaToolCall): string {
 
 export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWindow | null): void {
   ipcMain.handle('chat:send', (event, userMessages: Array<{ role: string; content: string }>) => {
+    if (!Array.isArray(userMessages) || userMessages.length === 0) return { ok: false, error: 'Invalid messages' };
+    for (const msg of userMessages) {
+      if (typeof msg !== 'object' || msg === null) return { ok: false, error: 'Invalid message entry' };
+      if (typeof msg.role !== 'string' || typeof msg.content !== 'string') return { ok: false, error: 'Invalid message fields' };
+    }
+
     const model = getConfigValue(db, 'selected_ollama_model');
     if (!model) {
       event.sender.send('chat:error', 'No Ollama model selected. Please select a model in the main window.');
