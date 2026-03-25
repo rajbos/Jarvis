@@ -4,11 +4,16 @@ description: Daily analysis of repository quality focusing on a different softwa
 on:
   schedule: daily
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/repository-quality-improver.md'
+      - '.github/workflows/repository-quality-improver.lock.yml'
 permissions:
   contents: read
   actions: read
   issues: read
   pull-requests: read
+
 
 tools:
   bash: ["*"]
