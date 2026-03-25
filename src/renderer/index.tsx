@@ -210,7 +210,7 @@ function App() {
 
   // Load persisted secrets from DB on mount + register progress listener
   useEffect(() => {
-    window.jarvis.onSecretsProgress((progress: SecretsScanProgress) => {
+    const unsubSecrets = window.jarvis.onSecretsProgress((progress: SecretsScanProgress) => {
       setSecretsScanProgress(progress);
     });
 
@@ -234,6 +234,8 @@ function App() {
         console.warn('[Jarvis] Could not load secret favorites:', err);
       }
     })();
+
+    return unsubSecrets;
   }, []);
 
   const handleSelectOllamaModel = async (modelName: string) => {
@@ -250,11 +252,11 @@ function App() {
 
   // IPC listeners
   useEffect(() => {
-    window.jarvis.onOpenChat(handleOpenChat);
+    return window.jarvis.onOpenChat(handleOpenChat);
   }, []); // run once: registers the IPC listener on mount
 
   useEffect(() => {
-    window.jarvis.onOAuthComplete((result: OAuthResult) => {
+    const unsubOAuth = window.jarvis.onOAuthComplete((result: OAuthResult) => {
       if (result.error) {
         alert('OAuth error: ' + result.error);
         setDeviceCode(null);
@@ -269,23 +271,23 @@ function App() {
       });
     });
 
-    window.jarvis.onDiscoveryProgress((progress: DiscoveryProgress) => {
+    const unsubDiscoveryProgress = window.jarvis.onDiscoveryProgress((progress: DiscoveryProgress) => {
       setDiscoveryProgress(progress);
       setDiscoveryFinished(false);
     });
 
-    window.jarvis.onDiscoveryComplete((progress: DiscoveryProgress) => {
+    const unsubDiscoveryComplete = window.jarvis.onDiscoveryComplete((progress: DiscoveryProgress) => {
       setDiscoveryProgress(progress);
       setDiscoveryFinished(true);
     });
 
-    window.jarvis.onLocalScanProgress((progress: LocalScanProgress) => {
+    const unsubLocalScanProgress = window.jarvis.onLocalScanProgress((progress: LocalScanProgress) => {
       setLocalScanProgress(progress);
       setLocalScanning(true);
       setLocalScanFinished(false);
     });
 
-    window.jarvis.onLocalScanComplete((progress: LocalScanProgress) => {
+    const unsubLocalScanComplete = window.jarvis.onLocalScanComplete((progress: LocalScanProgress) => {
       setLocalScanProgress(progress);
       setLocalScanning(false);
       setLocalScanFinished(true);
@@ -298,6 +300,14 @@ function App() {
           .catch(console.error);
       }
     });
+
+    return () => {
+      unsubOAuth();
+      unsubDiscoveryProgress();
+      unsubDiscoveryComplete();
+      unsubLocalScanProgress();
+      unsubLocalScanComplete();
+    };
   }, []);
 
   // Auto-resize Electron window when panels open/close

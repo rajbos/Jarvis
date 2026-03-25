@@ -1,4 +1,12 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import type {
+  AgentSessionStartingPayload,
+  AgentAnalysisCompletePayload,
+  AgentPhase2ErrorPayload,
+  AgentSessionCompletePayload,
+  AgentSessionErrorPayload,
+  AgentDebugContextPayload,
+} from '../types/ipc-payloads';
 
 contextBridge.exposeInMainWorld('jarvis', {
   getOnboardingStatus: () => ipcRenderer.invoke('onboarding:status'),
@@ -123,8 +131,8 @@ contextBridge.exposeInMainWorld('jarvis', {
   agentsApproveFinding: (findingId: number) => ipcRenderer.invoke('agents:approve-finding', findingId),
   agentsRejectFinding: (findingId: number) => ipcRenderer.invoke('agents:reject-finding', findingId),
   agentsExecuteFinding: (findingId: number) => ipcRenderer.invoke('agents:execute-finding', findingId),
-  onAgentSessionStarting: (callback: (data: Record<string, unknown>) => void) => {
-    const listener = (_event: unknown, data: Record<string, unknown>) => callback(data);
+  onAgentSessionStarting: (callback: (data: AgentSessionStartingPayload) => void) => {
+    const listener = (_event: unknown, data: AgentSessionStartingPayload) => callback(data);
     ipcRenderer.on('agent:session-starting', listener);
     return () => { ipcRenderer.removeListener('agent:session-starting', listener); };
   },
@@ -133,28 +141,28 @@ contextBridge.exposeInMainWorld('jarvis', {
     ipcRenderer.on('agent:token', listener);
     return () => { ipcRenderer.removeListener('agent:token', listener); };
   },
-  onAgentAnalysisComplete: (callback: (data: Record<string, unknown>) => void) => {
-    const listener = (_event: unknown, data: Record<string, unknown>) => callback(data);
+  onAgentAnalysisComplete: (callback: (data: AgentAnalysisCompletePayload) => void) => {
+    const listener = (_event: unknown, data: AgentAnalysisCompletePayload) => callback(data);
     ipcRenderer.on('agent:analysis-complete', listener);
     return () => { ipcRenderer.removeListener('agent:analysis-complete', listener); };
   },
-  onAgentPhase2Error: (callback: (data: Record<string, unknown>) => void) => {
-    const listener = (_event: unknown, data: Record<string, unknown>) => callback(data);
+  onAgentPhase2Error: (callback: (data: AgentPhase2ErrorPayload) => void) => {
+    const listener = (_event: unknown, data: AgentPhase2ErrorPayload) => callback(data);
     ipcRenderer.on('agent:phase2-error', listener);
     return () => { ipcRenderer.removeListener('agent:phase2-error', listener); };
   },
-  onAgentSessionComplete: (callback: (result: Record<string, unknown>) => void) => {
-    const listener = (_event: unknown, result: Record<string, unknown>) => callback(result);
+  onAgentSessionComplete: (callback: (result: AgentSessionCompletePayload) => void) => {
+    const listener = (_event: unknown, result: AgentSessionCompletePayload) => callback(result);
     ipcRenderer.on('agent:session-complete', listener);
     return () => { ipcRenderer.removeListener('agent:session-complete', listener); };
   },
-  onAgentSessionError: (callback: (error: Record<string, unknown>) => void) => {
-    const listener = (_event: unknown, error: Record<string, unknown>) => callback(error);
+  onAgentSessionError: (callback: (error: AgentSessionErrorPayload) => void) => {
+    const listener = (_event: unknown, error: AgentSessionErrorPayload) => callback(error);
     ipcRenderer.on('agent:session-error', listener);
     return () => { ipcRenderer.removeListener('agent:session-error', listener); };
   },
-  onAgentDebugContext: (callback: (data: Record<string, unknown>) => void) => {
-    const listener = (_event: unknown, data: Record<string, unknown>) => callback(data);
+  onAgentDebugContext: (callback: (data: AgentDebugContextPayload) => void) => {
+    const listener = (_event: unknown, data: AgentDebugContextPayload) => callback(data);
     ipcRenderer.on('agent:debug-context', listener);
     return () => { ipcRenderer.removeListener('agent:debug-context', listener); };
   },

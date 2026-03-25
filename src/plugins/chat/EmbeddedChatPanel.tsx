@@ -32,7 +32,6 @@ export function EmbeddedChatPanel({ visible, selectedModel, onClose, onAgentStar
   const [extractingError, setExtractingError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const registeredRef = useRef(false);
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const agentStreamRef = useRef('');
   const agentStartedRef = useRef(false);
@@ -71,27 +70,25 @@ export function EmbeddedChatPanel({ visible, selectedModel, onClose, onAgentStar
   };
 
   useEffect(() => {
-    if (registeredRef.current) return;
-    registeredRef.current = true;
-    window.jarvis.onChatToken((token: string) => {
+    const unsubChatToken = window.jarvis.onChatToken((token: string) => {
       setStreamText((prev) => prev + token);
     });
-    window.jarvis.onChatDone(() => {
+    const unsubChatDone = window.jarvis.onChatDone(() => {
       setStreamText((prev) => {
         setMessages((msgs) => [...msgs, { role: 'assistant', content: prev }]);
         return '';
       });
       setStreaming(false);
     });
-    window.jarvis.onChatError((err: string) => {
+    const unsubChatError = window.jarvis.onChatError((err: string) => {
       setError(err);
       setStreaming(false);
       setStreamText('');
     });
 
     // ── Agent streaming listeners ──────────────────────────────────────────
-    window.jarvis.onAgentSessionStarting?.((data) => {
-      const { agentName, scopeValue, workflowRunCount } = data as { agentName: string; scopeValue: string; workflowRunCount: number };
+    const unsubSessionStarting = window.jarvis.onAgentSessionStarting?.((data) => {
+      const { agentName, scopeValue, workflowRunCount } = data;
       agentStreamRef.current = '';
       agentStartedRef.current = true;
       setMessages([]);
@@ -106,12 +103,12 @@ export function EmbeddedChatPanel({ visible, selectedModel, onClose, onAgentStar
       onAgentStart?.();
     });
 
-    window.jarvis.onAgentDebugContext?.((data) => {
-      const { systemPrompt, userMessage } = data as { systemPrompt: string; userMessage: string };
+    const unsubDebugContext = window.jarvis.onAgentDebugContext?.((data) => {
+      const { systemPrompt, userMessage } = data;
       setAgentDebugContext({ systemPrompt, userMessage });
     });
 
-    window.jarvis.onAgentToken?.((token: string) => {
+    const unsubAgentToken = window.jarvis.onAgentToken?.((token: string) => {
       agentStreamRef.current += token;
       setAgentStreamText(agentStreamRef.current);
       if (!agentStartedRef.current) {
@@ -122,7 +119,7 @@ export function EmbeddedChatPanel({ visible, selectedModel, onClose, onAgentStar
       }
     });
 
-    window.jarvis.onAgentAnalysisComplete?.(({ sessionId: _sid }: { sessionId: number }) => {
+    const unsubAnalysisComplete = window.jarvis.onAgentAnalysisComplete?.(({ sessionId: _sid }) => {
       // Phase 1 done — flush analysis text and show extraction spinner
       const analysisText = agentStreamRef.current;
       agentStreamRef.current = '';
@@ -139,11 +136,11 @@ export function EmbeddedChatPanel({ visible, selectedModel, onClose, onAgentStar
       setExtractingError(null);
     });
 
-    window.jarvis.onAgentPhase2Error?.(({ message }: { sessionId: number; message: string }) => {
+    const unsubPhase2Error = window.jarvis.onAgentPhase2Error?.(({ message }) => {
       setExtractingError(message);
     });
 
-    window.jarvis.onAgentSessionComplete?.(({ sessionId }: { sessionId: number }) => {
+    const unsubSessionComplete = window.jarvis.onAgentSessionComplete?.(({ sessionId }) => {
       agentStreamRef.current = '';
       agentStartedRef.current = false;
       setAgentStreamText('');
@@ -159,13 +156,26 @@ export function EmbeddedChatPanel({ visible, selectedModel, onClose, onAgentStar
         .catch((err: unknown) => console.error('[Chat] agentsGetSession:', err));
     });
 
-    window.jarvis.onAgentSessionError?.(({ message }: { message: string }) => {
+    const unsubSessionError = window.jarvis.onAgentSessionError?.(({ message }) => {
       agentStreamRef.current = '';
       agentStartedRef.current = false;
       setAgentStreamText('');
       setAgentStreaming(false);
       setError(`Agent failed: ${message}`);
     });
+
+    return () => {
+      unsubChatToken();
+      unsubChatDone();
+      unsubChatError();
+      unsubSessionStarting?.();
+      unsubDebugContext?.();
+      unsubAgentToken?.();
+      unsubAnalysisComplete?.();
+      unsubPhase2Error?.();
+      unsubSessionComplete?.();
+      unsubSessionError?.();
+    };
   }, [onAgentStart]);
 
   useEffect(() => {
