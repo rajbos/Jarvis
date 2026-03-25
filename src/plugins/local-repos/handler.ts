@@ -40,6 +40,7 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
   });
 
   ipcMain.handle('local:remove-folder', (_event, folderPath: string) => {
+    if (typeof folderPath !== 'string' || folderPath.length === 0) return { ok: false, error: 'Invalid folderPath' };
     removeScanFolder(db, folderPath);
     saveDatabase();
     return { ok: true };
@@ -59,16 +60,20 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
   });
 
   ipcMain.handle('local:list-repos-for-folder', (_event, folderPath: string) => {
+    if (typeof folderPath !== 'string' || folderPath.length === 0) return [];
     return listLocalReposForFolder(db, folderPath);
   });
 
   ipcMain.handle('local:link-repo', (_event, localRepoId: number, githubRepoId: number | null) => {
+    if (typeof localRepoId !== 'number') return { ok: false, error: 'Invalid localRepoId' };
+    if (githubRepoId !== null && typeof githubRepoId !== 'number') return { ok: false, error: 'Invalid githubRepoId' };
     linkLocalRepo(db, localRepoId, githubRepoId);
     saveDatabase();
     return { ok: true };
   });
 
   ipcMain.handle('local:open-folder', (_event, folderPath: string) => {
+    if (typeof folderPath !== 'string' || folderPath.length === 0) return;
     void shell.openPath(folderPath);
   });
 }

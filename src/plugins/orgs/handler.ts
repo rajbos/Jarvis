@@ -11,6 +11,8 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
   });
 
   ipcMain.handle('github:set-org-enabled', (_event, orgLogin: string, enabled: boolean) => {
+    if (typeof orgLogin !== 'string' || orgLogin.length === 0) return { ok: false, error: 'Invalid orgLogin' };
+    if (typeof enabled !== 'boolean') return { ok: false, error: 'Invalid enabled value' };
     setOrgDiscoveryEnabled(db, orgLogin, enabled);
     saveDatabase();
     return { ok: true };

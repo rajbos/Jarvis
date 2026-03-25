@@ -53,7 +53,7 @@ jobs:
       secret_verification_result: ${{ steps.validate-secret.outputs.verification_result }}
     steps:
       - name: Setup Scripts
-        uses: github/gh-aw-actions/setup@e0b4815368e98f969f4e3985d8c2346f913f1bda # v0.62.4
+        uses: github/gh-aw-actions/setup@3fdddb991be60d9101dfaac84811d20543719da9 # v0.62.4
         with:
           destination: ${{ runner.temp }}/gh-aw/actions
       - name: Generate agentic run info
@@ -266,7 +266,7 @@ jobs:
       output_types: ${{ steps.collect_output.outputs.output_types }}
     steps:
       - name: Setup Scripts
-        uses: github/gh-aw-actions/setup@e0b4815368e98f969f4e3985d8c2346f913f1bda # v0.62.4
+        uses: github/gh-aw-actions/setup@3fdddb991be60d9101dfaac84811d20543719da9 # v0.62.4
         with:
           destination: ${{ runner.temp }}/gh-aw/actions
       - name: Set runtime paths
@@ -289,7 +289,7 @@ jobs:
         run: |
           mkdir -p /tmp/gh-aw/cache-memory-focus-areas
       - name: Restore cache-memory file share data (focus-areas)
-        uses: actions/cache/restore@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           key: quality-focus-${{ github.workflow }}-${{ github.run_id }}
           path: /tmp/gh-aw/cache-memory-focus-areas
@@ -885,7 +885,7 @@ jobs:
       total_count: ${{ steps.missing_tool.outputs.total_count }}
     steps:
       - name: Setup Scripts
-        uses: github/gh-aw-actions/setup@e0b4815368e98f969f4e3985d8c2346f913f1bda # v0.62.4
+        uses: github/gh-aw-actions/setup@3fdddb991be60d9101dfaac84811d20543719da9 # v0.62.4
         with:
           destination: ${{ runner.temp }}/gh-aw/actions
       - name: Download agent output artifact
@@ -1004,7 +1004,7 @@ jobs:
       process_safe_outputs_temporary_id_map: ${{ steps.process_safe_outputs.outputs.temporary_id_map }}
     steps:
       - name: Setup Scripts
-        uses: github/gh-aw-actions/setup@e0b4815368e98f969f4e3985d8c2346f913f1bda # v0.62.4
+        uses: github/gh-aw-actions/setup@3fdddb991be60d9101dfaac84811d20543719da9 # v0.62.4
         with:
           destination: ${{ runner.temp }}/gh-aw/actions
       - name: Download agent output artifact
@@ -1061,7 +1061,7 @@ jobs:
       GH_AW_WORKFLOW_ID_SANITIZED: repositoryqualityimprover
     steps:
       - name: Setup Scripts
-        uses: github/gh-aw-actions/setup@e0b4815368e98f969f4e3985d8c2346f913f1bda # v0.62.4
+        uses: github/gh-aw-actions/setup@3fdddb991be60d9101dfaac84811d20543719da9 # v0.62.4
         with:
           destination: ${{ runner.temp }}/gh-aw/actions
       - name: Download cache-memory artifact (focus-areas)
@@ -1082,7 +1082,7 @@ jobs:
           fi
       - name: Save cache-memory to cache (focus-areas)
         if: steps.check_cache_focus_areas.outputs.has_content == 'true'
-        uses: actions/cache/save@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           key: quality-focus-${{ github.workflow }}-${{ github.run_id }}
           path: /tmp/gh-aw/cache-memory-focus-areas

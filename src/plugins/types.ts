@@ -282,9 +282,9 @@ export interface JarvisApi {
   sendChatMessage(messages: Array<{ role: string; content: string }>): Promise<{ ok: boolean }>;
   abortChat(): Promise<{ ok: boolean }>;
   adjustWindowWidth(delta: number): Promise<{ ok: boolean }>;
-  onChatToken(cb: (token: string) => void): void;
-  onChatDone(cb: () => void): void;
-  onChatError(cb: (err: string) => void): void;
+  onChatToken(cb: (token: string) => void): () => void;
+  onChatDone(cb: () => void): () => void;
+  onChatError(cb: (err: string) => void): () => void;
   startGitHubOAuth(): Promise<OAuthResult>;
   getGitHubOAuthStatus(): Promise<OAuthStatus>;
   getDiscoveryStatus(): Promise<{ running: boolean; progress?: DiscoveryProgress }>;
@@ -305,10 +305,10 @@ export interface JarvisApi {
   getRunUrlForCheckSuite(checkSuiteApiUrl: string): Promise<string | null>;
   getPreferences(): Promise<{ sortByNotifications: boolean; localSortByNotifs: boolean; localRepoSortKey: 'name' | 'scanned' | 'notifs' }>;
   setPreferences(prefs: { sortByNotifications?: boolean; localSortByNotifs?: boolean; localRepoSortKey?: 'name' | 'scanned' | 'notifs' }): Promise<{ ok: boolean }>;
-  onOpenChat(cb: () => void): void;
-  onOAuthComplete(cb: (result: OAuthResult) => void): void;
-  onDiscoveryProgress(cb: (progress: DiscoveryProgress) => void): void;
-  onDiscoveryComplete(cb: (progress: DiscoveryProgress) => void): void;
+  onOpenChat(cb: () => void): () => void;
+  onOAuthComplete(cb: (result: OAuthResult) => void): () => void;
+  onDiscoveryProgress(cb: (progress: DiscoveryProgress) => void): () => void;
+  onDiscoveryComplete(cb: (progress: DiscoveryProgress) => void): () => void;
   // Local repos
   localGetFolders(): Promise<ScanFolder[]>;
   localAddFolder(folderPath?: string): Promise<{ ok?: boolean; path?: string; canceled?: boolean; error?: string }>;
@@ -326,9 +326,9 @@ export interface JarvisApi {
   listSecretFavorites(): Promise<SecretFavorite[]>;
   addSecretFavorite(targetType: 'org' | 'repo', targetName: string): Promise<{ ok: boolean }>;
   removeSecretFavorite(targetName: string): Promise<{ ok: boolean }>;
-  onSecretsProgress(cb: (progress: SecretsScanProgress) => void): void;
-  onLocalScanProgress(cb: (progress: LocalScanProgress) => void): void;
-  onLocalScanComplete(cb: (progress: LocalScanProgress) => void): void;
+  onSecretsProgress(cb: (progress: SecretsScanProgress) => void): () => void;
+  onLocalScanProgress(cb: (progress: LocalScanProgress) => void): () => void;
+  onLocalScanComplete(cb: (progress: LocalScanProgress) => void): () => void;
   // Agents
   agentsList(): Promise<AgentDefinition[]>;
   agentsUpdate(agentId: number, systemPrompt: string): Promise<{ ok: boolean; error?: string }>;
@@ -337,13 +337,13 @@ export interface JarvisApi {
   agentsApproveFinding(findingId: number): Promise<{ ok: boolean }>;
   agentsRejectFinding(findingId: number): Promise<{ ok: boolean }>;
   agentsExecuteFinding(findingId: number): Promise<{ ok: boolean; error?: string; dismissedIds?: string[] }>;
-  onAgentSessionStarting(cb: (data: { sessionId: number; agentName: string; scopeType: string; scopeValue: string; workflowRunCount: number }) => void): void;
-  onAgentDebugContext(cb: (data: { sessionId: number; systemPrompt: string; userMessage: string }) => void): void;
-  onAgentToken(cb: (token: string) => void): void;
-  onAgentAnalysisComplete(cb: (data: { sessionId: number }) => void): void;
-  onAgentPhase2Error(cb: (data: { sessionId: number; message: string }) => void): void;
-  onAgentSessionComplete(cb: (result: { sessionId: number }) => void): void;
-  onAgentSessionError(cb: (error: { sessionId: number; message: string }) => void): void;
+  onAgentSessionStarting(cb: (data: { sessionId: number; agentName: string; scopeType: string; scopeValue: string; workflowRunCount: number }) => void): () => void;
+  onAgentDebugContext(cb: (data: { sessionId: number; systemPrompt: string; userMessage: string }) => void): () => void;
+  onAgentToken(cb: (token: string) => void): () => void;
+  onAgentAnalysisComplete(cb: (data: { sessionId: number }) => void): () => void;
+  onAgentPhase2Error(cb: (data: { sessionId: number; message: string }) => void): () => void;
+  onAgentSessionComplete(cb: (result: { sessionId: number }) => void): () => void;
+  onAgentSessionError(cb: (error: { sessionId: number; message: string }) => void): () => void;
   // Workflow data
   githubFetchWorkflowRuns(repoFullName: string): Promise<{ ok: boolean; count?: number; error?: string }>;
   githubGetWorkflowSummary(repoFullName: string): Promise<WorkflowRunSummary>;

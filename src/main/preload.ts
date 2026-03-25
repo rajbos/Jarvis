@@ -13,13 +13,19 @@ contextBridge.exposeInMainWorld('jarvis', {
   abortChat: () => ipcRenderer.invoke('chat:abort'),
   adjustWindowWidth: (delta: number) => ipcRenderer.invoke('window:adjust-width', delta),
   onChatToken: (callback: (token: string) => void) => {
-    ipcRenderer.on('chat:token', (_event, token) => callback(token));
+    const listener = (_event: unknown, token: string) => callback(token);
+    ipcRenderer.on('chat:token', listener);
+    return () => { ipcRenderer.removeListener('chat:token', listener); };
   },
   onChatDone: (callback: () => void) => {
-    ipcRenderer.on('chat:done', () => callback());
+    const listener = () => callback();
+    ipcRenderer.on('chat:done', listener);
+    return () => { ipcRenderer.removeListener('chat:done', listener); };
   },
   onChatError: (callback: (error: string) => void) => {
-    ipcRenderer.on('chat:error', (_event, error) => callback(error));
+    const listener = (_event: unknown, error: string) => callback(error);
+    ipcRenderer.on('chat:error', listener);
+    return () => { ipcRenderer.removeListener('chat:error', listener); };
   },
   startGitHubOAuth: () => ipcRenderer.invoke('github:start-oauth'),
   getGitHubOAuthStatus: () => ipcRenderer.invoke('github:oauth-status'),
@@ -73,25 +79,39 @@ contextBridge.exposeInMainWorld('jarvis', {
   addSecretFavorite: (targetType: string, targetName: string) => ipcRenderer.invoke('secrets:add-favorite', targetType, targetName),
   removeSecretFavorite: (targetName: string) => ipcRenderer.invoke('secrets:remove-favorite', targetName),
   onSecretsProgress: (callback: (progress: Record<string, number>) => void) => {
-    ipcRenderer.on('secrets:scan-progress', (_event, progress) => callback(progress));
+    const listener = (_event: unknown, progress: Record<string, number>) => callback(progress);
+    ipcRenderer.on('secrets:scan-progress', listener);
+    return () => { ipcRenderer.removeListener('secrets:scan-progress', listener); };
   },
   onOpenChat: (callback: () => void) => {
-    ipcRenderer.on('chat:open', () => callback());
+    const listener = () => callback();
+    ipcRenderer.on('chat:open', listener);
+    return () => { ipcRenderer.removeListener('chat:open', listener); };
   },
   onOAuthComplete: (callback: (result: Record<string, string>) => void) => {
-    ipcRenderer.on('github:oauth-complete', (_event, result) => callback(result));
+    const listener = (_event: unknown, result: Record<string, string>) => callback(result);
+    ipcRenderer.on('github:oauth-complete', listener);
+    return () => { ipcRenderer.removeListener('github:oauth-complete', listener); };
   },
   onDiscoveryProgress: (callback: (progress: Record<string, unknown>) => void) => {
-    ipcRenderer.on('github:discovery-progress', (_event, progress) => callback(progress));
+    const listener = (_event: unknown, progress: Record<string, unknown>) => callback(progress);
+    ipcRenderer.on('github:discovery-progress', listener);
+    return () => { ipcRenderer.removeListener('github:discovery-progress', listener); };
   },
   onDiscoveryComplete: (callback: (progress: Record<string, unknown>) => void) => {
-    ipcRenderer.on('github:discovery-complete', (_event, progress) => callback(progress));
+    const listener = (_event: unknown, progress: Record<string, unknown>) => callback(progress);
+    ipcRenderer.on('github:discovery-complete', listener);
+    return () => { ipcRenderer.removeListener('github:discovery-complete', listener); };
   },
   onLocalScanProgress: (callback: (progress: Record<string, unknown>) => void) => {
-    ipcRenderer.on('local:scan-progress', (_event, progress) => callback(progress));
+    const listener = (_event: unknown, progress: Record<string, unknown>) => callback(progress);
+    ipcRenderer.on('local:scan-progress', listener);
+    return () => { ipcRenderer.removeListener('local:scan-progress', listener); };
   },
   onLocalScanComplete: (callback: (progress: Record<string, unknown>) => void) => {
-    ipcRenderer.on('local:scan-complete', (_event, progress) => callback(progress));
+    const listener = (_event: unknown, progress: Record<string, unknown>) => callback(progress);
+    ipcRenderer.on('local:scan-complete', listener);
+    return () => { ipcRenderer.removeListener('local:scan-complete', listener); };
   },
   // Agents
   agentsList: () => ipcRenderer.invoke('agents:list'),
@@ -104,25 +124,39 @@ contextBridge.exposeInMainWorld('jarvis', {
   agentsRejectFinding: (findingId: number) => ipcRenderer.invoke('agents:reject-finding', findingId),
   agentsExecuteFinding: (findingId: number) => ipcRenderer.invoke('agents:execute-finding', findingId),
   onAgentSessionStarting: (callback: (data: Record<string, unknown>) => void) => {
-    ipcRenderer.on('agent:session-starting', (_event, data) => callback(data));
+    const listener = (_event: unknown, data: Record<string, unknown>) => callback(data);
+    ipcRenderer.on('agent:session-starting', listener);
+    return () => { ipcRenderer.removeListener('agent:session-starting', listener); };
   },
   onAgentToken: (callback: (token: string) => void) => {
-    ipcRenderer.on('agent:token', (_event, token) => callback(token));
+    const listener = (_event: unknown, token: string) => callback(token);
+    ipcRenderer.on('agent:token', listener);
+    return () => { ipcRenderer.removeListener('agent:token', listener); };
   },
   onAgentAnalysisComplete: (callback: (data: Record<string, unknown>) => void) => {
-    ipcRenderer.on('agent:analysis-complete', (_event, data) => callback(data));
+    const listener = (_event: unknown, data: Record<string, unknown>) => callback(data);
+    ipcRenderer.on('agent:analysis-complete', listener);
+    return () => { ipcRenderer.removeListener('agent:analysis-complete', listener); };
   },
   onAgentPhase2Error: (callback: (data: Record<string, unknown>) => void) => {
-    ipcRenderer.on('agent:phase2-error', (_event, data) => callback(data));
+    const listener = (_event: unknown, data: Record<string, unknown>) => callback(data);
+    ipcRenderer.on('agent:phase2-error', listener);
+    return () => { ipcRenderer.removeListener('agent:phase2-error', listener); };
   },
   onAgentSessionComplete: (callback: (result: Record<string, unknown>) => void) => {
-    ipcRenderer.on('agent:session-complete', (_event, result) => callback(result));
+    const listener = (_event: unknown, result: Record<string, unknown>) => callback(result);
+    ipcRenderer.on('agent:session-complete', listener);
+    return () => { ipcRenderer.removeListener('agent:session-complete', listener); };
   },
   onAgentSessionError: (callback: (error: Record<string, unknown>) => void) => {
-    ipcRenderer.on('agent:session-error', (_event, error) => callback(error));
+    const listener = (_event: unknown, error: Record<string, unknown>) => callback(error);
+    ipcRenderer.on('agent:session-error', listener);
+    return () => { ipcRenderer.removeListener('agent:session-error', listener); };
   },
   onAgentDebugContext: (callback: (data: Record<string, unknown>) => void) => {
-    ipcRenderer.on('agent:debug-context', (_event, data) => callback(data));
+    const listener = (_event: unknown, data: Record<string, unknown>) => callback(data);
+    ipcRenderer.on('agent:debug-context', listener);
+    return () => { ipcRenderer.removeListener('agent:debug-context', listener); };
   },
   // Workflow data
   githubFetchWorkflowRuns: (repoFullName: string) =>
