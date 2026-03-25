@@ -165,4 +165,9 @@ contextBridge.exposeInMainWorld('jarvis', {
     ipcRenderer.invoke('github:get-workflow-summary', repoFullName),
   githubGetCachedWorkflowInfo: (repoFullName: string) =>
     ipcRenderer.invoke('github:get-cached-workflow-info', repoFullName),
+  // Dashboard
+  dashboardGetSummary: () => ipcRenderer.invoke('dashboard:get-summary'),
+  dashboardGetRecentFailedRuns: () => ipcRenderer.invoke('dashboard:get-recent-failed-runs'),
+  dashboardPushBranchUpstream: (repoPath: string, branch: string) =>
+    ipcRenderer.invoke('dashboard:push-branch-upstream', repoPath, branch),
 });

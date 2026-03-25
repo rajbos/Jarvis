@@ -222,6 +222,54 @@ export interface AgentSession {
   findings: AgentFinding[];
 }
 
+// ── Dashboard types ───────────────────────────────────────────────────────────
+
+export type HealthWarningKind =
+  | 'branch-no-upstream'
+  | 'no-remote'
+  | 'has-notifications'
+  | 'failed-workflows';
+
+export interface HealthWarning {
+  kind: HealthWarningKind;
+  message: string;
+}
+
+export interface RepoHealthStatus {
+  localRepoId: number;
+  localPath: string;
+  repoName: string;
+  currentBranch: string | null;
+  hasUpstream: boolean;
+  upstreamRef: string | null;
+  noRemote: boolean;
+  remoteCount: number;
+  notificationCount: number;
+  linkedGithubRepo: string | null;
+  failedWorkflowRuns: number;
+  exists: boolean;
+}
+
+export interface DashboardSummary {
+  repos: RepoHealthStatus[];
+  warnings: { repoId: number; warnings: HealthWarning[] }[];
+  totalRepos: number;
+  reposWithWarnings: number;
+  totalNotifications: number;
+  totalFailedRuns: number;
+  generatedAt: string;
+}
+
+export interface FailedWorkflowRun {
+  id: string;
+  repo_full_name: string;
+  workflow_name: string;
+  head_branch: string;
+  conclusion: string;
+  run_started_at: string;
+  html_url: string;
+}
+
 // ── Jarvis preload API contract ───────────────────────────────────────────────
 // This augments the global Window type so all plugin components get full
 // type-checking on window.jarvis calls without re-declaring it everywhere.
@@ -300,6 +348,10 @@ export interface JarvisApi {
   githubFetchWorkflowRuns(repoFullName: string): Promise<{ ok: boolean; count?: number; error?: string }>;
   githubGetWorkflowSummary(repoFullName: string): Promise<WorkflowRunSummary>;
   githubGetCachedWorkflowInfo(repoFullName: string): Promise<{ fetchedAt: string | null; runCount: number }>;
+  // Dashboard
+  dashboardGetSummary(): Promise<DashboardSummary>;
+  dashboardGetRecentFailedRuns(): Promise<FailedWorkflowRun[]>;
+  dashboardPushBranchUpstream(repoPath: string, branch: string): Promise<{ ok: boolean; error?: string; output?: string }>;
 }
 
 declare global {
