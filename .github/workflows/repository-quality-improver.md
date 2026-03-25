@@ -7,7 +7,7 @@ on:
 permissions:
   contents: read
   actions: read
-  issues: write
+  issues: read
   pull-requests: read
 
 tools:
@@ -24,8 +24,7 @@ safe-outputs:
     expires: 2d
     labels: [quality, automated-analysis]
     max: 1
-  comment-issue:
-    labels: [quality, automated-analysis]
+  add-comment:
     max: 1
 
 timeout-minutes: 20
