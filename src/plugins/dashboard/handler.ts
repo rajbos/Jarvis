@@ -22,10 +22,13 @@ import { normalizeGitHubUrl } from '../../services/local-discovery';
 function getLinkedGithubFullName(db: SqlJsDatabase, githubRepoId: number | null): string | null {
   if (!githubRepoId) return null;
   const stmt = db.prepare('SELECT full_name FROM github_repos WHERE id = ?');
-  stmt.bind([githubRepoId]);
-  const found = stmt.step() ? (stmt.getAsObject() as { full_name: string }) : null;
-  stmt.free();
-  return found?.full_name ?? null;
+  try {
+    stmt.bind([githubRepoId]);
+    const found = stmt.step() ? (stmt.getAsObject() as { full_name: string }) : null;
+    return found?.full_name ?? null;
+  } finally {
+    stmt.free();
+  }
 }
 
 /**
@@ -36,11 +39,14 @@ function getRepoNotifCount(db: SqlJsDatabase, repoFullName: string | null): numb
   const stmt = db.prepare(
     'SELECT COUNT(*) AS cnt FROM github_notifications WHERE repo_full_name = ? AND unread = 1',
   );
-  stmt.bind([repoFullName]);
-  stmt.step();
-  const { cnt } = stmt.getAsObject() as { cnt: number };
-  stmt.free();
-  return cnt;
+  try {
+    stmt.bind([repoFullName]);
+    stmt.step();
+    const { cnt } = stmt.getAsObject() as { cnt: number };
+    return cnt;
+  } finally {
+    stmt.free();
+  }
 }
 
 /**
@@ -53,11 +59,14 @@ function getFailedRunCount(db: SqlJsDatabase, repoFullName: string | null): numb
      WHERE repo_full_name = ? AND conclusion = 'failure'
        AND run_started_at >= datetime('now', '-7 days')`,
   );
-  stmt.bind([repoFullName]);
-  stmt.step();
-  const { cnt } = stmt.getAsObject() as { cnt: number };
-  stmt.free();
-  return cnt;
+  try {
+    stmt.bind([repoFullName]);
+    stmt.step();
+    const { cnt } = stmt.getAsObject() as { cnt: number };
+    return cnt;
+  } finally {
+    stmt.free();
+  }
 }
 
 /**
@@ -80,7 +89,6 @@ function getRecentFailedRuns(db: SqlJsDatabase, limit = 20): {
      ORDER BY run_started_at DESC
      LIMIT ?`,
   );
-  stmt.bind([limit]);
   const rows: {
     id: string;
     repo_full_name: string;
@@ -90,8 +98,12 @@ function getRecentFailedRuns(db: SqlJsDatabase, limit = 20): {
     run_started_at: string;
     html_url: string;
   }[] = [];
-  while (stmt.step()) rows.push(stmt.getAsObject() as typeof rows[0]);
-  stmt.free();
+  try {
+    stmt.bind([limit]);
+    while (stmt.step()) rows.push(stmt.getAsObject() as typeof rows[0]);
+  } finally {
+    stmt.free();
+  }
   return rows;
 }
 
@@ -107,62 +119,75 @@ export function registerHandlers(
    * with notification counts + workflow run data from the DB.
    */
   ipcMain.handle('dashboard:get-summary', async (): Promise<DashboardSummary> => {
-    const localRepos = listLocalRepos(db);
+    try {
+      const localRepos = listLocalRepos(db);
 
-    const repos: RepoHealthStatus[] = [];
-    const warnings: { repoId: number; warnings: HealthWarning[] }[] = [];
-    let totalNotifications = 0;
-    let totalFailedRuns = 0;
+      const repos: RepoHealthStatus[] = [];
+      const warnings: { repoId: number; warnings: HealthWarning[] }[] = [];
+      let totalNotifications = 0;
+      let totalFailedRuns = 0;
 
-    for (const repo of localRepos) {
-      // Resolve linked GitHub repo full_name
-      let linkedGithubRepo = getLinkedGithubFullName(db, repo.linkedGithubRepoId);
+      for (const repo of localRepos) {
+        // Resolve linked GitHub repo full_name
+        let linkedGithubRepo = getLinkedGithubFullName(db, repo.linkedGithubRepoId);
 
-      // Also try resolving via remote URLs if not linked
-      if (!linkedGithubRepo && repo.remotes.length > 0) {
-        for (const remote of repo.remotes) {
-          const fullName = normalizeGitHubUrl(remote.url);
-          if (fullName) {
-            linkedGithubRepo = fullName;
-            break;
+        // Also try resolving via remote URLs if not linked
+        if (!linkedGithubRepo && repo.remotes.length > 0) {
+          for (const remote of repo.remotes) {
+            const fullName = normalizeGitHubUrl(remote.url);
+            if (fullName) {
+              linkedGithubRepo = fullName;
+              break;
+            }
           }
         }
+
+        const notifCount = getRepoNotifCount(db, linkedGithubRepo);
+        const failedRuns = getFailedRunCount(db, linkedGithubRepo);
+
+        const status = checkRepoHealth(
+          repo.id,
+          repo.localPath,
+          repo.name,
+          linkedGithubRepo,
+          notifCount,
+          failedRuns,
+        );
+
+        repos.push(status);
+
+        const repoWarnings = deriveWarnings(status);
+        if (repoWarnings.length > 0) {
+          warnings.push({ repoId: repo.id, warnings: repoWarnings });
+        }
+
+        totalNotifications += notifCount;
+        totalFailedRuns += failedRuns;
       }
 
-      const notifCount = getRepoNotifCount(db, linkedGithubRepo);
-      const failedRuns = getFailedRunCount(db, linkedGithubRepo);
-
-      const status = checkRepoHealth(
-        repo.id,
-        repo.localPath,
-        repo.name,
-        linkedGithubRepo,
-        notifCount,
-        failedRuns,
-      );
-
-      repos.push(status);
-
-      const repoWarnings = deriveWarnings(status);
-      if (repoWarnings.length > 0) {
-        warnings.push({ repoId: repo.id, warnings: repoWarnings });
-      }
-
-      totalNotifications += notifCount;
-      totalFailedRuns += failedRuns;
+      return {
+        repos,
+        warnings,
+        totalRepos: repos.length,
+        reposWithWarnings: warnings.filter(({ warnings: w }) =>
+          w.some((h) => h.kind === 'branch-no-upstream' || h.kind === 'no-remote'),
+        ).length,
+        totalNotifications,
+        totalFailedRuns,
+        generatedAt: new Date().toISOString(),
+      };
+    } catch (err) {
+      console.error('[dashboard] dashboard:get-summary error:', err);
+      return {
+        repos: [],
+        warnings: [],
+        totalRepos: 0,
+        reposWithWarnings: 0,
+        totalNotifications: 0,
+        totalFailedRuns: 0,
+        generatedAt: new Date().toISOString(),
+      };
     }
-
-    return {
-      repos,
-      warnings,
-      totalRepos: repos.length,
-      reposWithWarnings: warnings.filter(({ warnings: w }) =>
-        w.some((h) => h.kind === 'branch-no-upstream' || h.kind === 'no-remote'),
-      ).length,
-      totalNotifications,
-      totalFailedRuns,
-      generatedAt: new Date().toISOString(),
-    };
   });
 
   /**
@@ -178,7 +203,12 @@ export function registerHandlers(
     run_started_at: string;
     html_url: string;
   }[]> => {
-    return getRecentFailedRuns(db);
+    try {
+      return getRecentFailedRuns(db);
+    } catch (err) {
+      console.error('[dashboard] dashboard:get-recent-failed-runs error:', err);
+      return [];
+    }
   });
 
   /**

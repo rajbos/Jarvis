@@ -31,6 +31,7 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
   });
 
   ipcMain.handle('secrets:list-for-repo', (_event, repoFullName: string) => {
+    if (typeof repoFullName !== 'string' || repoFullName.length === 0) return { ok: false, error: 'Invalid repoFullName' };
     return listSecretsForRepo(db, repoFullName);
   });
 
@@ -43,11 +44,14 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
   });
 
   ipcMain.handle('secrets:add-favorite', (_event, targetType: 'org' | 'repo', targetName: string) => {
+    if (targetType !== 'org' && targetType !== 'repo') return { ok: false, error: 'Invalid targetType' };
+    if (typeof targetName !== 'string' || targetName.length === 0) return { ok: false, error: 'Invalid targetName' };
     addSecretFavorite(db, targetType, targetName);
     return { ok: true };
   });
 
   ipcMain.handle('secrets:remove-favorite', (_event, targetName: string) => {
+    if (typeof targetName !== 'string' || targetName.length === 0) return { ok: false, error: 'Invalid targetName' };
     removeSecretFavorite(db, targetName);
     return { ok: true };
   });
