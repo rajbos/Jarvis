@@ -148,6 +148,68 @@ describe('IPC handler input validation', () => {
     });
   });
 
+  // ── repos handlers ────────────────────────────────────────────────────────
+
+  describe('github:list-repos-for-org', () => {
+    it('accepts null orgLogin (personal repos)', async () => {
+      const result = await callHandler('github:list-repos-for-org', null);
+      expect(Array.isArray(result)).toBe(true);
+    });
+
+    it('returns error for non-string, non-null orgLogin', async () => {
+      const result = await callHandler('github:list-repos-for-org', 42);
+      expect(result).toEqual({ ok: false, error: 'Invalid orgLogin' });
+    });
+
+    it('returns error for empty string orgLogin', async () => {
+      const result = await callHandler('github:list-repos-for-org', '');
+      expect(result).toEqual({ ok: false, error: 'Invalid orgLogin' });
+    });
+  });
+
+  // ── secrets handlers ──────────────────────────────────────────────────────
+
+  describe('secrets:list-for-repo', () => {
+    it('returns error for non-string repoFullName', () => {
+      const result = callHandler('secrets:list-for-repo', 123);
+      expect(result).toEqual({ ok: false, error: 'Invalid repoFullName' });
+    });
+
+    it('returns error for empty repoFullName', () => {
+      const result = callHandler('secrets:list-for-repo', '');
+      expect(result).toEqual({ ok: false, error: 'Invalid repoFullName' });
+    });
+  });
+
+  describe('secrets:add-favorite', () => {
+    it('returns error for invalid targetType', () => {
+      const result = callHandler('secrets:add-favorite', 'user', 'my-org');
+      expect(result).toEqual({ ok: false, error: 'Invalid targetType' });
+    });
+
+    it('returns error for empty targetName', () => {
+      const result = callHandler('secrets:add-favorite', 'org', '');
+      expect(result).toEqual({ ok: false, error: 'Invalid targetName' });
+    });
+
+    it('returns error for non-string targetName', () => {
+      const result = callHandler('secrets:add-favorite', 'repo', 42);
+      expect(result).toEqual({ ok: false, error: 'Invalid targetName' });
+    });
+  });
+
+  describe('secrets:remove-favorite', () => {
+    it('returns error for non-string targetName', () => {
+      const result = callHandler('secrets:remove-favorite', 99);
+      expect(result).toEqual({ ok: false, error: 'Invalid targetName' });
+    });
+
+    it('returns error for empty targetName', () => {
+      const result = callHandler('secrets:remove-favorite', '');
+      expect(result).toEqual({ ok: false, error: 'Invalid targetName' });
+    });
+  });
+
   // ── ollama handler ────────────────────────────────────────────────────────
 
   describe('ollama:set-selected-model', () => {
