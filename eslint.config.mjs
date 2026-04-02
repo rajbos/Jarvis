@@ -15,7 +15,7 @@ export default tseslint.config(
     },
   },
   {
-    // Ignore build output and test compiled output
-    ignores: ['dist/**', 'node_modules/**', 'tests/**'],
+    // Ignore build output and test compiled output and browser extension plain JS
+    ignores: ['dist/**', 'node_modules/**', 'tests/**', 'src/browser-extension/**'],
   },
 );

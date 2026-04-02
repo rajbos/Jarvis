@@ -1,7 +1,7 @@
 {
   "name": "jarvis",
   "version": "0.1.0",
-  "description": "Jarvis \u2014 a locally-hosted personal assistant agent for GitHub repository maintenance",
+  "description": "Jarvis — a locally-hosted personal assistant agent for GitHub repository maintenance",
   "main": "dist/main/index.js",
   "scripts": {
     "build": "tsc && node scripts/build-renderer.mjs && npm run copy-static",
@@ -21,6 +21,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^25.5.0",
+    "@types/ws": "^8.18.1",
     "@vitest/coverage-v8": "^4.1.1",
     "concurrently": "^9.2.1",
     "electron": "^41.0.3",
@@ -37,6 +38,7 @@
     "electron-squirrel-startup": "^1.0.1",
     "octokit": "^5.0.5",
     "preact": "^10.29.0",
-    "sql.js": "^1.12.0"
+    "sql.js": "^1.12.0",
+    "ws": "^8.20.0"
   }
 }

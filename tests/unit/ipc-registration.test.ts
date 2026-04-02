@@ -116,6 +116,17 @@ const EXPECTED_CHANNELS = [
   'dashboard:get-summary',
   'dashboard:get-recent-failed-runs',
   'dashboard:push-branch-upstream',
+  // browser-companion plugin
+  'browser:status',
+  'browser:list-skills',
+  'browser:create-skill',
+  'browser:update-skill',
+  'browser:delete-skill',
+  'browser:list-runs',
+  'browser:run-skill',
+  'browser:navigate',
+  'browser:list-tabs',
+  'browser:get-page-content',
 ] as const;
 
 describe('IPC handler registration', () => {
