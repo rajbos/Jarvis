@@ -221,5 +221,29 @@ export function getSchema(): string {
         target_name TEXT NOT NULL UNIQUE,
         added_at    DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
+    -- Browser companion: reusable automation skills
+    CREATE TABLE IF NOT EXISTS browser_skills (
+        id                INTEGER PRIMARY KEY AUTOINCREMENT,
+        name              TEXT NOT NULL UNIQUE,
+        description       TEXT,
+        start_url         TEXT NOT NULL,
+        instructions      TEXT NOT NULL,
+        extract_selector  TEXT,
+        created_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at        DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Browser companion: history of skill execution runs
+    CREATE TABLE IF NOT EXISTS browser_skill_runs (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        skill_id        INTEGER NOT NULL REFERENCES browser_skills(id) ON DELETE CASCADE,
+        status          TEXT DEFAULT 'pending',
+        started_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+        completed_at    DATETIME,
+        extracted_data  TEXT,
+        error           TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_browser_skill_runs_skill ON browser_skill_runs(skill_id);
   `;
 }
