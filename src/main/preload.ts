@@ -193,4 +193,23 @@ contextBridge.exposeInMainWorld('jarvis', {
     ipcRenderer.invoke('groups:add-github-repo', groupId, githubRepoId),
   groupsRemoveGithubRepo: (groupId: number, githubRepoId: number) =>
     ipcRenderer.invoke('groups:remove-github-repo', groupId, githubRepoId),
+  // Browser Companion
+  browserStatus: () => ipcRenderer.invoke('browser:status'),
+  browserListSkills: () => ipcRenderer.invoke('browser:list-skills'),
+  browserCreateSkill: (name: string, description: string, startUrl: string, instructions: string, extractSelector: string) =>
+    ipcRenderer.invoke('browser:create-skill', name, description, startUrl, instructions, extractSelector),
+  browserUpdateSkill: (id: number, name: string, description: string, startUrl: string, instructions: string, extractSelector: string) =>
+    ipcRenderer.invoke('browser:update-skill', id, name, description, startUrl, instructions, extractSelector),
+  browserDeleteSkill: (id: number) => ipcRenderer.invoke('browser:delete-skill', id),
+  browserListRuns: (skillId?: number) => ipcRenderer.invoke('browser:list-runs', skillId),
+  browserRunSkill: (skillId: number, testMode?: boolean) =>
+    ipcRenderer.invoke('browser:run-skill', skillId, testMode ?? false),
+  browserNavigate: (url: string) => ipcRenderer.invoke('browser:navigate', url),
+  browserListTabs: () => ipcRenderer.invoke('browser:list-tabs'),
+  browserGetPageContent: (tabId?: number) => ipcRenderer.invoke('browser:get-page-content', tabId),
+  onBrowserExtensionConnected: (callback: (data: { count: number }) => void) => {
+    const listener = (_event: unknown, data: { count: number }) => callback(data);
+    ipcRenderer.on('browser:extension-connected', listener);
+    return () => { ipcRenderer.removeListener('browser:extension-connected', listener); };
+  },
 });

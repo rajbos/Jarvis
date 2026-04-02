@@ -52,10 +52,7 @@ function initializeSchema(database: SqlJsDatabase): void {
   if (userVersion === 0) {
     database.run(getSchema());
     seedBuiltInAgents(database);
-    database.run('PRAGMA user_version = 12');
-  }
-
-  if (userVersion === 1) {
+    database.run('PRAGMA user_version = 13');
     // Migration v1 → v2: add discovery_enabled to github_orgs
     database.run('ALTER TABLE github_orgs ADD COLUMN discovery_enabled INTEGER DEFAULT 1');
     database.run('PRAGMA user_version = 2');
@@ -271,6 +268,35 @@ function initializeSchema(database: SqlJsDatabase): void {
       )
     `);
     database.run('PRAGMA user_version = 12');
+  }
+
+  if (userVersion === 12) {
+    // Migration v12 → v13: add browser companion tables
+    database.run(`
+      CREATE TABLE IF NOT EXISTS browser_skills (
+        id                INTEGER PRIMARY KEY AUTOINCREMENT,
+        name              TEXT NOT NULL UNIQUE,
+        description       TEXT,
+        start_url         TEXT NOT NULL,
+        instructions      TEXT NOT NULL,
+        extract_selector  TEXT,
+        created_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at        DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    database.run(`
+      CREATE TABLE IF NOT EXISTS browser_skill_runs (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        skill_id        INTEGER NOT NULL REFERENCES browser_skills(id) ON DELETE CASCADE,
+        status          TEXT DEFAULT 'pending',
+        started_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+        completed_at    DATETIME,
+        extracted_data  TEXT,
+        error           TEXT
+      )
+    `);
+    database.run('CREATE INDEX IF NOT EXISTS idx_browser_skill_runs_skill ON browser_skill_runs(skill_id)');
+    database.run('PRAGMA user_version = 13');
   }
 }
 

@@ -126,6 +126,17 @@ const EXPECTED_CHANNELS = [
   'groups:remove-local-repo',
   'groups:add-github-repo',
   'groups:remove-github-repo',
+  // browser-companion plugin
+  'browser:status',
+  'browser:list-skills',
+  'browser:create-skill',
+  'browser:update-skill',
+  'browser:delete-skill',
+  'browser:list-runs',
+  'browser:run-skill',
+  'browser:navigate',
+  'browser:list-tabs',
+  'browser:get-page-content',
 ] as const;
 
 describe('IPC handler registration', () => {

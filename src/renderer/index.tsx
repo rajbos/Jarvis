@@ -26,6 +26,7 @@ import { SecretsScanPanel } from '../plugins/secrets/SecretsScanPanel';
 import { DashboardPanel } from '../plugins/dashboard/DashboardPanel';
 import { GroupsStep } from '../plugins/groups/GroupsStep';
 import { GroupsPanel } from '../plugins/groups/GroupsPanel';
+import { BrowserCompanionPanel } from '../plugins/browser-companion/BrowserCompanionPanel';
 
 // ── Types (imported from single source of truth in plugins/types.ts) ─────────
 // The global augmentation `Window.jarvis` is declared in plugins/types.ts and
@@ -50,7 +51,7 @@ import type {
 } from '../plugins/types';
 import '../plugins/types'; // activate the global Window augmentation
 
-type AppTab = 'dashboard' | 'setup';
+type AppTab = 'dashboard' | 'browser' | 'setup';
 
 // ── App ──────────────────────────────────────────────────────────────────────
 
@@ -729,6 +730,10 @@ function App() {
           onClick={() => setActiveTab('dashboard')}
         >📊 Dashboard</button>
         <button
+          class={`tab-btn ${activeTab === 'browser' ? 'tab-active' : ''}`}
+          onClick={() => setActiveTab('browser')}
+        >🌐 Browser</button>
+        <button
           class={`tab-btn ${activeTab === 'setup' ? 'tab-active' : ''}`}
           onClick={() => setActiveTab('setup')}
         >⚙️ Setup</button>
@@ -737,6 +742,11 @@ function App() {
       {/* ── Dashboard tab ────────────────────────────────────────────────── */}
       {activeTab === 'dashboard' && (
         <DashboardPanel />
+      )}
+
+      {/* ── Browser Companion tab ─────────────────────────────────────────── */}
+      {activeTab === 'browser' && (
+        <BrowserCompanionPanel onBack={() => setActiveTab('dashboard')} />
       )}
 
       {/* ── Setup tab (original content) ─────────────────────────────────── */}

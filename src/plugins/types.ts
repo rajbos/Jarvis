@@ -304,6 +304,36 @@ export interface GroupDetail {
   githubRepos: GroupGithubRepoMember[];
 }
 
+// ── Browser Companion types ───────────────────────────────────────────────────
+
+export interface BrowserSkill {
+  id: number;
+  name: string;
+  description: string;
+  start_url: string;
+  instructions: string;
+  extract_selector: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BrowserSkillRun {
+  id: number;
+  skill_id: number;
+  skill_name: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  started_at: string;
+  completed_at: string | null;
+  extracted_data: unknown;
+  error: string | null;
+}
+
+export interface BrowserCompanionStatus {
+  running: boolean;
+  port: number;
+  connectedClients: number;
+}
+
 // ── Jarvis preload API contract ───────────────────────────────────────────────
 // This augments the global Window type so all plugin components get full
 // type-checking on window.jarvis calls without re-declaring it everywhere.
@@ -423,6 +453,18 @@ export interface JarvisApi {
   groupsRemoveLocalRepo(groupId: number, localRepoId: number): Promise<{ ok: boolean; error?: string }>;
   groupsAddGithubRepo(groupId: number, githubRepoId: number): Promise<{ ok: boolean; error?: string }>;
   groupsRemoveGithubRepo(groupId: number, githubRepoId: number): Promise<{ ok: boolean; error?: string }>;
+  // Browser Companion
+  browserStatus(): Promise<BrowserCompanionStatus>;
+  browserListSkills(): Promise<BrowserSkill[]>;
+  browserCreateSkill(name: string, description: string, startUrl: string, instructions: string, extractSelector: string): Promise<{ ok: boolean; id?: number; error?: string }>;
+  browserUpdateSkill(id: number, name: string, description: string, startUrl: string, instructions: string, extractSelector: string): Promise<{ ok: boolean; error?: string }>;
+  browserDeleteSkill(id: number): Promise<{ ok: boolean; error?: string }>;
+  browserListRuns(skillId?: number): Promise<BrowserSkillRun[]>;
+  browserRunSkill(skillId: number, testMode?: boolean): Promise<{ ok: boolean; runId?: number | null; data?: unknown; error?: string; testMode?: boolean }>;
+  browserNavigate(url: string): Promise<{ ok: boolean; data?: unknown; error?: string }>;
+  browserListTabs(): Promise<{ ok: boolean; data?: unknown; error?: string }>;
+  browserGetPageContent(tabId?: number): Promise<{ ok: boolean; data?: unknown; error?: string }>;
+  onBrowserExtensionConnected(cb: (data: { count: number }) => void): () => void;
 }
 
 declare global {
