@@ -52,7 +52,7 @@ function initializeSchema(database: SqlJsDatabase): void {
   if (userVersion === 0) {
     database.run(getSchema());
     seedBuiltInAgents(database);
-    database.run('PRAGMA user_version = 11');
+    database.run('PRAGMA user_version = 12');
   }
 
   if (userVersion === 1) {
@@ -242,6 +242,35 @@ function initializeSchema(database: SqlJsDatabase): void {
       )
     `);
     database.run('PRAGMA user_version = 11');
+  }
+
+  if (userVersion === 11) {
+    // Migration v11 → v12: add groups tables for grouped source configuration
+    database.run(`
+      CREATE TABLE IF NOT EXISTS groups (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        name       TEXT NOT NULL UNIQUE,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    database.run(`
+      CREATE TABLE IF NOT EXISTS group_local_repos (
+        group_id      INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+        local_repo_id INTEGER NOT NULL REFERENCES local_repos(id) ON DELETE CASCADE,
+        added_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (group_id, local_repo_id)
+      )
+    `);
+    database.run(`
+      CREATE TABLE IF NOT EXISTS group_github_repos (
+        group_id       INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+        github_repo_id INTEGER NOT NULL REFERENCES github_repos(id) ON DELETE CASCADE,
+        added_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (group_id, github_repo_id)
+      )
+    `);
+    database.run('PRAGMA user_version = 12');
   }
 }
 

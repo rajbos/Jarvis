@@ -2801,3 +2801,25 @@ h5.ec-heading { font-size: 0.85rem; }
 .agent-finding-state.done { color: #51cf66; }
 .agent-finding-state.skipped { color: #8892b0; }
 
+
+.groups-layout {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+}
+
+.groups-step-wrapper {
+  flex: 0 0 370px;
+}
+
+.groups-step-wrapper .step {
+  margin-bottom: 0;
+}
+
+.groups-panel {
+  min-width: 340px;
+  max-width: 520px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
