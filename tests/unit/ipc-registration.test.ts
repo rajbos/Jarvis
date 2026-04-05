@@ -116,6 +116,16 @@ const EXPECTED_CHANNELS = [
   'dashboard:get-summary',
   'dashboard:get-recent-failed-runs',
   'dashboard:push-branch-upstream',
+  // groups plugin
+  'groups:list',
+  'groups:get',
+  'groups:create',
+  'groups:rename',
+  'groups:delete',
+  'groups:add-local-repo',
+  'groups:remove-local-repo',
+  'groups:add-github-repo',
+  'groups:remove-github-repo',
 ] as const;
 
 describe('IPC handler registration', () => {
