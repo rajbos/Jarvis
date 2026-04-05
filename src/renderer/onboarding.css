@@ -2818,8 +2818,31 @@ h5.ec-heading { font-size: 0.85rem; }
 }
 
 .groups-panel {
-  min-width: 340px;
-  max-width: 520px;
+  flex: 1;
+  min-width: 0;
   max-height: 80vh;
+  overflow-y: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.groups-split {
+  display: flex;
+  gap: 0.75rem;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.groups-split-left {
+  flex: 0 0 210px;
+  overflow-y: auto;
+  border-right: 1px solid #232340;
+  padding-right: 0.5rem;
+}
+
+.groups-split-right {
+  flex: 1;
+  min-width: 0;
   overflow-y: auto;
 }
