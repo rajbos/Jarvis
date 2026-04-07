@@ -273,6 +273,8 @@ export interface FailedWorkflowRun {
 // ── Jarvis preload API contract ───────────────────────────────────────────────
 // This augments the global Window type so all plugin components get full
 // type-checking on window.jarvis calls without re-declaring it everywhere.
+export type { OnboardingStatus } from '../agent/onboarding';
+import type { OnboardingStatus } from '../agent/onboarding';
 import type {
   AgentSessionStartingPayload,
   AgentAnalysisCompletePayload,
@@ -292,6 +294,14 @@ export type {
 } from '../types/ipc-payloads';
 
 export interface JarvisApi {
+  getOnboardingStatus(): Promise<OnboardingStatus>;
+  startDiscovery(): Promise<{ started: boolean }>;
+  startPatDiscovery(): Promise<{ started?: boolean; error?: string }>;
+  startOAuthDiscovery(): Promise<{ ok: boolean }>;
+  savePat(pat: string): Promise<{ ok: boolean; error?: string }>;
+  deletePat(): Promise<{ ok: boolean }>;
+  getPatStatus(): Promise<{ hasPat: boolean; login?: string; name?: string; avatarUrl?: string }>;
+  logout(): Promise<{ ok: boolean }>;
   checkOllama(): Promise<OllamaStatus>;
   listOllamaModels(): Promise<{ available: boolean; models: OllamaModel[]; error?: string }>;
   getSelectedOllamaModel(): Promise<string | null>;
