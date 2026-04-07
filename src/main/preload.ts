@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import type { DiscoveryProgress, LocalScanProgress, SecretsScanProgress } from '../plugins/types';
 import type {
   AgentSessionStartingPayload,
   AgentAnalysisCompletePayload,
@@ -86,8 +87,8 @@ contextBridge.exposeInMainWorld('jarvis', {
   listSecretFavorites: () => ipcRenderer.invoke('secrets:list-favorites'),
   addSecretFavorite: (targetType: string, targetName: string) => ipcRenderer.invoke('secrets:add-favorite', targetType, targetName),
   removeSecretFavorite: (targetName: string) => ipcRenderer.invoke('secrets:remove-favorite', targetName),
-  onSecretsProgress: (callback: (progress: Record<string, number>) => void) => {
-    const listener = (_event: unknown, progress: Record<string, number>) => callback(progress);
+  onSecretsProgress: (callback: (progress: SecretsScanProgress) => void) => {
+    const listener = (_event: unknown, progress: SecretsScanProgress) => callback(progress);
     ipcRenderer.on('secrets:scan-progress', listener);
     return () => { ipcRenderer.removeListener('secrets:scan-progress', listener); };
   },
@@ -101,23 +102,23 @@ contextBridge.exposeInMainWorld('jarvis', {
     ipcRenderer.on('github:oauth-complete', listener);
     return () => { ipcRenderer.removeListener('github:oauth-complete', listener); };
   },
-  onDiscoveryProgress: (callback: (progress: Record<string, unknown>) => void) => {
-    const listener = (_event: unknown, progress: Record<string, unknown>) => callback(progress);
+  onDiscoveryProgress: (callback: (progress: DiscoveryProgress) => void) => {
+    const listener = (_event: unknown, progress: DiscoveryProgress) => callback(progress);
     ipcRenderer.on('github:discovery-progress', listener);
     return () => { ipcRenderer.removeListener('github:discovery-progress', listener); };
   },
-  onDiscoveryComplete: (callback: (progress: Record<string, unknown>) => void) => {
-    const listener = (_event: unknown, progress: Record<string, unknown>) => callback(progress);
+  onDiscoveryComplete: (callback: (progress: DiscoveryProgress) => void) => {
+    const listener = (_event: unknown, progress: DiscoveryProgress) => callback(progress);
     ipcRenderer.on('github:discovery-complete', listener);
     return () => { ipcRenderer.removeListener('github:discovery-complete', listener); };
   },
-  onLocalScanProgress: (callback: (progress: Record<string, unknown>) => void) => {
-    const listener = (_event: unknown, progress: Record<string, unknown>) => callback(progress);
+  onLocalScanProgress: (callback: (progress: LocalScanProgress) => void) => {
+    const listener = (_event: unknown, progress: LocalScanProgress) => callback(progress);
     ipcRenderer.on('local:scan-progress', listener);
     return () => { ipcRenderer.removeListener('local:scan-progress', listener); };
   },
-  onLocalScanComplete: (callback: (progress: Record<string, unknown>) => void) => {
-    const listener = (_event: unknown, progress: Record<string, unknown>) => callback(progress);
+  onLocalScanComplete: (callback: (progress: LocalScanProgress) => void) => {
+    const listener = (_event: unknown, progress: LocalScanProgress) => callback(progress);
     ipcRenderer.on('local:scan-complete', listener);
     return () => { ipcRenderer.removeListener('local:scan-complete', listener); };
   },
