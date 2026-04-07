@@ -270,6 +270,40 @@ export interface FailedWorkflowRun {
   html_url: string;
 }
 
+// ── Groups types ──────────────────────────────────────────────────────────────
+
+export interface Group {
+  id: number;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  localRepoCount: number;
+  githubRepoCount: number;
+}
+
+export interface GroupLocalRepoMember {
+  id: number;
+  localPath: string;
+  name: string;
+  addedAt: string;
+}
+
+export interface GroupGithubRepoMember {
+  id: number;
+  fullName: string;
+  name: string;
+  addedAt: string;
+}
+
+export interface GroupDetail {
+  id: number;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  localRepos: GroupLocalRepoMember[];
+  githubRepos: GroupGithubRepoMember[];
+}
+
 // ── Jarvis preload API contract ───────────────────────────────────────────────
 // This augments the global Window type so all plugin components get full
 // type-checking on window.jarvis calls without re-declaring it everywhere.
@@ -379,6 +413,16 @@ export interface JarvisApi {
   dashboardGetSummary(): Promise<DashboardSummary>;
   dashboardGetRecentFailedRuns(): Promise<FailedWorkflowRun[]>;
   dashboardPushBranchUpstream(repoPath: string, branch: string): Promise<{ ok: boolean; error?: string; output?: string }>;
+  // Groups
+  groupsList(): Promise<Group[]>;
+  groupsCreate(name: string): Promise<{ ok: boolean; id?: number; error?: string }>;
+  groupsRename(groupId: number, newName: string): Promise<{ ok: boolean; error?: string }>;
+  groupsDelete(groupId: number): Promise<{ ok: boolean; error?: string }>;
+  groupsGet(groupId: number): Promise<GroupDetail | null>;
+  groupsAddLocalRepo(groupId: number, localRepoId: number): Promise<{ ok: boolean; error?: string }>;
+  groupsRemoveLocalRepo(groupId: number, localRepoId: number): Promise<{ ok: boolean; error?: string }>;
+  groupsAddGithubRepo(groupId: number, githubRepoId: number): Promise<{ ok: boolean; error?: string }>;
+  groupsRemoveGithubRepo(groupId: number, githubRepoId: number): Promise<{ ok: boolean; error?: string }>;
 }
 
 declare global {

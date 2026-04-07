@@ -179,4 +179,18 @@ contextBridge.exposeInMainWorld('jarvis', {
   dashboardGetRecentFailedRuns: () => ipcRenderer.invoke('dashboard:get-recent-failed-runs'),
   dashboardPushBranchUpstream: (repoPath: string, branch: string) =>
     ipcRenderer.invoke('dashboard:push-branch-upstream', repoPath, branch),
+  // Groups
+  groupsList: () => ipcRenderer.invoke('groups:list'),
+  groupsGet: (groupId: number) => ipcRenderer.invoke('groups:get', groupId),
+  groupsCreate: (name: string) => ipcRenderer.invoke('groups:create', name),
+  groupsRename: (groupId: number, newName: string) => ipcRenderer.invoke('groups:rename', groupId, newName),
+  groupsDelete: (groupId: number) => ipcRenderer.invoke('groups:delete', groupId),
+  groupsAddLocalRepo: (groupId: number, localRepoId: number) =>
+    ipcRenderer.invoke('groups:add-local-repo', groupId, localRepoId),
+  groupsRemoveLocalRepo: (groupId: number, localRepoId: number) =>
+    ipcRenderer.invoke('groups:remove-local-repo', groupId, localRepoId),
+  groupsAddGithubRepo: (groupId: number, githubRepoId: number) =>
+    ipcRenderer.invoke('groups:add-github-repo', groupId, githubRepoId),
+  groupsRemoveGithubRepo: (groupId: number, githubRepoId: number) =>
+    ipcRenderer.invoke('groups:remove-github-repo', groupId, githubRepoId),
 });
