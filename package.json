@@ -4,8 +4,9 @@
   "description": "Jarvis — a locally-hosted personal assistant agent for GitHub repository maintenance",
   "main": "dist/main/index.js",
   "scripts": {
-    "build": "tsc && node scripts/build-renderer.mjs && npm run copy-static",
+    "build": "tsc && node scripts/build-renderer.mjs && npm run copy-static && npm run build:extension",
     "copy-static": "node -e \"const fs=require('fs');const p=require('path');fs.mkdirSync('dist/renderer',{recursive:true});for(const f of fs.readdirSync('src/renderer')){if(f.endsWith('.html'))fs.cpSync(p.join('src/renderer',f),p.join('dist/renderer',f));}\"",
+    "build:extension": "node -e \"const fs=require('fs');fs.rmSync('dist/browser-extension',{recursive:true,force:true});fs.cpSync('src/browser-extension','dist/browser-extension',{recursive:true});console.log('Browser extension copied to dist/browser-extension');\"",
     "start": "npm run build && electron dist/main/index.js",
     "dev:tsc": "tsc --watch --preserveWatchOutput",
     "dev:esbuild": "node scripts/build-renderer.mjs --watch",
