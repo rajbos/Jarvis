@@ -138,6 +138,10 @@ const EXPECTED_CHANNELS = [
   'browser:list-tabs',
   'browser:get-page-content',
   // ruddr plugin
+  'ruddr:get-workspace',
+  'ruddr:set-workspace',
+  'ruddr:scan-projects',
+  'ruddr:resolve-project-url',
   'ruddr:list-links',
   'ruddr:add-link',
   'ruddr:update-link',

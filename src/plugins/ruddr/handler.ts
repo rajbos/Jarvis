@@ -6,7 +6,70 @@ import { saveDatabase } from '../../storage/database';
 import { listRuddrLinks, addRuddrLink, updateRuddrLink, removeRuddrLink } from '../../services/ruddr';
 import { sendCommand } from '../browser-companion/server';
 
+export const DEFAULT_RUDDR_BUDGET_SELECTOR = '#workspace-main section:nth-child(2)';
+
 export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWindow | null): void {
+
+  // ── Workspace config ────────────────────────────────────────────────────────
+
+  ipcMain.handle('ruddr:get-workspace', () => {
+    const result = db.exec("SELECT value FROM config WHERE key = 'ruddr_workspace'");
+    return (result[0]?.values[0]?.[0] as string) ?? '';
+  });
+
+  ipcMain.handle('ruddr:set-workspace', (_event, workspace: string) => {
+    if (!workspace?.trim()) return { ok: false, error: 'workspace is required' };
+    db.run(
+      "INSERT OR REPLACE INTO config (key, value) VALUES ('ruddr_workspace', ?)",
+      [workspace.trim()],
+    );
+    saveDatabase();
+    return { ok: true };
+  });
+
+  // ── Project discovery ───────────────────────────────────────────────────────
+
+  ipcMain.handle('ruddr:scan-projects', async (_event, workspace: string) => {
+    if (!workspace?.trim()) return { ok: false, error: 'workspace is required' };
+    try {
+      await sendCommand({
+        type: 'navigate',
+        payload: { url: `https://www.ruddr.io/app/${workspace.trim()}/my-projects` },
+      });
+      const result = await sendCommand({
+        type: 'extract',
+        payload: { selector: 'a[href*="/portfolio/projects/"]' },
+      });
+      const seen = new Set<string>();
+      const projects = (result.data as Array<{ text?: string; href?: string }> ?? [])
+        .filter((p) => {
+          if (!p.href || !p.text?.trim()) return false;
+          if (seen.has(p.href)) return false;
+          seen.add(p.href);
+          return true;
+        })
+        .map((p) => ({
+          name: p.text!.trim().replace(/\s+/g, ' '),
+          href: p.href!,
+          url: p.href!.startsWith('http') ? p.href! : `https://www.ruddr.io${p.href!}`,
+        }));
+      return { ok: true, projects };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  // Navigate to a portfolio URL and return the final URL after page load
+  ipcMain.handle('ruddr:resolve-project-url', async (_event, portfolioUrl: string) => {
+    if (!portfolioUrl?.trim()) return { ok: false, error: 'url is required' };
+    try {
+      const navResult = await sendCommand({ type: 'navigate', payload: { url: portfolioUrl } });
+      const finalUrl = (navResult.data as { url?: string })?.url ?? portfolioUrl;
+      return { ok: true, url: finalUrl };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
 
   ipcMain.handle('ruddr:list-links', (_event, groupId?: number) => {
     return listRuddrLinks(db, typeof groupId === 'number' ? groupId : undefined);

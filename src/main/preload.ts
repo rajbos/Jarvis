@@ -213,6 +213,10 @@ contextBridge.exposeInMainWorld('jarvis', {
     return () => { ipcRenderer.removeListener('browser:extension-connected', listener); };
   },
   // Ruddr project links
+  ruddrGetWorkspace: () => ipcRenderer.invoke('ruddr:get-workspace'),
+  ruddrSetWorkspace: (workspace: string) => ipcRenderer.invoke('ruddr:set-workspace', workspace),
+  ruddrScanProjects: (workspace: string) => ipcRenderer.invoke('ruddr:scan-projects', workspace),
+  ruddrResolveProjectUrl: (portfolioUrl: string) => ipcRenderer.invoke('ruddr:resolve-project-url', portfolioUrl),
   ruddrListLinks: (groupId?: number) => ipcRenderer.invoke('ruddr:list-links', groupId),
   ruddrAddLink: (groupId: number, workspace: string, projectId: string, projectName: string, projectUrl: string, extractSelector: string) =>
     ipcRenderer.invoke('ruddr:add-link', groupId, workspace, projectId, projectName, projectUrl, extractSelector),

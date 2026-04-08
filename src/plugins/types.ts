@@ -319,6 +319,12 @@ export interface RuddrProjectLink {
   linkedAt: string;
 }
 
+export interface RuddrScannedProject {
+  name: string;
+  href: string;
+  url: string;
+}
+
 // ── Browser Companion types ───────────────────────────────────────────────────
 
 export interface BrowserSkill {
@@ -469,6 +475,10 @@ export interface JarvisApi {
   groupsAddGithubRepo(groupId: number, githubRepoId: number): Promise<{ ok: boolean; error?: string }>;
   groupsRemoveGithubRepo(groupId: number, githubRepoId: number): Promise<{ ok: boolean; error?: string }>;
   // Ruddr project links
+  ruddrGetWorkspace(): Promise<string>;
+  ruddrSetWorkspace(workspace: string): Promise<{ ok: boolean; error?: string }>;
+  ruddrScanProjects(workspace: string): Promise<{ ok: boolean; projects?: RuddrScannedProject[]; error?: string }>;
+  ruddrResolveProjectUrl(portfolioUrl: string): Promise<{ ok: boolean; url?: string; error?: string }>;
   ruddrListLinks(groupId?: number): Promise<RuddrProjectLink[]>;
   ruddrAddLink(groupId: number, workspace: string, projectId: string, projectName: string, projectUrl: string, extractSelector: string): Promise<{ ok: boolean; id?: number; error?: string }>;
   ruddrUpdateLink(id: number, projectName: string, projectUrl: string, extractSelector: string): Promise<{ ok: boolean; error?: string }>;

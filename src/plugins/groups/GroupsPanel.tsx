@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'preact/hooks';
-import type { Group, GroupDetail, LocalRepo, RuddrProjectLink } from '../types';
+import type { Group, GroupDetail, LocalRepo, RuddrProjectLink, RuddrScannedProject } from '../types';
+
+const DEFAULT_BUDGET_SELECTOR = '#workspace-main section:nth-child(2)';
 
 // ── GroupsPanel ───────────────────────────────────────────────────────────────
 // Allows users to create, rename, delete groups and assign local/remote repos
@@ -37,6 +39,15 @@ export function GroupsPanel({ onClose }: GroupsPanelProps) {
   const [ruddrExtractSelector, setRuddrExtractSelector] = useState('');
   const [ruddrAdding, setRuddrAdding] = useState(false);
   const [ruddrError, setRuddrError] = useState('');
+  // Workspace global config
+  const [savedWorkspace, setSavedWorkspace] = useState('');
+  const [workspaceInput, setWorkspaceInput] = useState('');
+  const [workspaceSaving, setWorkspaceSaving] = useState(false);
+  // Project browser
+  const [scannedProjects, setScannedProjects] = useState<RuddrScannedProject[] | null>(null);
+  const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState('');
+  const [resolving, setResolving] = useState(false);
   // Per-link state fetch results
   const [ruddrStateResults, setRuddrStateResults] = useState<Record<number, { loading: boolean; data?: unknown; error?: string }>>({});
   // Per-link edit state
@@ -63,12 +74,15 @@ export function GroupsPanel({ onClose }: GroupsPanelProps) {
     (async () => {
       setLoading(true);
       try {
-        const [list, repos] = await Promise.all([
+        const [list, repos, ws] = await Promise.all([
           window.jarvis.groupsList(),
           window.jarvis.localListRepos(),
+          window.jarvis.ruddrGetWorkspace(),
         ]);
         setGroups(list);
         setLocalRepos(repos);
+        setSavedWorkspace(ws);
+        setWorkspaceInput(ws);
       } catch (err) {
         console.error('[Groups] init error:', err);
       } finally {
@@ -156,17 +170,51 @@ export function GroupsPanel({ onClose }: GroupsPanelProps) {
     await refresh();
   };
 
+  const handleSaveWorkspace = async () => {
+    setWorkspaceSaving(true);
+    await window.jarvis.ruddrSetWorkspace(workspaceInput.trim());
+    setSavedWorkspace(workspaceInput.trim());
+    setWorkspaceSaving(false);
+  };
+
+  const handleScanProjects = async () => {
+    if (!savedWorkspace) return;
+    setScanning(true);
+    setScanError('');
+    setScannedProjects(null);
+    const result = await window.jarvis.ruddrScanProjects(savedWorkspace);
+    setScanning(false);
+    if (!result.ok || !result.projects) {
+      setScanError(result.error ?? 'Scan failed');
+      return;
+    }
+    setScannedProjects(result.projects);
+  };
+
+  const handlePickProject = async (project: RuddrScannedProject) => {
+    setScannedProjects(null);
+    setResolving(true);
+    // Navigate to the portfolio link; the extension returns the final URL after load
+    const resolved = await window.jarvis.ruddrResolveProjectUrl(project.url);
+    setResolving(false);
+    setRuddrProjectName(project.name);
+    setRuddrProjectUrl(resolved.ok && resolved.url ? resolved.url : project.url);
+    setRuddrProjectId(project.href); // use href as stable ID
+    setRuddrExtractSelector(DEFAULT_BUDGET_SELECTOR);
+    setShowRuddrForm(true);
+  };
+
   const handleAddRuddrLink = async () => {
     if (!selectedGroup) return;
     setRuddrAdding(true);
     setRuddrError('');
     const result = await window.jarvis.ruddrAddLink(
       selectedGroup.id,
-      ruddrWorkspace.trim(),
-      ruddrProjectId.trim() || ruddrProjectUrl.trim(), // use URL as ID if no explicit ID
+      savedWorkspace,
+      ruddrProjectId.trim() || ruddrProjectUrl.trim(),
       ruddrProjectName.trim(),
       ruddrProjectUrl.trim(),
-      ruddrExtractSelector.trim(),
+      ruddrExtractSelector.trim() || DEFAULT_BUDGET_SELECTOR,
     );
     setRuddrAdding(false);
     if (!result.ok) {
@@ -174,6 +222,7 @@ export function GroupsPanel({ onClose }: GroupsPanelProps) {
       return;
     }
     setShowRuddrForm(false);
+    setScannedProjects(null);
     setRuddrWorkspace('');
     setRuddrProjectId('');
     setRuddrProjectName('');
@@ -424,6 +473,59 @@ export function GroupsPanel({ onClose }: GroupsPanelProps) {
 
               {/* ── Ruddr project links ──────────────────────────────────── */}
               <div style={{ marginTop: '1rem', borderTop: '1px solid #2a2a3e', paddingTop: '0.75rem' }}>
+                {/* Workspace config bar */}
+                <div style={{ background: '#14141f', borderRadius: '6px', padding: '0.45rem 0.55rem', marginBottom: '0.6rem' }}>
+                  <div style={{ fontSize: '0.75rem', color: '#667', marginBottom: '0.25rem' }}>Ruddr workspace slug (global)</div>
+                  <div style={{ display: 'flex', gap: '0.35rem' }}>
+                    <input
+                      type="text"
+                      placeholder="e.g. xebia-xms-benelux"
+                      value={workspaceInput}
+                      onInput={(e) => setWorkspaceInput((e.target as HTMLInputElement).value)}
+                      style={{ flex: 1, fontSize: '0.82rem', boxSizing: 'border-box' }}
+                    />
+                    <button
+                      class="btn-save"
+                      style={{ padding: '0.15rem 0.6rem', fontSize: '0.78rem', whiteSpace: 'nowrap' }}
+                      onClick={() => void handleSaveWorkspace()}
+                      disabled={workspaceSaving || workspaceInput.trim() === savedWorkspace}
+                    >
+                      {workspaceSaving ? 'Saving…' : 'Save'}
+                    </button>
+                    <button
+                      class="btn-save"
+                      style={{ padding: '0.15rem 0.6rem', fontSize: '0.78rem', whiteSpace: 'nowrap' }}
+                      onClick={() => void handleScanProjects()}
+                      disabled={scanning || !savedWorkspace}
+                      title={savedWorkspace ? `Scan projects from ${savedWorkspace}` : 'Save workspace first'}
+                    >
+                      {scanning ? 'Scanning…' : '🔍 Browse'}
+                    </button>
+                  </div>
+                  {scanError && <div style={{ color: '#f88', fontSize: '0.75rem', marginTop: '0.25rem' }}>{scanError}</div>}
+                </div>
+
+                {/* Project picker */}
+                {scannedProjects && scannedProjects.length > 0 && (
+                  <div style={{ background: '#1a1a2e', borderRadius: '6px', padding: '0.5rem', marginBottom: '0.5rem', maxHeight: '180px', overflowY: 'auto' }}>
+                    <div style={{ fontSize: '0.75rem', color: '#99a', marginBottom: '0.3rem' }}>Pick a project to link:</div>
+                    {scannedProjects.map((p) => (
+                      <div
+                        key={p.href}
+                        style={{ padding: '0.25rem 0.4rem', cursor: resolving ? 'wait' : 'pointer', borderRadius: '4px', fontSize: '0.82rem' }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = '#22223a')}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = '')}
+                        onClick={() => !resolving && void handlePickProject(p)}
+                      >
+                        {resolving ? '⏳ ' : ''}{p.name}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {scannedProjects && scannedProjects.length === 0 && (
+                  <div style={{ fontSize: '0.78rem', color: '#667', marginBottom: '0.4rem' }}>No projects found. Make sure you're logged in to Ruddr.</div>
+                )}
+
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
                   <div style={{ fontSize: '0.8rem', color: '#99a', fontWeight: 600 }}>
                     🏗️ Ruddr projects ({selectedGroup.ruddrLinks.length})
@@ -433,7 +535,7 @@ export function GroupsPanel({ onClose }: GroupsPanelProps) {
                     style={{ padding: '0.1rem 0.5rem', fontSize: '0.78rem' }}
                     onClick={() => { setShowRuddrForm((v) => !v); setRuddrError(''); }}
                   >
-                    {showRuddrForm ? 'Cancel' : '+ Link project'}
+                    {showRuddrForm ? 'Cancel' : '+ Link manually'}
                   </button>
                 </div>
 
@@ -443,13 +545,6 @@ export function GroupsPanel({ onClose }: GroupsPanelProps) {
 
                 {showRuddrForm && (
                   <div style={{ background: '#1a1a2e', borderRadius: '6px', padding: '0.6rem', marginBottom: '0.5rem' }}>
-                    <input
-                      type="text"
-                      placeholder="Workspace slug (e.g. xebia-xms-benelux)"
-                      value={ruddrWorkspace}
-                      onInput={(e) => setRuddrWorkspace((e.target as HTMLInputElement).value)}
-                      style={{ width: '100%', marginBottom: '0.3rem', boxSizing: 'border-box', fontSize: '0.82rem' }}
-                    />
                     <input
                       type="text"
                       placeholder="Project name"
@@ -466,7 +561,7 @@ export function GroupsPanel({ onClose }: GroupsPanelProps) {
                     />
                     <input
                       type="text"
-                      placeholder="CSS selector for budget data (optional — leave blank to get full page)"
+                      placeholder={`CSS selector (default: ${DEFAULT_BUDGET_SELECTOR})`}
                       value={ruddrExtractSelector}
                       onInput={(e) => setRuddrExtractSelector((e.target as HTMLInputElement).value)}
                       style={{ width: '100%', marginBottom: '0.4rem', boxSizing: 'border-box', fontSize: '0.82rem' }}
@@ -474,11 +569,14 @@ export function GroupsPanel({ onClose }: GroupsPanelProps) {
                     <button
                       class="btn-save"
                       onClick={() => void handleAddRuddrLink()}
-                      disabled={ruddrAdding || !ruddrProjectName.trim() || !ruddrProjectUrl.trim() || !ruddrWorkspace.trim()}
+                      disabled={ruddrAdding || !ruddrProjectName.trim() || !ruddrProjectUrl.trim() || !savedWorkspace}
                       style={{ width: '100%', fontSize: '0.82rem' }}
                     >
                       {ruddrAdding ? 'Linking…' : 'Save link'}
                     </button>
+                    {!savedWorkspace && (
+                      <div style={{ color: '#f88', fontSize: '0.75rem', marginTop: '0.25rem' }}>Save workspace slug above first.</div>
+                    )}
                   </div>
                 )}
 
