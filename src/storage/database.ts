@@ -52,7 +52,7 @@ function initializeSchema(database: SqlJsDatabase): void {
   if (userVersion === 0) {
     database.run(getSchema());
     seedBuiltInAgents(database);
-    database.run('PRAGMA user_version = 13');
+    database.run('PRAGMA user_version = 14');
     // Migration v1 → v2: add discovery_enabled to github_orgs
     database.run('ALTER TABLE github_orgs ADD COLUMN discovery_enabled INTEGER DEFAULT 1');
     database.run('PRAGMA user_version = 2');
@@ -297,6 +297,24 @@ function initializeSchema(database: SqlJsDatabase): void {
     `);
     database.run('CREATE INDEX IF NOT EXISTS idx_browser_skill_runs_skill ON browser_skill_runs(skill_id)');
     database.run('PRAGMA user_version = 13');
+  }
+
+  if (userVersion === 13) {
+    // Migration v13 → v14: add ruddr project links for group ↔ Ruddr project association
+    database.run(`
+      CREATE TABLE IF NOT EXISTS ruddr_project_links (
+        id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+        group_id           INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+        ruddr_workspace    TEXT NOT NULL,
+        ruddr_project_id   TEXT NOT NULL,
+        ruddr_project_name TEXT NOT NULL,
+        ruddr_project_url  TEXT NOT NULL,
+        extract_selector   TEXT NOT NULL DEFAULT '',
+        linked_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(group_id, ruddr_project_id)
+      )
+    `);
+    database.run('PRAGMA user_version = 14');
   }
 }
 

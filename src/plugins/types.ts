@@ -302,6 +302,21 @@ export interface GroupDetail {
   updatedAt: string;
   localRepos: GroupLocalRepoMember[];
   githubRepos: GroupGithubRepoMember[];
+  ruddrLinks: RuddrProjectLink[];
+}
+
+// ── Ruddr types ───────────────────────────────────────────────────────────────
+
+export interface RuddrProjectLink {
+  id: number;
+  groupId: number;
+  groupName: string;
+  ruddrWorkspace: string;
+  ruddrProjectId: string;
+  ruddrProjectName: string;
+  ruddrProjectUrl: string;
+  extractSelector: string;
+  linkedAt: string;
 }
 
 // ── Browser Companion types ───────────────────────────────────────────────────
@@ -453,6 +468,12 @@ export interface JarvisApi {
   groupsRemoveLocalRepo(groupId: number, localRepoId: number): Promise<{ ok: boolean; error?: string }>;
   groupsAddGithubRepo(groupId: number, githubRepoId: number): Promise<{ ok: boolean; error?: string }>;
   groupsRemoveGithubRepo(groupId: number, githubRepoId: number): Promise<{ ok: boolean; error?: string }>;
+  // Ruddr project links
+  ruddrListLinks(groupId?: number): Promise<RuddrProjectLink[]>;
+  ruddrAddLink(groupId: number, workspace: string, projectId: string, projectName: string, projectUrl: string, extractSelector: string): Promise<{ ok: boolean; id?: number; error?: string }>;
+  ruddrUpdateLink(id: number, projectName: string, projectUrl: string, extractSelector: string): Promise<{ ok: boolean; error?: string }>;
+  ruddrRemoveLink(id: number): Promise<{ ok: boolean; error?: string }>;
+  ruddrFetchProjectState(linkId: number): Promise<{ ok: boolean; data?: unknown; error?: string }>;
   // Browser Companion
   browserStatus(): Promise<BrowserCompanionStatus>;
   browserListSkills(): Promise<BrowserSkill[]>;

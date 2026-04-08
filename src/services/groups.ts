@@ -2,6 +2,7 @@
 // CRUD operations and membership management for source groups.
 import type { Database as SqlJsDatabase } from 'sql.js';
 import type { Group, GroupDetail, GroupLocalRepoMember, GroupGithubRepoMember } from '../plugins/types';
+import { listRuddrLinks } from './ruddr';
 
 // ── List ──────────────────────────────────────────────────────────────────────
 
@@ -98,6 +99,7 @@ export function getGroup(db: SqlJsDatabase, groupId: number): GroupDetail | null
     updatedAt: groupRow.updated_at,
     localRepos,
     githubRepos,
+    ruddrLinks: listRuddrLinks(db, groupRow.id),
   };
 }
 

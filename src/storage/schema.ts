@@ -269,5 +269,18 @@ export function getSchema(): string {
         error           TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_browser_skill_runs_skill ON browser_skill_runs(skill_id);
+
+    -- Ruddr project links: associates a Ruddr project with a Jarvis source group
+    CREATE TABLE IF NOT EXISTS ruddr_project_links (
+        id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+        group_id           INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+        ruddr_workspace    TEXT NOT NULL,
+        ruddr_project_id   TEXT NOT NULL,
+        ruddr_project_name TEXT NOT NULL,
+        ruddr_project_url  TEXT NOT NULL,
+        extract_selector   TEXT NOT NULL DEFAULT '',
+        linked_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(group_id, ruddr_project_id)
+    );
   `;
 }

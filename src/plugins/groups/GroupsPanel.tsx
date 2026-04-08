@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'preact/hooks';
-import type { Group, GroupDetail, LocalRepo } from '../types';
+import type { Group, GroupDetail, LocalRepo, RuddrProjectLink } from '../types';
 
 // ── GroupsPanel ───────────────────────────────────────────────────────────────
 // Allows users to create, rename, delete groups and assign local/remote repos
@@ -27,6 +27,18 @@ export function GroupsPanel({ onClose }: GroupsPanelProps) {
   // Add repo search
   const [localRepos, setLocalRepos] = useState<LocalRepo[]>([]);
   const [repoSearch, setRepoSearch] = useState('');
+
+  // Ruddr link form state
+  const [showRuddrForm, setShowRuddrForm] = useState(false);
+  const [ruddrWorkspace, setRuddrWorkspace] = useState('');
+  const [ruddrProjectId, setRuddrProjectId] = useState('');
+  const [ruddrProjectName, setRuddrProjectName] = useState('');
+  const [ruddrProjectUrl, setRuddrProjectUrl] = useState('');
+  const [ruddrExtractSelector, setRuddrExtractSelector] = useState('');
+  const [ruddrAdding, setRuddrAdding] = useState(false);
+  const [ruddrError, setRuddrError] = useState('');
+  // Per-link state fetch results
+  const [ruddrStateResults, setRuddrStateResults] = useState<Record<number, { loading: boolean; data?: unknown; error?: string }>>({});
 
   const refresh = async () => {
     try {
@@ -136,6 +148,49 @@ export function GroupsPanel({ onClose }: GroupsPanelProps) {
     const detail = await window.jarvis.groupsGet(selectedGroup.id);
     setSelectedGroup(detail);
     await refresh();
+  };
+
+  const handleAddRuddrLink = async () => {
+    if (!selectedGroup) return;
+    setRuddrAdding(true);
+    setRuddrError('');
+    const result = await window.jarvis.ruddrAddLink(
+      selectedGroup.id,
+      ruddrWorkspace.trim(),
+      ruddrProjectId.trim() || ruddrProjectUrl.trim(), // use URL as ID if no explicit ID
+      ruddrProjectName.trim(),
+      ruddrProjectUrl.trim(),
+      ruddrExtractSelector.trim(),
+    );
+    setRuddrAdding(false);
+    if (!result.ok) {
+      setRuddrError(result.error ?? 'Failed to add Ruddr project');
+      return;
+    }
+    setShowRuddrForm(false);
+    setRuddrWorkspace('');
+    setRuddrProjectId('');
+    setRuddrProjectName('');
+    setRuddrProjectUrl('');
+    setRuddrExtractSelector('');
+    const detail = await window.jarvis.groupsGet(selectedGroup.id);
+    setSelectedGroup(detail);
+  };
+
+  const handleRemoveRuddrLink = async (id: number) => {
+    if (!selectedGroup) return;
+    await window.jarvis.ruddrRemoveLink(id);
+    const detail = await window.jarvis.groupsGet(selectedGroup.id);
+    setSelectedGroup(detail);
+  };
+
+  const handleFetchProjectState = async (link: RuddrProjectLink) => {
+    setRuddrStateResults((prev) => ({ ...prev, [link.id]: { loading: true } }));
+    const result = await window.jarvis.ruddrFetchProjectState(link.id);
+    setRuddrStateResults((prev) => ({
+      ...prev,
+      [link.id]: { loading: false, data: result.data, error: result.error },
+    }));
   };
 
   // Repos not yet in the selected group (for the add panel)
@@ -343,6 +398,117 @@ export function GroupsPanel({ onClose }: GroupsPanelProps) {
                   )}
                 </div>
               )}
+
+              {/* ── Ruddr project links ──────────────────────────────────── */}
+              <div style={{ marginTop: '1rem', borderTop: '1px solid #2a2a3e', paddingTop: '0.75rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                  <div style={{ fontSize: '0.8rem', color: '#99a', fontWeight: 600 }}>
+                    🏗️ Ruddr projects ({selectedGroup.ruddrLinks.length})
+                  </div>
+                  <button
+                    class="btn-save"
+                    style={{ padding: '0.1rem 0.5rem', fontSize: '0.78rem' }}
+                    onClick={() => { setShowRuddrForm((v) => !v); setRuddrError(''); }}
+                  >
+                    {showRuddrForm ? 'Cancel' : '+ Link project'}
+                  </button>
+                </div>
+
+                {ruddrError && (
+                  <div style={{ color: '#f88', fontSize: '0.78rem', marginBottom: '0.35rem' }}>{ruddrError}</div>
+                )}
+
+                {showRuddrForm && (
+                  <div style={{ background: '#1a1a2e', borderRadius: '6px', padding: '0.6rem', marginBottom: '0.5rem' }}>
+                    <input
+                      type="text"
+                      placeholder="Workspace slug (e.g. xebia-xms-benelux)"
+                      value={ruddrWorkspace}
+                      onInput={(e) => setRuddrWorkspace((e.target as HTMLInputElement).value)}
+                      style={{ width: '100%', marginBottom: '0.3rem', boxSizing: 'border-box', fontSize: '0.82rem' }}
+                    />
+                    <input
+                      type="text"
+                      placeholder="Project name"
+                      value={ruddrProjectName}
+                      onInput={(e) => setRuddrProjectName((e.target as HTMLInputElement).value)}
+                      style={{ width: '100%', marginBottom: '0.3rem', boxSizing: 'border-box', fontSize: '0.82rem' }}
+                    />
+                    <input
+                      type="text"
+                      placeholder="Project URL (https://www.ruddr.io/app/…)"
+                      value={ruddrProjectUrl}
+                      onInput={(e) => setRuddrProjectUrl((e.target as HTMLInputElement).value)}
+                      style={{ width: '100%', marginBottom: '0.3rem', boxSizing: 'border-box', fontSize: '0.82rem' }}
+                    />
+                    <input
+                      type="text"
+                      placeholder="CSS selector for budget data (optional — leave blank to get full page)"
+                      value={ruddrExtractSelector}
+                      onInput={(e) => setRuddrExtractSelector((e.target as HTMLInputElement).value)}
+                      style={{ width: '100%', marginBottom: '0.4rem', boxSizing: 'border-box', fontSize: '0.82rem' }}
+                    />
+                    <button
+                      class="btn-save"
+                      onClick={() => void handleAddRuddrLink()}
+                      disabled={ruddrAdding || !ruddrProjectName.trim() || !ruddrProjectUrl.trim() || !ruddrWorkspace.trim()}
+                      style={{ width: '100%', fontSize: '0.82rem' }}
+                    >
+                      {ruddrAdding ? 'Linking…' : 'Save link'}
+                    </button>
+                  </div>
+                )}
+
+                {selectedGroup.ruddrLinks.length === 0 && !showRuddrForm && (
+                  <div style={{ fontSize: '0.78rem', color: '#667' }}>No Ruddr projects linked yet.</div>
+                )}
+
+                {selectedGroup.ruddrLinks.map((link) => {
+                  const stateResult = ruddrStateResults[link.id];
+                  return (
+                    <div key={link.id} style={{ background: '#1a1a26', borderRadius: '5px', padding: '0.4rem 0.5rem', marginBottom: '0.35rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: '0.83rem', color: '#cce', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {link.ruddrProjectName}
+                          </div>
+                          <div style={{ fontSize: '0.72rem', color: '#778', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {link.ruddrProjectUrl}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.2rem', flexShrink: 0, paddingLeft: '0.3rem' }}>
+                          <button
+                            title="Fetch project state"
+                            onClick={() => void handleFetchProjectState(link)}
+                            disabled={stateResult?.loading}
+                            style={{ background: '#1e3a2a', border: '1px solid #3a5a3a', color: '#6d9', borderRadius: '4px', cursor: 'pointer', fontSize: '0.78rem', padding: '0.1rem 0.4rem' }}
+                          >
+                            {stateResult?.loading ? '⏳' : '📊 Fetch state'}
+                          </button>
+                          <button
+                            title="Remove"
+                            onClick={() => void handleRemoveRuddrLink(link.id)}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#f88', fontSize: '0.8rem', padding: '0.1rem 0.3rem' }}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      </div>
+                      {stateResult && !stateResult.loading && (
+                        <div style={{ marginTop: '0.4rem', fontSize: '0.75rem', background: '#111120', borderRadius: '4px', padding: '0.4rem', maxHeight: '120px', overflowY: 'auto' }}>
+                          {stateResult.error ? (
+                            <span style={{ color: '#f88' }}>Error: {stateResult.error}</span>
+                          ) : (
+                            <pre style={{ margin: 0, color: '#aca', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                              {JSON.stringify(stateResult.data, null, 2)}
+                            </pre>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </>
           )}
         </div>

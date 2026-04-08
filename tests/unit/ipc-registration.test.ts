@@ -137,6 +137,12 @@ const EXPECTED_CHANNELS = [
   'browser:navigate',
   'browser:list-tabs',
   'browser:get-page-content',
+  // ruddr plugin
+  'ruddr:list-links',
+  'ruddr:add-link',
+  'ruddr:update-link',
+  'ruddr:remove-link',
+  'ruddr:fetch-project-state',
 ] as const;
 
 describe('IPC handler registration', () => {
