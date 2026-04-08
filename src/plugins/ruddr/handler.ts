@@ -73,7 +73,7 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
           type: 'extract',
           payload: { selector: link.extractSelector },
         });
-        return { ok: true, data: result.data };
+        return { ok: true, data: parseRuddrBudgetData(result.data) };
       } else {
         const result = await sendCommand({
           type: 'get-page-content',
@@ -85,4 +85,69 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
   });
+}
+
+// ── Ruddr budget data parser ──────────────────────────────────────────────────
+// The extract command returns the container element's innerText as alternating
+// value/label lines (e.g. "77\nActual Billable Hours\n70\nBudget\n-7\nBudget Left").
+// This parser groups them into named metrics.
+
+interface RuddrMetric {
+  label: string;
+  value: number;
+}
+
+interface RuddrBudgetData {
+  metrics: RuddrMetric[];
+  // Convenience fields parsed from common metric names
+  actualBillableHours?: number;
+  billableBudget?: number;
+  billableBudgetLeft?: number;
+  actualNonBillableHours?: number;
+  actualTotalHours?: number;
+  totalBudget?: number;
+  totalBudgetLeft?: number;
+}
+
+function parseRuddrBudgetData(rawData: unknown): RuddrBudgetData {
+  // rawData is an array of extracted elements; we want the first (container) element's text
+  const items = rawData as Array<{ text?: string }>;
+  const text = items?.[0]?.text ?? '';
+
+  // Split on newlines, strip whitespace, remove empty lines
+  const lines = text.split('\n').map((l: string) => l.trim()).filter((l: string) => l.length > 0);
+
+  const metrics: RuddrMetric[] = [];
+  for (let i = 0; i + 1 < lines.length; i += 2) {
+    const numStr = lines[i];
+    const label = lines[i + 1];
+    // The value line is always the number (possibly negative)
+    const value = parseFloat(numStr.replace(/,/g, ''));
+    if (!isNaN(value)) {
+      metrics.push({ label, value });
+    } else {
+      // If the pairing is off, try the other order
+      const altValue = parseFloat(label.replace(/,/g, ''));
+      if (!isNaN(altValue)) {
+        metrics.push({ label: numStr, value: altValue });
+      }
+    }
+  }
+
+  // Build convenience lookup by normalised label
+  const byLabel: Record<string, number> = {};
+  for (const m of metrics) {
+    byLabel[m.label.toLowerCase()] = m.value;
+  }
+
+  return {
+    metrics,
+    actualBillableHours:    byLabel['actual billable hours'],
+    billableBudget:         metrics.find((m, i) => m.label === 'Budget' && i < 4)?.value,
+    billableBudgetLeft:     metrics.find((m, i) => m.label === 'Budget Left' && i < 6)?.value,
+    actualNonBillableHours: byLabel['actual non-billable hours'],
+    actualTotalHours:       byLabel['actual total hours'],
+    totalBudget:            metrics.filter((m) => m.label === 'Budget').at(-1)?.value,
+    totalBudgetLeft:        metrics.filter((m) => m.label === 'Budget Left').at(-1)?.value,
+  };
 }

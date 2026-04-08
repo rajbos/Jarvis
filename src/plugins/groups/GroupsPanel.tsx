@@ -495,14 +495,32 @@ export function GroupsPanel({ onClose }: GroupsPanelProps) {
                         </div>
                       </div>
                       {stateResult && !stateResult.loading && (
-                        <div style={{ marginTop: '0.4rem', fontSize: '0.75rem', background: '#111120', borderRadius: '4px', padding: '0.4rem', maxHeight: '120px', overflowY: 'auto' }}>
+                        <div style={{ marginTop: '0.4rem', fontSize: '0.75rem', background: '#111120', borderRadius: '4px', padding: '0.4rem', maxHeight: '180px', overflowY: 'auto' }}>
                           {stateResult.error ? (
                             <span style={{ color: '#f88' }}>Error: {stateResult.error}</span>
-                          ) : (
-                            <pre style={{ margin: 0, color: '#aca', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-                              {JSON.stringify(stateResult.data, null, 2)}
-                            </pre>
-                          )}
+                          ) : (() => {
+                            const d = stateResult.data as Record<string, unknown> | undefined;
+                            const metrics = d?.metrics as Array<{label: string; value: number}> | undefined;
+                            if (metrics && metrics.length > 0) {
+                              return (
+                                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                  <tbody>
+                                    {metrics.map((m, i) => (
+                                      <tr key={i} style={{ borderBottom: '1px solid #1e1e30' }}>
+                                        <td style={{ color: '#99a', padding: '0.1rem 0.3rem' }}>{m.label}</td>
+                                        <td style={{ color: m.value < 0 ? '#f88' : '#aca', padding: '0.1rem 0.3rem', textAlign: 'right', fontWeight: 600 }}>{m.value}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              );
+                            }
+                            return (
+                              <pre style={{ margin: 0, color: '#aca', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                                {JSON.stringify(stateResult.data, null, 2)}
+                              </pre>
+                            );
+                          })()}
                         </div>
                       )}
                     </div>
