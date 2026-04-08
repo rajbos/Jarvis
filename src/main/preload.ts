@@ -215,6 +215,7 @@ contextBridge.exposeInMainWorld('jarvis', {
   // Ruddr project links
   ruddrGetWorkspace: () => ipcRenderer.invoke('ruddr:get-workspace'),
   ruddrSetWorkspace: (workspace: string) => ipcRenderer.invoke('ruddr:set-workspace', workspace),
+  ruddrGetCachedProjects: () => ipcRenderer.invoke('ruddr:get-cached-projects'),
   ruddrScanProjects: (workspace: string) => ipcRenderer.invoke('ruddr:scan-projects', workspace),
   ruddrResolveProjectUrl: (portfolioUrl: string) => ipcRenderer.invoke('ruddr:resolve-project-url', portfolioUrl),
   ruddrListLinks: (groupId?: number) => ipcRenderer.invoke('ruddr:list-links', groupId),

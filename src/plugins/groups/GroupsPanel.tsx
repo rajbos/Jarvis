@@ -30,24 +30,17 @@ export function GroupsPanel({ onClose }: GroupsPanelProps) {
   const [localRepos, setLocalRepos] = useState<LocalRepo[]>([]);
   const [repoSearch, setRepoSearch] = useState('');
 
-  // Ruddr link form state
-  const [showRuddrForm, setShowRuddrForm] = useState(false);
-  const [ruddrWorkspace, setRuddrWorkspace] = useState('');
-  const [ruddrProjectId, setRuddrProjectId] = useState('');
-  const [ruddrProjectName, setRuddrProjectName] = useState('');
-  const [ruddrProjectUrl, setRuddrProjectUrl] = useState('');
-  const [ruddrExtractSelector, setRuddrExtractSelector] = useState('');
-  const [ruddrAdding, setRuddrAdding] = useState(false);
-  const [ruddrError, setRuddrError] = useState('');
-  // Workspace global config
+  // Ruddr global state (panel-level, not per-group)
   const [savedWorkspace, setSavedWorkspace] = useState('');
   const [workspaceInput, setWorkspaceInput] = useState('');
   const [workspaceSaving, setWorkspaceSaving] = useState(false);
-  // Project browser
-  const [scannedProjects, setScannedProjects] = useState<RuddrScannedProject[] | null>(null);
+  const [cachedProjects, setCachedProjects] = useState<RuddrScannedProject[]>([]);
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState('');
-  const [resolving, setResolving] = useState(false);
+  // Per-group: link a project
+  const [selectedProjectHref, setSelectedProjectHref] = useState('');
+  const [ruddrAdding, setRuddrAdding] = useState(false);
+  const [ruddrError, setRuddrError] = useState('');
   // Per-link state fetch results
   const [ruddrStateResults, setRuddrStateResults] = useState<Record<number, { loading: boolean; data?: unknown; error?: string }>>({});
   // Per-link edit state
@@ -74,15 +67,17 @@ export function GroupsPanel({ onClose }: GroupsPanelProps) {
     (async () => {
       setLoading(true);
       try {
-        const [list, repos, ws] = await Promise.all([
+        const [list, repos, ws, cached] = await Promise.all([
           window.jarvis.groupsList(),
           window.jarvis.localListRepos(),
           window.jarvis.ruddrGetWorkspace(),
+          window.jarvis.ruddrGetCachedProjects(),
         ]);
         setGroups(list);
         setLocalRepos(repos);
         setSavedWorkspace(ws);
         setWorkspaceInput(ws);
+        setCachedProjects(cached);
       } catch (err) {
         console.error('[Groups] init error:', err);
       } finally {
@@ -177,60 +172,44 @@ export function GroupsPanel({ onClose }: GroupsPanelProps) {
     setWorkspaceSaving(false);
   };
 
-  const handleScanProjects = async () => {
+  const handleRefreshProjects = async () => {
     if (!savedWorkspace) return;
     setScanning(true);
     setScanError('');
-    setScannedProjects(null);
     const result = await window.jarvis.ruddrScanProjects(savedWorkspace);
     setScanning(false);
     if (!result.ok || !result.projects) {
       setScanError(result.error ?? 'Scan failed');
       return;
     }
-    setScannedProjects(result.projects);
+    setCachedProjects(result.projects);
   };
 
-  const handlePickProject = async (project: RuddrScannedProject) => {
-    setScannedProjects(null);
-    setResolving(true);
-    // Navigate to the portfolio link; the extension returns the final URL after load
-    const resolved = await window.jarvis.ruddrResolveProjectUrl(project.url);
-    setResolving(false);
-    setRuddrProjectName(project.name);
-    setRuddrProjectUrl(resolved.ok && resolved.url ? resolved.url : project.url);
-    setRuddrProjectId(project.href); // use href as stable ID
-    setRuddrExtractSelector(DEFAULT_BUDGET_SELECTOR);
-    setShowRuddrForm(true);
-  };
-
-  const handleAddRuddrLink = async () => {
-    if (!selectedGroup) return;
+  const handleLinkProject = async () => {
+    if (!selectedGroup || !selectedProjectHref) return;
+    const project = cachedProjects.find((p) => p.href === selectedProjectHref);
+    if (!project) return;
     setRuddrAdding(true);
     setRuddrError('');
     const result = await window.jarvis.ruddrAddLink(
       selectedGroup.id,
       savedWorkspace,
-      ruddrProjectId.trim() || ruddrProjectUrl.trim(),
-      ruddrProjectName.trim(),
-      ruddrProjectUrl.trim(),
-      ruddrExtractSelector.trim() || DEFAULT_BUDGET_SELECTOR,
+      project.href,
+      project.name,
+      project.url,
+      DEFAULT_BUDGET_SELECTOR,
     );
     setRuddrAdding(false);
     if (!result.ok) {
-      setRuddrError(result.error ?? 'Failed to add Ruddr project');
+      setRuddrError(result.error ?? 'Failed to link project');
       return;
     }
-    setShowRuddrForm(false);
-    setScannedProjects(null);
-    setRuddrWorkspace('');
-    setRuddrProjectId('');
-    setRuddrProjectName('');
-    setRuddrProjectUrl('');
-    setRuddrExtractSelector('');
+    setSelectedProjectHref('');
     const detail = await window.jarvis.groupsGet(selectedGroup.id);
     setSelectedGroup(detail);
   };
+
+  const handleAddRuddrLink = handleLinkProject;
 
   const handleRemoveRuddrLink = async (id: number) => {
     if (!selectedGroup) return;
@@ -382,8 +361,56 @@ export function GroupsPanel({ onClose }: GroupsPanelProps) {
         {/* RIGHT: selected group detail */}
         <div class="groups-split-right">
           {!selectedGroup ? (
-            <div style={{ color: '#556', fontSize: '0.82rem', padding: '0.5rem 0' }}>
-              Select a group to view and manage its repositories.
+            <div>
+              <div style={{ color: '#99a', fontSize: '0.82rem', marginBottom: '1rem' }}>
+                Select a group to manage it, or configure your Ruddr workspace below.
+              </div>
+              {/* ── Ruddr global config ──────────────────────────────────────── */}
+              <div style={{ background: '#14141f', borderRadius: '8px', padding: '0.75rem' }}>
+                <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#99a', marginBottom: '0.5rem' }}>🏗️ Ruddr Configuration</div>
+                <div style={{ fontSize: '0.75rem', color: '#667', marginBottom: '0.25rem' }}>Workspace slug</div>
+                <div style={{ display: 'flex', gap: '0.35rem', marginBottom: '0.5rem' }}>
+                  <input
+                    type="text"
+                    placeholder="e.g. xebia-xms-benelux"
+                    value={workspaceInput}
+                    onInput={(e) => setWorkspaceInput((e.target as HTMLInputElement).value)}
+                    style={{ flex: 1, fontSize: '0.82rem', boxSizing: 'border-box' }}
+                  />
+                  <button
+                    class="btn-save"
+                    style={{ padding: '0.15rem 0.6rem', fontSize: '0.78rem', whiteSpace: 'nowrap' }}
+                    onClick={() => void handleSaveWorkspace()}
+                    disabled={workspaceSaving || workspaceInput.trim() === savedWorkspace}
+                  >
+                    {workspaceSaving ? 'Saving…' : 'Save'}
+                  </button>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                  <div style={{ fontSize: '0.75rem', color: '#667' }}>
+                    {cachedProjects.length > 0 ? `${cachedProjects.length} projects cached` : 'No projects cached yet'}
+                  </div>
+                  <button
+                    class="btn-save"
+                    style={{ padding: '0.15rem 0.6rem', fontSize: '0.78rem', whiteSpace: 'nowrap' }}
+                    onClick={() => void handleRefreshProjects()}
+                    disabled={scanning || !savedWorkspace}
+                    title={savedWorkspace ? `Refresh projects from ${savedWorkspace}` : 'Save workspace first'}
+                  >
+                    {scanning ? '⏳ Scanning…' : '🔄 Refresh projects'}
+                  </button>
+                </div>
+                {scanError && <div style={{ color: '#f88', fontSize: '0.75rem', marginBottom: '0.3rem' }}>{scanError}</div>}
+                {cachedProjects.length > 0 && (
+                  <div style={{ maxHeight: '240px', overflowY: 'auto', marginTop: '0.35rem' }}>
+                    {cachedProjects.map((p) => (
+                      <div key={p.href} style={{ fontSize: '0.78rem', color: '#aab', padding: '0.15rem 0.3rem', borderBottom: '1px solid #1e1e2e' }}>
+                        {p.name}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           ) : (
             <>
@@ -473,116 +500,48 @@ export function GroupsPanel({ onClose }: GroupsPanelProps) {
 
               {/* ── Ruddr project links ──────────────────────────────────── */}
               <div style={{ marginTop: '1rem', borderTop: '1px solid #2a2a3e', paddingTop: '0.75rem' }}>
-                {/* Workspace config bar */}
-                <div style={{ background: '#14141f', borderRadius: '6px', padding: '0.45rem 0.55rem', marginBottom: '0.6rem' }}>
-                  <div style={{ fontSize: '0.75rem', color: '#667', marginBottom: '0.25rem' }}>Ruddr workspace slug (global)</div>
-                  <div style={{ display: 'flex', gap: '0.35rem' }}>
-                    <input
-                      type="text"
-                      placeholder="e.g. xebia-xms-benelux"
-                      value={workspaceInput}
-                      onInput={(e) => setWorkspaceInput((e.target as HTMLInputElement).value)}
-                      style={{ flex: 1, fontSize: '0.82rem', boxSizing: 'border-box' }}
-                    />
-                    <button
-                      class="btn-save"
-                      style={{ padding: '0.15rem 0.6rem', fontSize: '0.78rem', whiteSpace: 'nowrap' }}
-                      onClick={() => void handleSaveWorkspace()}
-                      disabled={workspaceSaving || workspaceInput.trim() === savedWorkspace}
-                    >
-                      {workspaceSaving ? 'Saving…' : 'Save'}
-                    </button>
-                    <button
-                      class="btn-save"
-                      style={{ padding: '0.15rem 0.6rem', fontSize: '0.78rem', whiteSpace: 'nowrap' }}
-                      onClick={() => void handleScanProjects()}
-                      disabled={scanning || !savedWorkspace}
-                      title={savedWorkspace ? `Scan projects from ${savedWorkspace}` : 'Save workspace first'}
-                    >
-                      {scanning ? 'Scanning…' : '🔍 Browse'}
-                    </button>
-                  </div>
-                  {scanError && <div style={{ color: '#f88', fontSize: '0.75rem', marginTop: '0.25rem' }}>{scanError}</div>}
-                </div>
-
-                {/* Project picker */}
-                {scannedProjects && scannedProjects.length > 0 && (
-                  <div style={{ background: '#1a1a2e', borderRadius: '6px', padding: '0.5rem', marginBottom: '0.5rem', maxHeight: '180px', overflowY: 'auto' }}>
-                    <div style={{ fontSize: '0.75rem', color: '#99a', marginBottom: '0.3rem' }}>Pick a project to link:</div>
-                    {scannedProjects.map((p) => (
-                      <div
-                        key={p.href}
-                        style={{ padding: '0.25rem 0.4rem', cursor: resolving ? 'wait' : 'pointer', borderRadius: '4px', fontSize: '0.82rem' }}
-                        onMouseEnter={(e) => (e.currentTarget.style.background = '#22223a')}
-                        onMouseLeave={(e) => (e.currentTarget.style.background = '')}
-                        onClick={() => !resolving && void handlePickProject(p)}
-                      >
-                        {resolving ? '⏳ ' : ''}{p.name}
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {scannedProjects && scannedProjects.length === 0 && (
-                  <div style={{ fontSize: '0.78rem', color: '#667', marginBottom: '0.4rem' }}>
-                    No projects found. The page may still be loading — try Browse again after a moment, or make sure you're logged in to Ruddr.
-                  </div>
-                )}
-
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
                   <div style={{ fontSize: '0.8rem', color: '#99a', fontWeight: 600 }}>
                     🏗️ Ruddr projects ({selectedGroup.ruddrLinks.length})
                   </div>
-                  <button
-                    class="btn-save"
-                    style={{ padding: '0.1rem 0.5rem', fontSize: '0.78rem' }}
-                    onClick={() => { setShowRuddrForm((v) => !v); setRuddrError(''); }}
-                  >
-                    {showRuddrForm ? 'Cancel' : '+ Link manually'}
-                  </button>
                 </div>
+
+                {/* Link a project — dropdown from cached list */}
+                {cachedProjects.length > 0 ? (
+                  <div style={{ display: 'flex', gap: '0.35rem', marginBottom: '0.5rem' }}>
+                    <select
+                      value={selectedProjectHref}
+                      onChange={(e) => setSelectedProjectHref((e.target as HTMLSelectElement).value)}
+                      style={{ flex: 1, fontSize: '0.82rem', background: '#1a1a2e', color: '#cce', border: '1px solid #3a3a5a', borderRadius: '4px', padding: '0.2rem 0.3rem' }}
+                    >
+                      <option value="">— select a project to link —</option>
+                      {cachedProjects
+                        .filter((p) => !selectedGroup.ruddrLinks.some((l) => l.ruddrProjectId === p.href))
+                        .map((p) => <option key={p.href} value={p.href}>{p.name}</option>)}
+                    </select>
+                    <button
+                      class="btn-save"
+                      style={{ padding: '0.15rem 0.6rem', fontSize: '0.78rem', whiteSpace: 'nowrap' }}
+                      onClick={() => void handleLinkProject()}
+                      disabled={ruddrAdding || !selectedProjectHref || !savedWorkspace}
+                    >
+                      {ruddrAdding ? 'Linking…' : 'Link'}
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ fontSize: '0.78rem', color: '#667', marginBottom: '0.4rem' }}>
+                    No projects cached. Go to <em>Ruddr Configuration</em> (deselect group) and click Refresh projects.
+                  </div>
+                )}
 
                 {ruddrError && (
                   <div style={{ color: '#f88', fontSize: '0.78rem', marginBottom: '0.35rem' }}>{ruddrError}</div>
                 )}
-
-                {showRuddrForm && (
-                  <div style={{ background: '#1a1a2e', borderRadius: '6px', padding: '0.6rem', marginBottom: '0.5rem' }}>
-                    <input
-                      type="text"
-                      placeholder="Project name"
-                      value={ruddrProjectName}
-                      onInput={(e) => setRuddrProjectName((e.target as HTMLInputElement).value)}
-                      style={{ width: '100%', marginBottom: '0.3rem', boxSizing: 'border-box', fontSize: '0.82rem' }}
-                    />
-                    <input
-                      type="text"
-                      placeholder="Project URL (https://www.ruddr.io/app/…)"
-                      value={ruddrProjectUrl}
-                      onInput={(e) => setRuddrProjectUrl((e.target as HTMLInputElement).value)}
-                      style={{ width: '100%', marginBottom: '0.3rem', boxSizing: 'border-box', fontSize: '0.82rem' }}
-                    />
-                    <input
-                      type="text"
-                      placeholder={`CSS selector (default: ${DEFAULT_BUDGET_SELECTOR})`}
-                      value={ruddrExtractSelector}
-                      onInput={(e) => setRuddrExtractSelector((e.target as HTMLInputElement).value)}
-                      style={{ width: '100%', marginBottom: '0.4rem', boxSizing: 'border-box', fontSize: '0.82rem' }}
-                    />
-                    <button
-                      class="btn-save"
-                      onClick={() => void handleAddRuddrLink()}
-                      disabled={ruddrAdding || !ruddrProjectName.trim() || !ruddrProjectUrl.trim() || !savedWorkspace}
-                      style={{ width: '100%', fontSize: '0.82rem' }}
-                    >
-                      {ruddrAdding ? 'Linking…' : 'Save link'}
-                    </button>
-                    {!savedWorkspace && (
-                      <div style={{ color: '#f88', fontSize: '0.75rem', marginTop: '0.25rem' }}>Save workspace slug above first.</div>
-                    )}
-                  </div>
+                {!savedWorkspace && (
+                  <div style={{ color: '#f88', fontSize: '0.75rem', marginBottom: '0.35rem' }}>Save workspace slug in Ruddr Configuration first.</div>
                 )}
 
-                {selectedGroup.ruddrLinks.length === 0 && !showRuddrForm && (
+                {selectedGroup.ruddrLinks.length === 0 && (
                   <div style={{ fontSize: '0.78rem', color: '#667' }}>No Ruddr projects linked yet.</div>
                 )}
 

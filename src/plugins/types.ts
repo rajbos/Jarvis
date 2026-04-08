@@ -477,6 +477,7 @@ export interface JarvisApi {
   // Ruddr project links
   ruddrGetWorkspace(): Promise<string>;
   ruddrSetWorkspace(workspace: string): Promise<{ ok: boolean; error?: string }>;
+  ruddrGetCachedProjects(): Promise<RuddrScannedProject[]>;
   ruddrScanProjects(workspace: string): Promise<{ ok: boolean; projects?: RuddrScannedProject[]; error?: string }>;
   ruddrResolveProjectUrl(portfolioUrl: string): Promise<{ ok: boolean; url?: string; error?: string }>;
   ruddrListLinks(groupId?: number): Promise<RuddrProjectLink[]>;

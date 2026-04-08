@@ -62,10 +62,21 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
           href: p.href!,
           url: p.href!.startsWith('http') ? p.href! : `https://www.ruddr.io${p.href!}`,
         }));
+      // Save to cache so UI can load without re-scanning
+      if (projects.length > 0) {
+        db.run("INSERT OR REPLACE INTO config (key, value) VALUES ('ruddr_projects_cache', ?)", [JSON.stringify(projects)]);
+        saveDatabase();
+      }
       return { ok: true, projects, debug: { total: rawLinks.length } };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
+  });
+
+  ipcMain.handle('ruddr:get-cached-projects', () => {
+    const result = db.exec("SELECT value FROM config WHERE key = 'ruddr_projects_cache'");
+    const raw = result[0]?.values[0]?.[0] as string | undefined;
+    try { return raw ? JSON.parse(raw) : []; } catch { return []; }
   });
 
   // Navigate to a portfolio URL and return the final URL after page load

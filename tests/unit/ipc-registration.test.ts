@@ -140,6 +140,7 @@ const EXPECTED_CHANNELS = [
   // ruddr plugin
   'ruddr:get-workspace',
   'ruddr:set-workspace',
+  'ruddr:get-cached-projects',
   'ruddr:scan-projects',
   'ruddr:resolve-project-url',
   'ruddr:list-links',
