@@ -38,12 +38,14 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
       });
       const result = await sendCommand({
         type: 'extract',
-        payload: { selector: 'a[href*="/portfolio/projects/"]' },
+        payload: { selector: 'main a[href*="/projects/"]' },
       });
       const seen = new Set<string>();
       const projects = (result.data as Array<{ text?: string; href?: string }> ?? [])
         .filter((p) => {
           if (!p.href || !p.text?.trim()) return false;
+          // Must look like a project URL: /app/{workspace}/projects/{uuid}
+          if (!/\/projects\/[a-f0-9-]{36}/.test(p.href)) return false;
           if (seen.has(p.href)) return false;
           seen.add(p.href);
           return true;
