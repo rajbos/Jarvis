@@ -523,7 +523,9 @@ export function GroupsPanel({ onClose }: GroupsPanelProps) {
                   </div>
                 )}
                 {scannedProjects && scannedProjects.length === 0 && (
-                  <div style={{ fontSize: '0.78rem', color: '#667', marginBottom: '0.4rem' }}>No projects found. Make sure you're logged in to Ruddr.</div>
+                  <div style={{ fontSize: '0.78rem', color: '#667', marginBottom: '0.4rem' }}>
+                    No projects found. The page may still be loading — try Browse again after a moment, or make sure you're logged in to Ruddr.
+                  </div>
                 )}
 
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>

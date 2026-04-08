@@ -36,16 +36,23 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
         type: 'navigate',
         payload: { url: `https://www.ruddr.io/app/${workspace.trim()}/my-projects` },
       });
+      // SPA: wait for React to render the project list after nav completes
+      await sendCommand({
+        type: 'evaluate',
+        payload: { instructions: 'wait 2000' },
+      });
       const result = await sendCommand({
         type: 'extract',
-        payload: { selector: 'main a[href*="/projects/"]' },
+        payload: { selector: 'main a' },
       });
+      const rawLinks = result.data as Array<{ text?: string; href?: string }> ?? [];
       const seen = new Set<string>();
-      const projects = (result.data as Array<{ text?: string; href?: string }> ?? [])
+      const projects = rawLinks
         .filter((p) => {
           if (!p.href || !p.text?.trim()) return false;
-          // Must look like a project URL: /app/{workspace}/projects/{uuid}
-          if (!/\/projects\/[a-f0-9-]{36}/.test(p.href)) return false;
+          // Keep only links that are project pages in this workspace
+          if (!p.href.includes(`/app/${workspace.trim()}/`)) return false;
+          if (p.href.includes('/my-projects') || p.href.includes('/settings')) return false;
           if (seen.has(p.href)) return false;
           seen.add(p.href);
           return true;
@@ -55,7 +62,7 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
           href: p.href!,
           url: p.href!.startsWith('http') ? p.href! : `https://www.ruddr.io${p.href!}`,
         }));
-      return { ok: true, projects };
+      return { ok: true, projects, debug: { total: rawLinks.length } };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
