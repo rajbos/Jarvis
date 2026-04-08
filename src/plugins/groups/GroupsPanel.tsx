@@ -39,6 +39,12 @@ export function GroupsPanel({ onClose }: GroupsPanelProps) {
   const [ruddrError, setRuddrError] = useState('');
   // Per-link state fetch results
   const [ruddrStateResults, setRuddrStateResults] = useState<Record<number, { loading: boolean; data?: unknown; error?: string }>>({});
+  // Per-link edit state
+  const [editingLinkId, setEditingLinkId] = useState<number | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editUrl, setEditUrl] = useState('');
+  const [editSelector, setEditSelector] = useState('');
+  const [editSaving, setEditSaving] = useState(false);
 
   const refresh = async () => {
     try {
@@ -191,6 +197,23 @@ export function GroupsPanel({ onClose }: GroupsPanelProps) {
       ...prev,
       [link.id]: { loading: false, data: result.data, error: result.error },
     }));
+  };
+
+  const handleStartEditLink = (link: RuddrProjectLink) => {
+    setEditingLinkId(link.id);
+    setEditName(link.ruddrProjectName);
+    setEditUrl(link.ruddrProjectUrl);
+    setEditSelector(link.extractSelector);
+  };
+
+  const handleSaveEditLink = async (linkId: number) => {
+    if (!selectedGroup) return;
+    setEditSaving(true);
+    await window.jarvis.ruddrUpdateLink(linkId, editName.trim(), editUrl.trim(), editSelector.trim());
+    setEditSaving(false);
+    setEditingLinkId(null);
+    const detail = await window.jarvis.groupsGet(selectedGroup.id);
+    setSelectedGroup(detail);
   };
 
   // Repos not yet in the selected group (for the add panel)
@@ -465,63 +488,107 @@ export function GroupsPanel({ onClose }: GroupsPanelProps) {
 
                 {selectedGroup.ruddrLinks.map((link) => {
                   const stateResult = ruddrStateResults[link.id];
+                  const isEditing = editingLinkId === link.id;
                   return (
                     <div key={link.id} style={{ background: '#1a1a26', borderRadius: '5px', padding: '0.4rem 0.5rem', marginBottom: '0.35rem' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ fontSize: '0.83rem', color: '#cce', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {link.ruddrProjectName}
+                      {isEditing ? (
+                        <div>
+                          <input
+                            type="text"
+                            placeholder="Project name"
+                            value={editName}
+                            onInput={(e) => setEditName((e.target as HTMLInputElement).value)}
+                            style={{ width: '100%', marginBottom: '0.3rem', boxSizing: 'border-box', fontSize: '0.82rem' }}
+                          />
+                          <input
+                            type="text"
+                            placeholder="Project URL"
+                            value={editUrl}
+                            onInput={(e) => setEditUrl((e.target as HTMLInputElement).value)}
+                            style={{ width: '100%', marginBottom: '0.3rem', boxSizing: 'border-box', fontSize: '0.82rem' }}
+                          />
+                          <input
+                            type="text"
+                            placeholder="CSS selector for budget data"
+                            value={editSelector}
+                            onInput={(e) => setEditSelector((e.target as HTMLInputElement).value)}
+                            style={{ width: '100%', marginBottom: '0.4rem', boxSizing: 'border-box', fontSize: '0.82rem' }}
+                          />
+                          <div style={{ display: 'flex', gap: '0.3rem' }}>
+                            <button class="btn-save" onClick={() => void handleSaveEditLink(link.id)} disabled={editSaving} style={{ flex: 1, fontSize: '0.78rem' }}>
+                              {editSaving ? 'Saving…' : 'Save'}
+                            </button>
+                            <button class="btn-secondary" onClick={() => setEditingLinkId(null)} style={{ fontSize: '0.78rem' }}>
+                              Cancel
+                            </button>
                           </div>
-                          <div style={{ fontSize: '0.72rem', color: '#778', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {link.ruddrProjectUrl}
+                        </div>
+                      ) : (
+                        <>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontSize: '0.83rem', color: '#cce', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {link.ruddrProjectName}
+                              </div>
+                              <div style={{ fontSize: '0.72rem', color: '#778', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {link.ruddrProjectUrl}
+                              </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: '0.2rem', flexShrink: 0, paddingLeft: '0.3rem' }}>
+                              <button
+                                title="Fetch project state"
+                                onClick={() => void handleFetchProjectState(link)}
+                                disabled={stateResult?.loading}
+                                style={{ background: '#1e3a2a', border: '1px solid #3a5a3a', color: '#6d9', borderRadius: '4px', cursor: 'pointer', fontSize: '0.78rem', padding: '0.1rem 0.4rem' }}
+                              >
+                                {stateResult?.loading ? '⏳' : '📊 Fetch'}
+                              </button>
+                              <button
+                                title="Edit"
+                                onClick={() => handleStartEditLink(link)}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#99a', fontSize: '0.8rem', padding: '0.1rem 0.3rem' }}
+                              >
+                                ✏️
+                              </button>
+                              <button
+                                title="Remove"
+                                onClick={() => void handleRemoveRuddrLink(link.id)}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#f88', fontSize: '0.8rem', padding: '0.1rem 0.3rem' }}
+                              >
+                                ✕
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                        <div style={{ display: 'flex', gap: '0.2rem', flexShrink: 0, paddingLeft: '0.3rem' }}>
-                          <button
-                            title="Fetch project state"
-                            onClick={() => void handleFetchProjectState(link)}
-                            disabled={stateResult?.loading}
-                            style={{ background: '#1e3a2a', border: '1px solid #3a5a3a', color: '#6d9', borderRadius: '4px', cursor: 'pointer', fontSize: '0.78rem', padding: '0.1rem 0.4rem' }}
-                          >
-                            {stateResult?.loading ? '⏳' : '📊 Fetch state'}
-                          </button>
-                          <button
-                            title="Remove"
-                            onClick={() => void handleRemoveRuddrLink(link.id)}
-                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#f88', fontSize: '0.8rem', padding: '0.1rem 0.3rem' }}
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      </div>
-                      {stateResult && !stateResult.loading && (
-                        <div style={{ marginTop: '0.4rem', fontSize: '0.75rem', background: '#111120', borderRadius: '4px', padding: '0.4rem', maxHeight: '180px', overflowY: 'auto' }}>
-                          {stateResult.error ? (
-                            <span style={{ color: '#f88' }}>Error: {stateResult.error}</span>
-                          ) : (() => {
-                            const d = stateResult.data as Record<string, unknown> | undefined;
-                            const metrics = d?.metrics as Array<{label: string; value: number}> | undefined;
-                            if (metrics && metrics.length > 0) {
-                              return (
-                                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                                  <tbody>
-                                    {metrics.map((m, i) => (
-                                      <tr key={i} style={{ borderBottom: '1px solid #1e1e30' }}>
-                                        <td style={{ color: '#99a', padding: '0.1rem 0.3rem' }}>{m.label}</td>
-                                        <td style={{ color: m.value < 0 ? '#f88' : '#aca', padding: '0.1rem 0.3rem', textAlign: 'right', fontWeight: 600 }}>{m.value}</td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              );
-                            }
-                            return (
-                              <pre style={{ margin: 0, color: '#aca', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-                                {JSON.stringify(stateResult.data, null, 2)}
-                              </pre>
-                            );
-                          })()}
-                        </div>
+                          {stateResult && !stateResult.loading && (
+                            <div style={{ marginTop: '0.4rem', fontSize: '0.75rem', background: '#111120', borderRadius: '4px', padding: '0.4rem', maxHeight: '180px', overflowY: 'auto' }}>
+                              {stateResult.error ? (
+                                <span style={{ color: '#f88' }}>Error: {stateResult.error}</span>
+                              ) : (() => {
+                                const d = stateResult.data as Record<string, unknown> | undefined;
+                                const metrics = d?.metrics as Array<{label: string; value: number}> | undefined;
+                                if (metrics && metrics.length > 0) {
+                                  return (
+                                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                      <tbody>
+                                        {metrics.map((m, i) => (
+                                          <tr key={i} style={{ borderBottom: '1px solid #1e1e30' }}>
+                                            <td style={{ color: '#99a', padding: '0.1rem 0.3rem' }}>{m.label}</td>
+                                            <td style={{ color: m.value < 0 ? '#f88' : '#aca', padding: '0.1rem 0.3rem', textAlign: 'right', fontWeight: 600 }}>{m.value}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  );
+                                }
+                                return (
+                                  <pre style={{ margin: 0, color: '#aca', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                                    {JSON.stringify(stateResult.data, null, 2)}
+                                  </pre>
+                                );
+                              })()}
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                   );

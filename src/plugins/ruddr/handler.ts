@@ -69,11 +69,13 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
 
       // Extract data — use configured selector or fall back to full page content
       if (link.extractSelector) {
-        const result = await sendCommand({
-          type: 'extract',
-          payload: { selector: link.extractSelector },
-        });
-        return { ok: true, data: parseRuddrBudgetData(result.data) };
+        // Extract numbers (.sc-kDDYVy) and labels (.sc-gleVhi) separately so
+        // that inline <small> elements don't merge with the next number in innerText
+        const [valuesResult, labelsResult] = await Promise.all([
+          sendCommand({ type: 'extract', payload: { selector: `${link.extractSelector} .sc-kDDYVy` } }),
+          sendCommand({ type: 'extract', payload: { selector: `${link.extractSelector} .sc-gleVhi` } }),
+        ]);
+        return { ok: true, data: parseRuddrBudgetData(valuesResult.data, labelsResult.data) };
       } else {
         const result = await sendCommand({
           type: 'get-page-content',
@@ -109,30 +111,14 @@ interface RuddrBudgetData {
   totalBudgetLeft?: number;
 }
 
-function parseRuddrBudgetData(rawData: unknown): RuddrBudgetData {
-  // rawData is an array of extracted elements; we want the first (container) element's text
-  const items = rawData as Array<{ text?: string }>;
-  const text = items?.[0]?.text ?? '';
+function parseRuddrBudgetData(valuesData: unknown, labelsData: unknown): RuddrBudgetData {
+  const values = (valuesData as Array<{ text?: string }> | null) ?? [];
+  const labels = (labelsData as Array<{ text?: string }> | null) ?? [];
 
-  // Split on newlines, strip whitespace, remove empty lines
-  const lines = text.split('\n').map((l: string) => l.trim()).filter((l: string) => l.length > 0);
-
-  const metrics: RuddrMetric[] = [];
-  for (let i = 0; i + 1 < lines.length; i += 2) {
-    const numStr = lines[i];
-    const label = lines[i + 1];
-    // The value line is always the number (possibly negative)
-    const value = parseFloat(numStr.replace(/,/g, ''));
-    if (!isNaN(value)) {
-      metrics.push({ label, value });
-    } else {
-      // If the pairing is off, try the other order
-      const altValue = parseFloat(label.replace(/,/g, ''));
-      if (!isNaN(altValue)) {
-        metrics.push({ label: numStr, value: altValue });
-      }
-    }
-  }
+  const metrics: RuddrMetric[] = values.map((v, i) => ({
+    label: labels[i]?.text?.trim() ?? `Metric ${i + 1}`,
+    value: parseFloat((v.text ?? '').replace(/,/g, '')),
+  })).filter((m) => !isNaN(m.value));
 
   // Build convenience lookup by normalised label
   const byLabel: Record<string, number> = {};
