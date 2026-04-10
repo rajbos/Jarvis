@@ -36,7 +36,7 @@
   "dependencies": {
     "electron-squirrel-startup": "^1.0.1",
     "octokit": "^5.0.5",
-    "preact": "^10.29.0",
+    "preact": "^10.29.1",
     "sql.js": "^1.12.0"
   }
 }
