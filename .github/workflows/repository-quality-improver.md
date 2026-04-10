@@ -485,6 +485,10 @@ echo "Commented on existing issue #$EXISTING_ISSUE_NUMBER with new findings"
 echo "No new findings to add — existing issue #$EXISTING_ISSUE_NUMBER already covers the current state"
 ```
 
+When you reach this point, you must still emit a safe output:
+- If you created a new issue or added a comment, use the corresponding safe output tool (`create_issue` or `add_comment`) to publish it.
+- If no new action is needed, call the `noop` safe output with a one-line summary such as `noop: existing issue already covers current state`.
+
 ## Phase 3: Update Cache Memory
 
 After generating the report, update the focus area history:
@@ -522,4 +526,5 @@ A successful quality improvement run:
 - **Be Thorough**: Collect relevant metrics and perform meaningful analysis
 - **Be Specific**: Provide exact file paths, line numbers, and code examples where relevant
 - **Be Actionable**: Every finding should lead to a concrete task
+- **Always Emit Safe Output**: End every run with a safe output item. Prefer `create_issue`/`add_comment` when you have findings; otherwise use `noop` with a short rationale.
 - **Respect Timeout**: Complete within 20 minutes
