@@ -842,14 +842,15 @@ export function DashboardPanel() {
         <div class="dash-section-header">
           <h3>{sectionTitle(cardFilter, sorted.length)}</h3>
           {cardFilter === 'notifications' && (
-            <div class="dash-filter-btns">
+            <div class="dash-sort-btns">
+              <span class="dash-sort-label">Sort by</span>
               <button
-                class={`dash-filter-btn${notifSort === 'count' ? ' active' : ''}`}
+                class={`dash-filter-btn${notifSort === 'count' ? ' dash-sort-active' : ''}`}
                 onClick={() => handleNotifSortChange('count')}
                 title="Sort by number of notifications (most first)"
               >🔢 Count</button>
               <button
-                class={`dash-filter-btn${notifSort === 'name' ? ' active' : ''}`}
+                class={`dash-filter-btn${notifSort === 'name' ? ' dash-sort-active' : ''}`}
                 onClick={() => handleNotifSortChange('name')}
                 title="Sort alphabetically by repo name"
               >🔤 Name</button>

@@ -361,6 +361,24 @@ button:disabled {
   background: rgba(233, 69, 96, 0.08);
 }
 
+.dash-sort-btns {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.dash-sort-label {
+  font-size: 0.78rem;
+  color: #6a6a7a;
+  margin-right: 0.1rem;
+}
+
+.dash-sort-active {
+  color: #4caf88 !important;
+  border-color: #4caf88 !important;
+  background: rgba(76, 175, 136, 0.1) !important;
+}
+
 /* Repo health list */
 .dash-repo-list {
   display: flex;
