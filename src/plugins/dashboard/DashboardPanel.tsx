@@ -683,6 +683,14 @@ export function DashboardPanel() {
   const [cardFilter, setCardFilter] = useState<CardFilter>('all');
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [pushStates, setPushStates] = useState<Record<number, 'idle' | 'pushing' | 'done' | 'error'>>({});
+  const [notifSort, setNotifSort] = useState<'count' | 'name'>(
+    () => (localStorage.getItem('dashboard-notif-sort') as 'count' | 'name') ?? 'count',
+  );
+
+  const handleNotifSortChange = (sort: 'count' | 'name') => {
+    setNotifSort(sort);
+    localStorage.setItem('dashboard-notif-sort', sort);
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -781,8 +789,15 @@ export function DashboardPanel() {
   // Filter repos based on the selected card
   const displayRepos = filterRepos(summary.repos, warningMap, cardFilter);
 
-  // Sort: repos with warnings first, then alphabetical
+  // Sort: when viewing notifications, respect notifSort preference; otherwise warnings-first then alpha
   const sorted = [...displayRepos].sort((a, b) => {
+    if (cardFilter === 'notifications') {
+      if (notifSort === 'count') {
+        const diff = b.notificationCount - a.notificationCount;
+        if (diff !== 0) return diff;
+      }
+      return a.repoName.localeCompare(b.repoName);
+    }
     const aW = warningMap.get(a.localRepoId)?.length ?? 0;
     const bW = warningMap.get(b.localRepoId)?.length ?? 0;
     if (aW > 0 && bW === 0) return -1;
@@ -824,7 +839,23 @@ export function DashboardPanel() {
 
       {/* Repo health list — filtered by selected card */}
       <div class="dash-section">
-        <h3>{sectionTitle(cardFilter, sorted.length)}</h3>
+        <div class="dash-section-header">
+          <h3>{sectionTitle(cardFilter, sorted.length)}</h3>
+          {cardFilter === 'notifications' && (
+            <div class="dash-filter-btns">
+              <button
+                class={`dash-filter-btn${notifSort === 'count' ? ' active' : ''}`}
+                onClick={() => handleNotifSortChange('count')}
+                title="Sort by number of notifications (most first)"
+              >🔢 Count</button>
+              <button
+                class={`dash-filter-btn${notifSort === 'name' ? ' active' : ''}`}
+                onClick={() => handleNotifSortChange('name')}
+                title="Sort alphabetically by repo name"
+              >🔤 Name</button>
+            </div>
+          )}
+        </div>
         <div class="dash-repo-list">
           {sorted.length === 0 && (
             <div class="dash-empty">{emptyMessage(cardFilter)}</div>
