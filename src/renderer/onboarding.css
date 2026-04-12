@@ -77,6 +77,7 @@ button:disabled {
 /* ── Dashboard panel ─────────────────────────────────────────────────────── */
 .dashboard-panel {
   width: 100%;
+  overflow-x: hidden;
 }
 
 .dash-header {
@@ -774,6 +775,7 @@ button:disabled {
 
 .dash-notif-group-name {
   flex: 1;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
