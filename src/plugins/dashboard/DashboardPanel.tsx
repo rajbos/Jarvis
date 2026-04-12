@@ -232,12 +232,19 @@ function groupDashNotifications(notifications: StoredNotification[]): { groups: 
 }
 
 /** Lazily loads and displays notifications for a single repo, grouped by workflow. */
-function NotificationList({ repoFullName }: { repoFullName: string }) {
+function NotificationList({ repoFullName, onDismissed }: { repoFullName: string; onDismissed?: (count: number) => void }) {
   const [notifications, setNotifications] = useState<StoredNotification[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [recoveryMap, setRecoveryMap] = useState<Map<string, boolean>>(new Map());
   const [checkingRecovery, setCheckingRecovery] = useState(false);
   const [dismissingGroup, setDismissingGroup] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!successMsg) return;
+    const timer = setTimeout(() => setSuccessMsg(null), 3000);
+    return () => clearTimeout(timer);
+  }, [successMsg]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -301,6 +308,8 @@ function NotificationList({ repoFullName }: { repoFullName: string }) {
     try {
       await window.jarvis.dismissNotification(id);
       setNotifications((prev) => prev?.filter((n) => n.id !== id) ?? null);
+      setSuccessMsg('✓ Notification dismissed');
+      onDismissed?.(1);
     } catch (err) {
       console.error('[Dashboard] Failed to dismiss notification:', err);
     }
@@ -308,15 +317,21 @@ function NotificationList({ repoFullName }: { repoFullName: string }) {
 
   const handleDismissGroup = async (workflowName: string, ids: string[]) => {
     setDismissingGroup(workflowName);
+    let dismissed = 0;
     for (const id of ids) {
       try {
         await window.jarvis.dismissNotification(id);
+        dismissed++;
       } catch (err) {
         console.error('[Dashboard] Failed to dismiss notification:', err);
       }
     }
     setNotifications((prev) => prev?.filter((n) => !ids.includes(n.id)) ?? null);
     setDismissingGroup(null);
+    if (dismissed > 0) {
+      setSuccessMsg(`✓ ${dismissed} notification${dismissed > 1 ? 's' : ''} dismissed`);
+      onDismissed?.(dismissed);
+    }
   };
 
   const handleOpenOnGitHub = (n: StoredNotification) => {
@@ -329,7 +344,12 @@ function NotificationList({ repoFullName }: { repoFullName: string }) {
   }
 
   if (!notifications || notifications.length === 0) {
-    return <div class="dash-notif-empty">No notifications</div>;
+    return (
+      <>
+        {successMsg && <div class="dash-notif-success">{successMsg}</div>}
+        <div class="dash-notif-empty">No notifications</div>
+      </>
+    );
   }
 
   const { groups, isGrouped } = groupDashNotifications(notifications);
@@ -362,6 +382,7 @@ function NotificationList({ repoFullName }: { repoFullName: string }) {
   return (
     <div class="dash-notif-list">
       <div class="dash-notif-header">🔔 Notifications ({notifications.length})</div>
+      {successMsg && <div class="dash-notif-success">{successMsg}</div>}
       {isGrouped ? (
         groups.map((group) => (
           <div key={group.workflowName ?? '__other__'} class="dash-notif-group">
@@ -474,6 +495,7 @@ function RepoHealthRow({
   onOpenFolder,
   onOpenGitHub,
   onPushBranch,
+  onNotifsDismissed,
 }: {
   status: RepoHealthStatus;
   warnings: HealthWarning[];
@@ -483,6 +505,7 @@ function RepoHealthRow({
   onOpenFolder: (localPath: string) => void;
   onOpenGitHub: (repoFullName: string) => void;
   onPushBranch: (localPath: string, branch: string) => void;
+  onNotifsDismissed?: (count: number) => void;
 }) {
   return (
     <div id={`dash-repo-${status.localRepoId}`} class={`dash-repo-row ${warnings.length > 0 ? 'dash-repo-warn' : ''} ${expanded ? 'dash-repo-expanded' : ''}`}>
@@ -546,7 +569,7 @@ function RepoHealthRow({
 
           {/* Inline notification list */}
           {status.notificationCount > 0 && status.linkedGithubRepo && (
-            <NotificationList repoFullName={status.linkedGithubRepo} />
+            <NotificationList repoFullName={status.linkedGithubRepo} onDismissed={onNotifsDismissed} />
           )}
 
           {/* Actionable guidance per warning */}
@@ -705,6 +728,29 @@ export function DashboardPanel() {
     }
   };
 
+  const handleNotifsDismissed = useCallback((repoId: number, count: number) => {
+    setSummary((prev) => {
+      if (!prev) return prev;
+      const newRepos = prev.repos.map((r) => {
+        if (r.localRepoId !== repoId) return r;
+        return { ...r, notificationCount: Math.max(0, r.notificationCount - count) };
+      });
+      const newWarnings = prev.warnings.map((w) => {
+        if (w.repoId !== repoId) return w;
+        const updatedRepo = newRepos.find((r) => r.localRepoId === repoId);
+        if (!updatedRepo || updatedRepo.notificationCount > 0) return w;
+        return { ...w, warnings: w.warnings.filter((x) => x.kind !== 'has-notifications') };
+      });
+      return {
+        ...prev,
+        repos: newRepos,
+        warnings: newWarnings,
+        totalNotifications: Math.max(0, prev.totalNotifications - count),
+        reposWithWarnings: newWarnings.filter((w) => w.warnings.length > 0).length,
+      };
+    });
+  }, []);
+
   if (loading && !summary) {
     return (
       <div class="dashboard-panel">
@@ -794,6 +840,7 @@ export function DashboardPanel() {
               onOpenFolder={handleOpenFolder}
               onOpenGitHub={handleOpenGitHub}
               onPushBranch={handlePushBranch}
+              onNotifsDismissed={(count) => handleNotifsDismissed(repo.localRepoId, count)}
             />
           ))}
         </div>

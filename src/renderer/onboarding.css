@@ -636,6 +636,15 @@ button:disabled {
   padding: 0.4rem 0;
 }
 
+.dash-notif-success {
+  font-size: 0.8rem;
+  color: #4caf88;
+  padding: 0.25rem 0.4rem;
+  margin-bottom: 0.35rem;
+  background: rgba(76, 175, 136, 0.1);
+  border-radius: 4px;
+}
+
 .dash-notif-list {
   margin-bottom: 0.65rem;
 }
