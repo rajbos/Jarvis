@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useCallback } from 'preact/hooks';
+import { useState, useEffect, useCallback } from 'preact/hooks';
 import type {
   DashboardSummary,
   RepoHealthStatus,
@@ -351,7 +351,6 @@ function NotificationList({ repoFullName, dismissedNotifIds }: { repoFullName: s
       await window.jarvis.dismissNotification(id);
       setNotifications((prev) => prev?.filter((n) => n.id !== id) ?? null);
       setSuccessMsg('✓ Notification dismissed');
-      onDismissed?.(1);
     } catch (err) {
       console.error('[Dashboard] Failed to dismiss notification:', err);
     }
@@ -372,7 +371,6 @@ function NotificationList({ repoFullName, dismissedNotifIds }: { repoFullName: s
     setDismissingGroup(null);
     if (dismissed > 0) {
       setSuccessMsg(`✓ ${dismissed} notification${dismissed > 1 ? 's' : ''} dismissed`);
-      onDismissed?.(dismissed);
     }
   };
 

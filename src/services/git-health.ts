@@ -144,7 +144,9 @@ export function getLastCommitTime(repoPath: string): string | null {
     const lines = content.split('\n');
     const lastLine = lines[lines.length - 1];
     // Format: <oldSHA> <newSHA> <author> <unixTimestamp> <tzOffset>\t<message>
-    const match = lastLine.match(/\d+ (\d+) [+-]\d{4}\t/);
+    // Extract timestamp from the metadata before the tab, at end of the field 
+    const [metadata] = lastLine.split('\t', 1);
+    const match = metadata.match(/(\d+)\s+[+-]\d{4}$/);
     if (!match) return null;
     return new Date(parseInt(match[1], 10) * 1000).toISOString();
   } catch {

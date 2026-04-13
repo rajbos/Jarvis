@@ -1,4 +1,4 @@
-﻿import { ipcMain } from 'electron';
+import { ipcMain } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import type { BrowserWindow } from 'electron';
 import { execFile } from 'child_process';
@@ -113,10 +113,13 @@ function getRecentFailedRuns(db: SqlJsDatabase, limit = 20): {
 function getLastPushedAt(db: SqlJsDatabase, repoFullName: string | null): string | null {
   if (!repoFullName) return null;
   const stmt = db.prepare('SELECT last_pushed_at FROM github_repos WHERE full_name = ? LIMIT 1');
-  stmt.bind([repoFullName]);
-  const found = stmt.step() ? (stmt.getAsObject() as { last_pushed_at: string | null }) : null;
-  stmt.free();
-  return found?.last_pushed_at ?? null;
+  try {
+    stmt.bind([repoFullName]);
+    const found = stmt.step() ? (stmt.getAsObject() as { last_pushed_at: string | null }) : null;
+    return found?.last_pushed_at ?? null;
+  } finally {
+    stmt.free();
+  }
 }
 
 
@@ -202,7 +205,8 @@ export function registerHandlers(
         totalNotifications: 0,
         totalFailedRuns: 0,
         generatedAt: new Date().toISOString(),
-      };    }
+      };
+    }
   });
 
   /**
