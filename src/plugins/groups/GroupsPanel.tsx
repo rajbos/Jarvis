@@ -7,9 +7,10 @@ import type { Group, GroupDetail, LocalRepo, OnedriveFolderInfo, OnedriveFile } 
 
 interface GroupsPanelProps {
   onClose: () => void;
+  onOpenOneNote?: (filePath: string) => void;
 }
 
-export function GroupsPanel({ onClose }: GroupsPanelProps) {
+export function GroupsPanel({ onClose, onOpenOneNote }: GroupsPanelProps) {
   const [groups, setGroups] = useState<Group[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<GroupDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -441,24 +442,47 @@ export function GroupsPanel({ onClose }: GroupsPanelProps) {
                         {(folderFiles[folder.id] ?? []).length === 0 ? (
                           <div style={{ padding: '0.35rem 0.5rem', fontSize: '0.77rem', color: '#556' }}>No files indexed.</div>
                         ) : (
-                          (folderFiles[folder.id] ?? []).map((f) => (
-                            <div
-                              key={f.id}
-                              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.2rem 0.5rem', borderBottom: '1px solid #1e1e28' }}
-                            >
-                              <div style={{ minWidth: 0 }}>
-                                <span style={{ fontSize: '0.78rem', color: '#bbc' }}>{f.name}</span>
-                                {f.relativePath !== f.name && (
-                                  <span style={{ fontSize: '0.68rem', color: '#556', marginLeft: '0.3rem', fontFamily: 'monospace' }}>
-                                    {f.relativePath}
+                          (folderFiles[folder.id] ?? []).map((f) => {
+                            const isOneNote = f.extension === '.one';
+                            const fullPath = folder.folderPath
+                              ? folder.folderPath + '\\' + f.relativePath
+                              : null;
+                            return (
+                              <div
+                                key={f.id}
+                                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.2rem 0.5rem', borderBottom: '1px solid #1e1e28' }}
+                              >
+                                <div style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                                  {isOneNote && (
+                                    <span style={{ fontSize: '0.78rem', flexShrink: 0 }}>📓</span>
+                                  )}
+                                  <div style={{ minWidth: 0 }}>
+                                    <span style={{ fontSize: '0.78rem', color: isOneNote ? '#cce' : '#bbc' }}>{f.name}</span>
+                                    {f.relativePath !== f.name && (
+                                      <span style={{ fontSize: '0.68rem', color: '#556', marginLeft: '0.3rem', fontFamily: 'monospace' }}>
+                                        {f.relativePath}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flexShrink: 0, paddingLeft: '0.5rem' }}>
+                                  <span style={{ fontSize: '0.7rem', color: '#667' }}>
+                                    {f.lastModified ? new Date(f.lastModified).toLocaleDateString() : '—'}
                                   </span>
-                                )}
+                                  {isOneNote && fullPath && onOpenOneNote && (
+                                    <button
+                                      title="View note content"
+                                      class="btn-secondary"
+                                      style={{ padding: '0.05rem 0.3rem', fontSize: '0.7rem' }}
+                                      onClick={() => onOpenOneNote(fullPath)}
+                                    >
+                                      📖
+                                    </button>
+                                  )}
+                                </div>
                               </div>
-                              <span style={{ fontSize: '0.7rem', color: '#667', flexShrink: 0, paddingLeft: '0.5rem' }}>
-                                {f.lastModified ? new Date(f.lastModified).toLocaleDateString() : '—'}
-                              </span>
-                            </div>
-                          ))
+                            );
+                          })
                         )}
                       </div>
                     )}

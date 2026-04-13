@@ -26,6 +26,7 @@ import { SecretsScanPanel } from '../plugins/secrets/SecretsScanPanel';
 import { DashboardPanel } from '../plugins/dashboard/DashboardPanel';
 import { GroupsStep } from '../plugins/groups/GroupsStep';
 import { GroupsPanel } from '../plugins/groups/GroupsPanel';
+import { OneNoteSectionPanel } from '../plugins/groups/OneNoteSectionPanel';
 
 // ── Types (imported from single source of truth in plugins/types.ts) ─────────
 // The global augmentation `Window.jarvis` is declared in plugins/types.ts and
@@ -118,6 +119,7 @@ function App() {
   // Groups state
   const [groups, setGroups] = useState<Group[]>([]);
   const [showGroupsPanel, setShowGroupsPanel] = useState(false);
+  const [oneNoteFilePath, setOneNoteFilePath] = useState<string | null>(null);
 
   const currentUserLogin = oauthStatus?.login ?? null;
 
@@ -472,6 +474,7 @@ function App() {
     setShowSecretsPanel(false);
     // Groups
     setShowGroupsPanel(false);
+    setOneNoteFilePath(null);
     // Ollama + Chat sub-panel
     setShowOllamaPanel(false);
     setShowChatPanel(false);
@@ -675,6 +678,7 @@ function App() {
 
   const handleGroupsClose = async () => {
     setShowGroupsPanel(false);
+    setOneNoteFilePath(null);
     // Refresh group list so the step badge stays current
     try {
       const list = await window.jarvis.groupsList();
@@ -931,7 +935,17 @@ function App() {
         </div>
 
         {showGroupsPanel && (
-          <GroupsPanel onClose={() => void handleGroupsClose()} />
+          <GroupsPanel
+            onClose={() => void handleGroupsClose()}
+            onOpenOneNote={(path) => setOneNoteFilePath(path)}
+          />
+        )}
+
+        {oneNoteFilePath && (
+          <OneNoteSectionPanel
+            filePath={oneNoteFilePath}
+            onClose={() => setOneNoteFilePath(null)}
+          />
         )}
       </div>
 
