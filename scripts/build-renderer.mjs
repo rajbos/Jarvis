@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env node
+#!/usr/bin/env node
 // Bundles renderer TSX entry points into dist/renderer/ using esbuild.
 import esbuild from 'esbuild';
 import path from 'path';

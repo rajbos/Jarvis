@@ -1,6 +1,7 @@
-﻿import { render } from 'preact';
+import { render } from 'preact';
 import { useState, useEffect, useRef, useCallback } from 'preact/hooks';
 import './chat.css';
+import './onboarding.css';
 // Activates the global Window.jarvis type augmentation
 import type { AgentSession } from '../plugins/types';
 import { AgentApprovalPanel } from '../plugins/agents/AgentApprovalPanel';
@@ -110,12 +111,12 @@ function App() {
       .catch((err: unknown) => console.error('[Chat] getChatAlwaysOnTop:', err));
 
     // ── Regular chat events ──────────────────────────────────────────────
-    window.jarvis.onChatToken((token) => {
+    const cleanupChatToken = window.jarvis.onChatToken((token) => {
       streamRef.current += token;
       setStreamText(streamRef.current);
     });
 
-    window.jarvis.onChatDone(() => {
+    const cleanupChatDone = window.jarvis.onChatDone(() => {
       const finalText = streamRef.current;
       streamRef.current = '';
       setStreamText('');
@@ -125,7 +126,7 @@ function App() {
       }
     });
 
-    window.jarvis.onChatError((err) => {
+    const cleanupChatError = window.jarvis.onChatError((err) => {
       streamRef.current = '';
       setStreamText('');
       setStreaming(false);
@@ -153,9 +154,17 @@ function App() {
     });
 
     const cleanupSessionComplete = window.jarvis.onAgentSessionComplete(async (data) => {
-      const session = await window.jarvis.agentsGetSession(data.sessionId);
-      setAgentSession(session);
-      setActiveAgent(null);
+      try {
+        const session = await window.jarvis.agentsGetSession(data.sessionId);
+        setAgentSession(session);
+        setActiveAgent(null);
+      } catch (err: unknown) {
+        console.error('[Chat] agentsGetSession:', err);
+        setAgentError('Failed to load completed agent session.');
+        setActiveAgent(null);
+        agentStreamRef.current = '';
+        setAgentStreamText('');
+      }
     });
 
     const cleanupSessionError = window.jarvis.onAgentSessionError((data) => {
@@ -166,6 +175,9 @@ function App() {
     });
 
     return () => {
+      cleanupChatToken();
+      cleanupChatDone();
+      cleanupChatError();
       cleanupStarting();
       cleanupToken();
       cleanupAnalysisComplete();
