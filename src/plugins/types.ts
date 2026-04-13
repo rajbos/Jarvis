@@ -300,9 +300,116 @@ export interface BrowserCompanionStatus {
   connectedClients: number;
 }
 
+// ── OneNote types ─────────────────────────────────────────────────────────────
+
+export interface OneNotePageContent {
+  /** 1-based page index within the section file. */
+  pageIndex: number;
+  /** Best-effort page title (may be empty for untitled pages). */
+  title: string;
+  /** Best-effort page date string (e.g. "Thursday, September 25, 2025"). */
+  date: string;
+  /** All body text found in this page, joined with spaces. */
+  content: string;
+}
+
+export interface OneNoteSectionContent {
+  /** Human-readable name derived from the filename (without extension). */
+  sectionName: string;
+  /** Absolute path of the source `.one` file. */
+  filePath: string;
+  /** Number of pages found in this section. */
+  pageCount: number;
+  /** Per-page content. */
+  pages: OneNotePageContent[];
+  /** Full concatenated text — convenient for whole-section RAG. */
+  textContent: string;
+}
+
+// ── URL shortcut types ────────────────────────────────────────────────────────
+
+export interface UrlShortcutInfo {
+  /** Raw URL from the shortcut file. */
+  url: string;
+  /** True when the URL appears to be a OneNote notebook link. */
+  isOneNote: boolean;
+  /** True when the URL points to SharePoint (content requires Graph API). */
+  isSharePoint: boolean;
+}
+
+// ── OneDrive types ────────────────────────────────────────────────────────────
+
+export interface OnedriveRoot {
+  id: number;
+  path: string;
+  label: string;
+  addedAt: string;
+}
+
+export interface OnedriveFolderInfo {
+  id: number;
+  groupId: number;
+  rootId: number;
+  rootLabel: string;
+  rootPath: string;
+  status: 'found' | 'not_found';
+  folderPath: string | null;
+  fileCount: number;
+  lastScanned: string | null;
+  discoveredAt: string;
+}
+
+export interface OnedriveFile {
+  id: number;
+  folderId: number;
+  name: string;
+  extension: string | null;
+  relativePath: string;
+  lastModified: string | null;
+  sizeBytes: number | null;
+  scannedAt: string;
+}
+
+// ── Groups types ──────────────────────────────────────────────────────────────
+
+export interface Group {
+  id: number;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  localRepoCount: number;
+  githubRepoCount: number;
+}
+
+export interface GroupLocalRepoMember {
+  id: number;
+  localPath: string;
+  name: string;
+  addedAt: string;
+}
+
+export interface GroupGithubRepoMember {
+  id: number;
+  fullName: string;
+  name: string;
+  addedAt: string;
+}
+
+export interface GroupDetail {
+  id: number;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  localRepos: GroupLocalRepoMember[];
+  githubRepos: GroupGithubRepoMember[];
+  onedriveFolders: OnedriveFolderInfo[];
+}
+
 // ── Jarvis preload API contract ───────────────────────────────────────────────
 // This augments the global Window type so all plugin components get full
 // type-checking on window.jarvis calls without re-declaring it everywhere.
+export type { OnboardingStatus } from '../agent/onboarding';
+import type { OnboardingStatus } from '../agent/onboarding';
 import type {
   AgentSessionStartingPayload,
   AgentAnalysisCompletePayload,
@@ -322,6 +429,14 @@ export type {
 } from '../types/ipc-payloads';
 
 export interface JarvisApi {
+  getOnboardingStatus(): Promise<OnboardingStatus>;
+  startDiscovery(): Promise<{ started: boolean }>;
+  startPatDiscovery(): Promise<{ started?: boolean; error?: string }>;
+  startOAuthDiscovery(): Promise<{ ok: boolean }>;
+  savePat(pat: string): Promise<{ ok: boolean; error?: string }>;
+  deletePat(): Promise<{ ok: boolean }>;
+  getPatStatus(): Promise<{ hasPat: boolean; login?: string; name?: string; avatarUrl?: string }>;
+  logout(): Promise<{ ok: boolean }>;
   checkOllama(): Promise<OllamaStatus>;
   listOllamaModels(): Promise<{ available: boolean; models: OllamaModel[]; error?: string }>;
   getSelectedOllamaModel(): Promise<string | null>;
@@ -399,6 +514,27 @@ export interface JarvisApi {
   dashboardGetSummary(): Promise<DashboardSummary>;
   dashboardGetRecentFailedRuns(): Promise<FailedWorkflowRun[]>;
   dashboardPushBranchUpstream(repoPath: string, branch: string): Promise<{ ok: boolean; error?: string; output?: string }>;
+  // Groups
+  groupsList(): Promise<Group[]>;
+  groupsCreate(name: string): Promise<{ ok: boolean; id?: number; error?: string }>;
+  groupsRename(groupId: number, newName: string): Promise<{ ok: boolean; error?: string }>;
+  groupsDelete(groupId: number): Promise<{ ok: boolean; error?: string }>;
+  groupsGet(groupId: number): Promise<GroupDetail | null>;
+  groupsAddLocalRepo(groupId: number, localRepoId: number): Promise<{ ok: boolean; error?: string }>;
+  groupsRemoveLocalRepo(groupId: number, localRepoId: number): Promise<{ ok: boolean; error?: string }>;
+  groupsAddGithubRepo(groupId: number, githubRepoId: number): Promise<{ ok: boolean; error?: string }>;
+  groupsRemoveGithubRepo(groupId: number, githubRepoId: number): Promise<{ ok: boolean; error?: string }>;
+  // OneDrive
+  onedriveListRoots(): Promise<OnedriveRoot[]>;
+  onedriveAddRoot(label: string, folderPath?: string): Promise<{ ok: boolean; root?: OnedriveRoot; canceled?: boolean; error?: string }>;
+  onedriveRemoveRoot(rootId: number): Promise<{ ok: boolean; error?: string }>;
+  onedriveDiscoverForGroup(groupId: number): Promise<{ ok: boolean; folders?: OnedriveFolderInfo[]; error?: string }>;
+  onedriveGetFolderInfo(groupId: number): Promise<OnedriveFolderInfo[]>;
+  onedriveRescanFiles(folderId: number): Promise<{ ok: boolean; fileCount?: number; error?: string }>;
+  onedriveListFilesForFolder(folderId: number): Promise<OnedriveFile[]>;
+  onedriveReadOneNoteFile(filePath: string): Promise<{ ok: boolean; section?: OneNoteSectionContent; error?: string }>;
+  onedriveReadUrlShortcut(filePath: string): Promise<{ ok: boolean; url?: string; isOneNote?: boolean; isSharePoint?: boolean; error?: string }>;
+  shellOpenUrl(url: string): Promise<{ ok: boolean; error?: string }>;
   // Browser Companion
   browserStatus(): Promise<BrowserCompanionStatus>;
   browserListSkills(): Promise<BrowserSkill[]>;

@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import type { DiscoveryProgress, LocalScanProgress, SecretsScanProgress } from '../plugins/types';
 import type {
   AgentSessionStartingPayload,
   AgentAnalysisCompletePayload,
@@ -86,8 +87,8 @@ contextBridge.exposeInMainWorld('jarvis', {
   listSecretFavorites: () => ipcRenderer.invoke('secrets:list-favorites'),
   addSecretFavorite: (targetType: string, targetName: string) => ipcRenderer.invoke('secrets:add-favorite', targetType, targetName),
   removeSecretFavorite: (targetName: string) => ipcRenderer.invoke('secrets:remove-favorite', targetName),
-  onSecretsProgress: (callback: (progress: Record<string, number>) => void) => {
-    const listener = (_event: unknown, progress: Record<string, number>) => callback(progress);
+  onSecretsProgress: (callback: (progress: SecretsScanProgress) => void) => {
+    const listener = (_event: unknown, progress: SecretsScanProgress) => callback(progress);
     ipcRenderer.on('secrets:scan-progress', listener);
     return () => { ipcRenderer.removeListener('secrets:scan-progress', listener); };
   },
@@ -101,23 +102,23 @@ contextBridge.exposeInMainWorld('jarvis', {
     ipcRenderer.on('github:oauth-complete', listener);
     return () => { ipcRenderer.removeListener('github:oauth-complete', listener); };
   },
-  onDiscoveryProgress: (callback: (progress: Record<string, unknown>) => void) => {
-    const listener = (_event: unknown, progress: Record<string, unknown>) => callback(progress);
+  onDiscoveryProgress: (callback: (progress: DiscoveryProgress) => void) => {
+    const listener = (_event: unknown, progress: DiscoveryProgress) => callback(progress);
     ipcRenderer.on('github:discovery-progress', listener);
     return () => { ipcRenderer.removeListener('github:discovery-progress', listener); };
   },
-  onDiscoveryComplete: (callback: (progress: Record<string, unknown>) => void) => {
-    const listener = (_event: unknown, progress: Record<string, unknown>) => callback(progress);
+  onDiscoveryComplete: (callback: (progress: DiscoveryProgress) => void) => {
+    const listener = (_event: unknown, progress: DiscoveryProgress) => callback(progress);
     ipcRenderer.on('github:discovery-complete', listener);
     return () => { ipcRenderer.removeListener('github:discovery-complete', listener); };
   },
-  onLocalScanProgress: (callback: (progress: Record<string, unknown>) => void) => {
-    const listener = (_event: unknown, progress: Record<string, unknown>) => callback(progress);
+  onLocalScanProgress: (callback: (progress: LocalScanProgress) => void) => {
+    const listener = (_event: unknown, progress: LocalScanProgress) => callback(progress);
     ipcRenderer.on('local:scan-progress', listener);
     return () => { ipcRenderer.removeListener('local:scan-progress', listener); };
   },
-  onLocalScanComplete: (callback: (progress: Record<string, unknown>) => void) => {
-    const listener = (_event: unknown, progress: Record<string, unknown>) => callback(progress);
+  onLocalScanComplete: (callback: (progress: LocalScanProgress) => void) => {
+    const listener = (_event: unknown, progress: LocalScanProgress) => callback(progress);
     ipcRenderer.on('local:scan-complete', listener);
     return () => { ipcRenderer.removeListener('local:scan-complete', listener); };
   },
@@ -178,6 +179,39 @@ contextBridge.exposeInMainWorld('jarvis', {
   dashboardGetRecentFailedRuns: () => ipcRenderer.invoke('dashboard:get-recent-failed-runs'),
   dashboardPushBranchUpstream: (repoPath: string, branch: string) =>
     ipcRenderer.invoke('dashboard:push-branch-upstream', repoPath, branch),
+  // Groups
+  groupsList: () => ipcRenderer.invoke('groups:list'),
+  groupsGet: (groupId: number) => ipcRenderer.invoke('groups:get', groupId),
+  groupsCreate: (name: string) => ipcRenderer.invoke('groups:create', name),
+  groupsRename: (groupId: number, newName: string) => ipcRenderer.invoke('groups:rename', groupId, newName),
+  groupsDelete: (groupId: number) => ipcRenderer.invoke('groups:delete', groupId),
+  groupsAddLocalRepo: (groupId: number, localRepoId: number) =>
+    ipcRenderer.invoke('groups:add-local-repo', groupId, localRepoId),
+  groupsRemoveLocalRepo: (groupId: number, localRepoId: number) =>
+    ipcRenderer.invoke('groups:remove-local-repo', groupId, localRepoId),
+  groupsAddGithubRepo: (groupId: number, githubRepoId: number) =>
+    ipcRenderer.invoke('groups:add-github-repo', groupId, githubRepoId),
+  groupsRemoveGithubRepo: (groupId: number, githubRepoId: number) =>
+    ipcRenderer.invoke('groups:remove-github-repo', groupId, githubRepoId),
+  // OneDrive
+  onedriveListRoots: () => ipcRenderer.invoke('onedrive:list-roots'),
+  onedriveAddRoot: (label: string, folderPath?: string) =>
+    ipcRenderer.invoke('onedrive:add-root', label, folderPath),
+  onedriveRemoveRoot: (rootId: number) => ipcRenderer.invoke('onedrive:remove-root', rootId),
+  onedriveDiscoverForGroup: (groupId: number) =>
+    ipcRenderer.invoke('onedrive:discover-for-group', groupId),
+  onedriveGetFolderInfo: (groupId: number) =>
+    ipcRenderer.invoke('onedrive:get-folder-info', groupId),
+  onedriveRescanFiles: (folderId: number) =>
+    ipcRenderer.invoke('onedrive:rescan-files', folderId),
+  onedriveListFilesForFolder: (folderId: number) =>
+    ipcRenderer.invoke('onedrive:list-files-for-folder', folderId),
+  onedriveReadOneNoteFile: (filePath: string) =>
+    ipcRenderer.invoke('onedrive:read-onenote-file', filePath),
+  onedriveReadUrlShortcut: (filePath: string) =>
+    ipcRenderer.invoke('onedrive:read-url-shortcut', filePath),
+  shellOpenUrl: (url: string) =>
+    ipcRenderer.invoke('shell:open-url', url),
   // Browser Companion
   browserStatus: () => ipcRenderer.invoke('browser:status'),
   browserListSkills: () => ipcRenderer.invoke('browser:list-skills'),

@@ -17,6 +17,13 @@ interface PatStatus {
   avatarUrl?: string;
 }
 
+interface OnedriveRoot {
+  id: number;
+  path: string;
+  label: string;
+  addedAt: string;
+}
+
 declare const window: Window & {
   jarvis: {
     getGitHubOAuthStatus(): Promise<OAuthStatus>;
@@ -28,6 +35,9 @@ declare const window: Window & {
     startPatDiscovery(): Promise<void>;
     agentsList(): Promise<Array<{ id: number; name: string; description: string; system_prompt: string }>>;
     agentsUpdate(agentId: number, systemPrompt: string): Promise<{ ok: boolean; error?: string }>;
+    onedriveListRoots(): Promise<OnedriveRoot[]>;
+    onedriveAddRoot(label: string, folderPath?: string): Promise<{ ok?: boolean; root?: OnedriveRoot; canceled?: boolean; error?: string }>;
+    onedriveRemoveRoot(rootId: number): Promise<{ ok: boolean; error?: string }>;
   };
 };
 
@@ -316,6 +326,127 @@ function AgentPromptsSection() {
   );
 }
 
+// ── OneDrive Section ─────────────────────────────────────────────────────────
+
+function OneDriveSection() {
+  const [roots, setRoots] = useState<OnedriveRoot[]>([]);
+  const [label, setLabel] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [error, setError] = useState('');
+
+  const refresh = async () => {
+    try {
+      setRoots(await window.jarvis.onedriveListRoots());
+    } catch (err) {
+      console.error('[OneDrive] Failed to list roots:', err);
+    }
+  };
+
+  useEffect(() => {
+    refresh();
+  }, []);
+
+  const handleAdd = async () => {
+    if (!label.trim()) {
+      setError('Please enter a label for this root folder');
+      return;
+    }
+    setAdding(true);
+    setError('');
+    const result = await window.jarvis.onedriveAddRoot(label.trim());
+    setAdding(false);
+    if (result.canceled) return;
+    if (!result.ok) {
+      setError(result.error ?? 'Failed to add root');
+      return;
+    }
+    setLabel('');
+    await refresh();
+  };
+
+  const handleRemove = async (rootId: number, rootLabel: string) => {
+    if (!confirm(`Remove OneDrive root "${rootLabel}"? Customer folder links for this root will also be removed.`)) return;
+    const result = await window.jarvis.onedriveRemoveRoot(rootId);
+    if (!result.ok) {
+      setError(result.error ?? 'Failed to remove root');
+      return;
+    }
+    await refresh();
+  };
+
+  return (
+    <div class="section">
+      <h2>OneDrive Customer Data Roots</h2>
+      <p class="hint">
+        Configure the OneDrive folders where your customer data lives. Jarvis will discover
+        customer subfolders by matching group names — no files are downloaded.
+        Add one root per entity you work for.
+      </p>
+
+      <div class="btn-row" style={{ marginTop: '0.75rem', alignItems: 'flex-end', gap: '0.5rem' }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+          <label for="onedrive-label" style={{ fontSize: '0.82rem', color: '#aaa' }}>
+            Label (e.g. "Contoso" or "Personal")
+          </label>
+          <input
+            type="text"
+            id="onedrive-label"
+            placeholder="Entity name…"
+            value={label}
+            onInput={(e: Event) => setLabel((e.target as HTMLInputElement).value)}
+            onKeyDown={(e: KeyboardEvent) => { if (e.key === 'Enter') void handleAdd(); }}
+          />
+        </div>
+        <button class="btn-save" onClick={handleAdd} disabled={adding || !label.trim()}>
+          {adding ? 'Browsing…' : 'Browse & Add'}
+        </button>
+      </div>
+
+      {error && <div class="pat-error" style={{ marginTop: '0.4rem' }}>{error}</div>}
+
+      {roots.length === 0 && (
+        <p style={{ fontSize: '0.85rem', color: '#778', marginTop: '0.75rem' }}>
+          No OneDrive roots configured yet.
+        </p>
+      )}
+
+      {roots.length > 0 && (
+        <ul style={{ listStyle: 'none', padding: 0, margin: '0.75rem 0 0' }}>
+          {roots.map((r) => (
+            <li
+              key={r.id}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '0.45rem 0.6rem',
+                marginBottom: '0.35rem',
+                background: '#1e1e2a',
+                borderRadius: '5px',
+                border: '1px solid #333',
+              }}
+            >
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontWeight: 600, fontSize: '0.85rem', color: '#dde' }}>{r.label}</div>
+                <div style={{ fontSize: '0.75rem', color: '#778', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {r.path}
+                </div>
+              </div>
+              <button
+                class="btn-danger"
+                style={{ marginLeft: '0.75rem', padding: '0.2rem 0.5rem', fontSize: '0.78rem', flexShrink: 0 }}
+                onClick={() => void handleRemove(r.id, r.label)}
+              >
+                Remove
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 // ── App ──────────────────────────────────────────────────────────────────────
 
 function App() {
@@ -324,6 +455,7 @@ function App() {
       <h1>Settings</h1>
       <OAuthSection />
       <PatSection />
+      <OneDriveSection />
       <AgentPromptsSection />
     </>
   );

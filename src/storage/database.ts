@@ -52,7 +52,7 @@ function initializeSchema(database: SqlJsDatabase): void {
   if (userVersion === 0) {
     database.run(getSchema());
     seedBuiltInAgents(database);
-    database.run('PRAGMA user_version = 12');
+    database.run('PRAGMA user_version = 16');
   }
 
   if (userVersion === 1) {
@@ -245,7 +245,117 @@ function initializeSchema(database: SqlJsDatabase): void {
   }
 
   if (userVersion === 11) {
-    // Migration v11 → v12: add browser companion tables
+    // Migration v11 → v12: add groups tables for grouped source configuration
+    database.run(`
+      CREATE TABLE IF NOT EXISTS groups (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        name       TEXT NOT NULL UNIQUE,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    database.run(`
+      CREATE TABLE IF NOT EXISTS group_local_repos (
+        group_id      INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+        local_repo_id INTEGER NOT NULL REFERENCES local_repos(id) ON DELETE CASCADE,
+        added_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (group_id, local_repo_id)
+      )
+    `);
+    database.run(`
+      CREATE TABLE IF NOT EXISTS group_github_repos (
+        group_id       INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+        github_repo_id INTEGER NOT NULL REFERENCES github_repos(id) ON DELETE CASCADE,
+        added_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (group_id, github_repo_id)
+      )
+    `);
+    database.run('PRAGMA user_version = 12');
+  }
+
+  if (userVersion === 12) {
+    // Migration v12 → v13: add OneDrive customer folder discovery tables
+    database.run(`
+      CREATE TABLE IF NOT EXISTS onedrive_roots (
+        id       INTEGER PRIMARY KEY AUTOINCREMENT,
+        path     TEXT NOT NULL UNIQUE,
+        label    TEXT NOT NULL,
+        added_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    database.run(`
+      CREATE TABLE IF NOT EXISTS onedrive_customer_folders (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        group_id      INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+        root_id       INTEGER NOT NULL REFERENCES onedrive_roots(id) ON DELETE CASCADE,
+        folder_path   TEXT,
+        status        TEXT NOT NULL DEFAULT 'not_found',
+        discovered_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        scanned_at    DATETIME,
+        UNIQUE(group_id, root_id)
+      )
+    `);
+    database.run('CREATE INDEX IF NOT EXISTS idx_onedrive_cf_group ON onedrive_customer_folders(group_id)');
+    database.run(`
+      CREATE TABLE IF NOT EXISTS onedrive_files (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        folder_id     INTEGER NOT NULL REFERENCES onedrive_customer_folders(id) ON DELETE CASCADE,
+        name          TEXT NOT NULL,
+        extension     TEXT,
+        relative_path TEXT NOT NULL,
+        last_modified DATETIME,
+        size_bytes    INTEGER,
+        scanned_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(folder_id, relative_path)
+      )
+    `);
+    database.run('CREATE INDEX IF NOT EXISTS idx_onedrive_files_folder ON onedrive_files(folder_id)');
+    database.run('PRAGMA user_version = 13');
+  }
+
+  if (userVersion === 14) {
+    // Migration v14 → v15: add OneDrive customer folder discovery tables
+    // (for users who ran the browser-companion build which used v12→v13 and v13→v14)
+    database.run(`
+      CREATE TABLE IF NOT EXISTS onedrive_roots (
+        id       INTEGER PRIMARY KEY AUTOINCREMENT,
+        path     TEXT NOT NULL UNIQUE,
+        label    TEXT NOT NULL,
+        added_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    database.run(`
+      CREATE TABLE IF NOT EXISTS onedrive_customer_folders (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        group_id      INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+        root_id       INTEGER NOT NULL REFERENCES onedrive_roots(id) ON DELETE CASCADE,
+        folder_path   TEXT,
+        status        TEXT NOT NULL DEFAULT 'not_found',
+        discovered_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        scanned_at    DATETIME,
+        UNIQUE(group_id, root_id)
+      )
+    `);
+    database.run('CREATE INDEX IF NOT EXISTS idx_onedrive_cf_group ON onedrive_customer_folders(group_id)');
+    database.run(`
+      CREATE TABLE IF NOT EXISTS onedrive_files (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        folder_id     INTEGER NOT NULL REFERENCES onedrive_customer_folders(id) ON DELETE CASCADE,
+        name          TEXT NOT NULL,
+        extension     TEXT,
+        relative_path TEXT NOT NULL,
+        last_modified DATETIME,
+        size_bytes    INTEGER,
+        scanned_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(folder_id, relative_path)
+      )
+    `);
+    database.run('CREATE INDEX IF NOT EXISTS idx_onedrive_files_folder ON onedrive_files(folder_id)');
+    database.run('PRAGMA user_version = 15');
+  }
+
+  if (userVersion === 15) {
+    // Migration v15 → v16: add browser companion tables
     database.run(`
       CREATE TABLE IF NOT EXISTS browser_skills (
         id                INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -270,7 +380,7 @@ function initializeSchema(database: SqlJsDatabase): void {
       )
     `);
     database.run('CREATE INDEX IF NOT EXISTS idx_browser_skill_runs_skill ON browser_skill_runs(skill_id)');
-    database.run('PRAGMA user_version = 12');
+    database.run('PRAGMA user_version = 16');
   }
 }
 

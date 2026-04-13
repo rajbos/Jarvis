@@ -18,6 +18,8 @@ import { registerHandlers as registerLocalReposHandlers } from '../plugins/local
 import { registerHandlers as registerAgentsHandlers } from '../plugins/agents/handler';
 import { registerHandlers as registerSecretsHandlers } from '../plugins/secrets/handler';
 import { registerHandlers as registerDashboardHandlers } from '../plugins/dashboard/handler';
+import { registerHandlers as registerGroupsHandlers } from '../plugins/groups/handler';
+import { registerHandlers as registerOnedriveHandlers } from '../plugins/onedrive/handler';
 import { registerHandlers as registerBrowserCompanionHandlers } from '../plugins/browser-companion/handler';
 
 // Re-export startDiscoveryIfAuthed so src/main/index.ts can call it on startup
@@ -43,5 +45,7 @@ export function registerIpcHandlers(
   registerAgentsHandlers(db, getWindow);
   registerSecretsHandlers(db, getWindow);
   registerDashboardHandlers(db, getWindow);
+  registerGroupsHandlers(db, getWindow);
+  registerOnedriveHandlers(db, getWindow);
   registerBrowserCompanionHandlers(db, getWindow);
 }

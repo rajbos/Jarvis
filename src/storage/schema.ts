@@ -222,6 +222,65 @@ export function getSchema(): string {
         added_at    DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    -- Source groups: named collections of local and/or remote repos
+    CREATE TABLE IF NOT EXISTS groups (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        name       TEXT NOT NULL UNIQUE,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Local repos that belong to a group
+    CREATE TABLE IF NOT EXISTS group_local_repos (
+        group_id      INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+        local_repo_id INTEGER NOT NULL REFERENCES local_repos(id) ON DELETE CASCADE,
+        added_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (group_id, local_repo_id)
+    );
+
+    -- Remote GitHub repos that belong to a group
+    CREATE TABLE IF NOT EXISTS group_github_repos (
+        group_id       INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+        github_repo_id INTEGER NOT NULL REFERENCES github_repos(id) ON DELETE CASCADE,
+        added_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (group_id, github_repo_id)
+    );
+
+    -- OneDrive root folders (one per entity/company)
+    CREATE TABLE IF NOT EXISTS onedrive_roots (
+        id       INTEGER PRIMARY KEY AUTOINCREMENT,
+        path     TEXT NOT NULL UNIQUE,
+        label    TEXT NOT NULL,
+        added_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Customer folder discovery result per (group × root)
+    CREATE TABLE IF NOT EXISTS onedrive_customer_folders (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        group_id      INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+        root_id       INTEGER NOT NULL REFERENCES onedrive_roots(id) ON DELETE CASCADE,
+        folder_path   TEXT,
+        status        TEXT NOT NULL DEFAULT 'not_found',
+        discovered_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        scanned_at    DATETIME,
+        UNIQUE(group_id, root_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_onedrive_cf_group ON onedrive_customer_folders(group_id);
+
+    -- File metadata only (no content) — linked to a customer folder
+    CREATE TABLE IF NOT EXISTS onedrive_files (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        folder_id     INTEGER NOT NULL REFERENCES onedrive_customer_folders(id) ON DELETE CASCADE,
+        name          TEXT NOT NULL,
+        extension     TEXT,
+        relative_path TEXT NOT NULL,
+        last_modified DATETIME,
+        size_bytes    INTEGER,
+        scanned_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(folder_id, relative_path)
+    );
+    CREATE INDEX IF NOT EXISTS idx_onedrive_files_folder ON onedrive_files(folder_id);
+
     -- Browser companion: reusable automation skills
     CREATE TABLE IF NOT EXISTS browser_skills (
         id                INTEGER PRIMARY KEY AUTOINCREMENT,

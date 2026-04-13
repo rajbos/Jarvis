@@ -25,6 +25,9 @@ import { SecretsStep } from '../plugins/secrets/SecretsStep';
 import { SecretsScanPanel } from '../plugins/secrets/SecretsScanPanel';
 import { DashboardPanel } from '../plugins/dashboard/DashboardPanel';
 import { BrowserCompanionPanel } from '../plugins/browser-companion/BrowserCompanionPanel';
+import { GroupsStep } from '../plugins/groups/GroupsStep';
+import { GroupsPanel } from '../plugins/groups/GroupsPanel';
+import { OneNoteSectionPanel } from '../plugins/groups/OneNoteSectionPanel';
 
 // ── Types (imported from single source of truth in plugins/types.ts) ─────────
 // The global augmentation `Window.jarvis` is declared in plugins/types.ts and
@@ -45,6 +48,7 @@ import type {
   SecretsScanResult,
   SecretFavorite,
   SecretsScanProgress,
+  Group,
 } from '../plugins/types';
 import '../plugins/types'; // activate the global Window augmentation
 
@@ -112,6 +116,11 @@ function App() {
   const [secretsList, setSecretsList] = useState<RepoSecret[]>([]);
   const [favoritedOrgs, setFavoritedOrgs] = useState<Set<string>>(new Set());
   const [favoritedRepos, setFavoritedRepos] = useState<Set<string>>(new Set());
+
+  // Groups state
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [showGroupsPanel, setShowGroupsPanel] = useState(false);
+  const [oneNoteFilePath, setOneNoteFilePath] = useState<string | null>(null);
 
   const currentUserLogin = oauthStatus?.login ?? null;
 
@@ -237,6 +246,13 @@ function App() {
     })();
 
     return unsubSecrets;
+  }, []);
+
+  // Load groups on mount
+  useEffect(() => {
+    window.jarvis.groupsList()
+      .then(setGroups)
+      .catch((err: unknown) => console.warn('[Jarvis] Could not load groups:', err));
   }, []);
 
   const handleSelectOllamaModel = async (modelName: string) => {
@@ -457,6 +473,9 @@ function App() {
     setLocalNotifRepoPanel(null);
     // Secrets
     setShowSecretsPanel(false);
+    // Groups
+    setShowGroupsPanel(false);
+    setOneNoteFilePath(null);
     // Ollama + Chat sub-panel
     setShowOllamaPanel(false);
     setShowChatPanel(false);
@@ -650,6 +669,24 @@ function App() {
     const wasOpen = showSecretsPanel;
     closeAllPanels();
     if (!wasOpen) setShowSecretsPanel(true);
+  };
+
+  const handleGroupsToggle = () => {
+    const wasOpen = showGroupsPanel;
+    closeAllPanels();
+    if (!wasOpen) setShowGroupsPanel(true);
+  };
+
+  const handleGroupsClose = async () => {
+    setShowGroupsPanel(false);
+    setOneNoteFilePath(null);
+    // Refresh group list so the step badge stays current
+    try {
+      const list = await window.jarvis.groupsList();
+      setGroups(list);
+    } catch (err) {
+      console.warn('[Jarvis] Could not refresh groups:', err);
+    }
   };
 
   const handleOllamaToggle = () => {
@@ -898,6 +935,26 @@ function App() {
             secrets={secretsList}
             onScan={handleSecretsStartScan}
             onClose={() => setShowSecretsPanel(false)}
+          />
+        )}
+      </div>
+
+      <div class="groups-layout">
+        <div class="groups-step-wrapper">
+          <GroupsStep groups={groups} onToggle={handleGroupsToggle} />
+        </div>
+
+        {showGroupsPanel && (
+          <GroupsPanel
+            onClose={() => void handleGroupsClose()}
+            onOpenOneNote={(path) => setOneNoteFilePath(path)}
+          />
+        )}
+
+        {oneNoteFilePath && (
+          <OneNoteSectionPanel
+            filePath={oneNoteFilePath}
+            onClose={() => setOneNoteFilePath(null)}
           />
         )}
       </div>
