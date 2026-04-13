@@ -31,6 +31,10 @@ export interface RepoHealthStatus {
   failedWorkflowRuns: number;
   /** Whether the repo directory still exists on disk */
   exists: boolean;
+  /** Timestamp of the most recent local commit (from .git/logs/HEAD), or null */
+  lastCommitAt: string | null;
+  /** Timestamp of the most recent push to GitHub (from github_repos.last_pushed_at), or null */
+  lastPushedAt: string | null;
 }
 
 export type HealthWarningKind =
@@ -129,6 +133,27 @@ function escapeRegExp(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/**
+ * Read the timestamp of the most recent entry in `.git/logs/HEAD`.
+ * Returns an ISO string, or null if the log cannot be read.
+ */
+export function getLastCommitTime(repoPath: string): string | null {
+  const logPath = path.join(repoPath, '.git', 'logs', 'HEAD');
+  try {
+    const content = fs.readFileSync(logPath, 'utf-8').trimEnd();
+    const lines = content.split('\n');
+    const lastLine = lines[lines.length - 1];
+    // Format: <oldSHA> <newSHA> <author> <unixTimestamp> <tzOffset>\t<message>
+    // Extract timestamp from the metadata before the tab, at end of the field 
+    const [metadata] = lastLine.split('\t', 1);
+    const match = metadata.match(/(\d+)\s+[+-]\d{4}$/);
+    if (!match) return null;
+    return new Date(parseInt(match[1], 10) * 1000).toISOString();
+  } catch {
+    return null;
+  }
+}
+
 // ── Health check orchestration ────────────────────────────────────────────────
 
 export function checkRepoHealth(
@@ -138,6 +163,7 @@ export function checkRepoHealth(
   linkedGithubRepo: string | null,
   notificationCount: number,
   failedWorkflowRuns: number,
+  lastPushedAt: string | null = null,
 ): RepoHealthStatus {
   const exists = fs.existsSync(path.join(localPath, '.git'));
 
@@ -155,11 +181,14 @@ export function checkRepoHealth(
       linkedGithubRepo,
       failedWorkflowRuns,
       exists: false,
+      lastCommitAt: null,
+      lastPushedAt,
     };
   }
 
   const currentBranch = getCurrentBranch(localPath);
   const remoteCount = countRemotes(localPath);
+  const lastCommitAt = getLastCommitTime(localPath);
   let hasUpstream = false;
   let upstreamRef: string | null = null;
 
@@ -184,6 +213,8 @@ export function checkRepoHealth(
     linkedGithubRepo,
     failedWorkflowRuns,
     exists,
+    lastCommitAt,
+    lastPushedAt,
   };
 }
 

@@ -12,6 +12,7 @@ const options = {
   entryPoints: {
     renderer: path.join(__dirname, '..', 'src', 'renderer', 'index.tsx'),
     settings: path.join(__dirname, '..', 'src', 'renderer', 'settings.tsx'),
+    chat: path.join(__dirname, '..', 'src', 'renderer', 'chat.tsx'),
   },
   outdir: path.join(__dirname, '..', 'dist', 'renderer'),
   bundle: true,
