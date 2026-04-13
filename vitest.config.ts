@@ -19,8 +19,6 @@ export default defineConfig({
         'src/plugins/agents/runner.ts',
         // Pure type declarations — no executable code
         'src/plugins/types.ts',
-        // Ollama service requires an external Ollama process
-        'src/services/ollama.ts',
         // Database module uses better-sqlite3 (filesystem); tested via schema + in-memory sql.js
         'src/storage/database.ts',
         // Pure type declaration files
