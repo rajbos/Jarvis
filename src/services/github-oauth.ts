@@ -165,12 +165,19 @@ export function loadGitHubAuth(db: SqlJsDatabase): { login: string; accessToken:
   stmt.free();
 
   const key = getEncryptionKey();
-  return {
-    login: row.login,
-    accessToken: decrypt(row.access_token, key),
-    scopes: row.scopes,
-    avatarUrl: row.avatar_url,
-  };
+  try {
+    return {
+      login: row.login,
+      accessToken: decrypt(row.access_token, key),
+      scopes: row.scopes,
+      avatarUrl: row.avatar_url,
+    };
+  } catch {
+    // Decryption failed — the key changed (e.g. first run after upgrading to
+    // safeStorage). Return null so the caller prompts re-authentication.
+    console.warn('[OAuth] Failed to decrypt stored token — re-authentication required');
+    return null;
+  }
 }
 
 /**
@@ -192,7 +199,14 @@ export function loadGitHubPat(db: SqlJsDatabase): string | null {
   stmt.free();
   if (!row.pat) return null;
   const key = getEncryptionKey();
-  return decrypt(row.pat, key);
+  try {
+    return decrypt(row.pat, key);
+  } catch {
+    // Clear the undecryptable PAT so the warning does not repeat on every startup
+    try { db.run('UPDATE github_auth SET pat = NULL WHERE rowid IN (SELECT rowid FROM github_auth ORDER BY created_at DESC LIMIT 1)'); } catch { /* best-effort */ }
+    console.warn('[OAuth] Failed to decrypt stored PAT — it has been cleared and will need to be re-entered');
+    return null;
+  }
 }
 
 /**

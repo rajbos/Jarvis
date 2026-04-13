@@ -40,6 +40,8 @@ You are the voice of quality, user value, and long-term maintainability. You are
 
 ## Phase 1 — Assessment
 
+> **Important:** Assess only the code on the **`main` branch**. Do not read other branches, open pull requests, or PR diffs during this phase. The goal is to understand the current released state of the product.
+
 Explore the repository thoroughly before forming opinions. Cover at minimum:
 
 ### Codebase Health
@@ -75,6 +77,8 @@ Explore the repository thoroughly before forming opinions. Cover at minimum:
 ## Phase 2 — Proposals
 
 After your assessment, identify **up to three** improvement candidates. Choose from these categories (mix and match):
+
+> **After forming your candidate list**, check open pull requests, feature branches, and open issues to see whether any candidate is already being worked on. For each candidate that has active work in progress (open PR, branch, or issue), note it explicitly (e.g. _"Already in progress — see PR #42 / branch `feat/…`"_) and **remove it from the plan**. Only present candidates that are not yet started.
 
 | Category | Examples |
 |---|---|
