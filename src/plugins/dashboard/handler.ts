@@ -107,6 +107,23 @@ function getRecentFailedRuns(db: SqlJsDatabase, limit = 20): {
   return rows;
 }
 
+/**
+ * Look up last_pushed_at for a GitHub repo.
+ */
+function getLastPushedAt(db: SqlJsDatabase, repoFullName: string | null): string | null {
+  if (!repoFullName) return null;
+  const stmt = db.prepare('SELECT last_pushed_at FROM github_repos WHERE full_name = ? LIMIT 1');
+  try {
+    stmt.bind([repoFullName]);
+    const found = stmt.step() ? (stmt.getAsObject() as { last_pushed_at: string | null }) : null;
+    return found?.last_pushed_at ?? null;
+  } finally {
+    stmt.free();
+  }
+}
+
+
+
 // ── IPC registration ──────────────────────────────────────────────────────────
 
 export function registerHandlers(
@@ -144,6 +161,7 @@ export function registerHandlers(
 
         const notifCount = getRepoNotifCount(db, linkedGithubRepo);
         const failedRuns = getFailedRunCount(db, linkedGithubRepo);
+        const lastPushedAt = getLastPushedAt(db, linkedGithubRepo);
 
         const status = checkRepoHealth(
           repo.id,
@@ -152,6 +170,7 @@ export function registerHandlers(
           linkedGithubRepo,
           notifCount,
           failedRuns,
+          lastPushedAt,
         );
 
         repos.push(status);

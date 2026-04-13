@@ -8,6 +8,7 @@ import {
   countRemotes,
   checkRepoHealth,
   deriveWarnings,
+  getLastCommitTime,
 } from '../../src/services/git-health';
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -304,5 +305,45 @@ describe('deriveWarnings', () => {
     // non-existing repos don't produce branch/remote warnings
     // but DO produce notification warnings
     expect(warnings).toHaveLength(0);
+  });
+});
+
+// -- getLastCommitTime -------------------------------------------------------
+
+describe("getLastCommitTime", () => {
+  let tmpDir: string;
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "jarvis-glct-"));
+    fs.mkdirSync(path.join(tmpDir, ".git", "logs"), { recursive: true });
+  });
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("parses a standard git log HEAD line", () => {
+    const unixTs = 1712345678;
+    const line = "0000000000000000 abc123 Author <a@example.com> " + unixTs + " +0100	Initial commit";
+    fs.writeFileSync(path.join(tmpDir, ".git", "logs", "HEAD"), line + "\n", "utf-8");
+    expect(getLastCommitTime(tmpDir)).toBe(new Date(unixTs * 1000).toISOString());
+  });
+
+  it("returns the last entry timestamp for multiple entries", () => {
+    const olderTs = 1700000000;
+    const newerTs = 1712345678;
+    const lines = [
+      "000000000 aaa111 Author <a@example.com> " + olderTs + " +0000	First",
+      "aaa111 bbb222 Author <a@example.com> " + newerTs + " +0100	Second",
+    ].join("\n");
+    fs.writeFileSync(path.join(tmpDir, ".git", "logs", "HEAD"), lines + "\n", "utf-8");
+    expect(getLastCommitTime(tmpDir)).toBe(new Date(newerTs * 1000).toISOString());
+  });
+
+  it("returns null when .git/logs/HEAD does not exist", () => {
+    expect(getLastCommitTime(tmpDir)).toBeNull();
+  });
+
+  it("returns null when the log line has an unexpected format", () => {
+    fs.writeFileSync(path.join(tmpDir, ".git", "logs", "HEAD"), "not a git log line\n", "utf-8");
+    expect(getLastCommitTime(tmpDir)).toBeNull();
   });
 });

@@ -74,6 +74,7 @@ function App() {
   const [showOllamaPanel, setShowOllamaPanel] = useState(false);
   const [selectedOllamaModel, setSelectedOllamaModel] = useState<string | null>(null);
   const [showChatPanel, setShowChatPanel] = useState(false);
+  const [dismissedNotifIds, setDismissedNotifIds] = useState<ReadonlySet<string>>(new Set());
   const [notifCounts, setNotifCounts] = useState<NotificationCounts | null>(null);
   const [notifFetching, setNotifFetching] = useState(false);
   const [sortByNotifs, setSortByNotifs] = useState(false);
@@ -740,7 +741,7 @@ function App() {
 
       {/* ── Dashboard tab ────────────────────────────────────────────────── */}
       {activeTab === 'dashboard' && (
-        <DashboardPanel />
+        <DashboardPanel dismissedNotifIds={dismissedNotifIds} />
       )}
 
       {/* ── Setup tab (original content) ─────────────────────────────────── */}
@@ -972,8 +973,15 @@ function App() {
         onClose={() => { setShowChatPanel(false); localStorage.setItem('chat-panel-open', 'false'); }}
         onAgentStart={handleOpenChat}
         onNotificationsDismissed={(ids) => {
-          const idSet = new Set(ids);
-          const removeIds = (notifs: StoredNotification[]) => notifs.filter((n) => !idSet.has(n.id));
+          console.log('[App] onNotificationsDismissed called with ids:', ids);
+          const idSet = new Set(ids.map(String));
+          setDismissedNotifIds((prev) => {
+            const next = new Set(prev);
+            for (const id of ids) next.add(String(id));
+            console.log('[App] dismissedNotifIds updated, size:', next.size);
+            return next;
+          });
+          const removeIds = (notifs: StoredNotification[]) => notifs.filter((n) => !idSet.has(String(n.id)));
           setNotifRepoPanel((prev) => prev ? { ...prev, notifications: removeIds(prev.notifications) } : null);
           setLocalNotifRepoPanel((prev) => prev ? { ...prev, notifications: removeIds(prev.notifications) } : null);
           setNotifDive((prev) => prev ? { ...prev, notifications: removeIds(prev.notifications) } : null);
@@ -981,11 +989,12 @@ function App() {
             if (!prev) return prev;
             const newPerRepo = { ...prev.perRepo };
             for (const id of ids) {
+              const sid = String(id);
               // find which repo owns this notification from current panel state
               const repo =
-                notifRepoPanel?.notifications.find((n) => n.id === id)?.repo_full_name ??
-                localNotifRepoPanel?.notifications.find((n) => n.id === id)?.repo_full_name ??
-                notifDive?.notifications.find((n) => n.id === id)?.repo_full_name;
+                notifRepoPanel?.notifications.find((n) => String(n.id) === sid)?.repo_full_name ??
+                localNotifRepoPanel?.notifications.find((n) => String(n.id) === sid)?.repo_full_name ??
+                notifDive?.notifications.find((n) => String(n.id) === sid)?.repo_full_name;
               if (repo) newPerRepo[repo] = Math.max(0, (newPerRepo[repo] ?? 1) - 1);
             }
             return { ...prev, total: Math.max(0, prev.total - ids.length), perRepo: newPerRepo };
