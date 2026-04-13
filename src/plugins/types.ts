@@ -296,6 +296,17 @@ export interface OneNoteSectionContent {
   textContent: string;
 }
 
+// ── URL shortcut types ────────────────────────────────────────────────────────
+
+export interface UrlShortcutInfo {
+  /** Raw URL from the shortcut file. */
+  url: string;
+  /** True when the URL appears to be a OneNote notebook link. */
+  isOneNote: boolean;
+  /** True when the URL points to SharePoint (content requires Graph API). */
+  isSharePoint: boolean;
+}
+
 // ── OneDrive types ────────────────────────────────────────────────────────────
 
 export interface OnedriveRoot {
@@ -492,6 +503,8 @@ export interface JarvisApi {
   onedriveRescanFiles(folderId: number): Promise<{ ok: boolean; fileCount?: number; error?: string }>;
   onedriveListFilesForFolder(folderId: number): Promise<OnedriveFile[]>;
   onedriveReadOneNoteFile(filePath: string): Promise<{ ok: boolean; section?: OneNoteSectionContent; error?: string }>;
+  onedriveReadUrlShortcut(filePath: string): Promise<{ ok: boolean; url?: string; isOneNote?: boolean; isSharePoint?: boolean; error?: string }>;
+  shellOpenUrl(url: string): Promise<{ ok: boolean; error?: string }>;
 }
 
 declare global {

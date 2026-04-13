@@ -1,5 +1,5 @@
 // ── OneDrive IPC handlers ─────────────────────────────────────────────────────
-import { ipcMain, dialog, BrowserWindow } from 'electron';
+import { ipcMain, dialog, BrowserWindow, shell } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import { saveDatabase } from '../../storage/database';
 import {
@@ -12,6 +12,7 @@ import {
   listFilesForFolder,
 } from '../../services/onedrive';
 import { readOneNoteSection } from '../../services/onenote-reader';
+import { readUrlShortcut } from '../../services/url-shortcut';
 import { getGroup } from '../../services/groups';
 
 export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWindow | null): void {
@@ -124,5 +125,29 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
       const msg = err instanceof Error ? err.message : String(err);
       return { ok: false, error: msg };
     }
+  });
+
+  ipcMain.handle('onedrive:read-url-shortcut', (_event, filePath: string) => {
+    if (typeof filePath !== 'string' || filePath.trim().length === 0) {
+      return { ok: false, error: 'filePath is required' };
+    }
+    if (!filePath.toLowerCase().endsWith('.url')) {
+      return { ok: false, error: 'Only .url files are supported' };
+    }
+    try {
+      const info = readUrlShortcut(filePath);
+      return { ok: true, ...info };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: msg };
+    }
+  });
+
+  ipcMain.handle('shell:open-url', (_event, url: string) => {
+    if (typeof url !== 'string') return { ok: false, error: 'url is required' };
+    const safe = url.startsWith('https://') || url.startsWith('http://') || url.startsWith('onenote:');
+    if (!safe) return { ok: false, error: 'Unsupported URL scheme' };
+    void shell.openExternal(url);
+    return { ok: true };
   });
 }
