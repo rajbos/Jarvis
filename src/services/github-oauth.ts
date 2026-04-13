@@ -1,4 +1,4 @@
-﻿import type { Database as SqlJsDatabase } from 'sql.js';
+import type { Database as SqlJsDatabase } from 'sql.js';
 import { encrypt, decrypt, getEncryptionKey } from '../storage/encryption';
 
 const GITHUB_DEVICE_CODE_URL = 'https://github.com/login/device/code';
@@ -202,7 +202,9 @@ export function loadGitHubPat(db: SqlJsDatabase): string | null {
   try {
     return decrypt(row.pat, key);
   } catch {
-    console.warn('[OAuth] Failed to decrypt stored PAT — it will need to be re-entered');
+    // Clear the undecryptable PAT so the warning does not repeat on every startup
+    try { db.run('UPDATE github_auth SET pat = NULL WHERE rowid IN (SELECT rowid FROM github_auth ORDER BY created_at DESC LIMIT 1)'); } catch { /* best-effort */ }
+    console.warn('[OAuth] Failed to decrypt stored PAT — it has been cleared and will need to be re-entered');
     return null;
   }
 }

@@ -1,4 +1,4 @@
-﻿import crypto from 'crypto';
+import crypto from 'crypto';
 import path from 'path';
 import fs from 'fs';
 
@@ -48,13 +48,26 @@ export function generateKey(): Buffer {
 }
 
 /**
+ * Resolves the Jarvis config directory, mirroring the same fallback chain
+ * as getDefaultDbPath() in storage/database.ts.
+ */
+function getConfigDirPath(): string {
+  if (process.env.JARVIS_CONFIG_DIR) {
+    return process.env.JARVIS_CONFIG_DIR;
+  }
+  const roamingDir =
+    process.env.APPDATA ??
+    (process.env.USERPROFILE
+      ? path.join(process.env.USERPROFILE, 'AppData', 'Roaming')
+      : '.');
+  return path.join(roamingDir, 'Jarvis');
+}
+
+/**
  * Returns the path to the persisted key file in the Jarvis config directory.
  */
 function getKeyFilePath(): string {
-  const configDir =
-    process.env.JARVIS_CONFIG_DIR ??
-    path.join(process.env.APPDATA ?? process.env.HOME ?? '.', 'Jarvis');
-  return path.join(configDir, 'keystore.bin');
+  return path.join(getConfigDirPath(), 'keystore.bin');
 }
 
 /**
@@ -125,6 +138,11 @@ export function getEncryptionKey(): Buffer {
     if (safeStorage.isEncryptionAvailable()) {
       return getOrCreateKeyWithSafeStorage(safeStorage);
     }
+    console.warn(
+      '[Encryption] Electron safeStorage is available but isEncryptionAvailable() ' +
+      'returned false. Falling back to machine-id key derivation. ' +
+      'Set JARVIS_ENCRYPTION_KEY to avoid this weaker fallback.',
+    );
   } catch {
     // Not in an Electron context (e.g. unit tests running in plain Node.js)
   }
