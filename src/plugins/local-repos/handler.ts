@@ -18,58 +18,93 @@ let lastLocalScanProgress: ScanProgress | null = null;
 
 export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWindow | null): void {
   ipcMain.handle('local:get-folders', () => {
-    return getScanFolders(db);
+    try {
+      return getScanFolders(db);
+    } catch (err) {
+      console.error('[IPC] local:get-folders failed:', err);
+      return [];
+    }
   });
 
   ipcMain.handle('local:add-folder', async (_event, folderPath?: string) => {
-    let chosenPath = folderPath;
-    if (!chosenPath) {
-      const win = getWindow();
-      const result = await dialog.showOpenDialog(win ?? new BrowserWindow({ show: false }), {
-        properties: ['openDirectory'],
-        title: 'Select a folder to scan for Git repositories',
-      });
-      if (result.canceled || result.filePaths.length === 0) {
-        return { canceled: true };
+    try {
+      let chosenPath = folderPath;
+      if (!chosenPath) {
+        const win = getWindow();
+        const result = await dialog.showOpenDialog(win ?? new BrowserWindow({ show: false }), {
+          properties: ['openDirectory'],
+          title: 'Select a folder to scan for Git repositories',
+        });
+        if (result.canceled || result.filePaths.length === 0) {
+          return { canceled: true };
+        }
+        chosenPath = result.filePaths[0];
       }
-      chosenPath = result.filePaths[0];
+      addScanFolder(db, chosenPath);
+      saveDatabase();
+      return { ok: true, path: chosenPath };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
-    addScanFolder(db, chosenPath);
-    saveDatabase();
-    return { ok: true, path: chosenPath };
   });
 
   ipcMain.handle('local:remove-folder', (_event, folderPath: string) => {
     if (typeof folderPath !== 'string' || folderPath.length === 0) return { ok: false, error: 'Invalid folderPath' };
-    removeScanFolder(db, folderPath);
-    saveDatabase();
-    return { ok: true };
+    try {
+      removeScanFolder(db, folderPath);
+      saveDatabase();
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
   });
 
   ipcMain.handle('local:get-scan-status', () => {
-    return { running: localScanRunning, progress: lastLocalScanProgress };
+    try {
+      return { running: localScanRunning, progress: lastLocalScanProgress };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
   });
 
   ipcMain.handle('local:start-scan', () => {
-    startLocalScanIfNeeded(db, getWindow, true);
-    return { started: true };
+    try {
+      startLocalScanIfNeeded(db, getWindow, true);
+      return { started: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
   });
 
   ipcMain.handle('local:list-repos', () => {
-    return listLocalRepos(db);
+    try {
+      return listLocalRepos(db);
+    } catch (err) {
+      console.error('[IPC] local:list-repos failed:', err);
+      return [];
+    }
   });
 
   ipcMain.handle('local:list-repos-for-folder', (_event, folderPath: string) => {
     if (typeof folderPath !== 'string' || folderPath.length === 0) return [];
-    return listLocalReposForFolder(db, folderPath);
+    try {
+      return listLocalReposForFolder(db, folderPath);
+    } catch (err) {
+      console.error('[IPC] local:list-repos-for-folder failed:', err);
+      return [];
+    }
   });
 
   ipcMain.handle('local:link-repo', (_event, localRepoId: number, githubRepoId: number | null) => {
     if (typeof localRepoId !== 'number') return { ok: false, error: 'Invalid localRepoId' };
     if (githubRepoId !== null && typeof githubRepoId !== 'number') return { ok: false, error: 'Invalid githubRepoId' };
-    linkLocalRepo(db, localRepoId, githubRepoId);
-    saveDatabase();
-    return { ok: true };
+    try {
+      linkLocalRepo(db, localRepoId, githubRepoId);
+      saveDatabase();
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
   });
 
   ipcMain.handle('local:open-folder', (_event, folderPath: string) => {

@@ -32,27 +32,50 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
 
   ipcMain.handle('secrets:list-for-repo', (_event, repoFullName: string) => {
     if (typeof repoFullName !== 'string' || repoFullName.length === 0) return { ok: false, error: 'Invalid repoFullName' };
-    return listSecretsForRepo(db, repoFullName);
+    try {
+      return listSecretsForRepo(db, repoFullName);
+    } catch (err) {
+      console.error('[IPC] secrets:list-for-repo failed:', err);
+      return [];
+    }
   });
 
   ipcMain.handle('secrets:list-all', () => {
-    return searchSecrets(db, '');
+    try {
+      return searchSecrets(db, '');
+    } catch (err) {
+      console.error('[IPC] secrets:list-all failed:', err);
+      return [];
+    }
   });
 
   ipcMain.handle('secrets:list-favorites', () => {
-    return listSecretFavorites(db);
+    try {
+      return listSecretFavorites(db);
+    } catch (err) {
+      console.error('[IPC] secrets:list-favorites failed:', err);
+      return [];
+    }
   });
 
   ipcMain.handle('secrets:add-favorite', (_event, targetType: 'org' | 'repo', targetName: string) => {
     if (targetType !== 'org' && targetType !== 'repo') return { ok: false, error: 'Invalid targetType' };
     if (typeof targetName !== 'string' || targetName.length === 0) return { ok: false, error: 'Invalid targetName' };
-    addSecretFavorite(db, targetType, targetName);
-    return { ok: true };
+    try {
+      addSecretFavorite(db, targetType, targetName);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
   });
 
   ipcMain.handle('secrets:remove-favorite', (_event, targetName: string) => {
     if (typeof targetName !== 'string' || targetName.length === 0) return { ok: false, error: 'Invalid targetName' };
-    removeSecretFavorite(db, targetName);
-    return { ok: true };
+    try {
+      removeSecretFavorite(db, targetName);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
   });
 }
