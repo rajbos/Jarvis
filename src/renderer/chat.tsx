@@ -1,6 +1,9 @@
-import { render } from 'preact';
+﻿import { render } from 'preact';
 import { useState, useEffect, useRef, useCallback } from 'preact/hooks';
 import './chat.css';
+// Activates the global Window.jarvis type augmentation
+import type { AgentSession } from '../plugins/types';
+import { AgentApprovalPanel } from '../plugins/agents/AgentApprovalPanel';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -9,20 +12,13 @@ interface Message {
   content: string;
 }
 
-declare const window: Window & {
-  jarvis: {
-    getSelectedOllamaModel(): Promise<string | null>;
-    sendChatMessage(messages: Array<{ role: string; content: string }>): Promise<{ ok: boolean }>;
-    abortChat(): Promise<void>;
-    onChatToken(callback: (token: string) => void): void;
-    onChatDone(callback: () => void): void;
-    onChatError(callback: (error: string) => void): void;
-    getChatAlwaysOnTop(): Promise<boolean>;
-    setChatAlwaysOnTop(value: boolean): Promise<{ ok: boolean }>;
-  };
-};
+interface ActiveAgentSession {
+  sessionId: number;
+  agentName: string;
+  scopeValue: string;
+}
 
-// ── Markdown renderer ─────────────────────────────────────────────────────────
+// ── Markdown renderer ────────────────────────────────────────────────────────
 // Lightweight renderer — no external dependency.
 function renderMarkdown(raw: string): string {
   // 1. Escape HTML entities
@@ -81,7 +77,7 @@ function StreamingBubble({ text }: { text: string }) {
   );
 }
 
-// ── App ───────────────────────────────────────────────────────────────────────
+// ── App ──────────────────────────────────────────────────────────────────────
 
 function App() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -92,8 +88,15 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [pinned, setPinned] = useState(true);
 
+  // ── Agent session state ───────────────────────────────────────────────────
+  const [activeAgent, setActiveAgent] = useState<ActiveAgentSession | null>(null);
+  const [agentStreamText, setAgentStreamText] = useState('');
+  const [agentSession, setAgentSession] = useState<AgentSession | null>(null);
+  const [agentError, setAgentError] = useState<string | null>(null);
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const streamRef = useRef('');
+  const agentStreamRef = useRef('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // ── Init: load model + register IPC event listeners (once) ──────────────
@@ -106,6 +109,7 @@ function App() {
       .then(setPinned)
       .catch((err: unknown) => console.error('[Chat] getChatAlwaysOnTop:', err));
 
+    // ── Regular chat events ──────────────────────────────────────────────
     window.jarvis.onChatToken((token) => {
       streamRef.current += token;
       setStreamText(streamRef.current);
@@ -127,13 +131,54 @@ function App() {
       setStreaming(false);
       setError(err);
     });
+
+    // ── Agent session events ─────────────────────────────────────────────
+    const cleanupStarting = window.jarvis.onAgentSessionStarting((data) => {
+      setActiveAgent({ sessionId: data.sessionId, agentName: data.agentName, scopeValue: data.scopeValue });
+      agentStreamRef.current = '';
+      setAgentStreamText('');
+      setAgentSession(null);
+      setAgentError(null);
+    });
+
+    const cleanupToken = window.jarvis.onAgentToken((token) => {
+      agentStreamRef.current += token;
+      setAgentStreamText(agentStreamRef.current);
+    });
+
+    const cleanupAnalysisComplete = window.jarvis.onAgentAnalysisComplete(() => {
+      // Phase 1 (streaming analysis) done — clear the streaming text
+      agentStreamRef.current = '';
+      setAgentStreamText('');
+    });
+
+    const cleanupSessionComplete = window.jarvis.onAgentSessionComplete(async (data) => {
+      const session = await window.jarvis.agentsGetSession(data.sessionId);
+      setAgentSession(session);
+      setActiveAgent(null);
+    });
+
+    const cleanupSessionError = window.jarvis.onAgentSessionError((data) => {
+      setAgentError(data.message);
+      setActiveAgent(null);
+      agentStreamRef.current = '';
+      setAgentStreamText('');
+    });
+
+    return () => {
+      cleanupStarting();
+      cleanupToken();
+      cleanupAnalysisComplete();
+      cleanupSessionComplete();
+      cleanupSessionError();
+    };
   }, []);
 
   // ── Auto-scroll to bottom on new content ─────────────────────────────────
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [messages, streamText]);
+  }, [messages, streamText, agentStreamText, agentSession]);
 
   // ── Auto-resize textarea ──────────────────────────────────────────────────
   useEffect(() => {
@@ -177,6 +222,11 @@ function App() {
     setPinned(next);
   }, [pinned]);
 
+  const handleFindingUpdate = useCallback(async (sessionId: number) => {
+    const updated = await window.jarvis.agentsGetSession(sessionId);
+    setAgentSession(updated);
+  }, []);
+
   const noModel = !model;
   const inputDisabled = noModel || streaming;
   const sendDisabled = inputDisabled || !input.trim();
@@ -199,9 +249,19 @@ function App() {
         </button>
       </div>
 
+      {/* Agent session banner */}
+      {activeAgent && (
+        <div class="chat-agent-header">
+          <span class="chat-agent-spinner">{'⏳'}</span>
+          {' Agent: '}<strong>{activeAgent.agentName}</strong>
+          {' \u2014 analysing '}
+          <span class="chat-agent-scope">{activeAgent.scopeValue}</span>
+        </div>
+      )}
+
       {/* Messages */}
       <div class="chat-messages" ref={scrollRef}>
-        {messages.length === 0 && !streaming && (
+        {messages.length === 0 && !streaming && !activeAgent && agentSession === null && (
           <div class="chat-empty">
             <div class="chat-empty-icon">{'💬'}</div>
             <p>Ask me about your repositories, organizations, recent activity, or anything in your indexed GitHub data.</p>
@@ -219,8 +279,23 @@ function App() {
 
         {streaming && <StreamingBubble text={streamText} />}
 
+        {/* Agent streaming output */}
+        {agentStreamText && <StreamingBubble text={agentStreamText} />}
+
         {error && (
           <div class="chat-error">{error}</div>
+        )}
+
+        {agentError && (
+          <div class="chat-error">{'⚠ Agent error: '}{agentError}</div>
+        )}
+
+        {/* Agent approval panel — shown after session completes with findings */}
+        {agentSession && (
+          <AgentApprovalPanel
+            session={agentSession}
+            onFindingUpdate={handleFindingUpdate}
+          />
         )}
       </div>
 
@@ -254,7 +329,7 @@ function App() {
   );
 }
 
-// ── Mount ─────────────────────────────────────────────────────────────────────
+// ── Mount ────────────────────────────────────────────────────────────────────
 
 const root = document.getElementById('app')!;
 render(<App />, root);

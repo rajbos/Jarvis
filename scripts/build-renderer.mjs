@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+﻿#!/usr/bin/env node
 // Bundles renderer TSX entry points into dist/renderer/ using esbuild.
 import esbuild from 'esbuild';
 import path from 'path';
@@ -12,6 +12,7 @@ const options = {
   entryPoints: {
     renderer: path.join(__dirname, '..', 'src', 'renderer', 'index.tsx'),
     settings: path.join(__dirname, '..', 'src', 'renderer', 'settings.tsx'),
+    chat: path.join(__dirname, '..', 'src', 'renderer', 'chat.tsx'),
   },
   outdir: path.join(__dirname, '..', 'dist', 'renderer'),
   bundle: true,
