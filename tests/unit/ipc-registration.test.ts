@@ -134,6 +134,9 @@ const EXPECTED_CHANNELS = [
   'onedrive:get-folder-info',
   'onedrive:rescan-files',
   'onedrive:list-files-for-folder',
+  'onedrive:read-onenote-file',
+  'onedrive:read-url-shortcut',
+  'shell:open-url',
 ] as const;
 
 describe('IPC handler registration', () => {

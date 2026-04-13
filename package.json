@@ -1,7 +1,7 @@
 {
   "name": "jarvis",
   "version": "0.1.0",
-  "description": "Jarvis \u2014 a locally-hosted personal assistant agent for GitHub repository maintenance",
+  "description": "Jarvis — a locally-hosted personal assistant agent for GitHub repository maintenance",
   "main": "dist/main/index.js",
   "scripts": {
     "build": "tsc && node scripts/build-renderer.mjs && npm run copy-static",
@@ -20,6 +20,7 @@
   "license": "MIT",
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@joplin/onenote-converter": "^3.5.1",
     "@types/node": "^25.5.2",
     "@vitest/coverage-v8": "^4.1.3",
     "concurrently": "^9.2.1",

@@ -270,6 +270,43 @@ export interface FailedWorkflowRun {
   html_url: string;
 }
 
+// ── OneNote types ─────────────────────────────────────────────────────────────
+
+export interface OneNotePageContent {
+  /** 1-based page index within the section file. */
+  pageIndex: number;
+  /** Best-effort page title (may be empty for untitled pages). */
+  title: string;
+  /** Best-effort page date string (e.g. "Thursday, September 25, 2025"). */
+  date: string;
+  /** All body text found in this page, joined with spaces. */
+  content: string;
+}
+
+export interface OneNoteSectionContent {
+  /** Human-readable name derived from the filename (without extension). */
+  sectionName: string;
+  /** Absolute path of the source `.one` file. */
+  filePath: string;
+  /** Number of pages found in this section. */
+  pageCount: number;
+  /** Per-page content. */
+  pages: OneNotePageContent[];
+  /** Full concatenated text — convenient for whole-section RAG. */
+  textContent: string;
+}
+
+// ── URL shortcut types ────────────────────────────────────────────────────────
+
+export interface UrlShortcutInfo {
+  /** Raw URL from the shortcut file. */
+  url: string;
+  /** True when the URL appears to be a OneNote notebook link. */
+  isOneNote: boolean;
+  /** True when the URL points to SharePoint (content requires Graph API). */
+  isSharePoint: boolean;
+}
+
 // ── OneDrive types ────────────────────────────────────────────────────────────
 
 export interface OnedriveRoot {
@@ -465,6 +502,9 @@ export interface JarvisApi {
   onedriveGetFolderInfo(groupId: number): Promise<OnedriveFolderInfo[]>;
   onedriveRescanFiles(folderId: number): Promise<{ ok: boolean; fileCount?: number; error?: string }>;
   onedriveListFilesForFolder(folderId: number): Promise<OnedriveFile[]>;
+  onedriveReadOneNoteFile(filePath: string): Promise<{ ok: boolean; section?: OneNoteSectionContent; error?: string }>;
+  onedriveReadUrlShortcut(filePath: string): Promise<{ ok: boolean; url?: string; isOneNote?: boolean; isSharePoint?: boolean; error?: string }>;
+  shellOpenUrl(url: string): Promise<{ ok: boolean; error?: string }>;
 }
 
 declare global {

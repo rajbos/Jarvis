@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'preact/hooks';
-import type { Group, GroupDetail, LocalRepo, OnedriveFolderInfo, OnedriveFile } from '../types';
+import type { Group, GroupDetail, LocalRepo, OnedriveFolderInfo, OnedriveFile, UrlShortcutInfo } from '../types';
 
 // ── GroupsPanel ───────────────────────────────────────────────────────────────
 // Allows users to create, rename, delete groups and assign local/remote repos
@@ -7,9 +7,10 @@ import type { Group, GroupDetail, LocalRepo, OnedriveFolderInfo, OnedriveFile } 
 
 interface GroupsPanelProps {
   onClose: () => void;
+  onOpenOneNote?: (filePath: string) => void;
 }
 
-export function GroupsPanel({ onClose }: GroupsPanelProps) {
+export function GroupsPanel({ onClose, onOpenOneNote }: GroupsPanelProps) {
   const [groups, setGroups] = useState<Group[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<GroupDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -33,6 +34,8 @@ export function GroupsPanel({ onClose }: GroupsPanelProps) {
   const [onedriveRescanningId, setOnedriveRescanningId] = useState<number | null>(null);
   const [expandedFolderId, setExpandedFolderId] = useState<number | null>(null);
   const [folderFiles, setFolderFiles] = useState<Record<number, OnedriveFile[]>>({});
+  // Cache parsed .url shortcut info keyed by file path
+  const [urlShortcuts, setUrlShortcuts] = useState<Record<string, UrlShortcutInfo & { loading?: boolean }>>({});
 
   const refresh = async () => {
     try {
@@ -187,6 +190,27 @@ export function GroupsPanel({ onClose }: GroupsPanelProps) {
     if (!folderFiles[folder.id]) {
       const files = await window.jarvis.onedriveListFilesForFolder(folder.id);
       setFolderFiles((prev) => ({ ...prev, [folder.id]: files }));
+      // Pre-load URL shortcut info for .url files
+      if (folder.folderPath) {
+        for (const f of files.filter((f) => f.extension === '.url')) {
+          const fullPath = folder.folderPath + '\\' + f.relativePath;
+          if (!urlShortcuts[fullPath]) {
+            setUrlShortcuts((prev) => ({ ...prev, [fullPath]: { url: '', isOneNote: false, isSharePoint: false, loading: true } }));
+            window.jarvis.onedriveReadUrlShortcut(fullPath).then((result) => {
+              if (result.ok && result.url) {
+                setUrlShortcuts((prev) => ({
+                  ...prev,
+                  [fullPath]: { url: result.url!, isOneNote: result.isOneNote ?? false, isSharePoint: result.isSharePoint ?? false },
+                }));
+              } else {
+                setUrlShortcuts((prev) => ({ ...prev, [fullPath]: { url: '', isOneNote: false, isSharePoint: false } }));
+              }
+            }).catch(() => {
+              setUrlShortcuts((prev) => ({ ...prev, [fullPath]: { url: '', isOneNote: false, isSharePoint: false } }));
+            });
+          }
+        }
+      }
     }
   };
 
@@ -441,24 +465,68 @@ export function GroupsPanel({ onClose }: GroupsPanelProps) {
                         {(folderFiles[folder.id] ?? []).length === 0 ? (
                           <div style={{ padding: '0.35rem 0.5rem', fontSize: '0.77rem', color: '#556' }}>No files indexed.</div>
                         ) : (
-                          (folderFiles[folder.id] ?? []).map((f) => (
-                            <div
-                              key={f.id}
-                              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.2rem 0.5rem', borderBottom: '1px solid #1e1e28' }}
-                            >
-                              <div style={{ minWidth: 0 }}>
-                                <span style={{ fontSize: '0.78rem', color: '#bbc' }}>{f.name}</span>
-                                {f.relativePath !== f.name && (
-                                  <span style={{ fontSize: '0.68rem', color: '#556', marginLeft: '0.3rem', fontFamily: 'monospace' }}>
-                                    {f.relativePath}
+                          (folderFiles[folder.id] ?? []).map((f) => {
+                            const isOneNote = f.extension === '.one';
+                            const isUrlShortcut = f.extension === '.url';
+                            const fullPath = folder.folderPath
+                              ? folder.folderPath + '\\' + f.relativePath
+                              : null;
+                            const shortcutInfo = fullPath ? urlShortcuts[fullPath] : null;
+                            const isOneNoteUrl = isUrlShortcut && shortcutInfo?.isOneNote;
+                            return (
+                              <div
+                                key={f.id}
+                                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.2rem 0.5rem', borderBottom: '1px solid #1e1e28' }}
+                              >
+                                <div style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                                  {isOneNote && (
+                                    <span style={{ fontSize: '0.78rem', flexShrink: 0 }}>📓</span>
+                                  )}
+                                  {isUrlShortcut && (
+                                    <span style={{ fontSize: '0.78rem', flexShrink: 0 }}>{isOneNoteUrl ? '📓🌐' : '🔗'}</span>
+                                  )}
+                                  <div style={{ minWidth: 0 }}>
+                                    <span style={{ fontSize: '0.78rem', color: (isOneNote || isOneNoteUrl) ? '#cce' : '#bbc' }}>{f.name}</span>
+                                    {isUrlShortcut && shortcutInfo?.isSharePoint && (
+                                      <span style={{ marginLeft: '0.35rem', fontSize: '0.68rem', color: '#88a', background: '#1a1a30', padding: '0.05rem 0.25rem', borderRadius: '3px' }}>
+                                        SharePoint
+                                      </span>
+                                    )}
+                                    {f.relativePath !== f.name && (
+                                      <span style={{ fontSize: '0.68rem', color: '#556', marginLeft: '0.3rem', fontFamily: 'monospace' }}>
+                                        {f.relativePath}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flexShrink: 0, paddingLeft: '0.5rem' }}>
+                                  <span style={{ fontSize: '0.7rem', color: '#667' }}>
+                                    {f.lastModified ? new Date(f.lastModified).toLocaleDateString() : '—'}
                                   </span>
-                                )}
+                                  {isOneNote && fullPath && onOpenOneNote && (
+                                    <button
+                                      title="View note content"
+                                      class="btn-secondary"
+                                      style={{ padding: '0.05rem 0.3rem', fontSize: '0.7rem' }}
+                                      onClick={() => onOpenOneNote(fullPath)}
+                                    >
+                                      📖
+                                    </button>
+                                  )}
+                                  {isUrlShortcut && shortcutInfo?.url && (
+                                    <button
+                                      title={`Open in ${shortcutInfo.isOneNote ? 'OneNote' : 'browser'}: ${shortcutInfo.url}`}
+                                      class="btn-secondary"
+                                      style={{ padding: '0.05rem 0.3rem', fontSize: '0.7rem' }}
+                                      onClick={() => void window.jarvis.shellOpenUrl(shortcutInfo.url)}
+                                    >
+                                      🌐
+                                    </button>
+                                  )}
+                                </div>
                               </div>
-                              <span style={{ fontSize: '0.7rem', color: '#667', flexShrink: 0, paddingLeft: '0.5rem' }}>
-                                {f.lastModified ? new Date(f.lastModified).toLocaleDateString() : '—'}
-                              </span>
-                            </div>
-                          ))
+                            );
+                          })
                         )}
                       </div>
                     )}

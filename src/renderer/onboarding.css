@@ -2875,3 +2875,11 @@ h5.ec-heading { font-size: 0.85rem; }
   min-width: 0;
   overflow-y: auto;
 }
+
+/* ── OneNote section panel ────────────────────────────────────────────────── */
+.onenote-section-panel {
+  flex: 0 0 420px;
+  width: 420px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
