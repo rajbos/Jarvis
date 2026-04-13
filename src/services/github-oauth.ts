@@ -1,4 +1,4 @@
-import type { Database as SqlJsDatabase } from 'sql.js';
+﻿import type { Database as SqlJsDatabase } from 'sql.js';
 import { encrypt, decrypt, getEncryptionKey } from '../storage/encryption';
 
 const GITHUB_DEVICE_CODE_URL = 'https://github.com/login/device/code';
@@ -165,12 +165,19 @@ export function loadGitHubAuth(db: SqlJsDatabase): { login: string; accessToken:
   stmt.free();
 
   const key = getEncryptionKey();
-  return {
-    login: row.login,
-    accessToken: decrypt(row.access_token, key),
-    scopes: row.scopes,
-    avatarUrl: row.avatar_url,
-  };
+  try {
+    return {
+      login: row.login,
+      accessToken: decrypt(row.access_token, key),
+      scopes: row.scopes,
+      avatarUrl: row.avatar_url,
+    };
+  } catch {
+    // Decryption failed — the key changed (e.g. first run after upgrading to
+    // safeStorage). Return null so the caller prompts re-authentication.
+    console.warn('[OAuth] Failed to decrypt stored token — re-authentication required');
+    return null;
+  }
 }
 
 /**
@@ -192,7 +199,12 @@ export function loadGitHubPat(db: SqlJsDatabase): string | null {
   stmt.free();
   if (!row.pat) return null;
   const key = getEncryptionKey();
-  return decrypt(row.pat, key);
+  try {
+    return decrypt(row.pat, key);
+  } catch {
+    console.warn('[OAuth] Failed to decrypt stored PAT — it will need to be re-entered');
+    return null;
+  }
 }
 
 /**
