@@ -11,6 +11,7 @@ import {
   scanFilesForFolder,
   listFilesForFolder,
 } from '../../services/onedrive';
+import { readOneNoteSection } from '../../services/onenote-reader';
 import { getGroup } from '../../services/groups';
 
 export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWindow | null): void {
@@ -107,5 +108,21 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
   ipcMain.handle('onedrive:list-files-for-folder', (_event, folderId: number) => {
     if (typeof folderId !== 'number') return [];
     return listFilesForFolder(db, folderId);
+  });
+
+  ipcMain.handle('onedrive:read-onenote-file', (_event, filePath: string) => {
+    if (typeof filePath !== 'string' || filePath.trim().length === 0) {
+      return { ok: false, error: 'filePath is required' };
+    }
+    if (!filePath.toLowerCase().endsWith('.one')) {
+      return { ok: false, error: 'Only .one files are supported' };
+    }
+    try {
+      const section = readOneNoteSection(filePath);
+      return { ok: true, section };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: msg };
+    }
   });
 }

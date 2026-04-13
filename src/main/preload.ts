@@ -206,4 +206,6 @@ contextBridge.exposeInMainWorld('jarvis', {
     ipcRenderer.invoke('onedrive:rescan-files', folderId),
   onedriveListFilesForFolder: (folderId: number) =>
     ipcRenderer.invoke('onedrive:list-files-for-folder', folderId),
+  onedriveReadOneNoteFile: (filePath: string) =>
+    ipcRenderer.invoke('onedrive:read-onenote-file', filePath),
 });
