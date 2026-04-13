@@ -126,6 +126,14 @@ const EXPECTED_CHANNELS = [
   'groups:remove-local-repo',
   'groups:add-github-repo',
   'groups:remove-github-repo',
+  // onedrive plugin
+  'onedrive:list-roots',
+  'onedrive:add-root',
+  'onedrive:remove-root',
+  'onedrive:discover-for-group',
+  'onedrive:get-folder-info',
+  'onedrive:rescan-files',
+  'onedrive:list-files-for-folder',
 ] as const;
 
 describe('IPC handler registration', () => {

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'preact/hooks';
-import type { Group, GroupDetail, LocalRepo } from '../types';
+import type { Group, GroupDetail, LocalRepo, OnedriveFolderInfo, OnedriveFile } from '../types';
 
 // ── GroupsPanel ───────────────────────────────────────────────────────────────
 // Allows users to create, rename, delete groups and assign local/remote repos
@@ -27,6 +27,12 @@ export function GroupsPanel({ onClose }: GroupsPanelProps) {
   // Add repo search
   const [localRepos, setLocalRepos] = useState<LocalRepo[]>([]);
   const [repoSearch, setRepoSearch] = useState('');
+
+  // OneDrive state
+  const [onedriveDiscovering, setOnedriveDiscovering] = useState(false);
+  const [onedriveRescanningId, setOnedriveRescanningId] = useState<number | null>(null);
+  const [expandedFolderId, setExpandedFolderId] = useState<number | null>(null);
+  const [folderFiles, setFolderFiles] = useState<Record<number, OnedriveFile[]>>({});
 
   const refresh = async () => {
     try {
@@ -136,6 +142,52 @@ export function GroupsPanel({ onClose }: GroupsPanelProps) {
     const detail = await window.jarvis.groupsGet(selectedGroup.id);
     setSelectedGroup(detail);
     await refresh();
+  };
+
+  // ── OneDrive handlers ────────────────────────────────────────────────────────
+
+  const handleOnedriveDiscover = async () => {
+    if (!selectedGroup) return;
+    setOnedriveDiscovering(true);
+    try {
+      await window.jarvis.onedriveDiscoverForGroup(selectedGroup.id);
+      const detail = await window.jarvis.groupsGet(selectedGroup.id);
+      setSelectedGroup(detail);
+    } catch (err) {
+      console.error('[Groups] OneDrive discover failed:', err);
+    } finally {
+      setOnedriveDiscovering(false);
+    }
+  };
+
+  const handleOnedriveRescan = async (folderId: number) => {
+    setOnedriveRescanningId(folderId);
+    try {
+      await window.jarvis.onedriveRescanFiles(folderId);
+      const detail = await window.jarvis.groupsGet(selectedGroup!.id);
+      setSelectedGroup(detail);
+      // Refresh file list if expanded
+      if (expandedFolderId === folderId) {
+        const files = await window.jarvis.onedriveListFilesForFolder(folderId);
+        setFolderFiles((prev) => ({ ...prev, [folderId]: files }));
+      }
+    } catch (err) {
+      console.error('[Groups] OneDrive rescan failed:', err);
+    } finally {
+      setOnedriveRescanningId(null);
+    }
+  };
+
+  const handleToggleFiles = async (folder: OnedriveFolderInfo) => {
+    if (expandedFolderId === folder.id) {
+      setExpandedFolderId(null);
+      return;
+    }
+    setExpandedFolderId(folder.id);
+    if (!folderFiles[folder.id]) {
+      const files = await window.jarvis.onedriveListFilesForFolder(folder.id);
+      setFolderFiles((prev) => ({ ...prev, [folder.id]: files }));
+    }
   };
 
   // Repos not yet in the selected group (for the add panel)
@@ -306,6 +358,113 @@ export function GroupsPanel({ onClose }: GroupsPanelProps) {
                   </button>
                 </div>
               ))}
+
+              {/* OneDrive customer folder */}
+              <div style={{ marginTop: '0.75rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.3rem' }}>
+                  <div style={{ fontSize: '0.8rem', color: '#99a', fontWeight: 600 }}>
+                    Customer Data (OneDrive)
+                  </div>
+                  <button
+                    class="btn-save"
+                    style={{ padding: '0.15rem 0.5rem', fontSize: '0.75rem' }}
+                    onClick={() => void handleOnedriveDiscover()}
+                    disabled={onedriveDiscovering}
+                  >
+                    {onedriveDiscovering ? 'Scanning…' : '🔍 Discover'}
+                  </button>
+                </div>
+
+                {selectedGroup.onedriveFolders.length === 0 && (
+                  <div style={{ fontSize: '0.78rem', color: '#667' }}>
+                    No OneDrive roots configured. Add roots in Settings first, then click Discover.
+                  </div>
+                )}
+
+                {selectedGroup.onedriveFolders.map((folder) => (
+                  <div
+                    key={folder.id}
+                    style={{ marginBottom: '0.4rem', background: '#1a1a26', borderRadius: '4px', overflow: 'hidden' }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.3rem 0.5rem' }}>
+                      <div style={{ minWidth: 0 }}>
+                        <span style={{ fontSize: '0.82rem', color: '#ccd', fontWeight: 600 }}>{folder.rootLabel}</span>
+                        {folder.status === 'found' ? (
+                          <span style={{ marginLeft: '0.4rem', fontSize: '0.72rem', color: '#6a9', background: '#1a3a1a', padding: '0.1rem 0.3rem', borderRadius: '3px' }}>
+                            ✓ found
+                          </span>
+                        ) : (
+                          <span style={{ marginLeft: '0.4rem', fontSize: '0.72rem', color: '#f88', background: '#3a1a1a', padding: '0.1rem 0.3rem', borderRadius: '3px' }}>
+                            ✕ not found
+                          </span>
+                        )}
+                        {folder.status === 'found' && (
+                          <span style={{ marginLeft: '0.4rem', fontSize: '0.72rem', color: '#778' }}>
+                            {folder.fileCount} file{folder.fileCount !== 1 ? 's' : ''}
+                            {folder.lastScanned ? ` · scanned ${new Date(folder.lastScanned).toLocaleDateString()}` : ''}
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', gap: '0.25rem', flexShrink: 0 }}>
+                        {folder.status === 'found' && (
+                          <>
+                            <button
+                              title="Rescan files"
+                              class="btn-secondary"
+                              style={{ padding: '0.1rem 0.35rem', fontSize: '0.72rem' }}
+                              onClick={() => void handleOnedriveRescan(folder.id)}
+                              disabled={onedriveRescanningId === folder.id}
+                            >
+                              {onedriveRescanningId === folder.id ? '…' : '↻'}
+                            </button>
+                            <button
+                              title={expandedFolderId === folder.id ? 'Hide files' : 'Show files'}
+                              class="btn-secondary"
+                              style={{ padding: '0.1rem 0.35rem', fontSize: '0.72rem' }}
+                              onClick={() => void handleToggleFiles(folder)}
+                            >
+                              {expandedFolderId === folder.id ? '▲' : '▼'}
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {folder.status === 'found' && folder.folderPath && (
+                      <div style={{ paddingLeft: '0.5rem', paddingBottom: '0.2rem', fontSize: '0.7rem', color: '#556', fontFamily: 'monospace' }}>
+                        {folder.folderPath}
+                      </div>
+                    )}
+
+                    {expandedFolderId === folder.id && (
+                      <div style={{ borderTop: '1px solid #2a2a3a', maxHeight: '200px', overflowY: 'auto' }}>
+                        {(folderFiles[folder.id] ?? []).length === 0 ? (
+                          <div style={{ padding: '0.35rem 0.5rem', fontSize: '0.77rem', color: '#556' }}>No files indexed.</div>
+                        ) : (
+                          (folderFiles[folder.id] ?? []).map((f) => (
+                            <div
+                              key={f.id}
+                              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.2rem 0.5rem', borderBottom: '1px solid #1e1e28' }}
+                            >
+                              <div style={{ minWidth: 0 }}>
+                                <span style={{ fontSize: '0.78rem', color: '#bbc' }}>{f.name}</span>
+                                {f.relativePath !== f.name && (
+                                  <span style={{ fontSize: '0.68rem', color: '#556', marginLeft: '0.3rem', fontFamily: 'monospace' }}>
+                                    {f.relativePath}
+                                  </span>
+                                )}
+                              </div>
+                              <span style={{ fontSize: '0.7rem', color: '#667', flexShrink: 0, paddingLeft: '0.5rem' }}>
+                                {f.lastModified ? new Date(f.lastModified).toLocaleDateString() : '—'}
+                              </span>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
 
               {/* Add local repo */}
               {localRepos.length > 0 && (

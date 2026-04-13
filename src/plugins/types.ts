@@ -270,6 +270,39 @@ export interface FailedWorkflowRun {
   html_url: string;
 }
 
+// ── OneDrive types ────────────────────────────────────────────────────────────
+
+export interface OnedriveRoot {
+  id: number;
+  path: string;
+  label: string;
+  addedAt: string;
+}
+
+export interface OnedriveFolderInfo {
+  id: number;
+  groupId: number;
+  rootId: number;
+  rootLabel: string;
+  rootPath: string;
+  status: 'found' | 'not_found';
+  folderPath: string | null;
+  fileCount: number;
+  lastScanned: string | null;
+  discoveredAt: string;
+}
+
+export interface OnedriveFile {
+  id: number;
+  folderId: number;
+  name: string;
+  extension: string | null;
+  relativePath: string;
+  lastModified: string | null;
+  sizeBytes: number | null;
+  scannedAt: string;
+}
+
 // ── Groups types ──────────────────────────────────────────────────────────────
 
 export interface Group {
@@ -302,6 +335,7 @@ export interface GroupDetail {
   updatedAt: string;
   localRepos: GroupLocalRepoMember[];
   githubRepos: GroupGithubRepoMember[];
+  onedriveFolders: OnedriveFolderInfo[];
 }
 
 // ── Jarvis preload API contract ───────────────────────────────────────────────
@@ -423,6 +457,14 @@ export interface JarvisApi {
   groupsRemoveLocalRepo(groupId: number, localRepoId: number): Promise<{ ok: boolean; error?: string }>;
   groupsAddGithubRepo(groupId: number, githubRepoId: number): Promise<{ ok: boolean; error?: string }>;
   groupsRemoveGithubRepo(groupId: number, githubRepoId: number): Promise<{ ok: boolean; error?: string }>;
+  // OneDrive
+  onedriveListRoots(): Promise<OnedriveRoot[]>;
+  onedriveAddRoot(label: string, folderPath?: string): Promise<{ ok: boolean; root?: OnedriveRoot; canceled?: boolean; error?: string }>;
+  onedriveRemoveRoot(rootId: number): Promise<{ ok: boolean; error?: string }>;
+  onedriveDiscoverForGroup(groupId: number): Promise<{ ok: boolean; folders?: OnedriveFolderInfo[]; error?: string }>;
+  onedriveGetFolderInfo(groupId: number): Promise<OnedriveFolderInfo[]>;
+  onedriveRescanFiles(folderId: number): Promise<{ ok: boolean; fileCount?: number; error?: string }>;
+  onedriveListFilesForFolder(folderId: number): Promise<OnedriveFile[]>;
 }
 
 declare global {
