@@ -36,7 +36,15 @@ export function readUrlShortcut(filePath: string): UrlShortcutInfo {
     lower.includes('onenote') ||
     lower.includes('callerscenarioid=onenote');
 
-  const isSharePoint = lower.includes('sharepoint.com');
+  let isSharePoint = false;
+  try {
+    const parsed = new URL(url);
+    isSharePoint =
+      parsed.hostname === 'sharepoint.com' ||
+      parsed.hostname.endsWith('.sharepoint.com');
+  } catch {
+    // Malformed URL — not SharePoint
+  }
 
   return { url, isOneNote, isSharePoint };
 }
