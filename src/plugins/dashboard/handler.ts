@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron';
+﻿import { ipcMain } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import type { BrowserWindow } from 'electron';
 import { execFile } from 'child_process';
@@ -107,6 +107,20 @@ function getRecentFailedRuns(db: SqlJsDatabase, limit = 20): {
   return rows;
 }
 
+/**
+ * Look up last_pushed_at for a GitHub repo.
+ */
+function getLastPushedAt(db: SqlJsDatabase, repoFullName: string | null): string | null {
+  if (!repoFullName) return null;
+  const stmt = db.prepare('SELECT last_pushed_at FROM github_repos WHERE full_name = ? LIMIT 1');
+  stmt.bind([repoFullName]);
+  const found = stmt.step() ? (stmt.getAsObject() as { last_pushed_at: string | null }) : null;
+  stmt.free();
+  return found?.last_pushed_at ?? null;
+}
+
+
+
 // ── IPC registration ──────────────────────────────────────────────────────────
 
 export function registerHandlers(
@@ -144,6 +158,7 @@ export function registerHandlers(
 
         const notifCount = getRepoNotifCount(db, linkedGithubRepo);
         const failedRuns = getFailedRunCount(db, linkedGithubRepo);
+        const lastPushedAt = getLastPushedAt(db, linkedGithubRepo);
 
         const status = checkRepoHealth(
           repo.id,
@@ -152,6 +167,7 @@ export function registerHandlers(
           linkedGithubRepo,
           notifCount,
           failedRuns,
+          lastPushedAt,
         );
 
         repos.push(status);
@@ -186,8 +202,7 @@ export function registerHandlers(
         totalNotifications: 0,
         totalFailedRuns: 0,
         generatedAt: new Date().toISOString(),
-      };
-    }
+      };    }
   });
 
   /**
