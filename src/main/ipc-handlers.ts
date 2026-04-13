@@ -19,6 +19,7 @@ import { registerHandlers as registerAgentsHandlers } from '../plugins/agents/ha
 import { registerHandlers as registerSecretsHandlers } from '../plugins/secrets/handler';
 import { registerHandlers as registerDashboardHandlers } from '../plugins/dashboard/handler';
 import { registerHandlers as registerGroupsHandlers } from '../plugins/groups/handler';
+import { registerHandlers as registerOnedriveHandlers } from '../plugins/onedrive/handler';
 
 // Re-export startDiscoveryIfAuthed so src/main/index.ts can call it on startup
 export { startDiscoveryIfAuthed } from '../plugins/discovery/handler';
@@ -44,4 +45,5 @@ export function registerIpcHandlers(
   registerSecretsHandlers(db, getWindow);
   registerDashboardHandlers(db, getWindow);
   registerGroupsHandlers(db, getWindow);
+  registerOnedriveHandlers(db, getWindow);
 }
