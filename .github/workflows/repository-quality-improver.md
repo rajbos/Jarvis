@@ -491,11 +491,39 @@ When you reach this point, you must still emit a safe output:
 
 ## Phase 3: Update Cache Memory
 
-After generating the report, update the focus area history:
+After generating the report, update the focus area history using `jq` to construct the JSON safely (no heredoc):
 
 ```bash
 mkdir -p /tmp/gh-aw/cache-memory/focus-areas/
-# Write updated history.json with the new run appended
+
+# Load existing history or start fresh
+HISTORY_FILE="/tmp/gh-aw/cache-memory/focus-areas/history.json"
+if [ -f "$HISTORY_FILE" ]; then
+  EXISTING=$(cat "$HISTORY_FILE")
+else
+  EXISTING='{"runs":[],"recent_areas":[],"statistics":{"total_runs":0,"custom_rate":0,"reuse_rate":0,"unique_areas_explored":0}}'
+fi
+
+# Build the new run entry using jq (replace FOCUS_AREA, IS_CUSTOM, DESCRIPTION, TASKS_COUNT with actual values)
+TODAY=$(date +%Y-%m-%d)
+NEW_RUN=$(jq -n \
+  --arg date "$TODAY" \
+  --arg focus_area "FOCUS_AREA" \
+  --argjson custom false \
+  --arg description "DESCRIPTION" \
+  --argjson tasks 0 \
+  '{date: $date, focus_area: $focus_area, custom: $custom, description: $description, tasks_generated: $tasks}')
+
+# Append the new run and update statistics
+echo "$EXISTING" | jq \
+  --argjson new_run "$NEW_RUN" \
+  '.runs += [$new_run] |
+   .recent_areas = ([.runs[-5:][].focus_area] | unique) |
+   .statistics.total_runs += 1 |
+   .statistics.unique_areas_explored = (.runs | map(.focus_area) | unique | length)' \
+  > "$HISTORY_FILE"
+
+echo "Cache memory updated: $HISTORY_FILE"
 ```
 
 The JSON should include:
@@ -528,3 +556,27 @@ A successful quality improvement run:
 - **Be Actionable**: Every finding should lead to a concrete task
 - **Always Emit Safe Output**: End every run with a safe output item. Prefer `create_issue`/`add_comment` when you have findings; otherwise use `noop` with a short rationale.
 - **Respect Timeout**: Complete within 20 minutes
+
+## Shell Command Safety Rules
+
+The agentic workflow runtime enforces a security policy that **blocks heredoc syntax and certain shell expansion patterns**. You must follow these rules for every bash command you write:
+
+- **No heredoc syntax**: Never use `<< 'EOF'`, `<< EOF`, `<<'PYEOF'`, or any other heredoc (`<<`) redirections in shell commands.
+- **No inline Python via stdin**: Never use `python3 - << 'PYEOF'` or similar patterns to pass Python code via stdin.
+- **No dangerous parameter expansions**: Avoid `${var,,}`, `${!var}`, `${var^^}`, `${var//pattern/replace}` and similar bash parameter transformation or indirect expansion patterns.
+- **No nested command substitution**: Avoid deeply nested `$($(…))` or backtick-within-backtick patterns.
+
+**Safe alternatives for writing multi-line content to files:**
+
+Instead of a heredoc, use `printf` or multiple `echo` statements:
+```bash
+# Instead of: cat > /tmp/file.json << 'EOF'
+# Use printf with escaped newlines:
+printf '{\n  "key": "value"\n}\n' > /tmp/file.json
+
+# Or write a Python script to a file using printf, then execute it:
+printf 'import sys\nprint("hello")\n' > /tmp/script.py
+python3 /tmp/script.py
+```
+
+For writing JSON to the cache-memory history file, construct it with `jq` or write it with `printf`/`echo` line by line.
