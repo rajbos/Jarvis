@@ -300,4 +300,17 @@ export function registerHandlers(
       return { ok: false, error: e instanceof Error ? e.message : String(e) };
     }
   });
+
+  ipcMain.handle('browser:focus-window', async (_event, tabId?: number) => {
+    try {
+      const response = await sendCommand({
+        type: 'focus-window',
+        payload: {},
+        ...(typeof tabId === 'number' ? { tabId } : {}),
+      });
+      return response;
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  });
 }

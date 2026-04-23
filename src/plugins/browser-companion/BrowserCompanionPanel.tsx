@@ -273,6 +273,18 @@ export function BrowserCompanionPanel({ onBack }: { onBack: () => void }) {
   };
 
   const connected = (status?.connectedClients ?? 0) > 0;
+  const [focusing, setFocusing] = useState(false);
+
+  const handleFocusBrowser = async () => {
+    setFocusing(true);
+    try {
+      await window.jarvis.browserFocusWindow();
+    } catch (e) {
+      console.warn('[BrowserCompanion] focus-window error:', e);
+    } finally {
+      setFocusing(false);
+    }
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '8px 0' }}>
@@ -300,7 +312,7 @@ export function BrowserCompanionPanel({ onBack }: { onBack: () => void }) {
         gap: 8,
       }}>
         <span style={{ fontSize: 20 }}>{connected ? '🟢' : '🟡'}</span>
-        <div>
+        <div style={{ flex: 1 }}>
           <div style={{ fontWeight: 600, fontSize: 13, color: connected ? '#81c784' : '#ffb74d' }}>
             {connected
               ? `Extension connected (${status?.connectedClients ?? 0} client${(status?.connectedClients ?? 0) !== 1 ? 's' : ''})`
@@ -312,6 +324,26 @@ export function BrowserCompanionPanel({ onBack }: { onBack: () => void }) {
               : `Install the Jarvis companion extension in Edge/Chrome and enable it. Bridge listening on port ${status?.port ?? 35789}.`}
           </div>
         </div>
+        {connected && (
+          <button
+            onClick={() => void handleFocusBrowser()}
+            disabled={focusing}
+            title="Bring the browser window to the foreground"
+            style={{
+              padding: '4px 10px',
+              borderRadius: 4,
+              border: 'none',
+              background: '#1565c0',
+              color: '#fff',
+              cursor: focusing ? 'not-allowed' : 'pointer',
+              fontSize: 12,
+              opacity: focusing ? 0.6 : 1,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {focusing ? '⏳' : '🪟'} Focus Browser
+          </button>
+        )}
       </div>
 
       {/* Install instructions banner */}

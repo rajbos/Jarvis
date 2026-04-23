@@ -148,6 +148,7 @@ const EXPECTED_CHANNELS = [
   'browser:navigate',
   'browser:list-tabs',
   'browser:get-page-content',
+  'browser:focus-window',
 ] as const;
 
 describe('IPC handler registration', () => {

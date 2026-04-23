@@ -146,6 +146,9 @@ async function handleCommand(rawData) {
       case 'get-page-content':
         data = await cmdGetPageContent(tabId);
         break;
+      case 'focus-window':
+        data = await cmdFocusWindow(tabId);
+        break;
       default:
         throw new Error(`Unknown command type: ${type}`);
     }
@@ -269,6 +272,23 @@ async function cmdGetPageContent(tabId) {
   });
 
   return results[0]?.result ?? null;
+}
+
+async function cmdFocusWindow(tabId) {
+  // Determine which window to focus.
+  // If a specific tab is requested, bring that tab's window to the front.
+  // Otherwise focus the last-focused window that contains a normal tab.
+  let windowId;
+  if (typeof tabId === 'number') {
+    const tab = await chrome.tabs.get(tabId);
+    windowId = tab.windowId;
+  } else {
+    const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    windowId = tab?.windowId;
+  }
+  if (windowId === undefined) throw new Error('No browser window found');
+  await chrome.windows.update(windowId, { focused: true });
+  return { ok: true, windowId };
 }
 
 // ── Tab load helper ───────────────────────────────────────────────────────────

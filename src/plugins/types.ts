@@ -550,6 +550,7 @@ export interface JarvisApi {
   browserNavigate(url: string): Promise<{ ok: boolean; data?: unknown; error?: string }>;
   browserListTabs(): Promise<{ ok: boolean; data?: unknown; error?: string }>;
   browserGetPageContent(tabId?: number): Promise<{ ok: boolean; data?: unknown; error?: string }>;
+  browserFocusWindow(tabId?: number): Promise<{ ok: boolean; windowId?: number; error?: string }>;
   onBrowserExtensionConnected(cb: (data: { count: number }) => void): () => void;
 }
 

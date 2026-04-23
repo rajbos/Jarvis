@@ -226,6 +226,7 @@ contextBridge.exposeInMainWorld('jarvis', {
   browserNavigate: (url: string) => ipcRenderer.invoke('browser:navigate', url),
   browserListTabs: () => ipcRenderer.invoke('browser:list-tabs'),
   browserGetPageContent: (tabId?: number) => ipcRenderer.invoke('browser:get-page-content', tabId),
+  browserFocusWindow: (tabId?: number) => ipcRenderer.invoke('browser:focus-window', tabId),
   onBrowserExtensionConnected: (callback: (data: { count: number }) => void) => {
     const listener = (_event: unknown, data: { count: number }) => callback(data);
     ipcRenderer.on('browser:extension-connected', listener);
