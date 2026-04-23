@@ -131,6 +131,27 @@ function showSettingsWindow(): void {
   });
 }
 
+// In packaged (production) builds, enforce a single instance so the user can't
+// accidentally open two Jarvis windows.  In development the watch-electron
+// watcher is already responsible for process lifecycle; skipping the lock
+// prevents races where a fast restart tries to acquire the lock before the
+// previous process has fully released it.
+if (app.isPackaged) {
+  const gotLock = app.requestSingleInstanceLock();
+  if (!gotLock) {
+    console.log('[Main] Another instance is already running — quitting.');
+    app.quit();
+  } else {
+    app.on('second-instance', () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.show();
+        mainWindow.focus();
+      }
+    });
+  }
+}
+
 app.whenReady().then(() => {
   initialize().catch((err) => {
     console.error('[Main] Fatal initialization error:', err);
