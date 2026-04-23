@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Jarvis Browser Companion",
+  "version": "0.1.0",
+  "description": "Connects your browser to the local Jarvis assistant via a WebSocket bridge.",
+  "permissions": ["activeTab", "tabs", "storage", "alarms"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Jarvis Browser Companion"
+  }
+}

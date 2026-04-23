@@ -19,6 +19,7 @@ This project is **Jarvis**: a locally-hosted personal assistant agent for GitHub
 
 - **src/**
   - **agent/**: Agent configuration and onboarding logic
+  - **browser-extension/**: Manifest V3 browser companion extension (plain JS, no build step)
   - **main/**: Electron main process (entry point, IPC, tray, window management)
   - **renderer/**: Frontend (HTML, TSX, CSS) for onboarding and settings
   - **services/**: Integrations (e.g., GitHub discovery, OAuth)
@@ -33,7 +34,8 @@ This project is **Jarvis**: a locally-hosted personal assistant agent for GitHub
 
 ## Key Scripts
 
-- **npm run build**: Compile TypeScript, build renderer, copy static files
+- **npm run build**: Compile TypeScript, build renderer, copy static files, build browser extension
+- **npm run build:extension**: Build (copy) the browser extension to `dist/browser-extension/`
 - **npm start**: Build and launch the Electron app
 - **npm run dev**: Concurrently run TypeScript, renderer, and Electron in watch mode for development
 - **npm test**: Run all unit tests with Vitest
@@ -85,3 +87,40 @@ Scripts for development:
 - **Run tests after changes**: After making any changes to TypeScript or JavaScript files, always run `npm test` and fix any failing tests before finishing
 - **IPC catalogue**: When adding a new `ipcMain.handle` channel, also add its name to the `EXPECTED_CHANNELS` array in `tests/unit/ipc-registration.test.ts`
 - **Automation**: CI/CD is not configured by default; contributors should run tests locally before PRs
+
+---
+
+## Browser Extension
+
+The Jarvis **Browser Companion** is a Manifest V3 extension that connects your browser to the Jarvis WebSocket bridge (`ws://127.0.0.1:35789`).  
+Source lives in `src/browser-extension/`; the built output goes to `dist/browser-extension/`.
+
+### Building
+
+```bash
+npm run build:extension
+```
+
+To rebuild automatically whenever a source file changes, pass `--watch`:
+
+```bash
+node scripts/build-extension.mjs --watch
+```
+
+### Loading the extension in Chrome / Edge
+
+1. Open **`chrome://extensions`** (or **`edge://extensions`**).
+2. Enable **Developer mode** (toggle in the top-right corner).
+3. Click **Load unpacked** and select the **`dist/browser-extension/`** folder.
+
+The Jarvis icon will appear in the browser toolbar.  
+Click it to see whether the extension is connected to the running Jarvis desktop app.
+
+### Reloading after a rebuild
+
+After running `npm run build:extension`:
+
+1. Go to **`chrome://extensions`**.
+2. Find the **Jarvis Browser Companion** card and click the **↻ (reload)** button.
+
+> **Tip:** Keep `node scripts/build-extension.mjs --watch` running in one terminal so files are re-copied immediately on save, then just hit reload in the extensions page.

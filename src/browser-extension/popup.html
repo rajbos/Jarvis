@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jarvis Browser Companion</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      margin: 0;
+      padding: 14px 16px;
+      width: 200px;
+      background: #1a1a2e;
+      color: #e2e8f0;
+    }
+    h3 {
+      margin: 0 0 10px;
+      font-size: 15px;
+      letter-spacing: 0.5px;
+    }
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+    }
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .dot.connected    { background: #22c55e; }
+    .dot.disconnected { background: #ef4444; }
+    .hint {
+      margin-top: 10px;
+      font-size: 11px;
+      color: #94a3b8;
+    }
+  </style>
+</head>
+<body>
+  <h3>🤖 Jarvis</h3>
+  <div class="status">
+    <div class="dot disconnected" id="dot"></div>
+    <span id="label">Disconnected</span>
+  </div>
+  <p class="hint" id="hint">Make sure Jarvis is running.</p>
+  <script src="popup.js"></script>
+</body>
+</html>
