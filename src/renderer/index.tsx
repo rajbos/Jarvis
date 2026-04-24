@@ -1017,13 +1017,7 @@ function App() {
 
 // ── Mount ────────────────────────────────────────────────────────────────────
 
-// Guard: only mount once.  During `npm run dev` the esbuild/tsc watchers can
-// cause the renderer script to be re-evaluated; without this check each
-// execution appends a second Preact tree instead of replacing the first one.
+document.body.classList.add('onboarding');
 const root = document.getElementById('app')!;
-if (!root.dataset.mounted) {
-  root.dataset.mounted = '1';
-  document.body.classList.add('onboarding');
-  render(<App />, root);
-}
+render(<App />, root);
 

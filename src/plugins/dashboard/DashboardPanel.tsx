@@ -888,7 +888,8 @@ export function DashboardPanel({ dismissedNotifIds }: { dismissedNotifIds?: Read
       const bT = b.lastPushedAt ? new Date(b.lastPushedAt).getTime() : 0;
       return bT - aT;
     }
-    // 'attention': repos with warnings first, then alphabetical    const aW = warningMap.get(a.localRepoId)?.length ?? 0;
+    // 'attention': repos with warnings first, then alphabetical
+    const aW = warningMap.get(a.localRepoId)?.length ?? 0;
     const bW = warningMap.get(b.localRepoId)?.length ?? 0;
     if (aW > 0 && bW === 0) return -1;
     if (aW === 0 && bW > 0) return 1;

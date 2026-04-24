@@ -8,6 +8,7 @@ import { getOnboardingStatus, completeOnboardingStep } from '../agent/onboarding
 import { registerIpcHandlers, startDiscoveryIfAuthed, scheduleLocalDiscovery, runBootWorkflowCheck } from './ipc-handlers';
 import { checkOllama } from '../services/ollama';
 import { saveDatabase } from '../storage/database';
+import { stopBridgeServer } from '../plugins/browser-companion/server';
 
 let mainWindow: BrowserWindow | null = null;
 let settingsWindow: BrowserWindow | null = null;
@@ -164,5 +165,6 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  stopBridgeServer();
   closeDatabase();
 });
