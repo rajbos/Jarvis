@@ -138,4 +138,16 @@ if (fs.existsSync(SRC_RENDERER)) {
   });
 }
 
+// Kill the Electron child when this watcher process is shut down (Ctrl+C,
+// SIGTERM from concurrently, etc.).  Without this, orphaned Electron windows
+// accumulate every time `npm run dev` is re-invoked.
+function killChild() {
+  if (electronProcess) {
+    try { electronProcess.kill(); } catch { /* already dead */ }
+  }
+  process.exit(0);
+}
+process.on('SIGINT', killChild);
+process.on('SIGTERM', killChild);
+
 startElectron();

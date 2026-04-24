@@ -274,6 +274,36 @@ export interface FailedWorkflowRun {
   html_url: string;
 }
 
+// ── Browser Companion types ───────────────────────────────────────────────────
+
+export interface BrowserSkill {
+  id: number;
+  name: string;
+  description: string;
+  start_url: string;
+  instructions: string;
+  extract_selector: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BrowserSkillRun {
+  id: number;
+  skill_id: number;
+  skill_name: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  started_at: string;
+  completed_at: string | null;
+  extracted_data: unknown;
+  error: string | null;
+}
+
+export interface BrowserCompanionStatus {
+  running: boolean;
+  port: number;
+  connectedClients: number;
+}
+
 // ── OneNote types ─────────────────────────────────────────────────────────────
 
 export interface OneNotePageContent {
@@ -509,6 +539,19 @@ export interface JarvisApi {
   onedriveReadOneNoteFile(filePath: string): Promise<{ ok: boolean; section?: OneNoteSectionContent; error?: string }>;
   onedriveReadUrlShortcut(filePath: string): Promise<{ ok: boolean; url?: string; isOneNote?: boolean; isSharePoint?: boolean; error?: string }>;
   shellOpenUrl(url: string): Promise<{ ok: boolean; error?: string }>;
+  // Browser Companion
+  browserStatus(): Promise<BrowserCompanionStatus>;
+  browserListSkills(): Promise<BrowserSkill[]>;
+  browserCreateSkill(name: string, description: string, startUrl: string, instructions: string, extractSelector: string): Promise<{ ok: boolean; id?: number; error?: string }>;
+  browserUpdateSkill(id: number, name: string, description: string, startUrl: string, instructions: string, extractSelector: string): Promise<{ ok: boolean; error?: string }>;
+  browserDeleteSkill(id: number): Promise<{ ok: boolean; error?: string }>;
+  browserListRuns(skillId?: number): Promise<BrowserSkillRun[]>;
+  browserRunSkill(skillId: number, testMode?: boolean): Promise<{ ok: boolean; runId?: number | null; data?: unknown; error?: string; testMode?: boolean }>;
+  browserNavigate(url: string): Promise<{ ok: boolean; data?: unknown; error?: string }>;
+  browserListTabs(): Promise<{ ok: boolean; data?: unknown; error?: string }>;
+  browserGetPageContent(tabId?: number): Promise<{ ok: boolean; data?: unknown; error?: string }>;
+  browserFocusWindow(tabId?: number): Promise<{ ok: boolean; windowId?: number; error?: string }>;
+  onBrowserExtensionConnected(cb: (data: { count: number }) => void): () => void;
 }
 
 declare global {
