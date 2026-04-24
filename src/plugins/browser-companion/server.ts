@@ -58,6 +58,12 @@ export function startBridgeServer(getWindow: () => BrowserWindow | null): void {
   getWindowFn = getWindow;
 
   wss = new WebSocketServer({ port: BRIDGE_PORT, host: '127.0.0.1' });
+  let started = false;
+
+  wss.on('listening', () => {
+    started = true;
+    console.log(`[BrowserBridge] Listening on ${BRIDGE_ORIGIN}`);
+  });
 
   wss.on('connection', (ws, req) => {
     // Only allow connections from localhost
@@ -114,9 +120,11 @@ export function startBridgeServer(getWindow: () => BrowserWindow | null): void {
 
   wss.on('error', (err) => {
     console.error('[BrowserBridge] Server error:', err.message);
+    if (!started) {
+      try { wss?.close(); } catch { /* ignore */ }
+      wss = null;
+    }
   });
-
-  console.log(`[BrowserBridge] Listening on ${BRIDGE_ORIGIN}`);
 }
 
 export function stopBridgeServer(): void {

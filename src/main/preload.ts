@@ -80,6 +80,7 @@ contextBridge.exposeInMainWorld('jarvis', {
   localLinkRepo: (localRepoId: number, githubRepoId: number | null) =>
     ipcRenderer.invoke('local:link-repo', localRepoId, githubRepoId),
   localOpenFolder: (folderPath: string) => ipcRenderer.invoke('local:open-folder', folderPath),
+  localOpenTerminal: (folderPath: string) => ipcRenderer.invoke('local:open-terminal', folderPath),
   // Secrets
   scanRepoSecrets: () => ipcRenderer.invoke('secrets:scan'),
   listSecretsForRepo: (repoFullName: string) => ipcRenderer.invoke('secrets:list-for-repo', repoFullName),

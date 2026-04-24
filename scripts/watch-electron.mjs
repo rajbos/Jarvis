@@ -3,6 +3,7 @@
 
 import { spawn } from 'child_process';
 import fs from 'fs';
+import net from 'net';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
@@ -11,25 +12,21 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 const electronPath = String(require('electron'));
 const ROOT = path.join(__dirname, '..');
-const WATCH_DIRS = [
-  path.join(ROOT, 'dist', 'main'),
-  path.join(ROOT, 'dist', 'renderer'),
-  path.join(ROOT, 'dist', 'plugins'),
-  path.join(ROOT, 'dist', 'services'),
-  path.join(ROOT, 'dist', 'storage'),
-  path.join(ROOT, 'dist', 'agent'),
-];
+const DIST_RENDERER = path.join(ROOT, 'dist', 'renderer');
+const TSC_BUILD_INFO = path.join(ROOT, 'tsconfig.tsbuildinfo');
+const BROWSER_BRIDGE_PORT = 35789;
 
 let electronProcess = null;
 let intentionalRestart = false;
 let debounceTimer = null;
+let startInProgress = false;
 // Ignore file-change events for this many ms after (re)starting electron.
 // Covers tsc --watch and esbuild --watch doing their initial output writes.
 const STARTUP_GRACE_MS = 4000;
 let graceUntil = 0;
 
-// Track last-known content of watched dist/ files so we can ignore spurious
-// write events from tsc/esbuild initial builds that produce identical output.
+// Track last-known content of watched renderer files so we can ignore spurious
+// write events from esbuild initial builds that produce identical output.
 const knownContents = new Map();
 
 function preloadDir(dir) {
@@ -46,9 +43,35 @@ function preloadDir(dir) {
   } catch { /* ignore */ }
 }
 
-function startElectron() {
+function portIsFree(port) {
+  return new Promise((resolve) => {
+    const tester = net.createServer();
+    tester.once('error', () => resolve(false));
+    tester.once('listening', () => {
+      tester.close(() => resolve(true));
+    });
+    tester.listen(port, '127.0.0.1');
+  });
+}
+
+async function waitForPortToFree(port, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await portIsFree(port)) return true;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return false;
+}
+
+async function startElectron() {
+  if (startInProgress) return;
+  startInProgress = true;
   intentionalRestart = false;
   graceUntil = Date.now() + STARTUP_GRACE_MS;
+  const bridgePortFreed = await waitForPortToFree(BROWSER_BRIDGE_PORT, 5000);
+  if (!bridgePortFreed) {
+    console.warn('[watch-electron] browser bridge port still busy after restart wait; starting anyway...');
+  }
   console.log('[watch-electron] starting electron...');
   electronProcess = spawn(electronPath, ['dist/main/index.js'], {
     stdio: 'inherit',
@@ -57,8 +80,9 @@ function startElectron() {
 
   electronProcess.on('exit', () => {
     electronProcess = null;
+    startInProgress = false;
     if (intentionalRestart) {
-      startElectron(); // restarted due to file change — respawn
+      void startElectron(); // restarted due to file change — respawn
     } else {
       // User quit via tray or window — propagate the exit
       console.log('[watch-electron] app exited, stopping watcher');
@@ -79,35 +103,43 @@ function scheduleRestart() {
     } else {
       startElectron();
     }
-  }, 800); // wait 800ms for tsc to finish writing all files
+  }, 800); // batch rapid rebuild outputs before restarting
 }
 
 const SRC_RENDERER = path.join(ROOT, 'src', 'renderer');
-const DIST_RENDERER = path.join(ROOT, 'dist', 'renderer');
 
-for (const dir of WATCH_DIRS) preloadDir(dir);
+preloadDir(DIST_RENDERER);
 
-for (const dir of WATCH_DIRS) {
-  if (fs.existsSync(dir)) {
-    fs.watch(dir, { recursive: true }, (_event, filename) => {
-      if (!filename || !/\.(js|html|css)$/.test(filename)) return;
-      const fullPath = path.join(dir, filename);
-      try {
-        if (!fs.existsSync(fullPath)) {
-          // File deleted — only restart if we knew about it
-          if (knownContents.has(fullPath)) { knownContents.delete(fullPath); scheduleRestart(); }
-          return;
-        }
-        const newBuf = fs.readFileSync(fullPath);
-        const prevBuf = knownContents.get(fullPath);
-        if (prevBuf && prevBuf.equals(newBuf)) return; // content unchanged, ignore
-        knownContents.set(fullPath, newBuf);
-      } catch {
-        // Can't read file — fall through and restart to be safe
+// Watch the renderer bundle directly. esbuild writes coherent output here, so
+// restarting from these files is safe.
+if (fs.existsSync(DIST_RENDERER)) {
+  fs.watch(DIST_RENDERER, { recursive: true }, (_event, filename) => {
+    if (!filename || !/\.(js|html|css)$/.test(filename)) return;
+    const fullPath = path.join(DIST_RENDERER, filename);
+    try {
+      if (!fs.existsSync(fullPath)) {
+        if (knownContents.has(fullPath)) { knownContents.delete(fullPath); scheduleRestart(); }
+        return;
       }
-      scheduleRestart();
-    });
-  }
+      const newBuf = fs.readFileSync(fullPath);
+      const prevBuf = knownContents.get(fullPath);
+      if (prevBuf && prevBuf.equals(newBuf)) return;
+      knownContents.set(fullPath, newBuf);
+    } catch {
+      // Can't read file — fall through and restart to be safe
+    }
+    scheduleRestart();
+  });
+}
+
+// Watch the TypeScript incremental build-info marker instead of raw dist/main
+// files. This fires when tsc finishes a coherent output batch, avoiding restarts
+// against half-written JS that can produce undefined imports at runtime.
+if (fs.existsSync(TSC_BUILD_INFO)) {
+  fs.watchFile(TSC_BUILD_INFO, { interval: 250 }, (curr, prev) => {
+    if (curr.mtimeMs === 0 || curr.mtimeMs === prev.mtimeMs) return;
+    scheduleRestart();
+  });
 }
 
 // Watch src/renderer/ and copy static files to dist/renderer/ immediately.
@@ -150,4 +182,4 @@ function killChild() {
 process.on('SIGINT', killChild);
 process.on('SIGTERM', killChild);
 
-startElectron();
+void startElectron();

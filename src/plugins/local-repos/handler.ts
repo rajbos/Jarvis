@@ -1,4 +1,5 @@
 // ── Local repos IPC handlers ──────────────────────────────────────────────────
+import { spawn } from 'node:child_process';
 import { ipcMain, shell, dialog, BrowserWindow } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import { saveDatabase } from '../../storage/database';
@@ -15,6 +16,34 @@ import {
 
 let localScanRunning = false;
 let lastLocalScanProgress: ScanProgress | null = null;
+
+function launchDetached(command: string, args: string[], folderPath: string, onError: (error: unknown) => void): void {
+  try {
+    const child = spawn(command, args, {
+      cwd: folderPath,
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: false,
+    });
+    child.once('spawn', () => {
+      child.unref();
+    });
+    child.once('error', onError);
+  } catch (err) {
+    onError(err);
+  }
+}
+
+function openTerminal(folderPath: string): void {
+  // Prefer Windows Terminal when available, but keep working on machines that
+  // only have the classic command prompt.
+  launchDetached('wt.exe', ['-d', folderPath], folderPath, () => {
+    const commandShell = process.env.ComSpec ?? process.env.COMSPEC ?? 'cmd.exe';
+    launchDetached(commandShell, ['/k'], folderPath, (err) => {
+      console.error('[IPC] local:open-terminal failed:', err);
+    });
+  });
+}
 
 export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWindow | null): void {
   ipcMain.handle('local:get-folders', () => {
@@ -110,6 +139,11 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
   ipcMain.handle('local:open-folder', (_event, folderPath: string) => {
     if (typeof folderPath !== 'string' || folderPath.length === 0) return;
     void shell.openPath(folderPath);
+  });
+
+  ipcMain.handle('local:open-terminal', (_event, folderPath: string) => {
+    if (typeof folderPath !== 'string' || folderPath.length === 0) return;
+    openTerminal(folderPath);
   });
 }
 

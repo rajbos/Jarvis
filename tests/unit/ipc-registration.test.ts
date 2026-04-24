@@ -93,6 +93,7 @@ const EXPECTED_CHANNELS = [
   'local:list-repos-for-folder',
   'local:link-repo',
   'local:open-folder',
+  'local:open-terminal',
   // agents plugin
   'agents:list',
   'agents:update',
