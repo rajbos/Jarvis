@@ -109,6 +109,12 @@ function RecoverableBanner({
   const totalIds = entries.flatMap((e) => e.ids);
   if (totalIds.length === 0) return null;
 
+  const repoCount = new Set(entries.map((e) => e.repoFullName)).size;
+  const recoverableSummary = `${totalIds.length} notification${totalIds.length !== 1 ? 's' : ''} across ${entries.length} workflow${entries.length !== 1 ? 's' : ''} in ${repoCount} repo${repoCount !== 1 ? 's' : ''}.`;
+  const recoverableTooltip = entries
+    .map((e) => `${e.repoFullName.split('/')[1]} · ${e.workflowName}`)
+    .join(', ');
+
   // Repo with the most recoverable notifications
   const topEntry = entries.reduce((best, e) => e.ids.length > best.ids.length ? e : best, entries[0]);
 
@@ -128,9 +134,7 @@ function RecoverableBanner({
       <span class="dash-recoverable-icon">✓</span>
       <div class="dash-recoverable-body">
         <span class="dash-recoverable-title">Workflows recovered</span>
-        <span class="dash-recoverable-detail">
-          {entries.map((e) => `${e.repoFullName.split('/')[1]} · ${e.workflowName}`).join(', ')}
-        </span>
+        <span class="dash-recoverable-detail" title={recoverableTooltip}>{recoverableSummary}</span>
       </div>
       <button
         class={`dash-recoverable-btn${dismissing ? ' dash-recoverable-btn--busy' : ''}`}
