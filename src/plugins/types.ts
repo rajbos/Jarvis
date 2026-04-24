@@ -485,6 +485,7 @@ export interface JarvisApi {
   localListReposForFolder(folderPath: string): Promise<LocalRepo[]>;
   localLinkRepo(localRepoId: number, githubRepoId: number | null): Promise<{ ok: boolean }>;
   localOpenFolder(folderPath: string): Promise<void>;
+  localOpenTerminal(folderPath: string): Promise<void>;
   // Secrets
   scanRepoSecrets(): Promise<SecretsScanResult>;
   listSecretsForRepo(repoFullName: string): Promise<RepoSecret[]>;

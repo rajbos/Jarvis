@@ -584,6 +584,7 @@ function RepoHealthRow({
   pushState,
   onToggle,
   onOpenFolder,
+  onOpenTerminal,
   onOpenGitHub,
   onPushBranch,
   dismissedNotifIds,}: {
@@ -593,6 +594,7 @@ function RepoHealthRow({
   pushState?: 'idle' | 'pushing' | 'done' | 'error';
   onToggle: () => void;
   onOpenFolder: (localPath: string) => void;
+  onOpenTerminal: (localPath: string) => void;
   onOpenGitHub: (repoFullName: string) => void;
   onPushBranch: (localPath: string, branch: string) => void;
   dismissedNotifIds?: ReadonlySet<string>;}) {
@@ -689,6 +691,9 @@ function RepoHealthRow({
           <div class="dash-detail-buttons">
             <button class="dash-action-btn" onClick={(e) => { e.stopPropagation(); onOpenFolder(status.localPath); }}>
               📂 Open folder
+            </button>
+            <button class="dash-action-btn" onClick={(e) => { e.stopPropagation(); onOpenTerminal(status.localPath); }}>
+              💻 Open in terminal
             </button>
             {status.linkedGithubRepo && (
               <button class="dash-action-btn" onClick={(e) => { e.stopPropagation(); onOpenGitHub(status.linkedGithubRepo!); }}>
@@ -797,6 +802,10 @@ export function DashboardPanel({ dismissedNotifIds }: { dismissedNotifIds?: Read
 
   const handleOpenFolder = (localPath: string) => {
     window.jarvis.localOpenFolder(localPath);
+  };
+
+  const handleOpenTerminal = (localPath: string) => {
+    window.jarvis.localOpenTerminal(localPath);
   };
 
   const handleOpenGitHub = (repoFullName: string) => {
@@ -978,6 +987,7 @@ export function DashboardPanel({ dismissedNotifIds }: { dismissedNotifIds?: Read
                 }
               }}
               onOpenFolder={handleOpenFolder}
+              onOpenTerminal={handleOpenTerminal}
               onOpenGitHub={handleOpenGitHub}
               onPushBranch={handlePushBranch}
               dismissedNotifIds={dismissedNotifIds}            />

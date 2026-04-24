@@ -26,6 +26,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import initSqlJs, { Database as SqlJsDatabase } from 'sql.js';
 import { getSchema } from '../../src/storage/schema';
 
+const spawnMock = vi.hoisted(() => vi.fn(() => ({
+  once: vi.fn().mockReturnThis(),
+  unref: vi.fn(),
+})));
+
 // ── Track registered handlers so we can invoke them directly ──────────────────
 const handlers = new Map<string, (...args: unknown[]) => unknown>();
 
@@ -44,6 +49,10 @@ vi.mock('electron', () => ({
     fromWebContents: vi.fn(),
     getAllWindows: vi.fn(() => []),
   },
+}));
+
+vi.mock('node:child_process', () => ({
+  spawn: spawnMock,
 }));
 
 vi.mock('../../src/storage/database', async (importOriginal) => {
@@ -107,6 +116,32 @@ describe('IPC handler input validation', () => {
     it('calls shell.openPath for a valid path', () => {
       callHandler('local:open-folder', '/home/user/projects');
       expect(shell.openPath).toHaveBeenCalledWith('/home/user/projects');
+    });
+  });
+
+  describe('local:open-terminal', () => {
+    it('does nothing when folderPath is not a string', () => {
+      callHandler('local:open-terminal', 123);
+      expect(spawnMock).not.toHaveBeenCalled();
+    });
+
+    it('does nothing when folderPath is empty', () => {
+      callHandler('local:open-terminal', '');
+      expect(spawnMock).not.toHaveBeenCalled();
+    });
+
+    it('launches a terminal for a valid path', () => {
+      callHandler('local:open-terminal', 'C:/Users/example/projects');
+      expect(spawnMock).toHaveBeenCalledWith(
+        'wt.exe',
+        ['-d', 'C:/Users/example/projects'],
+        expect.objectContaining({
+          cwd: 'C:/Users/example/projects',
+          detached: true,
+          stdio: 'ignore',
+          windowsHide: false,
+        }),
+      );
     });
   });
 
