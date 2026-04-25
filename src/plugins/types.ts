@@ -164,6 +164,7 @@ export interface WorkflowRun {
   repo_full_name: string;
   workflow_name: string;
   workflow_id: string;
+  workflow_path: string | null;
   head_branch: string;
   head_sha: string;
   event: string;
