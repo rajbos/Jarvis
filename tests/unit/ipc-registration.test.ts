@@ -57,6 +57,7 @@ const EXPECTED_CHANNELS = [
   'github:oauth-status',
   'github:open-url',
   'github:get-run-url-for-check-suite',
+  'github:get-pr-state',
   'github:save-pat',
   'github:delete-pat',
   'github:logout',
@@ -82,6 +83,7 @@ const EXPECTED_CHANNELS = [
   'github:list-notifications-for-repo',
   'github:list-notifications-for-owner',
   'github:list-notifications-for-starred',
+  'github:list-pr-notifications',
   'github:dismiss-notification',
   // local-repos plugin
   'local:get-folders',
