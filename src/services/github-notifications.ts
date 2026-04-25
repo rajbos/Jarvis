@@ -7,6 +7,8 @@ export interface GitHubNotification {
   unread: boolean;
   reason: string;
   updated_at: string;
+  subject_actor_login?: string | null;
+  subject_actor_type?: string | null;
   subject: {
     type: string;   // Issue, PullRequest, Commit, Release, Discussion, CheckSuite
     title: string;
@@ -35,6 +37,8 @@ export interface StoredNotification {
   subject_type: string;
   subject_title: string;
   subject_url: string | null;
+  subject_actor_login: string | null;
+  subject_actor_type: string | null;
   reason: string;
   unread: number;
   updated_at: string;
@@ -72,6 +76,93 @@ async function fetchPage(
   return { items, nextUrl };
 }
 
+function extractActorFromSubject(data: unknown): { login: string | null; type: string | null } {
+  if (!data || typeof data !== 'object') return { login: null, type: null };
+  const record = data as Record<string, unknown>;
+  const actor = record.user ?? record.actor ?? record.author ?? record.sender ?? record.app;
+  if (!actor || typeof actor !== 'object') return { login: null, type: null };
+  const actorRecord = actor as Record<string, unknown>;
+  const login = typeof actorRecord.login === 'string'
+    ? actorRecord.login
+    : typeof actorRecord.slug === 'string'
+      ? actorRecord.slug
+      : null;
+  const type = typeof actorRecord.type === 'string'
+    ? actorRecord.type
+    : typeof record.app === 'object' && record.app === actor
+      ? 'Bot'
+      : null;
+  return { login, type };
+}
+
+async function fetchSubjectActor(
+  accessToken: string,
+  subjectUrl: string | null,
+): Promise<{ login: string | null; type: string | null }> {
+  if (!subjectUrl?.startsWith(`${GITHUB_API_BASE}/repos/`)) return { login: null, type: null };
+
+  try {
+    const response = await fetch(subjectUrl, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    });
+    if (!response.ok) return { login: null, type: null };
+    return extractActorFromSubject(await response.json());
+  } catch {
+    return { login: null, type: null };
+  }
+}
+
+async function enrichNotificationActors(
+  accessToken: string,
+  notifications: GitHubNotification[],
+): Promise<GitHubNotification[]> {
+  const concurrency = 8;
+  const enriched: GitHubNotification[] = new Array(notifications.length);
+  let nextIndex = 0;
+
+  async function worker(): Promise<void> {
+    while (nextIndex < notifications.length) {
+      const index = nextIndex;
+      nextIndex++;
+      const notification = notifications[index];
+      const actor = await fetchSubjectActor(accessToken, notification.subject.url);
+      enriched[index] = {
+        ...notification,
+        subject_actor_login: actor.login,
+        subject_actor_type: actor.type,
+      };
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, notifications.length) }, () => worker()));
+  return enriched;
+}
+
+function insertNotification(db: SqlJsDatabase, n: GitHubNotification): void {
+  db.run(
+    `INSERT INTO github_notifications
+      (id, repo_full_name, repo_owner, subject_type, subject_title, subject_url, subject_actor_login, subject_actor_type, reason, unread, updated_at, fetched_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+    [
+      n.id,
+      n.repository.full_name,
+      n.repository.owner.login,
+      n.subject.type,
+      n.subject.title,
+      n.subject.url ?? null,
+      n.subject_actor_login ?? null,
+      n.subject_actor_type ?? null,
+      n.reason,
+      n.unread ? 1 : 0,
+      n.updated_at,
+    ],
+  );
+}
+
 /**
  * Fetch all unread notifications for the authenticated user via GitHub API.
  * Automatically follows pagination.
@@ -91,7 +182,7 @@ export async function fetchNotifications(
     url = nextUrl;
   }
 
-  return all;
+  return enrichNotificationActors(accessToken, all);
 }
 
 /**
@@ -104,22 +195,7 @@ export function storeNotifications(
   db.run('DELETE FROM github_notifications');
 
   for (const n of notifications) {
-    db.run(
-      `INSERT INTO github_notifications
-        (id, repo_full_name, repo_owner, subject_type, subject_title, subject_url, reason, unread, updated_at, fetched_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
-      [
-        n.id,
-        n.repository.full_name,
-        n.repository.owner.login,
-        n.subject.type,
-        n.subject.title,
-        n.subject.url ?? null,
-        n.reason,
-        n.unread ? 1 : 0,
-        n.updated_at,
-      ],
-    );
+    insertNotification(db, n);
   }
 }
 
@@ -196,7 +272,7 @@ export async function fetchNotificationsForRepo(
     url = nextUrl;
   }
 
-  return all;
+  return enrichNotificationActors(accessToken, all);
 }
 
 /**
@@ -210,22 +286,7 @@ export function storeNotificationsForRepo(
   db.run('DELETE FROM github_notifications WHERE repo_full_name = ?', [repoFullName]);
 
   for (const n of notifications) {
-    db.run(
-      `INSERT INTO github_notifications
-        (id, repo_full_name, repo_owner, subject_type, subject_title, subject_url, reason, unread, updated_at, fetched_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
-      [
-        n.id,
-        n.repository.full_name,
-        n.repository.owner.login,
-        n.subject.type,
-        n.subject.title,
-        n.subject.url ?? null,
-        n.reason,
-        n.unread ? 1 : 0,
-        n.updated_at,
-      ],
-    );
+    insertNotification(db, n);
   }
 }
 
@@ -242,22 +303,7 @@ export function storeNotificationsForOwner(
   db.run('DELETE FROM github_notifications WHERE repo_owner = ?', [owner]);
 
   for (const n of notifications.filter((n) => n.repository.owner.login === owner)) {
-    db.run(
-      `INSERT INTO github_notifications
-        (id, repo_full_name, repo_owner, subject_type, subject_title, subject_url, reason, unread, updated_at, fetched_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
-      [
-        n.id,
-        n.repository.full_name,
-        n.repository.owner.login,
-        n.subject.type,
-        n.subject.title,
-        n.subject.url ?? null,
-        n.reason,
-        n.unread ? 1 : 0,
-        n.updated_at,
-      ],
-    );
+    insertNotification(db, n);
   }
 }
 
@@ -269,7 +315,7 @@ export function listNotificationsForRepo(
   repoFullName: string,
 ): StoredNotification[] {
   const stmt = db.prepare(`
-    SELECT id, repo_full_name, repo_owner, subject_type, subject_title, subject_url, reason, unread, updated_at, fetched_at
+    SELECT id, repo_full_name, repo_owner, subject_type, subject_title, subject_url, subject_actor_login, subject_actor_type, reason, unread, updated_at, fetched_at
     FROM github_notifications
     WHERE repo_full_name = ? AND unread = 1
     ORDER BY updated_at DESC
@@ -290,7 +336,7 @@ export function listNotificationsForOwner(
   owner: string,
 ): StoredNotification[] {
   const stmt = db.prepare(`
-    SELECT id, repo_full_name, repo_owner, subject_type, subject_title, subject_url, reason, unread, updated_at, fetched_at
+    SELECT id, repo_full_name, repo_owner, subject_type, subject_title, subject_url, subject_actor_login, subject_actor_type, reason, unread, updated_at, fetched_at
     FROM github_notifications
     WHERE repo_owner = ? AND unread = 1
     ORDER BY repo_full_name, updated_at DESC
@@ -309,7 +355,7 @@ export function listNotificationsForStarred(
   db: SqlJsDatabase,
 ): StoredNotification[] {
   const stmt = db.prepare(`
-    SELECT n.id, n.repo_full_name, n.repo_owner, n.subject_type, n.subject_title, n.subject_url, n.reason, n.unread, n.updated_at, n.fetched_at
+    SELECT n.id, n.repo_full_name, n.repo_owner, n.subject_type, n.subject_title, n.subject_url, n.subject_actor_login, n.subject_actor_type, n.reason, n.unread, n.updated_at, n.fetched_at
     FROM github_notifications n
     WHERE n.unread = 1
       AND n.repo_full_name IN (SELECT full_name FROM github_repos WHERE starred = 1)

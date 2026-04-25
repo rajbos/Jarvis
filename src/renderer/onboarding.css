@@ -215,6 +215,10 @@ button:disabled {
   border-color: #e94560;
 }
 
+.dash-card-people {
+  border-color: #4eca8a;
+}
+
 .dash-card-value {
   font-size: 1.8rem;
   font-weight: 700;
@@ -235,6 +239,10 @@ button:disabled {
 
 .dash-card-danger .dash-card-value {
   color: #e94560;
+}
+
+.dash-card-people .dash-card-value {
+  color: #4eca8a;
 }
 
 .dash-card-label {
@@ -878,6 +886,158 @@ button:disabled {
   font-weight: 700;
   flex-shrink: 0;
   line-height: 1.4;
+}
+
+/* ── Dashboard notification triage ─────────────────────────────────────── */
+.dash-triage-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.dash-triage-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  background: #101d35;
+  border: 1px solid #173458;
+  border-radius: 8px;
+}
+
+.dash-triage-kicker {
+  font-size: 0.7rem;
+  color: #6f9bd0;
+  text-transform: uppercase;
+  letter-spacing: 0;
+  font-weight: 700;
+}
+
+.dash-triage-title {
+  color: #d8e4f2;
+  font-size: 0.92rem;
+  font-weight: 700;
+  margin-top: 0.15rem;
+}
+
+.dash-triage-tabs {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.dash-triage-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: #16213e;
+  border: 1px solid #0f3460;
+  color: #9aa8bd;
+  border-radius: 5px;
+  padding: 0.28rem 0.55rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.dash-triage-tab:hover {
+  background: #1a2e56;
+  color: #d5e4f5;
+}
+
+.dash-triage-tab--active {
+  background: #12325a;
+  border-color: #4eca8a;
+  color: #e8f7ef;
+}
+
+.dash-triage-tab span {
+  min-width: 1.1rem;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 9px;
+  padding: 0.02rem 0.35rem;
+}
+
+.dash-triage-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.dash-triage-item {
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid #132c4e;
+  border-radius: 8px;
+  padding: 0.6rem;
+}
+
+.dash-triage-item--people {
+  border-left: 3px solid #4eca8a;
+}
+
+.dash-triage-item--bot-self {
+  border-left: 3px solid #6a7b95;
+  opacity: 0.9;
+}
+
+.dash-triage-item-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+}
+
+.dash-triage-item-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.dash-triage-item-title {
+  color: #d7deeb;
+  font-size: 0.86rem;
+  font-weight: 650;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.dash-triage-item-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin-top: 0.28rem;
+  color: #7f8ca3;
+  font-size: 0.72rem;
+}
+
+.dash-triage-repo {
+  color: #9fc6f5;
+  font-weight: 700;
+}
+
+.dash-triage-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.25rem 0.65rem;
+  margin-top: 0.45rem;
+  padding: 0.45rem 0.55rem;
+  background: rgba(0, 0, 0, 0.16);
+  border-radius: 6px;
+  color: #8793a8;
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.dash-triage-details span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.dash-triage-details strong {
+  color: #b9c6d8;
 }
 
 .dash-group-status {

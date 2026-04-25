@@ -89,6 +89,16 @@ describe('GitHub Notifications — storeNotifications', () => {
     expect(res[0].values[0][0]).toBeNull();
   });
 
+  it('stores subject actor metadata when present', () => {
+    storeNotifications(db, [{
+      ...makeNotif('1'),
+      subject_actor_login: 'dependabot[bot]',
+      subject_actor_type: 'Bot',
+    }]);
+    const res = db.exec(`SELECT subject_actor_login, subject_actor_type FROM github_notifications WHERE id = '1'`);
+    expect(res[0].values[0]).toEqual(['dependabot[bot]', 'Bot']);
+  });
+
   it('stores read (unread=false) notifications with unread=0', () => {
     storeNotifications(db, [makeNotif('1', { unread: false })]);
     const res = db.exec(`SELECT unread FROM github_notifications WHERE id = '1'`);
@@ -367,6 +377,26 @@ describe('fetchNotificationsForRepo', () => {
     expect(result[0].id).toBe('1');
   });
 
+  it('fetches notification subject actor metadata', async () => {
+    const notif = makeNotif('1', {
+      owner: 'myorg',
+      repoName: 'myrepo',
+      type: 'PullRequest',
+      subjectUrl: 'https://api.github.com/repos/myorg/myrepo/pulls/42',
+    });
+    globalThis.fetch = vi.fn(async (url: RequestInfo | URL) => {
+      const requestedUrl = String(url);
+      if (requestedUrl.endsWith('/notifications?all=false&per_page=50')) {
+        return new Response(JSON.stringify([notif]), { status: 200 });
+      }
+      return new Response(JSON.stringify({ user: { login: 'dependabot[bot]', type: 'Bot' } }), { status: 200 });
+    });
+
+    const result = await fetchNotificationsForRepo('token', 'myorg/myrepo');
+    expect(result[0].subject_actor_login).toBe('dependabot[bot]');
+    expect(result[0].subject_actor_type).toBe('Bot');
+  });
+
   it('throws when the API returns a non-OK status', async () => {
     globalThis.fetch = vi.fn(async () =>
       new Response('Server Error', { status: 500, statusText: 'Internal Server Error' }),
@@ -380,10 +410,14 @@ describe('fetchNotificationsForRepo', () => {
     const notif1 = makeNotif('1', { owner: 'myorg', repoName: 'myrepo' });
     const notif2 = makeNotif('2', { owner: 'myorg', repoName: 'myrepo' });
 
-    let callCount = 0;
+    let notificationPageCalls = 0;
     globalThis.fetch = vi.fn(async (url: RequestInfo | URL) => {
-      callCount++;
-      if (callCount === 1) {
+      const requestedUrl = String(url);
+      if (!requestedUrl.includes('/notifications')) {
+        return new Response(JSON.stringify({ user: { login: 'octocat', type: 'User' } }), { status: 200 });
+      }
+      notificationPageCalls++;
+      if (notificationPageCalls === 1) {
         return new Response(JSON.stringify([notif1]), {
           status: 200,
           headers: { Link: `<https://api.github.com/repos/myorg/myrepo/notifications?page=2>; rel="next"` },
@@ -394,7 +428,7 @@ describe('fetchNotificationsForRepo', () => {
 
     const result = await fetchNotificationsForRepo('token', 'myorg/myrepo');
     expect(result).toHaveLength(2);
-    expect(callCount).toBe(2);
+    expect(notificationPageCalls).toBe(2);
   });
 });
 
