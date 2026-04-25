@@ -12,6 +12,7 @@ import {
   listNotificationsForRepo,
   listNotificationsForOwner,
   listNotificationsForStarred,
+  listPrNotifications,
   deleteNotification,
   markNotificationRead,
 } from '../../services/github-notifications';
@@ -77,6 +78,10 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
 
   ipcMain.handle('github:list-notifications-for-starred', () => {
     return listNotificationsForStarred(db);
+  });
+
+  ipcMain.handle('github:list-pr-notifications', () => {
+    return listPrNotifications(db);
   });
 
   ipcMain.handle('github:dismiss-notification', async (_event, id: string) => {

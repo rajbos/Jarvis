@@ -315,7 +315,16 @@ export function NotifRepoPanel({ repoFullName, notifications, onClose, onRefresh
                 <span class="notif-group-status notif-group-status--checking">checking…</span>
               )}
               {group.workflowName && !checkingRecovery && recoveryMap.get(group.workflowName) === false && (
-                <span class="notif-group-status notif-group-status--failing">✗ Still failing</span>
+                <>
+                  <span class="notif-group-status notif-group-status--failing">✗ Still failing</span>
+                  <button
+                    class={`notif-dismiss-group-btn${dismissingGroup === group.workflowName ? ' notif-dismiss-group-btn--busy' : ''}`}
+                    disabled={dismissingGroup === group.workflowName}
+                    onClick={() => handleDismissGroup(group.workflowName!, group.notifications.map((n) => n.id))}
+                  >
+                    {dismissingGroup === group.workflowName ? <span class="dismiss-spinner" /> : 'Dismiss all'}
+                  </button>
+                </>
               )}
               {group.workflowName && !checkingRecovery && recoveryMap.get(group.workflowName) === true && (
                 <>
