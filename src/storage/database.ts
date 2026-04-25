@@ -52,7 +52,7 @@ function initializeSchema(database: SqlJsDatabase): void {
   if (userVersion === 0) {
     database.run(getSchema());
     seedBuiltInAgents(database);
-    database.run('PRAGMA user_version = 16');
+    database.run('PRAGMA user_version = 17');
   }
 
   if (userVersion === 1) {
@@ -381,6 +381,13 @@ function initializeSchema(database: SqlJsDatabase): void {
     `);
     database.run('CREATE INDEX IF NOT EXISTS idx_browser_skill_runs_skill ON browser_skill_runs(skill_id)');
     database.run('PRAGMA user_version = 16');
+  }
+
+  if (userVersion === 15 || userVersion === 16) {
+    // Migration v16 → v17: cache notification subject actor metadata
+    database.run('ALTER TABLE github_notifications ADD COLUMN subject_actor_login TEXT');
+    database.run('ALTER TABLE github_notifications ADD COLUMN subject_actor_type TEXT');
+    database.run('PRAGMA user_version = 17');
   }
 }
 

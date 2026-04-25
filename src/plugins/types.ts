@@ -70,6 +70,8 @@ export interface StoredNotification {
   subject_type: string;
   subject_title: string;
   subject_url: string | null;
+  subject_actor_login: string | null;
+  subject_actor_type: string | null;
   reason: string;
   unread: number;
   updated_at: string;

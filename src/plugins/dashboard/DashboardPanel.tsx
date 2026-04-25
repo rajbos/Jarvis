@@ -209,6 +209,62 @@ function timeAgo(dateStr: string): string {
   return `${days}d ago`;
 }
 
+async function openNotificationSubject(n: StoredNotification): Promise<void> {
+  if (n.subject_type === 'CheckSuite') {
+    if (n.subject_url) {
+      const runUrl = await window.jarvis.getRunUrlForCheckSuite(n.subject_url);
+      window.jarvis.openUrl(runUrl ?? `https://github.com/${n.repo_full_name}/actions`);
+    } else {
+      window.jarvis.openUrl(`https://github.com/${n.repo_full_name}/actions`);
+    }
+    return;
+  }
+
+  if (n.subject_type === 'WorkflowRun') {
+    const url = n.subject_url
+      ? n.subject_url.replace('https://api.github.com/repos/', 'https://github.com/')
+      : `https://github.com/${n.repo_full_name}/actions`;
+    window.jarvis.openUrl(url);
+    return;
+  }
+
+  const url = n.subject_url
+    ? n.subject_url
+        .replace('https://api.github.com/repos/', 'https://github.com/')
+        .replace(/\/pulls\/(\d+)$/, '/pull/$1')
+        .replace(/\/issues\/(\d+)$/, '/issues/$1')
+        .replace(/\/commits\/([a-f0-9]+)$/i, '/commit/$1')
+        .replace(/\/releases\/(\d+)$/, '/releases')
+    : `https://github.com/${n.repo_full_name}`;
+  window.jarvis.openUrl(url);
+}
+
+function isWorkflowNotification(n: StoredNotification): boolean {
+  return WORKFLOW_TYPES_DASH.has(n.subject_type) || n.reason === 'ci_activity';
+}
+
+function looksBotGenerated(n: StoredNotification): boolean {
+  return n.subject_actor_type === 'Bot' || /\b(dependabot|renovate|github-actions|codeql|copilot|bot)\b|\[bot\]/i.test(
+    `${n.subject_actor_login ?? ''} ${n.subject_title} ${n.subject_url ?? ''}`,
+  );
+}
+
+function classifyDashboardNotification(
+  n: StoredNotification,
+  currentUserLogin?: string | null,
+): { bucket: 'people' | 'bot-self'; reason: string } {
+  if (isWorkflowNotification(n)) return { bucket: 'bot-self', reason: 'workflow or CI activity' };
+  if (currentUserLogin && n.subject_actor_login?.toLowerCase() === currentUserLogin.toLowerCase()) {
+    return { bucket: 'bot-self', reason: `opened by you (${n.subject_actor_login})` };
+  }
+  if (n.reason === 'author') return { bucket: 'bot-self', reason: 'created by you' };
+  if (looksBotGenerated(n)) {
+    return { bucket: 'bot-self', reason: n.subject_actor_login ? `opened by bot ${n.subject_actor_login}` : 'bot-generated title or source' };
+  }
+  if (n.subject_actor_login) return { bucket: 'people', reason: `opened by ${n.subject_actor_login}` };
+  return { bucket: 'people', reason: 'actor unavailable from subject API' };
+}
+
 // ── Notification grouping helpers (mirrored from NotifRepoPanel) ──────────────
 
 const WORKFLOW_TYPES_DASH = new Set(['CheckSuite', 'WorkflowRun']);
@@ -379,8 +435,7 @@ function NotificationList({ repoFullName, dismissedNotifIds }: { repoFullName: s
   };
 
   const handleOpenOnGitHub = (n: StoredNotification) => {
-    const webUrl = `https://github.com/${n.repo_full_name}`;
-    window.jarvis.openUrl(webUrl);
+    void openNotificationSubject(n);
   };
 
   if (loading) {
@@ -513,19 +568,145 @@ function NotificationList({ repoFullName, dismissedNotifIds }: { repoFullName: s
   );
 }
 
+type TriageMode = 'people' | 'bot-self' | 'all';
+
+function DashboardNotificationTriage({
+  notifications,
+  loading,
+  currentUserLogin,
+  onDismissed,
+}: {
+  notifications: StoredNotification[];
+  loading: boolean;
+  currentUserLogin: string | null;
+  onDismissed: (id: string) => void;
+}) {
+  const [mode, setMode] = useState<TriageMode>('people');
+  const [dismissingId, setDismissingId] = useState<string | null>(null);
+
+  const sortedItems = notifications
+    .map((notification) => ({ notification, triage: classifyDashboardNotification(notification, currentUserLogin) }))
+    .sort((a, b) => {
+      if (a.triage.bucket !== b.triage.bucket) return a.triage.bucket === 'people' ? -1 : 1;
+      return new Date(b.notification.updated_at).getTime() - new Date(a.notification.updated_at).getTime();
+    });
+  const peopleCount = sortedItems.filter((item) => item.triage.bucket === 'people').length;
+  const botSelfCount = sortedItems.length - peopleCount;
+  const visibleItems = mode === 'all'
+    ? sortedItems
+    : sortedItems.filter((item) => item.triage.bucket === mode);
+
+  const handleDismiss = async (id: string) => {
+    setDismissingId(id);
+    try {
+      await window.jarvis.dismissNotification(id);
+      onDismissed(id);
+    } catch (err) {
+      console.error('[Dashboard] Failed to dismiss notification:', err);
+    } finally {
+      setDismissingId(null);
+    }
+  };
+
+  if (loading) {
+    return <div class="dash-notif-loading">Loading notification triage...</div>;
+  }
+
+  if (!currentUserLogin) {
+    return <div class="dash-empty">Sign in with GitHub to split notifications for your own repos.</div>;
+  }
+
+  return (
+    <div class="dash-triage-panel">
+      <div class="dash-triage-summary">
+        <div>
+          <div class="dash-triage-kicker">Own repos</div>
+          <div class="dash-triage-title">People first notification triage</div>
+        </div>
+        <div class="dash-triage-tabs" role="tablist">
+          <button class={`dash-triage-tab${mode === 'people' ? ' dash-triage-tab--active' : ''}`} onClick={() => setMode('people')}>
+            People <span>{peopleCount}</span>
+          </button>
+          <button class={`dash-triage-tab${mode === 'bot-self' ? ' dash-triage-tab--active' : ''}`} onClick={() => setMode('bot-self')}>
+            Bot/self/CI <span>{botSelfCount}</span>
+          </button>
+          <button class={`dash-triage-tab${mode === 'all' ? ' dash-triage-tab--active' : ''}`} onClick={() => setMode('all')}>
+            All <span>{sortedItems.length}</span>
+          </button>
+        </div>
+      </div>
+
+      {visibleItems.length === 0 ? (
+        <div class="dash-empty">
+          {mode === 'people'
+            ? 'No people-driven notifications in your own repos right now.'
+            : mode === 'bot-self'
+              ? 'No bot, self-authored, or CI notifications in your own repos right now.'
+              : 'No unread notifications in your own repos right now.'}
+        </div>
+      ) : (
+        <div class="dash-triage-list">
+          {visibleItems.map(({ notification, triage }) => (
+            <div key={notification.id} class={`dash-triage-item dash-triage-item--${triage.bucket}`}>
+              <div class="dash-triage-item-main">
+                <span class="dash-notif-icon" title={notification.subject_type}>{subjectTypeIcon(notification.subject_type)}</span>
+                <div class="dash-triage-item-body">
+                  <div class="dash-triage-item-title">{notification.subject_title}</div>
+                  <div class="dash-triage-item-meta">
+                    <span class="dash-triage-repo">{notification.repo_full_name}</span>
+                    {notification.subject_actor_login && <span>Actor: {notification.subject_actor_login}</span>}
+                    <span class={`dash-notif-reason dash-reason-${notification.reason}`}>{reasonLabel(notification.reason)}</span>
+                    <span>{notification.subject_type}</span>
+                    <span>{timeAgo(notification.updated_at)}</span>
+                  </div>
+                </div>
+                <div class="dash-notif-actions">
+                  <button
+                    class="dash-action-btn dash-notif-btn"
+                    onClick={() => void openNotificationSubject(notification)}
+                    title="Open notification subject in browser"
+                  >Open</button>
+                  <button
+                    class="dash-action-btn dash-notif-btn"
+                    disabled={dismissingId === notification.id}
+                    onClick={() => void handleDismiss(notification.id)}
+                    title="Dismiss notification"
+                  >{dismissingId === notification.id ? '...' : 'Dismiss'}</button>
+                </div>
+              </div>
+              <div class="dash-triage-details">
+                <span><strong>Bucket:</strong> {triage.bucket === 'people' ? 'Other users' : 'Bots, CI, or myself'}</span>
+                <span><strong>Why:</strong> {triage.reason}</span>
+                <span><strong>Updated:</strong> {new Date(notification.updated_at).toLocaleString()}</span>
+                <span><strong>Actor:</strong> {notification.subject_actor_login ? `${notification.subject_actor_login}${notification.subject_actor_type ? ` (${notification.subject_actor_type})` : ''}` : 'not resolved'}</span>
+                <span><strong>Subject API:</strong> {notification.subject_url ?? 'not provided'}</span>
+                <span><strong>Thread ID:</strong> {notification.id}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** The active card filter drives what appears below the cards. */
-type CardFilter = 'all' | 'healthy' | 'warnings' | 'notifications' | 'failed-runs';
+type CardFilter = 'all' | 'healthy' | 'warnings' | 'notifications' | 'human-notifications' | 'failed-runs';
 
 type SortMode = 'attention' | 'local-activity' | 'remote-activity';
 
 function SummaryCards({
   summary,
   healthyCount,
+  humanNotificationCount,
+  humanNotificationLoading,
   active,
   onSelect,
 }: {
   summary: DashboardSummary;
   healthyCount: number;
+  humanNotificationCount: number | null;
+  humanNotificationLoading: boolean;
   active: CardFilter;
   onSelect: (f: CardFilter) => void;
 }) {
@@ -548,6 +729,14 @@ function SummaryCards({
         <div class="dash-card-value">{summary.totalNotifications}</div>
         <div class="dash-card-label">Notifications</div>
         {active === 'notifications' && <span class="dash-card-selected-icon">▾</span>}
+      </div>
+      <div
+        class={`dash-card dash-card-clickable ${(humanNotificationCount ?? 0) > 0 ? 'dash-card-people' : ''} ${active === 'human-notifications' ? 'dash-card-selected' : ''}`}
+        onClick={() => toggle('human-notifications')}
+      >
+        <div class="dash-card-value">{humanNotificationLoading && humanNotificationCount === null ? '...' : humanNotificationCount ?? 0}</div>
+        <div class="dash-card-label">People First</div>
+        {active === 'human-notifications' && <span class="dash-card-selected-icon">▾</span>}
       </div>
       <div
         class={`dash-card dash-card-clickable ${summary.totalFailedRuns > 0 ? 'dash-card-danger' : ''} ${active === 'failed-runs' ? 'dash-card-selected' : ''}`}
@@ -740,6 +929,8 @@ function filterRepos(
       });
     case 'notifications':
       return repos.filter((r) => r.notificationCount > 0);
+    case 'human-notifications':
+      return [];
     case 'failed-runs':
       return repos.filter((r) => r.failedWorkflowRuns > 0);
     default:
@@ -753,6 +944,7 @@ function sectionTitle(card: CardFilter, count: number): string {
     case 'healthy': return `✅ Healthy Repos (${count})`;
     case 'warnings': return `⚠️ Repos Needing Attention (${count})`;
     case 'notifications': return `🔔 Repos with Notifications (${count})`;
+    case 'human-notifications': return '👥 People First Notifications';
     case 'failed-runs': return `❌ Repos with Failed Runs (${count})`;
     default: return `🗂️ Repos Needing Attention (${count})`;
   }
@@ -763,6 +955,7 @@ function emptyMessage(card: CardFilter): string {
     case 'healthy': return 'No repos without warnings right now.';
     case 'warnings': return 'No repos with warnings — all clear! 🎉';
     case 'notifications': return 'No unread notifications — inbox zero! 📭';
+    case 'human-notifications': return 'No people-driven notifications in your own repos right now.';
     case 'failed-runs': return 'No failed runs — everything is green! ✅';
     default: return 'No repos with warnings, notifications or failed runs — all clear! 🎉';
   }
@@ -777,6 +970,9 @@ export function DashboardPanel({ dismissedNotifIds }: { dismissedNotifIds?: Read
   const [sortMode, setSortMode] = useState<SortMode>('attention');
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [pushStates, setPushStates] = useState<Record<number, 'idle' | 'pushing' | 'done' | 'error'>>({});
+  const [currentUserLogin, setCurrentUserLogin] = useState<string | null>(null);
+  const [ownRepoNotifications, setOwnRepoNotifications] = useState<StoredNotification[]>([]);
+  const [triageLoading, setTriageLoading] = useState(false);
   const [notifSort, setNotifSort] = useState<'count' | 'name'>(
     () => (localStorage.getItem('dashboard-notif-sort') as 'count' | 'name') ?? 'count',
   );
@@ -789,8 +985,12 @@ export function DashboardPanel({ dismissedNotifIds }: { dismissedNotifIds?: Read
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const sum = await window.jarvis.dashboardGetSummary();
+      const [sum, authStatus] = await Promise.all([
+        window.jarvis.dashboardGetSummary(),
+        window.jarvis.getGitHubOAuthStatus(),
+      ]);
       setSummary(sum);
+      setCurrentUserLogin(authStatus.login ?? null);
     } catch (err) {
       console.error('[Dashboard] Failed to load:', err);
     } finally {
@@ -799,6 +999,57 @@ export function DashboardPanel({ dismissedNotifIds }: { dismissedNotifIds?: Read
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    if (!summary || !currentUserLogin) {
+      setOwnRepoNotifications([]);
+      return;
+    }
+
+    const ownRepoNames = summary.repos
+      .filter((repo) => {
+        if (!repo.linkedGithubRepo || repo.notificationCount === 0) return false;
+        const [owner] = repo.linkedGithubRepo.split('/');
+        return owner.toLowerCase() === currentUserLogin.toLowerCase();
+      })
+      .map((repo) => repo.linkedGithubRepo!);
+
+    if (ownRepoNames.length === 0) {
+      setOwnRepoNotifications([]);
+      return;
+    }
+
+    let cancelled = false;
+    setTriageLoading(true);
+    void Promise.all(ownRepoNames.map(async (repoFullName) => {
+      try {
+        await window.jarvis.fetchNotificationsForRepo(repoFullName);
+      } catch (err) {
+        console.warn('[Dashboard] Could not refresh notifications for triage:', repoFullName, err);
+      }
+      return window.jarvis.listNotificationsForRepo(repoFullName);
+    }))
+      .then((lists) => {
+        if (cancelled) return;
+        const dismissed = dismissedNotifIds ?? new Set<string>();
+        setOwnRepoNotifications(
+          lists.flat()
+            .filter((notification) => !dismissed.has(String(notification.id)))
+            .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()),
+        );
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          console.error('[Dashboard] Failed to load notification triage:', err);
+          setOwnRepoNotifications([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setTriageLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [summary, currentUserLogin, dismissedNotifIds]);
 
   const handleOpenFolder = (localPath: string) => {
     window.jarvis.localOpenFolder(localPath);
@@ -857,6 +1108,14 @@ export function DashboardPanel({ dismissedNotifIds }: { dismissedNotifIds?: Read
     });
   }, []);
 
+  const handleTriageNotificationDismissed = useCallback((id: string) => {
+    const dismissed = ownRepoNotifications.find((notification) => String(notification.id) === String(id));
+    setOwnRepoNotifications((prev) => prev.filter((notification) => String(notification.id) !== String(id)));
+    if (!dismissed || !summary) return;
+    const repo = summary.repos.find((item) => item.linkedGithubRepo === dismissed.repo_full_name);
+    if (repo) handleNotifsDismissed(repo.localRepoId, 1);
+  }, [handleNotifsDismissed, ownRepoNotifications, summary]);
+
   if (loading && !summary) {
     return (
       <div class="dashboard-panel">
@@ -886,6 +1145,9 @@ export function DashboardPanel({ dismissedNotifIds }: { dismissedNotifIds?: Read
 
   // Filter repos based on the selected card
   const displayRepos = filterRepos(summary.repos, warningMap, cardFilter);
+  const humanNotificationCount = ownRepoNotifications.filter(
+    (notification) => classifyDashboardNotification(notification, currentUserLogin).bucket === 'people',
+  ).length;
 
   // Sort based on selected mode
   const sorted = [...displayRepos].sort((a, b) => {
@@ -930,7 +1192,14 @@ export function DashboardPanel({ dismissedNotifIds }: { dismissedNotifIds?: Read
         </div>
       </div>
 
-      <SummaryCards summary={summary} healthyCount={healthyCount} active={cardFilter} onSelect={setCardFilter} />
+      <SummaryCards
+        summary={summary}
+        healthyCount={healthyCount}
+        humanNotificationCount={triageLoading && ownRepoNotifications.length === 0 ? null : humanNotificationCount}
+        humanNotificationLoading={triageLoading}
+        active={cardFilter}
+        onSelect={setCardFilter}
+      />
 
       {/* Recoverable notifications — repos with CI notifications that have since gone green */}
       <RecoverableBanner
@@ -954,19 +1223,30 @@ export function DashboardPanel({ dismissedNotifIds }: { dismissedNotifIds?: Read
       <div class="dash-section">
         <div class="dash-section-header">
           <h3>{sectionTitle(cardFilter, sorted.length)}</h3>
-          <div class="dash-sort-controls">
-            <span class="dash-sort-label">Sort:</span>
-            {(['attention', 'local-activity', 'remote-activity'] as SortMode[]).map((mode) => (
-              <button
-                key={mode}
-                class={`dash-sort-btn${sortMode === mode ? ' dash-sort-btn--active' : ''}`}
-                onClick={() => setSortMode(mode)}
-              >
-                {mode === 'attention' ? '⚠️ Attention' : mode === 'local-activity' ? '💻 Local activity' : '☁️ Remote activity'}
-              </button>
-            ))}
-          </div>        </div>
-        <div class="dash-repo-list">
+          {cardFilter !== 'human-notifications' && (
+            <div class="dash-sort-controls">
+              <span class="dash-sort-label">Sort:</span>
+              {(['attention', 'local-activity', 'remote-activity'] as SortMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  class={`dash-sort-btn${sortMode === mode ? ' dash-sort-btn--active' : ''}`}
+                  onClick={() => setSortMode(mode)}
+                >
+                  {mode === 'attention' ? '⚠️ Attention' : mode === 'local-activity' ? '💻 Local activity' : '☁️ Remote activity'}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        {cardFilter === 'human-notifications' ? (
+          <DashboardNotificationTriage
+            notifications={ownRepoNotifications}
+            loading={triageLoading}
+            currentUserLogin={currentUserLogin}
+            onDismissed={handleTriageNotificationDismissed}
+          />
+        ) : (
+          <div class="dash-repo-list">
           {sorted.length === 0 && (
             <div class="dash-empty">{emptyMessage(cardFilter)}</div>
           )}
@@ -992,7 +1272,8 @@ export function DashboardPanel({ dismissedNotifIds }: { dismissedNotifIds?: Read
               onPushBranch={handlePushBranch}
               dismissedNotifIds={dismissedNotifIds}            />
           ))}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );

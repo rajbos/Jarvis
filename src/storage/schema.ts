@@ -119,6 +119,8 @@ export function getSchema(): string {
         subject_type   TEXT,
         subject_title  TEXT,
         subject_url    TEXT,
+        subject_actor_login TEXT,
+        subject_actor_type  TEXT,
         reason         TEXT,
         unread         INTEGER DEFAULT 1,
         updated_at     TEXT,
