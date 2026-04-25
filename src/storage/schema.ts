@@ -135,6 +135,7 @@ export function getSchema(): string {
         repo_full_name  TEXT NOT NULL,
         workflow_name   TEXT,
         workflow_id     TEXT,
+        workflow_path   TEXT,
         head_branch     TEXT,
         head_sha        TEXT,
         event           TEXT,

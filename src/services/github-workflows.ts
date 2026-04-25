@@ -14,6 +14,7 @@ const MAX_FAILING_RUNS_FOR_LOGS = 5;
 interface GitHubWorkflowRun {
   id: number;
   name: string;
+  path: string;
   workflow_id: number;
   head_branch: string;
   head_sha: string;
@@ -140,14 +141,15 @@ export function storeWorkflowRuns(
   for (const r of runs) {
     db.run(
       `INSERT OR REPLACE INTO github_workflow_runs
-        (id, repo_full_name, workflow_name, workflow_id, head_branch, head_sha, event,
+        (id, repo_full_name, workflow_name, workflow_id, workflow_path, head_branch, head_sha, event,
          status, conclusion, run_number, run_started_at, updated_at, html_url, fetched_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
       [
         String(r.id),
         repoFullName,
         r.name ?? null,
         String(r.workflow_id),
+        r.path ?? null,
         r.head_branch ?? null,
         r.head_sha ?? null,
         r.event ?? null,
@@ -250,7 +252,7 @@ export function getWorkflowSummaryForRepo(
 ): WorkflowRunSummary {
   const runStmt = db.prepare(`
     SELECT id, repo_full_name, workflow_name, workflow_id, head_branch, head_sha,
-           event, status, conclusion, run_number, run_started_at, updated_at, html_url, fetched_at
+           event, status, conclusion, run_number, run_started_at, updated_at, html_url, workflow_path, fetched_at
     FROM github_workflow_runs
     WHERE repo_full_name = ?
     ORDER BY run_started_at DESC
