@@ -471,6 +471,7 @@ export interface JarvisApi {
   listNotificationsForOwner(owner: string): Promise<StoredNotification[]>;
   listNotificationsForStarred(): Promise<StoredNotification[]>;
   dismissNotification(id: string): Promise<void>;
+  checkMergedDependabotPRs(): Promise<StoredNotification[]>;
   getRunUrlForCheckSuite(checkSuiteApiUrl: string): Promise<string | null>;
   getPreferences(): Promise<{ sortByNotifications: boolean; localSortByNotifs: boolean; localRepoSortKey: 'name' | 'scanned' | 'notifs' }>;
   setPreferences(prefs: { sortByNotifications?: boolean; localSortByNotifs?: boolean; localRepoSortKey?: 'name' | 'scanned' | 'notifs' }): Promise<{ ok: boolean }>;

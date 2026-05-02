@@ -374,6 +374,84 @@ export function deleteNotification(db: SqlJsDatabase, id: string): void {
   db.run('DELETE FROM github_notifications WHERE id = ?', [id]);
 }
 
+// ── Dependabot merged PR detection ───────────────────────────────────────────
+
+const DEPENDABOT_PR_URL_RE = /^https:\/\/api\.github\.com\/repos\/[^/]+\/[^/]+\/pulls\/\d+$/;
+
+function isDependabotPRNotification(n: StoredNotification): boolean {
+  if (n.subject_type !== 'PullRequest') return false;
+  const actor = (n.subject_actor_login ?? '').toLowerCase();
+  if (actor.includes('dependabot')) return true;
+  // Fallback when actor wasn't resolved: Bot + specific "Bump X from Y to Z" title pattern
+  return (
+    n.subject_actor_type === 'Bot' &&
+    /\bBump\s+\S.+?\bfrom\s+\S+\s+to\s+\S+/i.test(n.subject_title)
+  );
+}
+
+async function checkPRMerged(accessToken: string, prApiUrl: string): Promise<boolean> {
+  if (!DEPENDABOT_PR_URL_RE.test(prApiUrl)) return false;
+  try {
+    const response = await fetch(prApiUrl, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    });
+    if (!response.ok) return false;
+    const pr = (await response.json()) as Record<string, unknown>;
+    return pr.state === 'closed' && pr.merged_at != null;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Scans all stored unread PullRequest notifications, identifies those authored
+ * by Dependabot, checks each against the GitHub API, and returns the subset
+ * whose PR has been merged. Failures per-notification are non-fatal.
+ */
+export async function listMergedDependabotPRNotifications(
+  db: SqlJsDatabase,
+  accessToken: string,
+): Promise<StoredNotification[]> {
+  const stmt = db.prepare(`
+    SELECT id, repo_full_name, repo_owner, subject_type, subject_title, subject_url,
+           subject_actor_login, subject_actor_type, reason, unread, updated_at, fetched_at
+    FROM github_notifications
+    WHERE unread = 1 AND subject_type = 'PullRequest'
+    ORDER BY updated_at DESC
+  `);
+  const rows: StoredNotification[] = [];
+  while (stmt.step()) rows.push(stmt.getAsObject() as unknown as StoredNotification);
+  stmt.free();
+
+  const candidates = rows.filter(isDependabotPRNotification).filter(
+    (n) => n.subject_url != null,
+  );
+  if (candidates.length === 0) return [];
+
+  const merged: StoredNotification[] = [];
+  const concurrency = 6;
+  let next = 0;
+
+  async function worker(): Promise<void> {
+    while (next < candidates.length) {
+      const i = next++;
+      const n = candidates[i];
+      const isMerged = await checkPRMerged(accessToken, n.subject_url!);
+      if (isMerged) merged.push(n);
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, candidates.length) }, () => worker()),
+  );
+
+  return merged;
+}
+
 /**
  * Calls the GitHub API to mark a notification thread as done (removes it from GitHub inbox).
  * DELETE /notifications/threads/{thread_id} — returns 204 No Content.

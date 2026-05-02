@@ -14,6 +14,7 @@ import {
   listNotificationsForStarred,
   deleteNotification,
   markNotificationRead,
+  listMergedDependabotPRNotifications,
 } from '../../services/github-notifications';
 import { loadGitHubAuth } from '../../services/github-oauth';
 import { saveDatabase } from '../../storage/database';
@@ -91,6 +92,17 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
     }
     deleteNotification(db, id);
     saveDatabase();
+  });
+
+  ipcMain.handle('github:check-merged-dependabot-prs', async () => {
+    const auth = loadGitHubAuth(db);
+    if (!auth) return [];
+    try {
+      return await listMergedDependabotPRNotifications(db, auth.accessToken);
+    } catch (err) {
+      console.warn('[Jarvis] Could not check merged dependabot PRs:', err instanceof Error ? err.message : String(err));
+      return [];
+    }
   });
 }
 

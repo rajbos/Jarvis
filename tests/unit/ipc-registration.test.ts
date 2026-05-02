@@ -83,6 +83,7 @@ const EXPECTED_CHANNELS = [
   'github:list-notifications-for-owner',
   'github:list-notifications-for-starred',
   'github:dismiss-notification',
+  'github:check-merged-dependabot-prs',
   // local-repos plugin
   'local:get-folders',
   'local:add-folder',

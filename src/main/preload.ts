@@ -67,6 +67,8 @@ contextBridge.exposeInMainWorld('jarvis', {
     ipcRenderer.invoke('github:list-notifications-for-starred'),
   dismissNotification: (id: string) =>
     ipcRenderer.invoke('github:dismiss-notification', id),
+  checkMergedDependabotPRs: () =>
+    ipcRenderer.invoke('github:check-merged-dependabot-prs'),
   getRunUrlForCheckSuite: (checkSuiteApiUrl: string) =>
     ipcRenderer.invoke('github:get-run-url-for-check-suite', checkSuiteApiUrl),
   // Local repos
