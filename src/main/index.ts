@@ -85,7 +85,7 @@ async function initialize(): Promise<void> {
   if (!needsOnboarding || onboarding.github_oauth === 'completed') {
     startDiscoveryIfAuthed(db, () => mainWindow);
     // Pre-warm workflow run cache so recovery status is ready when panels open
-    runBootWorkflowCheck(db).catch((err) => {
+    runBootWorkflowCheck(db, () => mainWindow).catch((err) => {
       console.warn('[Boot] Workflow check failed:', err instanceof Error ? err.message : String(err));
     });
   }

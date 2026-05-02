@@ -127,8 +127,8 @@ function RecoverableBanner({
     onDismissed();
   };
 
-  if (checking) return null;
-
+  // Keep showing the banner with the last known results while re-checking.
+  // The totalIds.length === 0 guard above handles the initial-load case.
   return (
     <div class="dash-recoverable-banner">
       <span class="dash-recoverable-icon">✓</span>
@@ -151,6 +151,79 @@ function RecoverableBanner({
         onClick={() => onNavigate(topEntry.repoFullName)}
       >
         View {topEntry.repoFullName.split('/')[1]} ›
+      </button>
+    </div>
+  );
+}
+
+// ── Merged Dependabot PR notifications banner ─────────────────────────────────
+
+/**
+ * Checks all stored PR notifications for Dependabot-authored PRs that have
+ * been merged, and offers a single "dismiss all" action.
+ * Re-checks whenever `refreshKey` changes (e.g. on dashboard reload).
+ */
+function DependabotMergedBanner({
+  refreshKey,
+  onDismissed,
+}: {
+  refreshKey: string;
+  onDismissed: () => void;
+}) {
+  const [notifications, setNotifications] = useState<StoredNotification[]>([]);
+  const [checking, setChecking] = useState(true);
+  const [dismissing, setDismissing] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setChecking(true);
+    setNotifications([]);
+
+    const run = async () => {
+      try {
+        const result = await window.jarvis.checkMergedDependabotPRs();
+        if (!cancelled) setNotifications(result);
+      } catch {
+        // best-effort; silently ignore
+      } finally {
+        if (!cancelled) setChecking(false);
+      }
+    };
+
+    void run();
+    return () => { cancelled = true; };
+  }, [refreshKey]);
+
+  if (checking || notifications.length === 0) return null;
+
+  const repoCount = new Set(notifications.map((n) => n.repo_full_name)).size;
+  const summary = `${notifications.length} notification${notifications.length !== 1 ? 's' : ''} for merged PRs across ${repoCount} repo${repoCount !== 1 ? 's' : ''}.`;
+  const tooltip = notifications.map((n) => `${n.repo_full_name}: ${n.subject_title}`).join('\n');
+
+  const handleDismissAll = async () => {
+    setDismissing(true);
+    for (const n of notifications) {
+      try { await window.jarvis.dismissNotification(n.id); } catch { /* skip */ }
+    }
+    setDismissing(false);
+    onDismissed();
+  };
+
+  return (
+    <div class="dash-recoverable-banner">
+      <span class="dash-recoverable-icon">🤖</span>
+      <div class="dash-recoverable-body">
+        <span class="dash-recoverable-title">Merged Dependabot PRs</span>
+        <span class="dash-recoverable-detail" title={tooltip}>{summary}</span>
+      </div>
+      <button
+        class={`dash-recoverable-btn${dismissing ? ' dash-recoverable-btn--busy' : ''}`}
+        disabled={dismissing}
+        onClick={() => void handleDismissAll()}
+      >
+        {dismissing
+          ? <span class="dismiss-spinner" />
+          : `Dismiss ${notifications.length} notification${notifications.length !== 1 ? 's' : ''}`}
       </button>
     </div>
   );
@@ -1234,6 +1307,12 @@ export function DashboardPanel({ dismissedNotifIds }: { dismissedNotifIds?: Read
             document.getElementById(`dash-repo-${repo.localRepoId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
           });
         }}
+      />
+
+      {/* Merged Dependabot PRs — dismiss all notifications for merged dependabot PRs */}
+      <DependabotMergedBanner
+        refreshKey={summary.generatedAt}
+        onDismissed={load}
       />
 
       {/* Repo health list — filtered by selected card */}

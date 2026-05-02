@@ -471,6 +471,7 @@ export interface JarvisApi {
   listNotificationsForOwner(owner: string): Promise<StoredNotification[]>;
   listNotificationsForStarred(): Promise<StoredNotification[]>;
   dismissNotification(id: string): Promise<void>;
+  checkMergedDependabotPRs(): Promise<StoredNotification[]>;
   getRunUrlForCheckSuite(checkSuiteApiUrl: string): Promise<string | null>;
   getPreferences(): Promise<{ sortByNotifications: boolean; localSortByNotifs: boolean; localRepoSortKey: 'name' | 'scanned' | 'notifs' }>;
   setPreferences(prefs: { sortByNotifications?: boolean; localSortByNotifs?: boolean; localRepoSortKey?: 'name' | 'scanned' | 'notifs' }): Promise<{ ok: boolean }>;
@@ -556,6 +557,7 @@ export interface JarvisApi {
   browserGetPageContent(tabId?: number): Promise<{ ok: boolean; data?: unknown; error?: string }>;
   browserFocusWindow(tabId?: number): Promise<{ ok: boolean; windowId?: number; error?: string }>;
   onBrowserExtensionConnected(cb: (data: { count: number }) => void): () => void;
+  onBackgroundStatus(cb: (message: string) => void): () => void;
 }
 
 declare global {

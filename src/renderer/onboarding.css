@@ -3151,3 +3151,49 @@ h5.ec-heading { font-size: 0.85rem; }
   max-height: 80vh;
   overflow-y: auto;
 }
+
+/* ── Background status bar ───────────────────────────────────────────────── */
+.bg-status-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 1rem;
+  background: rgba(10, 10, 30, 0.88);
+  border-top: 1px solid #1e2040;
+  backdrop-filter: blur(4px);
+  animation: bg-status-fadein 0.2s ease;
+  pointer-events: none;
+}
+
+@keyframes bg-status-fadein {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.bg-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #4fc3f7;
+  flex-shrink: 0;
+  animation: bg-status-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes bg-status-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
+}
+
+.bg-status-text {
+  font-size: 0.72rem;
+  color: #8892b0;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
