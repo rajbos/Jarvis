@@ -1011,22 +1011,42 @@ function App() {
           });
         }}
       />
-      <BackgroundStatusBar />
+      <BackgroundStatusBar
+        notifFetching={notifFetching}
+        discoveryProgress={discoveryProgress}
+        discoveryFinished={discoveryFinished}
+        localScanning={localScanning}
+        localScanProgress={localScanProgress}
+      />
     </div>
   );
 }
 
 // ── Background status bar ─────────────────────────────────────────────────────
 
-function BackgroundStatusBar() {
-  const [message, setMessage] = useState<string | null>(null);
+interface BackgroundStatusBarProps {
+  notifFetching: boolean;
+  discoveryProgress: DiscoveryProgress | null;
+  discoveryFinished: boolean;
+  localScanning: boolean;
+  localScanProgress: LocalScanProgress | null;
+}
+
+function BackgroundStatusBar({
+  notifFetching,
+  discoveryProgress,
+  discoveryFinished,
+  localScanning,
+  localScanProgress,
+}: BackgroundStatusBarProps) {
+  const [ipcMessage, setIpcMessage] = useState<string | null>(null);
   const fadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const unsub = window.jarvis.onBackgroundStatus((msg) => {
-      setMessage(msg);
+      setIpcMessage(msg);
       if (fadeTimer.current) clearTimeout(fadeTimer.current);
-      fadeTimer.current = setTimeout(() => setMessage(null), 4000);
+      fadeTimer.current = setTimeout(() => setIpcMessage(null), 4000);
     });
     return () => {
       unsub();
@@ -1034,6 +1054,31 @@ function BackgroundStatusBar() {
     };
   }, []);
 
+  // Derive a message from App state — IPC message takes priority when active
+  let derivedMessage: string | null = null;
+  if (localScanning) {
+    if (localScanProgress?.currentFolder) {
+      derivedMessage = `Scanning repos… ${localScanProgress.currentFolder}`;
+    } else if (localScanProgress) {
+      derivedMessage = `Scanning repos… ${localScanProgress.reposFound} found`;
+    } else {
+      derivedMessage = 'Scanning local repos…';
+    }
+  } else if (discoveryProgress && !discoveryFinished) {
+    const phase = discoveryProgress.phase;
+    const count = discoveryProgress.reposFound;
+    if (phase === 'starred') {
+      derivedMessage = `Discovering starred repos… ${count} found`;
+    } else if (phase === 'repos') {
+      derivedMessage = `Discovering repos… ${count} found`;
+    } else {
+      derivedMessage = `Discovering repos (${phase})…`;
+    }
+  } else if (notifFetching) {
+    derivedMessage = 'Fetching notifications…';
+  }
+
+  const message = ipcMessage ?? derivedMessage;
   if (!message) return null;
 
   return (
