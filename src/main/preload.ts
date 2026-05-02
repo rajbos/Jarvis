@@ -240,4 +240,6 @@ contextBridge.exposeInMainWorld('jarvis', {
     ipcRenderer.on('app:background-status', listener);
     return () => { ipcRenderer.removeListener('app:background-status', listener); };
   },
+  // GitHub rate limit
+  getGitHubRateLimit: () => ipcRenderer.invoke('github:get-rate-limit'),
 });

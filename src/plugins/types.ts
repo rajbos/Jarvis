@@ -277,6 +277,28 @@ export interface FailedWorkflowRun {
   html_url: string;
 }
 
+// ── GitHub rate limit types ───────────────────────────────────────────────────
+
+export interface GitHubRateLimitResource {
+  limit: number;
+  remaining: number;
+  reset: number; // unix timestamp
+  used: number;
+}
+
+/** Per-token rate limit status. `configured: false` means the token is not set up. */
+export interface GitHubRateLimitSource {
+  configured: boolean;
+  resource: GitHubRateLimitResource | null;
+  error?: string;
+}
+
+export interface GitHubRateLimit {
+  oauth: GitHubRateLimitSource;
+  pat: GitHubRateLimitSource;
+  fetchedAt: string; // ISO timestamp
+}
+
 // ── Browser Companion types ───────────────────────────────────────────────────
 
 export interface BrowserSkill {
@@ -558,6 +580,8 @@ export interface JarvisApi {
   browserFocusWindow(tabId?: number): Promise<{ ok: boolean; windowId?: number; error?: string }>;
   onBrowserExtensionConnected(cb: (data: { count: number }) => void): () => void;
   onBackgroundStatus(cb: (message: string) => void): () => void;
+  // GitHub rate limit
+  getGitHubRateLimit(): Promise<GitHubRateLimit>;
 }
 
 declare global {

@@ -19,19 +19,31 @@ export interface SecretFavoriteRow {
 
 async function fetchRepoSecretNames(
   repoFullName: string,
-  token: string,
+  oauthToken: string,
+  patToken?: string,
 ): Promise<string[]> {
   const url = `${GITHUB_API_BASE}/repos/${repoFullName}/actions/secrets?per_page=100`;
-  const resp = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: 'application/vnd.github+json',
-    },
-  });
-  if (resp.status === 403 || resp.status === 404) return [];
-  if (!resp.ok) throw new Error(`GitHub API ${resp.status} for ${repoFullName}/actions/secrets`);
-  const data = await resp.json() as { secrets?: Array<{ name: string }> };
-  return (data.secrets ?? []).map((s) => s.name);
+
+  const tryFetch = async (token: string): Promise<{ status: number; names: string[] }> => {
+    const resp = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github+json',
+      },
+    });
+    if (resp.status === 403 || resp.status === 404) return { status: resp.status, names: [] };
+    if (!resp.ok) throw new Error(`GitHub API ${resp.status} for ${repoFullName}/actions/secrets`);
+    const data = await resp.json() as { secrets?: Array<{ name: string }> };
+    return { status: 200, names: (data.secrets ?? []).map((s) => s.name) };
+  };
+
+  const oauthResult = await tryFetch(oauthToken);
+  // If OAuth was blocked (403/404) and a PAT is available, retry with PAT
+  if ((oauthResult.status === 403 || oauthResult.status === 404) && patToken && patToken !== oauthToken) {
+    const patResult = await tryFetch(patToken);
+    return patResult.names;
+  }
+  return oauthResult.names;
 }
 
 /**
@@ -41,9 +53,10 @@ async function fetchRepoSecretNames(
  */
 export async function scanUserRepoSecrets(
   db: SqlJsDatabase,
-  token: string,
+  oauthToken: string,
   userLogin: string,
   onProgress?: (done: number, total: number, secretsFound: number) => void,
+  patToken?: string,
 ): Promise<SecretsScanResult> {
   // Collect repo IDs to scan, deduplicating via a Map<id, full_name>
   const repoMap = new Map<number, string>();
@@ -113,7 +126,7 @@ export async function scanUserRepoSecrets(
     onProgress?.(i, repos.length, secretsFound);
     const repo = repos[i];
     try {
-      const names = await fetchRepoSecretNames(repo.full_name, token);
+      const names = await fetchRepoSecretNames(repo.full_name, oauthToken, patToken);
       db.run('DELETE FROM repo_secrets WHERE github_repo_id = ?', [repo.id]);
       for (const name of names) {
         db.run(

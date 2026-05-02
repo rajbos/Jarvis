@@ -49,6 +49,7 @@ import type {
   SecretFavorite,
   SecretsScanProgress,
   Group,
+  GitHubRateLimit,
 } from '../plugins/types';
 import '../plugins/types'; // activate the global Window augmentation
 
@@ -123,6 +124,9 @@ function App() {
   const [showGroupsPanel, setShowGroupsPanel] = useState(false);
   const [oneNoteFilePath, setOneNoteFilePath] = useState<string | null>(null);
 
+  // GitHub rate limit
+  const [rateLimit, setRateLimit] = useState<GitHubRateLimit | null>(null);
+
   const currentUserLogin = oauthStatus?.login ?? null;
 
   // Tab state
@@ -169,6 +173,13 @@ function App() {
             setLocalRepoSortKey((prefs.localRepoSortKey as 'name' | 'scanned' | 'notifs') ?? 'name');
           } catch (e) {
             console.warn('[Jarvis] Could not load preferences:', e);
+          }
+          // Load GitHub rate limit
+          try {
+            const rl = await window.jarvis.getGitHubRateLimit();
+            setRateLimit(rl);
+          } catch (e) {
+            console.warn('[Jarvis] Could not load rate limit:', e);
           }
         }
       } catch (err) {
@@ -380,6 +391,20 @@ function App() {
     const id = window.setInterval(() => { void doFetchNotifications(); }, 5 * 60 * 1000);
     return () => window.clearInterval(id);
   }, [oauthStatus?.authenticated, doFetchNotifications]);
+
+  // 2-minute rate limit refresh
+  useEffect(() => {
+    if (!oauthStatus?.authenticated) return;
+    const id = window.setInterval(async () => {
+      try {
+        const rl = await window.jarvis.getGitHubRateLimit();
+        setRateLimit(rl);
+      } catch (e) {
+        console.warn('[Jarvis] Rate limit refresh failed:', e);
+      }
+    }, 2 * 60 * 1000);
+    return () => window.clearInterval(id);
+  }, [oauthStatus?.authenticated]);
 
   // Keep refs so the effect below can always read the latest panel state
   // without adding them to the dependency array (which would re-fire on every
@@ -1017,6 +1042,7 @@ function App() {
         discoveryFinished={discoveryFinished}
         localScanning={localScanning}
         localScanProgress={localScanProgress}
+        rateLimit={rateLimit}
       />
     </div>
   );
@@ -1030,6 +1056,7 @@ interface BackgroundStatusBarProps {
   discoveryFinished: boolean;
   localScanning: boolean;
   localScanProgress: LocalScanProgress | null;
+  rateLimit: GitHubRateLimit | null;
 }
 
 function BackgroundStatusBar({
@@ -1038,6 +1065,7 @@ function BackgroundStatusBar({
   discoveryFinished,
   localScanning,
   localScanProgress,
+  rateLimit,
 }: BackgroundStatusBarProps) {
   const [ipcMessage, setIpcMessage] = useState<string | null>(null);
   const fadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1079,12 +1107,55 @@ function BackgroundStatusBar({
   }
 
   const message = ipcMessage ?? derivedMessage;
-  if (!message) return null;
+
+  // Helper: pick badge colour from remaining count
+  function rateLimitColor(remaining: number): string {
+    if (remaining < 100) return '#f44336';       // red
+    if (remaining < 1000) return '#ff9800';      // orange
+    return '#4caf50';                            // green
+  }
+
+  // Build badges for OAuth and PAT sources (only when configured)
+  const oauthBadge = rateLimit?.oauth.configured ? rateLimit.oauth : null;
+  const patBadge = rateLimit?.pat.configured ? rateLimit.pat : null;
+  const hasAnyBadge = oauthBadge !== null || patBadge !== null;
+
+  if (!message && !hasAnyBadge) return null;
 
   return (
     <div class="bg-status-bar" aria-live="polite">
-      <span class="bg-status-dot" />
-      <span class="bg-status-text">{message}</span>
+      {message && (
+        <>
+          <span class="bg-status-dot" />
+          <span class="bg-status-text">{message}</span>
+        </>
+      )}
+      {oauthBadge && (
+        <span
+          class="bg-status-rate-limit"
+          title={oauthBadge.error
+            ? `OAuth rate limit error: ${oauthBadge.error}`
+            : `OAuth: ${oauthBadge.resource!.remaining}/${oauthBadge.resource!.limit} calls remaining (resets ${new Date(oauthBadge.resource!.reset * 1000).toLocaleTimeString()})`}
+          style={{ color: oauthBadge.error ? '#888' : (oauthBadge.resource ? rateLimitColor(oauthBadge.resource.remaining) : '#888') }}
+        >
+          {oauthBadge.error || !oauthBadge.resource
+            ? '⚡ OAuth –'
+            : `⚡ OAuth ${oauthBadge.resource.remaining.toLocaleString()}/${oauthBadge.resource.limit.toLocaleString()}`}
+        </span>
+      )}
+      {patBadge && (
+        <span
+          class="bg-status-rate-limit"
+          title={patBadge.error
+            ? `PAT rate limit error: ${patBadge.error}`
+            : `PAT: ${patBadge.resource!.remaining}/${patBadge.resource!.limit} calls remaining (resets ${new Date(patBadge.resource!.reset * 1000).toLocaleTimeString()})`}
+          style={{ color: patBadge.error ? '#888' : (patBadge.resource ? rateLimitColor(patBadge.resource.remaining) : '#888') }}
+        >
+          {patBadge.error || !patBadge.resource
+            ? '⚡ PAT –'
+            : `⚡ PAT ${patBadge.resource.remaining.toLocaleString()}/${patBadge.resource.limit.toLocaleString()}`}
+        </span>
+      )}
     </div>
   );
 }

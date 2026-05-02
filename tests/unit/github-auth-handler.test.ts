@@ -259,4 +259,87 @@ describe('GitHub Auth plugin — IPC handlers', () => {
       expect(result.ok).toBe(true);
     });
   });
+
+  // ── github:get-rate-limit ──────────────────────────────────────────────────
+
+  describe('github:get-rate-limit', () => {
+    it('returns unconfigured oauth and pat when not authenticated', async () => {
+      const result = (await callHandler('github:get-rate-limit')) as Record<string, unknown>;
+      expect(typeof result.fetchedAt).toBe('string');
+      const oauth = result.oauth as Record<string, unknown>;
+      const pat = result.pat as Record<string, unknown>;
+      expect(oauth.configured).toBe(false);
+      expect(oauth.resource).toBeNull();
+      expect(pat.configured).toBe(false);
+      expect(pat.resource).toBeNull();
+    });
+
+    it('returns oauth rate limit data when authenticated and fetch succeeds', async () => {
+      saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo', null);
+      const mockRateLimit = {
+        resources: { core: { limit: 5000, remaining: 4321, reset: 1700000000, used: 679 } },
+      };
+      global.fetch = vi.fn().mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockRateLimit,
+      } as Response);
+
+      const result = (await callHandler('github:get-rate-limit')) as Record<string, unknown>;
+      const oauth = result.oauth as Record<string, unknown>;
+      expect(oauth.configured).toBe(true);
+      expect(oauth.error).toBeUndefined();
+      const resource = oauth.resource as Record<string, unknown>;
+      expect(resource.remaining).toBe(4321);
+      expect(resource.limit).toBe(5000);
+      // PAT not configured
+      const pat = result.pat as Record<string, unknown>;
+      expect(pat.configured).toBe(false);
+    });
+
+    it('shows both oauth and pat rate limits when both tokens exist', async () => {
+      saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo', null);
+      saveGitHubPat(db, 'octocat', 'ghp_pat_token');
+      const mockRateLimit = {
+        resources: { core: { limit: 5000, remaining: 4000, reset: 1700000000, used: 1000 } },
+      };
+      const mockPatLimit = {
+        resources: { core: { limit: 5000, remaining: 2000, reset: 1700000000, used: 3000 } },
+      };
+      global.fetch = vi.fn()
+        .mockResolvedValueOnce({ ok: true, json: async () => mockRateLimit } as Response)
+        .mockResolvedValueOnce({ ok: true, json: async () => mockPatLimit } as Response);
+
+      const result = (await callHandler('github:get-rate-limit')) as Record<string, unknown>;
+      const oauth = result.oauth as Record<string, unknown>;
+      const pat = result.pat as Record<string, unknown>;
+      expect(oauth.configured).toBe(true);
+      expect((oauth.resource as Record<string, unknown>).remaining).toBe(4000);
+      expect(pat.configured).toBe(true);
+      expect((pat.resource as Record<string, unknown>).remaining).toBe(2000);
+    });
+
+    it('sets error on oauth source when fetch fails', async () => {
+      saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo', null);
+      global.fetch = vi.fn().mockRejectedValueOnce(new Error('Network error'));
+
+      const result = (await callHandler('github:get-rate-limit')) as Record<string, unknown>;
+      const oauth = result.oauth as Record<string, unknown>;
+      expect(oauth.configured).toBe(true);
+      expect(oauth.resource).toBeNull();
+      expect(oauth.error as string).toContain('Network error');
+    });
+
+    it('sets error on oauth source when API returns non-ok status', async () => {
+      saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo', null);
+      global.fetch = vi.fn().mockResolvedValueOnce({
+        ok: false, status: 401, json: async () => ({}),
+      } as Response);
+
+      const result = (await callHandler('github:get-rate-limit')) as Record<string, unknown>;
+      const oauth = result.oauth as Record<string, unknown>;
+      expect(oauth.configured).toBe(true);
+      expect(oauth.resource).toBeNull();
+      expect(oauth.error as string).toContain('401');
+    });
+  });
 });

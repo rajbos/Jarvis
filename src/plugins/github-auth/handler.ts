@@ -179,6 +179,45 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
       return { error: String(err) };
     }
   });
+  ipcMain.handle('github:get-rate-limit', async () => {
+    const auth = loadGitHubAuth(db);
+    const pat = loadGitHubPat(db);
+
+    type RateLimitResource = { limit: number; remaining: number; reset: number; used: number };
+
+    const fetchForToken = async (token: string): Promise<{ resource: RateLimitResource | null; error?: string }> => {
+      try {
+        const res = await fetch('https://api.github.com/rate_limit', {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: 'application/vnd.github+json',
+            'X-GitHub-Api-Version': '2022-11-28',
+          },
+        });
+        if (!res.ok) return { resource: null, error: `HTTP ${res.status}` };
+        const data = (await res.json()) as { resources: { core: RateLimitResource } };
+        return { resource: data.resources.core };
+      } catch (err) {
+        return { resource: null, error: String(err) };
+      }
+    };
+
+    const [oauthResult, patResult] = await Promise.all([
+      auth ? fetchForToken(auth.accessToken) : Promise.resolve(null),
+      pat ? fetchForToken(pat) : Promise.resolve(null),
+    ]);
+
+    return {
+      oauth: auth
+        ? { configured: true, resource: oauthResult!.resource, error: oauthResult!.error }
+        : { configured: false, resource: null },
+      pat: pat
+        ? { configured: true, resource: patResult!.resource, error: patResult!.error }
+        : { configured: false, resource: null },
+      fetchedAt: new Date().toISOString(),
+    };
+  });
+
 }
 
 async function startPollingLoop(

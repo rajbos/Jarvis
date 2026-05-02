@@ -3197,3 +3197,14 @@ h5.ec-heading { font-size: 0.85rem; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+.bg-status-rate-limit {
+  margin-left: auto;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  flex-shrink: 0;
+  pointer-events: auto;
+  cursor: default;
+}
