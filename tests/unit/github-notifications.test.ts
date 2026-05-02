@@ -562,8 +562,22 @@ describe('listMergedDependabotPRNotifications', () => {
   it('detects dependabot via title pattern when actor login is null', async () => {
     storeNotifications(db, [makePRNotif('15', {
       actorLogin: null,
-      actorType: 'Bot',
+      actorType: null,
       title: 'Bump actions/checkout from 3.0.0 to 4.0.0',
+    })]);
+    globalThis.fetch = vi.fn(async () =>
+      new Response(JSON.stringify({ state: 'closed', merged_at: '2024-01-01T00:00:00Z' }), { status: 200 }),
+    );
+
+    const result = await listMergedDependabotPRNotifications(db, 'token');
+    expect(result).toHaveLength(1);
+  });
+
+  it('detects grouped dependabot update PRs via title pattern', async () => {
+    storeNotifications(db, [makePRNotif('15b', {
+      actorLogin: null,
+      actorType: null,
+      title: 'Bump the github-actions group in /.github/workflows with 5 updates',
     })]);
     globalThis.fetch = vi.fn(async () =>
       new Response(JSON.stringify({ state: 'closed', merged_at: '2024-01-01T00:00:00Z' }), { status: 200 }),

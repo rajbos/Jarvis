@@ -381,11 +381,13 @@ const DEPENDABOT_PR_URL_RE = /^https:\/\/api\.github\.com\/repos\/[^/]+\/[^/]+\/
 function isDependabotPRNotification(n: StoredNotification): boolean {
   if (n.subject_type !== 'PullRequest') return false;
   const actor = (n.subject_actor_login ?? '').toLowerCase();
-  if (actor.includes('dependabot')) return true;
-  // Fallback when actor wasn't resolved: Bot + specific "Bump X from Y to Z" title pattern
+  // If we know who opened the PR, use that as source of truth
+  if (actor.length > 0) return actor.includes('dependabot');
+  // Actor unknown — fall back to distinctive dependabot title patterns:
+  // "Bump X from Y to Z" (single dep) or "Bump the X group" (grouped update)
   return (
-    n.subject_actor_type === 'Bot' &&
-    /\bBump\s+\S.+?\bfrom\s+\S+\s+to\s+\S+/i.test(n.subject_title)
+    /\bBump\s+\S.+?\bfrom\s+\S+\s+to\s+\S+/i.test(n.subject_title) ||
+    /\bBump\s+the\s+\S.+?\bgroup\b/i.test(n.subject_title)
   );
 }
 
