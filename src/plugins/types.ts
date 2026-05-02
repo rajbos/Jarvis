@@ -286,10 +286,17 @@ export interface GitHubRateLimitResource {
   used: number;
 }
 
-export interface GitHubRateLimit {
-  core: GitHubRateLimitResource;
-  fetchedAt: string; // ISO timestamp
+/** Per-token rate limit status. `configured: false` means the token is not set up. */
+export interface GitHubRateLimitSource {
+  configured: boolean;
+  resource: GitHubRateLimitResource | null;
   error?: string;
+}
+
+export interface GitHubRateLimit {
+  oauth: GitHubRateLimitSource;
+  pat: GitHubRateLimitSource;
+  fetchedAt: string; // ISO timestamp
 }
 
 // ── Browser Companion types ───────────────────────────────────────────────────

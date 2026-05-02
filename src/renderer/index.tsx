@@ -1108,15 +1108,19 @@ function BackgroundStatusBar({
 
   const message = ipcMessage ?? derivedMessage;
 
-  // Rate limit badge — color by remaining calls
-  let rateLimitColor = '#4caf50'; // green
-  if (rateLimit && !rateLimit.error) {
-    const { remaining } = rateLimit.core;
-    if (remaining < 100) rateLimitColor = '#f44336';       // red
-    else if (remaining < 1000) rateLimitColor = '#ff9800'; // orange
+  // Helper: pick badge colour from remaining count
+  function rateLimitColor(remaining: number): string {
+    if (remaining < 100) return '#f44336';       // red
+    if (remaining < 1000) return '#ff9800';      // orange
+    return '#4caf50';                            // green
   }
 
-  if (!message && !rateLimit) return null;
+  // Build badges for OAuth and PAT sources (only when configured)
+  const oauthBadge = rateLimit?.oauth.configured ? rateLimit.oauth : null;
+  const patBadge = rateLimit?.pat.configured ? rateLimit.pat : null;
+  const hasAnyBadge = oauthBadge !== null || patBadge !== null;
+
+  if (!message && !hasAnyBadge) return null;
 
   return (
     <div class="bg-status-bar" aria-live="polite">
@@ -1126,15 +1130,30 @@ function BackgroundStatusBar({
           <span class="bg-status-text">{message}</span>
         </>
       )}
-      {rateLimit && (
+      {oauthBadge && (
         <span
           class="bg-status-rate-limit"
-          title={rateLimit.error
-            ? `GitHub rate limit error: ${rateLimit.error}`
-            : `GitHub API: ${rateLimit.core.remaining}/${rateLimit.core.limit} calls remaining (resets ${new Date(rateLimit.core.reset * 1000).toLocaleTimeString()})`}
-          style={{ color: rateLimit.error ? '#888' : rateLimitColor }}
+          title={oauthBadge.error
+            ? `OAuth rate limit error: ${oauthBadge.error}`
+            : `OAuth: ${oauthBadge.resource!.remaining}/${oauthBadge.resource!.limit} calls remaining (resets ${new Date(oauthBadge.resource!.reset * 1000).toLocaleTimeString()})`}
+          style={{ color: oauthBadge.error ? '#888' : (oauthBadge.resource ? rateLimitColor(oauthBadge.resource.remaining) : '#888') }}
         >
-          {rateLimit.error ? '⚡ –/–' : `⚡ ${rateLimit.core.remaining.toLocaleString()}/${rateLimit.core.limit.toLocaleString()}`}
+          {oauthBadge.error || !oauthBadge.resource
+            ? '⚡ OAuth –'
+            : `⚡ OAuth ${oauthBadge.resource.remaining.toLocaleString()}/${oauthBadge.resource.limit.toLocaleString()}`}
+        </span>
+      )}
+      {patBadge && (
+        <span
+          class="bg-status-rate-limit"
+          title={patBadge.error
+            ? `PAT rate limit error: ${patBadge.error}`
+            : `PAT: ${patBadge.resource!.remaining}/${patBadge.resource!.limit} calls remaining (resets ${new Date(patBadge.resource!.reset * 1000).toLocaleTimeString()})`}
+          style={{ color: patBadge.error ? '#888' : (patBadge.resource ? rateLimitColor(patBadge.resource.remaining) : '#888') }}
+        >
+          {patBadge.error || !patBadge.resource
+            ? '⚡ PAT –'
+            : `⚡ PAT ${patBadge.resource.remaining.toLocaleString()}/${patBadge.resource.limit.toLocaleString()}`}
         </span>
       )}
     </div>

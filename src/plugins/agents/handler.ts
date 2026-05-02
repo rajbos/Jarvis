@@ -5,7 +5,7 @@ import * as path from 'path';
 import type { BrowserWindow } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import { getConfigValue, saveDatabase } from '../../storage/database';
-import { loadGitHubAuth } from '../../services/github-oauth';
+import { loadGitHubAuth, loadGitHubPat } from '../../services/github-oauth';
 import {
   fetchAndStoreWorkflowData,
   getWorkflowSummaryForRepo,
@@ -246,11 +246,23 @@ export function registerHandlers(
     }
     const auth = loadGitHubAuth(db);
     if (!auth) return { ok: false, error: 'Not authenticated with GitHub' };
+    const pat = loadGitHubPat(db);
     try {
       const { runsStored } = await fetchAndStoreWorkflowData(db, auth.accessToken, repoFullName);
       saveDatabase();
       return { ok: true, count: runsStored };
     } catch (err) {
+      // GitHub returns 403 when OAuth app is blocked by the org, 404 for private repos
+      // the token can't access. Retry with PAT when available.
+      if (pat && err instanceof Error && /GitHub API error (403|404):/.test(err.message)) {
+        try {
+          const { runsStored } = await fetchAndStoreWorkflowData(db, pat, repoFullName);
+          saveDatabase();
+          return { ok: true, count: runsStored };
+        } catch (patErr) {
+          return { ok: false, error: patErr instanceof Error ? patErr.message : String(patErr) };
+        }
+      }
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
   });
