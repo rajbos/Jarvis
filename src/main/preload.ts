@@ -235,4 +235,9 @@ contextBridge.exposeInMainWorld('jarvis', {
     ipcRenderer.on('browser:extension-connected', listener);
     return () => { ipcRenderer.removeListener('browser:extension-connected', listener); };
   },
+  onBackgroundStatus: (callback: (message: string) => void) => {
+    const listener = (_event: unknown, message: string) => callback(message);
+    ipcRenderer.on('app:background-status', listener);
+    return () => { ipcRenderer.removeListener('app:background-status', listener); };
+  },
 });

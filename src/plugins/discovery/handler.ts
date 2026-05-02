@@ -80,6 +80,8 @@ export function startDiscoveryIfAuthed(
   const auth = loadGitHubAuth(db);
   if (!auth) return;
 
+  const sendStatus = (msg: string) => getWindow()?.webContents.send('app:background-status', msg);
+
   if (activeDiscovery && !activeDiscovery.aborted) {
     console.log('[Discovery] Already running, skipping');
     return;
@@ -139,12 +141,14 @@ export function startDiscoveryIfAuthed(
 
       if (isStale) {
         console.log('[Discovery] Data is stale, running lightweight refresh');
+        sendStatus('Syncing repos\u2026');
         const pat = loadGitHubPat(db);
         runLightweightRefresh(db, auth.accessToken, (progress) => {
           setLastDiscoveryProgress(progress);
           getWindow()?.webContents.send('github:discovery-progress', progress);
         }, pat, auth.login).then(() => {
           console.log('[Discovery] Lightweight refresh finished');
+          sendStatus('Repos synced.');
           getWindow()?.webContents.send('github:discovery-complete', lastDiscoveryProgress);
         }).catch((err) => {
           console.error('[Discovery] Lightweight refresh failed:', err);
@@ -153,7 +157,8 @@ export function startDiscoveryIfAuthed(
         console.log(`[Discovery] Already have ${existing.orgs.length} org(s) in DB and data is fresh, skipping.`);
 
         if (existing.starredRepoCount === 0) {
-          console.log('[Discovery] No starred repos indexed yet — fetching stars now');
+          console.log('[Discovery] No starred repos indexed yet - fetching stars now');
+          sendStatus('Fetching starred repos\u2026');
           const starState: DiscoveryState = { callsSinceLastPause: 0, aborted: false, lastRateLimit: null };
           const starProgress: DiscoveryProgress = { phase: 'starred', orgsFound: 0, reposFound: 0 };
           fetchStarredRepos(db, auth.accessToken, starState, starProgress, (p) => {
@@ -162,6 +167,7 @@ export function startDiscoveryIfAuthed(
           }).then(() => {
             const done: DiscoveryProgress = { phase: 'done', orgsFound: 0, reposFound: starProgress.reposFound };
             setLastDiscoveryProgress(done);
+            sendStatus(starProgress.reposFound + ' starred repo' + (starProgress.reposFound !== 1 ? 's' : '') + ' loaded.');
             getWindow()?.webContents.send('github:discovery-complete', done);
           }).catch((err) => console.error('[Discovery] Starred-only fetch failed:', err));
         }
@@ -171,6 +177,7 @@ export function startDiscoveryIfAuthed(
   }
 
   console.log('[Discovery] Starting background discovery for', auth.login);
+  sendStatus('Discovering repos\u2026');
   const pat = loadGitHubPat(db);
   runDiscovery(db, auth.accessToken, (progress) => {
     setLastDiscoveryProgress(progress);
@@ -178,6 +185,7 @@ export function startDiscoveryIfAuthed(
   }, pat, auth.login).then((_state) => {
     setActiveDiscovery(null);
     console.log('[Discovery] Finished');
+    sendStatus('Discovery finished — ' + (lastDiscoveryProgress?.reposFound ?? 0) + ' repos found.');
     getWindow()?.webContents.send('github:discovery-complete', lastDiscoveryProgress);
   }).catch((err) => {
     setActiveDiscovery(null);

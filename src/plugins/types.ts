@@ -557,6 +557,7 @@ export interface JarvisApi {
   browserGetPageContent(tabId?: number): Promise<{ ok: boolean; data?: unknown; error?: string }>;
   browserFocusWindow(tabId?: number): Promise<{ ok: boolean; windowId?: number; error?: string }>;
   onBrowserExtensionConnected(cb: (data: { count: number }) => void): () => void;
+  onBackgroundStatus(cb: (message: string) => void): () => void;
 }
 
 declare global {

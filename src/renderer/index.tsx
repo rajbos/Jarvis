@@ -1011,6 +1011,35 @@ function App() {
           });
         }}
       />
+      <BackgroundStatusBar />
+    </div>
+  );
+}
+
+// ── Background status bar ─────────────────────────────────────────────────────
+
+function BackgroundStatusBar() {
+  const [message, setMessage] = useState<string | null>(null);
+  const fadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const unsub = window.jarvis.onBackgroundStatus((msg) => {
+      setMessage(msg);
+      if (fadeTimer.current) clearTimeout(fadeTimer.current);
+      fadeTimer.current = setTimeout(() => setMessage(null), 4000);
+    });
+    return () => {
+      unsub();
+      if (fadeTimer.current) clearTimeout(fadeTimer.current);
+    };
+  }, []);
+
+  if (!message) return null;
+
+  return (
+    <div class="bg-status-bar" aria-live="polite">
+      <span class="bg-status-dot" />
+      <span class="bg-status-text">{message}</span>
     </div>
   );
 }
