@@ -127,8 +127,8 @@ function RecoverableBanner({
     onDismissed();
   };
 
-  if (checking) return null;
-
+  // Keep showing the banner with the last known results while re-checking.
+  // The totalIds.length === 0 guard above handles the initial-load case.
   return (
     <div class="dash-recoverable-banner">
       <span class="dash-recoverable-icon">✓</span>
