@@ -52,7 +52,7 @@ function initializeSchema(database: SqlJsDatabase): void {
   if (userVersion === 0) {
     database.run(getSchema());
     seedBuiltInAgents(database);
-    database.run('PRAGMA user_version = 17');
+    database.run('PRAGMA user_version = 18');
   }
 
   if (userVersion === 1) {
@@ -388,6 +388,12 @@ function initializeSchema(database: SqlJsDatabase): void {
     database.run('ALTER TABLE github_notifications ADD COLUMN subject_actor_login TEXT');
     database.run('ALTER TABLE github_notifications ADD COLUMN subject_actor_type TEXT');
     database.run('PRAGMA user_version = 17');
+  }
+
+  if (userVersion === 17) {
+    // Migration v17 → v18: add workflow_path to github_workflow_runs for filter URL support
+    database.run('ALTER TABLE github_workflow_runs ADD COLUMN workflow_path TEXT');
+    database.run('PRAGMA user_version = 18');
   }
 }
 

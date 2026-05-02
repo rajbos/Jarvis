@@ -164,6 +164,7 @@ export interface WorkflowRun {
   repo_full_name: string;
   workflow_name: string;
   workflow_id: string;
+  workflow_path: string | null;
   head_branch: string;
   head_sha: string;
   event: string;
@@ -274,6 +275,28 @@ export interface FailedWorkflowRun {
   conclusion: string;
   run_started_at: string;
   html_url: string;
+}
+
+// ── GitHub rate limit types ───────────────────────────────────────────────────
+
+export interface GitHubRateLimitResource {
+  limit: number;
+  remaining: number;
+  reset: number; // unix timestamp
+  used: number;
+}
+
+/** Per-token rate limit status. `configured: false` means the token is not set up. */
+export interface GitHubRateLimitSource {
+  configured: boolean;
+  resource: GitHubRateLimitResource | null;
+  error?: string;
+}
+
+export interface GitHubRateLimit {
+  oauth: GitHubRateLimitSource;
+  pat: GitHubRateLimitSource;
+  fetchedAt: string; // ISO timestamp
 }
 
 // ── Browser Companion types ───────────────────────────────────────────────────
@@ -471,6 +494,7 @@ export interface JarvisApi {
   listNotificationsForStarred(): Promise<StoredNotification[]>;
   listPrNotifications(): Promise<StoredNotification[]>;
   dismissNotification(id: string): Promise<void>;
+  checkMergedDependabotPRs(): Promise<StoredNotification[]>;
   getRunUrlForCheckSuite(checkSuiteApiUrl: string): Promise<string | null>;
   githubGetPrState(subjectUrl: string): Promise<'open' | 'closed' | 'merged' | null>;
   getPreferences(): Promise<{ sortByNotifications: boolean; localSortByNotifs: boolean; localRepoSortKey: 'name' | 'scanned' | 'notifs' }>;
@@ -557,6 +581,9 @@ export interface JarvisApi {
   browserGetPageContent(tabId?: number): Promise<{ ok: boolean; data?: unknown; error?: string }>;
   browserFocusWindow(tabId?: number): Promise<{ ok: boolean; windowId?: number; error?: string }>;
   onBrowserExtensionConnected(cb: (data: { count: number }) => void): () => void;
+  onBackgroundStatus(cb: (message: string) => void): () => void;
+  // GitHub rate limit
+  getGitHubRateLimit(): Promise<GitHubRateLimit>;
 }
 
 declare global {

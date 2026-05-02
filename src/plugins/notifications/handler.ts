@@ -15,6 +15,7 @@ import {
   listPrNotifications,
   deleteNotification,
   markNotificationRead,
+  listMergedDependabotPRNotifications,
 } from '../../services/github-notifications';
 import { loadGitHubAuth } from '../../services/github-oauth';
 import { saveDatabase } from '../../storage/database';
@@ -97,6 +98,17 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
     deleteNotification(db, id);
     saveDatabase();
   });
+
+  ipcMain.handle('github:check-merged-dependabot-prs', async () => {
+    const auth = loadGitHubAuth(db);
+    if (!auth) return [];
+    try {
+      return await listMergedDependabotPRNotifications(db, auth.accessToken);
+    } catch (err) {
+      console.warn('[Jarvis] Could not check merged dependabot PRs:', err instanceof Error ? err.message : String(err));
+      return [];
+    }
+  });
 }
 
 /**
@@ -104,7 +116,10 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
  * CI-type notifications stored locally. This ensures the recovery check in
  * the UI can resolve immediately without a user-triggered fetch.
  */
-export async function runBootWorkflowCheck(db: SqlJsDatabase): Promise<void> {
+export async function runBootWorkflowCheck(
+  db: SqlJsDatabase,
+  getWindow: () => BrowserWindow | null,
+): Promise<void> {
   const auth = loadGitHubAuth(db);
   if (!auth) return;
 
@@ -117,10 +132,14 @@ export async function runBootWorkflowCheck(db: SqlJsDatabase): Promise<void> {
   const repos: string[] = result[0]?.values.map((row) => row[0] as string) ?? [];
   if (repos.length === 0) return;
 
+  const sendStatus = (msg: string) => getWindow()?.webContents.send('app:background-status', msg);
+
   console.log(`[Boot] Pre-warming workflow cache for ${repos.length} repo(s) with CI notifications…`);
+  sendStatus(`Caching workflow data for ${repos.length} repo${repos.length !== 1 ? 's' : ''}…`);
 
   for (const repo of repos) {
     try {
+      sendStatus(`Loading workflow runs: ${repo.split('/')[1]}…`);
       const { runsStored } = await fetchAndStoreWorkflowData(db, auth.accessToken, repo);
       console.log(`[Boot] Cached ${runsStored} workflow run(s) for ${repo}`);
     } catch (err) {
@@ -129,5 +148,6 @@ export async function runBootWorkflowCheck(db: SqlJsDatabase): Promise<void> {
     }
   }
 
+  sendStatus('Workflow cache ready.');
   saveDatabase();
 }

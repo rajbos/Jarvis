@@ -69,6 +69,8 @@ contextBridge.exposeInMainWorld('jarvis', {
     ipcRenderer.invoke('github:list-pr-notifications'),
   dismissNotification: (id: string) =>
     ipcRenderer.invoke('github:dismiss-notification', id),
+  checkMergedDependabotPRs: () =>
+    ipcRenderer.invoke('github:check-merged-dependabot-prs'),
   getRunUrlForCheckSuite: (checkSuiteApiUrl: string) =>
     ipcRenderer.invoke('github:get-run-url-for-check-suite', checkSuiteApiUrl),
   githubGetPrState: (subjectUrl: string) =>
@@ -237,4 +239,11 @@ contextBridge.exposeInMainWorld('jarvis', {
     ipcRenderer.on('browser:extension-connected', listener);
     return () => { ipcRenderer.removeListener('browser:extension-connected', listener); };
   },
+  onBackgroundStatus: (callback: (message: string) => void) => {
+    const listener = (_event: unknown, message: string) => callback(message);
+    ipcRenderer.on('app:background-status', listener);
+    return () => { ipcRenderer.removeListener('app:background-status', listener); };
+  },
+  // GitHub rate limit
+  getGitHubRateLimit: () => ipcRenderer.invoke('github:get-rate-limit'),
 });

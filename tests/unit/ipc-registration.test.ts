@@ -64,6 +64,7 @@ const EXPECTED_CHANNELS = [
   'github:pat-status',
   'github:start-oauth-discovery',
   'github:start-oauth',
+  'github:get-rate-limit',
   // discovery plugin
   'github:discovery-status',
   'github:start-discovery',
@@ -85,6 +86,7 @@ const EXPECTED_CHANNELS = [
   'github:list-notifications-for-starred',
   'github:list-pr-notifications',
   'github:dismiss-notification',
+  'github:check-merged-dependabot-prs',
   // local-repos plugin
   'local:get-folders',
   'local:add-folder',

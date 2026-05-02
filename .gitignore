@@ -33,4 +33,4 @@ logs/
 coverage/
 
 
-.claude/worktrees/
+.claude/worktrees/test_output.txt

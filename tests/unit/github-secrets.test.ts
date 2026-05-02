@@ -223,7 +223,7 @@ describe('scanUserRepoSecrets', () => {
       new Response(JSON.stringify({ secrets: [{ name: 'MY_SECRET' }] }), { status: 200 }),
     );
 
-    const result = await scanUserRepoSecrets(db, 'ghp_token', 'alice');
+    const result = await scanUserRepoSecrets(db, 'gho_oauth', 'alice');
     expect(result.scanned).toBe(2);
     expect(result.secretsFound).toBe(2);
     expect(result.errors).toHaveLength(0);
@@ -237,19 +237,58 @@ describe('scanUserRepoSecrets', () => {
       new Response('Server Error', { status: 500 }),
     );
 
-    const result = await scanUserRepoSecrets(db, 'ghp_token', 'alice');
+    const result = await scanUserRepoSecrets(db, 'gho_oauth', 'alice');
     expect(result.errors).toHaveLength(2);
     expect(result.secretsFound).toBe(0);
   });
 
-  it('skips repos that return 403/404', async () => {
+  it('skips repos that return 403/404 when no PAT is configured', async () => {
     globalThis.fetch = vi.fn(async () =>
       new Response('Forbidden', { status: 403 }),
     );
 
-    const result = await scanUserRepoSecrets(db, 'ghp_token', 'alice');
+    const result = await scanUserRepoSecrets(db, 'gho_oauth', 'alice');
     expect(result.errors).toHaveLength(0);
     expect(result.secretsFound).toBe(0);
+  });
+
+  it('retries with PAT when OAuth returns 403', async () => {
+    globalThis.fetch = vi.fn()
+      // First call (OAuth) → 403
+      .mockResolvedValueOnce(new Response('Forbidden', { status: 403 }))
+      // Second call (PAT retry for repo 1) → success
+      .mockResolvedValueOnce(new Response(JSON.stringify({ secrets: [{ name: 'ORG_SECRET' }] }), { status: 200 }))
+      // Third call (OAuth) for repo 2 → 403
+      .mockResolvedValueOnce(new Response('Forbidden', { status: 403 }))
+      // Fourth call (PAT retry for repo 2) → success
+      .mockResolvedValueOnce(new Response(JSON.stringify({ secrets: [{ name: 'ORG_SECRET_2' }] }), { status: 200 }));
+
+    const result = await scanUserRepoSecrets(db, 'gho_oauth', 'alice', undefined, 'ghp_pat');
+    expect(result.errors).toHaveLength(0);
+    expect(result.secretsFound).toBe(2);
+  });
+
+  it('retries with PAT when OAuth returns 404', async () => {
+    globalThis.fetch = vi.fn()
+      .mockResolvedValueOnce(new Response('Not Found', { status: 404 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ secrets: [{ name: 'FOUND' }] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response('Not Found', { status: 404 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ secrets: [] }), { status: 200 }));
+
+    const result = await scanUserRepoSecrets(db, 'gho_oauth', 'alice', undefined, 'ghp_pat');
+    expect(result.secretsFound).toBe(1);
+  });
+
+  it('does not retry with PAT when OAuth and PAT tokens are the same', async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response('Forbidden', { status: 403 }),
+    );
+    globalThis.fetch = fetchMock;
+
+    // passing the same token as both oauth and pat should not double-fetch
+    await scanUserRepoSecrets(db, 'same_token', 'alice', undefined, 'same_token');
+    // Only 2 OAuth calls, no PAT retries (2 repos)
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('calls onProgress callback', async () => {
@@ -258,7 +297,7 @@ describe('scanUserRepoSecrets', () => {
     );
 
     const progressCalls: number[] = [];
-    await scanUserRepoSecrets(db, 'ghp_token', 'alice', (done) => {
+    await scanUserRepoSecrets(db, 'gho_oauth', 'alice', (done) => {
       progressCalls.push(done);
     });
 
@@ -273,7 +312,7 @@ describe('scanUserRepoSecrets', () => {
       new Response(JSON.stringify({ secrets: [{ name: 'FAV_SECRET' }] }), { status: 200 }),
     );
 
-    const result = await scanUserRepoSecrets(db, 'ghp_token', 'alice');
+    const result = await scanUserRepoSecrets(db, 'gho_oauth', 'alice');
     // alice has 2 personal repos + 1 favorited repo = 3 total
     expect(result.scanned).toBe(3);
   });
@@ -287,7 +326,7 @@ describe('scanUserRepoSecrets', () => {
       new Response(JSON.stringify({ secrets: [{ name: 'ORG_SECRET' }] }), { status: 200 }),
     );
 
-    const result = await scanUserRepoSecrets(db, 'ghp_token', 'alice');
+    const result = await scanUserRepoSecrets(db, 'gho_oauth', 'alice');
     // alice has 2 personal repos + 1 org repo = 3 total
     expect(result.scanned).toBe(3);
   });

@@ -139,13 +139,20 @@ async function openNotifUrl(n: StoredNotification): Promise<void> {
 
 // ── Notification row ──────────────────────────────────────────────────────────
 
-function NotifRow({ n, onContextMenu }: { n: StoredNotification; onContextMenu: (e: MouseEvent) => void }) {
+function NotifRow({ n, onContextMenu, workflowFilterUrl }: { n: StoredNotification; onContextMenu: (e: MouseEvent) => void; workflowFilterUrl?: string }) {
+  const handleClick = () => {
+    if (workflowFilterUrl) {
+      window.jarvis.openUrl(workflowFilterUrl);
+    } else {
+      void openNotifUrl(n);
+    }
+  };
   return (
     <div
       key={n.id}
       class="org-item"
       style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '0.25rem', cursor: 'pointer' }}
-      onClick={() => openNotifUrl(n)}
+      onClick={handleClick}
       onContextMenu={onContextMenu}
     >
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', width: '100%' }}>
@@ -180,6 +187,7 @@ export function NotifRepoPanel({ repoFullName, notifications, onClose, onRefresh
   const [agentTarget, setAgentTarget] = useState<{ workflowFilter?: string } | null>(null);
   const [recoveryMap, setRecoveryMap] = useState<Map<string, boolean>>(new Map());
   const [failureHintMap, setFailureHintMap] = useState<Map<string, FailureHint>>(new Map());
+  const [workflowPathMap, setWorkflowPathMap] = useState<Map<string, string | null>>(new Map());
   const [checkingRecovery, setCheckingRecovery] = useState(false);
   const [dismissingGroup, setDismissingGroup] = useState<string | null>(null);
 
@@ -241,6 +249,14 @@ export function NotifRepoPanel({ repoFullName, notifications, onClose, onRefresh
         }
         setRecoveryMap(newMap);
         setFailureHintMap(newHints);
+
+        const newPathMap = new Map<string, string | null>();
+        for (const run of summary.recent_runs) {
+          if (run.workflow_name && !newPathMap.has(run.workflow_name)) {
+            newPathMap.set(run.workflow_name, run.workflow_path ?? null);
+          }
+        }
+        setWorkflowPathMap(newPathMap);
       } catch {
         // recovery check is best-effort; silently ignore errors
       } finally {
@@ -363,6 +379,12 @@ export function NotifRepoPanel({ repoFullName, notifications, onClose, onRefresh
               <NotifRow
                 key={n.id}
                 n={n}
+                workflowFilterUrl={group.workflowName ? (() => {
+                  const wfPath = workflowPathMap.get(group.workflowName!);
+                  if (!wfPath) return undefined;
+                  const filename = wfPath.split('/').pop()!;
+                  return `https://github.com/${repoFullName}/actions/workflows/${filename}`;
+                })() : undefined}
                 onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY, notifId: n.id }); }}
               />
             ))}

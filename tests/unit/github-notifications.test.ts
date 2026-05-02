@@ -358,7 +358,7 @@ describe('GitHub Notifications — listNotificationsForStarred', () => {
 });
 
 // ── fetchNotificationsForRepo ─────────────────────────────────────────────────
-import { fetchNotificationsForRepo, markNotificationRead } from '../../src/services/github-notifications';
+import { fetchNotificationsForRepo, markNotificationRead, listMergedDependabotPRNotifications } from '../../src/services/github-notifications';
 
 describe('fetchNotificationsForRepo', () => {
   afterEach(() => vi.restoreAllMocks());
@@ -454,5 +454,174 @@ describe('markNotificationRead', () => {
     await expect(markNotificationRead('token', '123')).rejects.toThrow(
       'GitHub mark-done API error: 403',
     );
+  });
+});
+
+// ── listMergedDependabotPRNotifications ───────────────────────────────────────
+
+function makePRNotif(
+  id: string,
+  opts: {
+    owner?: string;
+    repoName?: string;
+    actorLogin?: string | null;
+    actorType?: string | null;
+    title?: string;
+    prNumber?: number;
+  } = {},
+): GitHubNotification {
+  const owner = opts.owner ?? 'myorg';
+  const repoName = opts.repoName ?? 'myrepo';
+  const prNumber = opts.prNumber ?? 1;
+  return {
+    id,
+    unread: true,
+    reason: 'subscribed',
+    updated_at: new Date().toISOString(),
+    subject_actor_login: opts.actorLogin !== undefined ? opts.actorLogin : 'dependabot[bot]',
+    subject_actor_type: opts.actorType !== undefined ? opts.actorType : 'Bot',
+    subject: {
+      type: 'PullRequest',
+      title: opts.title ?? `Bump some-action from 1.0.0 to 2.0.0`,
+      url: `https://api.github.com/repos/${owner}/${repoName}/pulls/${prNumber}`,
+    },
+    repository: {
+      full_name: `${owner}/${repoName}`,
+      name: repoName,
+      owner: { login: owner },
+      html_url: `https://github.com/${owner}/${repoName}`,
+    },
+  };
+}
+
+describe('listMergedDependabotPRNotifications', () => {
+  let db: SqlJsDatabase;
+
+  beforeEach(async () => {
+    const SQL = await initSqlJs();
+    db = new SQL.Database();
+    db.run(getSchema());
+  });
+
+  afterEach(() => {
+    db.close();
+    vi.restoreAllMocks();
+  });
+
+  it('returns merged dependabot PR notifications', async () => {
+    storeNotifications(db, [makePRNotif('10', { actorLogin: 'dependabot[bot]' })]);
+    globalThis.fetch = vi.fn(async () =>
+      new Response(JSON.stringify({ state: 'closed', merged_at: '2024-01-01T00:00:00Z' }), { status: 200 }),
+    );
+
+    const result = await listMergedDependabotPRNotifications(db, 'token');
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('10');
+  });
+
+  it('excludes closed-but-not-merged PRs', async () => {
+    storeNotifications(db, [makePRNotif('11')]);
+    globalThis.fetch = vi.fn(async () =>
+      new Response(JSON.stringify({ state: 'closed', merged_at: null }), { status: 200 }),
+    );
+
+    const result = await listMergedDependabotPRNotifications(db, 'token');
+    expect(result).toHaveLength(0);
+  });
+
+  it('excludes open PRs', async () => {
+    storeNotifications(db, [makePRNotif('12')]);
+    globalThis.fetch = vi.fn(async () =>
+      new Response(JSON.stringify({ state: 'open', merged_at: null }), { status: 200 }),
+    );
+
+    const result = await listMergedDependabotPRNotifications(db, 'token');
+    expect(result).toHaveLength(0);
+  });
+
+  it('excludes non-PR notifications', async () => {
+    storeNotifications(db, [makeNotif('13', { type: 'CheckSuite' })]);
+    globalThis.fetch = vi.fn(async () =>
+      new Response(JSON.stringify({ state: 'closed', merged_at: '2024-01-01T00:00:00Z' }), { status: 200 }),
+    );
+
+    const result = await listMergedDependabotPRNotifications(db, 'token');
+    expect(result).toHaveLength(0);
+  });
+
+  it('excludes PR notifications not authored by dependabot', async () => {
+    storeNotifications(db, [makePRNotif('14', { actorLogin: 'octocat', actorType: 'User' })]);
+    globalThis.fetch = vi.fn(async () =>
+      new Response(JSON.stringify({ state: 'closed', merged_at: '2024-01-01T00:00:00Z' }), { status: 200 }),
+    );
+
+    const result = await listMergedDependabotPRNotifications(db, 'token');
+    expect(result).toHaveLength(0);
+  });
+
+  it('detects dependabot via title pattern when actor login is null', async () => {
+    storeNotifications(db, [makePRNotif('15', {
+      actorLogin: null,
+      actorType: null,
+      title: 'Bump actions/checkout from 3.0.0 to 4.0.0',
+    })]);
+    globalThis.fetch = vi.fn(async () =>
+      new Response(JSON.stringify({ state: 'closed', merged_at: '2024-01-01T00:00:00Z' }), { status: 200 }),
+    );
+
+    const result = await listMergedDependabotPRNotifications(db, 'token');
+    expect(result).toHaveLength(1);
+  });
+
+  it('detects grouped dependabot update PRs via title pattern', async () => {
+    storeNotifications(db, [makePRNotif('15b', {
+      actorLogin: null,
+      actorType: null,
+      title: 'Bump the github-actions group in /.github/workflows with 5 updates',
+    })]);
+    globalThis.fetch = vi.fn(async () =>
+      new Response(JSON.stringify({ state: 'closed', merged_at: '2024-01-01T00:00:00Z' }), { status: 200 }),
+    );
+
+    const result = await listMergedDependabotPRNotifications(db, 'token');
+    expect(result).toHaveLength(1);
+  });
+
+  it('does not false-positive on renovate-style bot with generic title', async () => {
+    storeNotifications(db, [makePRNotif('16', {
+      actorLogin: 'renovate[bot]',
+      actorType: 'Bot',
+      title: 'Update dependency some-package to v3',
+    })]);
+    globalThis.fetch = vi.fn(async () =>
+      new Response(JSON.stringify({ state: 'closed', merged_at: '2024-01-01T00:00:00Z' }), { status: 200 }),
+    );
+
+    const result = await listMergedDependabotPRNotifications(db, 'token');
+    expect(result).toHaveLength(0);
+  });
+
+  it('returns partial results when one PR check fails', async () => {
+    storeNotifications(db, [
+      makePRNotif('17', { prNumber: 1 }),
+      makePRNotif('18', { prNumber: 2 }),
+    ]);
+    let callCount = 0;
+    globalThis.fetch = vi.fn(async () => {
+      callCount++;
+      if (callCount === 1) throw new Error('Network error');
+      return new Response(JSON.stringify({ state: 'closed', merged_at: '2024-01-01T00:00:00Z' }), { status: 200 });
+    });
+
+    const result = await listMergedDependabotPRNotifications(db, 'token');
+    // One fails (treated as not-merged), one succeeds
+    expect(result).toHaveLength(1);
+  });
+
+  it('returns empty array when no notifications are stored', async () => {
+    globalThis.fetch = vi.fn();
+    const result = await listMergedDependabotPRNotifications(db, 'token');
+    expect(result).toHaveLength(0);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 });

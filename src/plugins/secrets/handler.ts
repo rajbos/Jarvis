@@ -18,12 +18,17 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
     if (!auth) return { error: 'Not authenticated with GitHub' };
 
     const pat = loadGitHubPat(db);
-    const token = pat ?? auth.accessToken;
 
     try {
-      const result = await scanUserRepoSecrets(db, token, auth.login, (done, total, secretsFound) => {
-        _getWindow()?.webContents.send('secrets:scan-progress', { done, total, secretsFound });
-      });
+      const result = await scanUserRepoSecrets(
+        db,
+        auth.accessToken,
+        auth.login,
+        (done, total, secretsFound) => {
+          _getWindow()?.webContents.send('secrets:scan-progress', { done, total, secretsFound });
+        },
+        pat ?? undefined,
+      );
       return result;
     } catch (err) {
       return { error: err instanceof Error ? err.message : String(err) };

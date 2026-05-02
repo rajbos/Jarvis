@@ -127,8 +127,8 @@ function RecoverableBanner({
     onDismissed();
   };
 
-  if (checking) return null;
-
+  // Keep showing the banner with the last known results while re-checking.
+  // The totalIds.length === 0 guard above handles the initial-load case.
   return (
     <div class="dash-recoverable-banner">
       <span class="dash-recoverable-icon">✓</span>
@@ -423,6 +423,7 @@ function NotificationList({ repoFullName, dismissedNotifIds }: { repoFullName: s
   const [recoveryMap, setRecoveryMap] = useState<Map<string, boolean>>(new Map());
   const [checkingRecovery, setCheckingRecovery] = useState(false);
   const [failureHintMap, setFailureHintMap] = useState<Map<string, FailureHint>>(new Map());
+  const [workflowPathMap, setWorkflowPathMap] = useState<Map<string, string | null>>(new Map());
   const [dismissingGroup, setDismissingGroup] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
@@ -496,8 +497,15 @@ function NotificationList({ repoFullName, dismissedNotifIds }: { repoFullName: s
             }
           }
         }
+        const newPathMap = new Map<string, string | null>();
+        for (const run of summary.recent_runs) {
+          if (run.workflow_name && !newPathMap.has(run.workflow_name)) {
+            newPathMap.set(run.workflow_name, run.workflow_path ?? null);
+          }
+        }
         setRecoveryMap(newMap);
         setFailureHintMap(newHints);
+        setWorkflowPathMap(newPathMap);
       } catch {
         // best-effort; ignore errors
       } finally {
@@ -538,6 +546,15 @@ function NotificationList({ repoFullName, dismissedNotifIds }: { repoFullName: s
   };
 
   const handleOpenOnGitHub = (n: StoredNotification) => {
+    if (WORKFLOW_TYPES_DASH.has(n.subject_type)) {
+      const wfName = normalizeWorkflowName(n.subject_title);
+      const wfPath = workflowPathMap.get(wfName);
+      if (wfPath) {
+        const filename = wfPath.split('/').pop()!;
+        window.jarvis.openUrl(`https://github.com/${repoFullName}/actions/workflows/${filename}`);
+        return;
+      }
+    }
     void openNotificationSubject(n);
   };
 
