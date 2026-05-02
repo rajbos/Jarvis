@@ -63,6 +63,7 @@ const EXPECTED_CHANNELS = [
   'github:pat-status',
   'github:start-oauth-discovery',
   'github:start-oauth',
+  'github:get-rate-limit',
   // discovery plugin
   'github:discovery-status',
   'github:start-discovery',

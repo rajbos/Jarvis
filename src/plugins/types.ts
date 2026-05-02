@@ -277,6 +277,21 @@ export interface FailedWorkflowRun {
   html_url: string;
 }
 
+// ── GitHub rate limit types ───────────────────────────────────────────────────
+
+export interface GitHubRateLimitResource {
+  limit: number;
+  remaining: number;
+  reset: number; // unix timestamp
+  used: number;
+}
+
+export interface GitHubRateLimit {
+  core: GitHubRateLimitResource;
+  fetchedAt: string; // ISO timestamp
+  error?: string;
+}
+
 // ── Browser Companion types ───────────────────────────────────────────────────
 
 export interface BrowserSkill {
@@ -558,6 +573,8 @@ export interface JarvisApi {
   browserFocusWindow(tabId?: number): Promise<{ ok: boolean; windowId?: number; error?: string }>;
   onBrowserExtensionConnected(cb: (data: { count: number }) => void): () => void;
   onBackgroundStatus(cb: (message: string) => void): () => void;
+  // GitHub rate limit
+  getGitHubRateLimit(): Promise<GitHubRateLimit>;
 }
 
 declare global {

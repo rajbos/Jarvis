@@ -49,6 +49,7 @@ import type {
   SecretFavorite,
   SecretsScanProgress,
   Group,
+  GitHubRateLimit,
 } from '../plugins/types';
 import '../plugins/types'; // activate the global Window augmentation
 
@@ -123,6 +124,9 @@ function App() {
   const [showGroupsPanel, setShowGroupsPanel] = useState(false);
   const [oneNoteFilePath, setOneNoteFilePath] = useState<string | null>(null);
 
+  // GitHub rate limit
+  const [rateLimit, setRateLimit] = useState<GitHubRateLimit | null>(null);
+
   const currentUserLogin = oauthStatus?.login ?? null;
 
   // Tab state
@@ -169,6 +173,13 @@ function App() {
             setLocalRepoSortKey((prefs.localRepoSortKey as 'name' | 'scanned' | 'notifs') ?? 'name');
           } catch (e) {
             console.warn('[Jarvis] Could not load preferences:', e);
+          }
+          // Load GitHub rate limit
+          try {
+            const rl = await window.jarvis.getGitHubRateLimit();
+            setRateLimit(rl);
+          } catch (e) {
+            console.warn('[Jarvis] Could not load rate limit:', e);
           }
         }
       } catch (err) {
@@ -380,6 +391,20 @@ function App() {
     const id = window.setInterval(() => { void doFetchNotifications(); }, 5 * 60 * 1000);
     return () => window.clearInterval(id);
   }, [oauthStatus?.authenticated, doFetchNotifications]);
+
+  // 2-minute rate limit refresh
+  useEffect(() => {
+    if (!oauthStatus?.authenticated) return;
+    const id = window.setInterval(async () => {
+      try {
+        const rl = await window.jarvis.getGitHubRateLimit();
+        setRateLimit(rl);
+      } catch (e) {
+        console.warn('[Jarvis] Rate limit refresh failed:', e);
+      }
+    }, 2 * 60 * 1000);
+    return () => window.clearInterval(id);
+  }, [oauthStatus?.authenticated]);
 
   // Keep refs so the effect below can always read the latest panel state
   // without adding them to the dependency array (which would re-fire on every
@@ -1017,6 +1042,7 @@ function App() {
         discoveryFinished={discoveryFinished}
         localScanning={localScanning}
         localScanProgress={localScanProgress}
+        rateLimit={rateLimit}
       />
     </div>
   );
@@ -1030,6 +1056,7 @@ interface BackgroundStatusBarProps {
   discoveryFinished: boolean;
   localScanning: boolean;
   localScanProgress: LocalScanProgress | null;
+  rateLimit: GitHubRateLimit | null;
 }
 
 function BackgroundStatusBar({
@@ -1038,6 +1065,7 @@ function BackgroundStatusBar({
   discoveryFinished,
   localScanning,
   localScanProgress,
+  rateLimit,
 }: BackgroundStatusBarProps) {
   const [ipcMessage, setIpcMessage] = useState<string | null>(null);
   const fadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1079,12 +1107,36 @@ function BackgroundStatusBar({
   }
 
   const message = ipcMessage ?? derivedMessage;
-  if (!message) return null;
+
+  // Rate limit badge — color by remaining calls
+  let rateLimitColor = '#4caf50'; // green
+  if (rateLimit && !rateLimit.error) {
+    const { remaining } = rateLimit.core;
+    if (remaining < 100) rateLimitColor = '#f44336';       // red
+    else if (remaining < 1000) rateLimitColor = '#ff9800'; // orange
+  }
+
+  if (!message && !rateLimit) return null;
 
   return (
     <div class="bg-status-bar" aria-live="polite">
-      <span class="bg-status-dot" />
-      <span class="bg-status-text">{message}</span>
+      {message && (
+        <>
+          <span class="bg-status-dot" />
+          <span class="bg-status-text">{message}</span>
+        </>
+      )}
+      {rateLimit && (
+        <span
+          class="bg-status-rate-limit"
+          title={rateLimit.error
+            ? `GitHub rate limit error: ${rateLimit.error}`
+            : `GitHub API: ${rateLimit.core.remaining}/${rateLimit.core.limit} calls remaining (resets ${new Date(rateLimit.core.reset * 1000).toLocaleTimeString()})`}
+          style={{ color: rateLimit.error ? '#888' : rateLimitColor }}
+        >
+          {rateLimit.error ? '⚡ –/–' : `⚡ ${rateLimit.core.remaining.toLocaleString()}/${rateLimit.core.limit.toLocaleString()}`}
+        </span>
+      )}
     </div>
   );
 }

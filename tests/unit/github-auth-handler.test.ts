@@ -259,4 +259,56 @@ describe('GitHub Auth plugin — IPC handlers', () => {
       expect(result.ok).toBe(true);
     });
   });
+
+  // ── github:get-rate-limit ──────────────────────────────────────────────────
+
+  describe('github:get-rate-limit', () => {
+    it('returns error result when not authenticated', async () => {
+      const result = (await callHandler('github:get-rate-limit')) as Record<string, unknown>;
+      expect(result.error).toBe('Not authenticated');
+      expect(typeof result.fetchedAt).toBe('string');
+    });
+
+    it('returns rate limit data when authenticated and fetch succeeds', async () => {
+      saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo', null);
+      const mockRateLimit = {
+        resources: {
+          core: { limit: 5000, remaining: 4321, reset: 1700000000, used: 679 },
+        },
+      };
+      global.fetch = vi.fn().mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockRateLimit,
+      } as Response);
+
+      const result = (await callHandler('github:get-rate-limit')) as Record<string, unknown>;
+      expect(result.error).toBeUndefined();
+      expect(typeof result.fetchedAt).toBe('string');
+      const core = result.core as Record<string, unknown>;
+      expect(core.remaining).toBe(4321);
+      expect(core.limit).toBe(5000);
+    });
+
+    it('returns error result when fetch fails', async () => {
+      saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo', null);
+      global.fetch = vi.fn().mockRejectedValueOnce(new Error('Network error'));
+
+      const result = (await callHandler('github:get-rate-limit')) as Record<string, unknown>;
+      expect(typeof result.error).toBe('string');
+      expect(result.error as string).toContain('Network error');
+    });
+
+    it('returns error result when API returns non-ok status', async () => {
+      saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo', null);
+      global.fetch = vi.fn().mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        json: async () => ({}),
+      } as Response);
+
+      const result = (await callHandler('github:get-rate-limit')) as Record<string, unknown>;
+      expect(typeof result.error).toBe('string');
+      expect(result.error as string).toContain('401');
+    });
+  });
 });

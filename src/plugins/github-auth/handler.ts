@@ -179,6 +179,29 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
       return { error: String(err) };
     }
   });
+  ipcMain.handle('github:get-rate-limit', async () => {
+    const auth = loadGitHubAuth(db);
+    if (!auth) return { core: { limit: 0, remaining: 0, reset: 0, used: 0 }, fetchedAt: new Date().toISOString(), error: 'Not authenticated' };
+    try {
+      const res = await fetch('https://api.github.com/rate_limit', {
+        headers: {
+          Authorization: `Bearer ${auth.accessToken}`,
+          Accept: 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+        },
+      });
+      if (!res.ok) {
+        return { core: { limit: 0, remaining: 0, reset: 0, used: 0 }, fetchedAt: new Date().toISOString(), error: `HTTP ${res.status}` };
+      }
+      const data = (await res.json()) as {
+        resources: { core: { limit: number; remaining: number; reset: number; used: number } };
+      };
+      return { core: data.resources.core, fetchedAt: new Date().toISOString() };
+    } catch (err) {
+      return { core: { limit: 0, remaining: 0, reset: 0, used: 0 }, fetchedAt: new Date().toISOString(), error: String(err) };
+    }
+  });
+
 }
 
 async function startPollingLoop(
