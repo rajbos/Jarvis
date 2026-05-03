@@ -85,3 +85,11 @@ Scripts for development:
 - **Run tests after changes**: After making any changes to TypeScript or JavaScript files, always run `npm test` and fix any failing tests before finishing
 - **IPC catalogue**: When adding a new `ipcMain.handle` channel, also add its name to the `EXPECTED_CHANNELS` array in `tests/unit/ipc-registration.test.ts`
 - **Automation**: CI/CD is not configured by default; contributors should run tests locally before PRs
+
+---
+
+## Known Gotchas & Lessons Learned
+
+- **GitHub API: mark notification as read** — Use `PATCH /notifications/threads/{id}` to mark a thread as read. Do **not** use `DELETE`, which unsubscribes from the thread rather than marking it read, causing notifications to reappear on the next sync.
+- **Dismiss banners: clear local state immediately** — After a dismiss/bulk-dismiss action, call `setEntries([])` (or equivalent state reset) immediately in addition to triggering the parent refresh callback. Relying solely on the parent `load()` to re-render leaves the banner visible during the async reload.
+- **Auto-dismiss scope for PR notifications** — Only offer to auto-dismiss PR notifications for PRs that the user explicitly actioned: Dependabot PRs (identified by `subject_actor_login` containing `"dependabot"` or matching title patterns) and PRs merged or closed by the current authenticated user. Do not auto-dismiss notifications for PRs closed/merged by other contributors — the user may still want to review them.
