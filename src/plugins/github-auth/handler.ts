@@ -94,6 +94,27 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
     return null;
   });
 
+  ipcMain.handle('github:get-pr-state', async (_event, subjectUrl: string) => {
+    if (typeof subjectUrl !== 'string') return null;
+    if (!/^https:\/\/api\.github\.com\/repos\/[^/]+\/[^/]+\/pulls\/\d+$/.test(subjectUrl)) return null;
+    const auth = loadGitHubAuth(db);
+    if (!auth) return null;
+    try {
+      const res = await fetch(subjectUrl, {
+        headers: {
+          Authorization: `Bearer ${auth.accessToken}`,
+          Accept: 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+        },
+      });
+      if (!res.ok) return null;
+      const pr = (await res.json()) as { state: string; merged: boolean };
+      if (pr.merged) return 'merged';
+      if (pr.state === 'closed') return 'closed';
+      return 'open';
+    } catch { return null; }
+  });
+
   ipcMain.handle('github:save-pat', async (_event, pat: string) => {
     const auth = loadGitHubAuth(db);
     if (!auth) return { error: 'Not authenticated' };

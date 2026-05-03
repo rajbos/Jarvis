@@ -65,12 +65,16 @@ contextBridge.exposeInMainWorld('jarvis', {
     ipcRenderer.invoke('github:list-notifications-for-owner', owner),
   listNotificationsForStarred: () =>
     ipcRenderer.invoke('github:list-notifications-for-starred'),
+  listPrNotifications: () =>
+    ipcRenderer.invoke('github:list-pr-notifications'),
   dismissNotification: (id: string) =>
     ipcRenderer.invoke('github:dismiss-notification', id),
   checkMergedDependabotPRs: () =>
     ipcRenderer.invoke('github:check-merged-dependabot-prs'),
   getRunUrlForCheckSuite: (checkSuiteApiUrl: string) =>
     ipcRenderer.invoke('github:get-run-url-for-check-suite', checkSuiteApiUrl),
+  githubGetPrState: (subjectUrl: string) =>
+    ipcRenderer.invoke('github:get-pr-state', subjectUrl),
   // Local repos
   localGetFolders: () => ipcRenderer.invoke('local:get-folders'),
   localAddFolder: (folderPath?: string) => ipcRenderer.invoke('local:add-folder', folderPath),

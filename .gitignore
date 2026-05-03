@@ -34,3 +34,4 @@ coverage/
 
 
 .claude/worktrees/
+test_output.txt

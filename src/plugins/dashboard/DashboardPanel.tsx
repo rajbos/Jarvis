@@ -156,54 +156,84 @@ function RecoverableBanner({
   );
 }
 
-// ── Merged Dependabot PR notifications banner ─────────────────────────────────
+// ── Closed PR notifications banner ───────────────────────────────────────────
+
+interface ClosedPrEntry {
+  repoFullName: string;
+  prTitle: string;
+  ids: string[];
+}
 
 /**
- * Checks all stored PR notifications for Dependabot-authored PRs that have
- * been merged, and offers a single "dismiss all" action.
- * Re-checks whenever `refreshKey` changes (e.g. on dashboard reload).
+ * Scans ALL stored PullRequest notifications and surfaces those whose PR is
+ * already closed or merged. Shows a single top-level dismiss button.
  */
-function DependabotMergedBanner({
-  refreshKey,
+function ClosedPrBanner({
   onDismissed,
 }: {
-  refreshKey: string;
   onDismissed: () => void;
 }) {
-  const [notifications, setNotifications] = useState<StoredNotification[]>([]);
+  const [entries, setEntries] = useState<ClosedPrEntry[]>([]);
   const [checking, setChecking] = useState(true);
   const [dismissing, setDismissing] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     setChecking(true);
-    setNotifications([]);
 
     const run = async () => {
+      const found: ClosedPrEntry[] = [];
       try {
-        const result = await window.jarvis.checkMergedDependabotPRs();
-        if (!cancelled) setNotifications(result);
-      } catch {
-        // best-effort; silently ignore
-      } finally {
-        if (!cancelled) setChecking(false);
-      }
+        const allPrNotifs = await window.jarvis.listPrNotifications();
+
+        // Group by PR URL — one API call per unique PR, most recent first, cap at 50
+        const byUrl = new Map<string, StoredNotification[]>();
+        for (const n of allPrNotifs) {
+          if (!n.subject_url) continue;
+          if (!byUrl.has(n.subject_url)) byUrl.set(n.subject_url, []);
+          byUrl.get(n.subject_url)!.push(n);
+        }
+        const urlEntries = [...byUrl.entries()].slice(0, 50);
+
+        // Parallel checks with concurrency 8
+        const CONCURRENCY = 8;
+        let nextIdx = 0;
+        const worker = async () => {
+          while (nextIdx < urlEntries.length) {
+            const idx = nextIdx++;
+            const [url, urlNotifs] = urlEntries[idx];
+            try {
+              const state = await window.jarvis.githubGetPrState(url);
+              if (cancelled) return;
+              if (state === 'closed' || state === 'merged') {
+                found.push({
+                  repoFullName: urlNotifs[0].repo_full_name,
+                  prTitle: urlNotifs[0].subject_title,
+                  ids: urlNotifs.map((n) => n.id),
+                });
+              }
+            } catch { /* skip individual PR */ }
+          }
+        };
+        await Promise.all(Array.from({ length: Math.min(CONCURRENCY, urlEntries.length) }, worker));
+      } catch { /* non-fatal */ }
+      if (!cancelled) { setEntries(found); setChecking(false); }
     };
 
     void run();
     return () => { cancelled = true; };
-  }, [refreshKey]);
+  }, []);
 
-  if (checking || notifications.length === 0) return null;
+  const totalIds = entries.flatMap((e) => e.ids);
+  if (checking || totalIds.length === 0) return null;
 
-  const repoCount = new Set(notifications.map((n) => n.repo_full_name)).size;
-  const summary = `${notifications.length} notification${notifications.length !== 1 ? 's' : ''} for merged PRs across ${repoCount} repo${repoCount !== 1 ? 's' : ''}.`;
-  const tooltip = notifications.map((n) => `${n.repo_full_name}: ${n.subject_title}`).join('\n');
+  const summary = `${totalIds.length} notification${totalIds.length !== 1 ? 's' : ''} from ${entries.length} closed/merged PR${entries.length !== 1 ? 's' : ''}.`;
+  const tooltip = entries.map((e) => `${e.repoFullName.split('/')[1]} · ${e.prTitle}`).join(', ');
 
   const handleDismissAll = async () => {
     setDismissing(true);
-    for (const n of notifications) {
-      try { await window.jarvis.dismissNotification(n.id); } catch { /* skip */ }
+    for (const id of totalIds) {
+      try { await window.jarvis.dismissNotification(id); } catch { /* skip */ }
     }
     setDismissing(false);
     onDismissed();
@@ -211,9 +241,9 @@ function DependabotMergedBanner({
 
   return (
     <div class="dash-recoverable-banner">
-      <span class="dash-recoverable-icon">🤖</span>
+      <span class="dash-recoverable-icon">✓</span>
       <div class="dash-recoverable-body">
-        <span class="dash-recoverable-title">Merged Dependabot PRs</span>
+        <span class="dash-recoverable-title">PRs closed / merged</span>
         <span class="dash-recoverable-detail" title={tooltip}>{summary}</span>
       </div>
       <button
@@ -223,7 +253,7 @@ function DependabotMergedBanner({
       >
         {dismissing
           ? <span class="dismiss-spinner" />
-          : `Dismiss ${notifications.length} notification${notifications.length !== 1 ? 's' : ''}`}
+          : `Dismiss ${totalIds.length} notification${totalIds.length !== 1 ? 's' : ''}`}
       </button>
     </div>
   );
@@ -605,6 +635,13 @@ function NotificationList({ repoFullName, dismissedNotifIds }: { repoFullName: s
               {group.workflowName && !checkingRecovery && recoveryMap.get(group.workflowName) === false && (
                 <>
                   <span class="dash-group-status dash-group-status--failing">✗ Still failing</span>
+                  <button
+                    class={`dash-dismiss-group-btn${dismissingGroup === group.workflowName ? ' dash-dismiss-group-btn--busy' : ''}`}
+                    disabled={dismissingGroup === group.workflowName}
+                    onClick={() => void handleDismissGroup(group.workflowName!, group.notifications.map((n) => n.id))}
+                  >
+                    {dismissingGroup === group.workflowName ? <span class="dismiss-spinner" /> : 'Dismiss all'}
+                  </button>
                   <button
                     class="dash-analyse-btn"
                     title={`Analyse "${group.workflowName}" with an LLM agent`}
@@ -1309,9 +1346,8 @@ export function DashboardPanel({ dismissedNotifIds }: { dismissedNotifIds?: Read
         }}
       />
 
-      {/* Merged Dependabot PRs — dismiss all notifications for merged dependabot PRs */}
-      <DependabotMergedBanner
-        refreshKey={summary.generatedAt}
+      {/* Closed / merged PR notifications */}
+      <ClosedPrBanner
         onDismissed={load}
       />
 
