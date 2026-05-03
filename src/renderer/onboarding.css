@@ -3198,13 +3198,20 @@ h5.ec-heading { font-size: 0.85rem; }
   text-overflow: ellipsis;
 }
 
-.bg-status-rate-limit {
+.bg-status-rate-limits {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+  pointer-events: auto;
+}
+
+.bg-status-rate-limit {
   font-size: 0.72rem;
   font-weight: 600;
   letter-spacing: 0.02em;
   white-space: nowrap;
   flex-shrink: 0;
-  pointer-events: auto;
   cursor: default;
 }

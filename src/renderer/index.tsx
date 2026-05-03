@@ -1130,31 +1130,35 @@ function BackgroundStatusBar({
           <span class="bg-status-text">{message}</span>
         </>
       )}
-      {oauthBadge && (
-        <span
-          class="bg-status-rate-limit"
-          title={oauthBadge.error
-            ? `OAuth rate limit error: ${oauthBadge.error}`
-            : `OAuth: ${oauthBadge.resource!.remaining}/${oauthBadge.resource!.limit} calls remaining (resets ${new Date(oauthBadge.resource!.reset * 1000).toLocaleTimeString()})`}
-          style={{ color: oauthBadge.error ? '#888' : (oauthBadge.resource ? rateLimitColor(oauthBadge.resource.remaining) : '#888') }}
-        >
-          {oauthBadge.error || !oauthBadge.resource
-            ? '⚡ OAuth –'
-            : `⚡ OAuth ${oauthBadge.resource.remaining.toLocaleString()}/${oauthBadge.resource.limit.toLocaleString()}`}
-        </span>
-      )}
-      {patBadge && (
-        <span
-          class="bg-status-rate-limit"
-          title={patBadge.error
-            ? `PAT rate limit error: ${patBadge.error}`
-            : `PAT: ${patBadge.resource!.remaining}/${patBadge.resource!.limit} calls remaining (resets ${new Date(patBadge.resource!.reset * 1000).toLocaleTimeString()})`}
-          style={{ color: patBadge.error ? '#888' : (patBadge.resource ? rateLimitColor(patBadge.resource.remaining) : '#888') }}
-        >
-          {patBadge.error || !patBadge.resource
-            ? '⚡ PAT –'
-            : `⚡ PAT ${patBadge.resource.remaining.toLocaleString()}/${patBadge.resource.limit.toLocaleString()}`}
-        </span>
+      {hasAnyBadge && (
+        <div class="bg-status-rate-limits">
+          {oauthBadge && (
+            <span
+              class="bg-status-rate-limit"
+              title={oauthBadge.error
+                ? `OAuth rate limit error: ${oauthBadge.error}`
+                : `OAuth: ${oauthBadge.resource!.remaining}/${oauthBadge.resource!.limit} calls remaining (resets ${new Date(oauthBadge.resource!.reset * 1000).toLocaleTimeString()})`}
+              style={{ color: oauthBadge.error ? '#888' : (oauthBadge.resource ? rateLimitColor(oauthBadge.resource.remaining) : '#888') }}
+            >
+              {oauthBadge.error || !oauthBadge.resource
+                ? '⚡ OAuth –'
+                : `⚡ OAuth ${oauthBadge.resource.remaining.toLocaleString()}/${oauthBadge.resource.limit.toLocaleString()}`}
+            </span>
+          )}
+          {patBadge && (
+            <span
+              class="bg-status-rate-limit"
+              title={patBadge.error
+                ? `PAT rate limit error: ${patBadge.error}`
+                : `PAT: ${patBadge.resource!.remaining}/${patBadge.resource!.limit} calls remaining (resets ${new Date(patBadge.resource!.reset * 1000).toLocaleTimeString()})`}
+              style={{ color: patBadge.error ? '#888' : (patBadge.resource ? rateLimitColor(patBadge.resource.remaining) : '#888') }}
+            >
+              {patBadge.error || !patBadge.resource
+                ? '⚡ PAT –'
+                : `⚡ PAT ${patBadge.resource.remaining.toLocaleString()}/${patBadge.resource.limit.toLocaleString()}`}
+            </span>
+          )}
+        </div>
       )}
     </div>
   );
@@ -1165,4 +1169,3 @@ function BackgroundStatusBar({
 document.body.classList.add('onboarding');
 const root = document.getElementById('app')!;
 render(<App />, root);
-
