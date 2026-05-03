@@ -202,6 +202,7 @@ contextBridge.exposeInMainWorld('jarvis', {
     ipcRenderer.invoke('groups:remove-github-repo', groupId, githubRepoId),
   // OneDrive
   onedriveListRoots: () => ipcRenderer.invoke('onedrive:list-roots'),
+  onedriveBrowseFolder: () => ipcRenderer.invoke('onedrive:browse-folder'),
   onedriveAddRoot: (label: string, folderPath?: string) =>
     ipcRenderer.invoke('onedrive:add-root', label, folderPath),
   onedriveRemoveRoot: (rootId: number) => ipcRenderer.invoke('onedrive:remove-root', rootId),

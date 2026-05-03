@@ -331,7 +331,9 @@ function AgentPromptsSection() {
 function OneDriveSection() {
   const [roots, setRoots] = useState<OnedriveRoot[]>([]);
   const [label, setLabel] = useState('');
+  const [folderPath, setFolderPath] = useState('');
   const [adding, setAdding] = useState(false);
+  const [browsing, setBrowsing] = useState(false);
   const [error, setError] = useState('');
 
   const refresh = async () => {
@@ -346,14 +348,27 @@ function OneDriveSection() {
     refresh();
   }, []);
 
+  const handleBrowse = async () => {
+    setBrowsing(true);
+    setError('');
+    const result = await window.jarvis.onedriveBrowseFolder();
+    setBrowsing(false);
+    if (result.canceled) return;
+    setFolderPath(result.folderPath);
+  };
+
   const handleAdd = async () => {
     if (!label.trim()) {
       setError('Please enter a label for this root folder');
       return;
     }
+    if (!folderPath) {
+      setError('Please select a folder first');
+      return;
+    }
     setAdding(true);
     setError('');
-    const result = await window.jarvis.onedriveAddRoot(label.trim());
+    const result = await window.jarvis.onedriveAddRoot(label.trim(), folderPath);
     setAdding(false);
     if (result.canceled) return;
     if (!result.ok) {
@@ -361,6 +376,7 @@ function OneDriveSection() {
       return;
     }
     setLabel('');
+    setFolderPath('');
     await refresh();
   };
 
@@ -397,8 +413,33 @@ function OneDriveSection() {
             onKeyDown={(e: KeyboardEvent) => { if (e.key === 'Enter') void handleAdd(); }}
           />
         </div>
-        <button class="btn-save" onClick={handleAdd} disabled={adding || !label.trim()}>
-          {adding ? 'Browsing…' : 'Browse & Add'}
+      </div>
+
+      <div class="btn-row" style={{ marginTop: '0.4rem', alignItems: 'center', gap: '0.5rem' }}>
+        <div
+          style={{
+            flex: 1,
+            padding: '0.4rem 0.6rem',
+            background: '#1a1a28',
+            border: '1px solid #333',
+            borderRadius: '4px',
+            fontSize: '0.8rem',
+            color: folderPath ? '#ccd' : '#556',
+            fontFamily: 'monospace',
+            cursor: 'pointer',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+          onClick={() => void handleBrowse()}
+        >
+          {folderPath || 'Click Browse to select a folder…'}
+        </div>
+        <button class="btn-secondary" onClick={() => void handleBrowse()} disabled={browsing} style={{ flexShrink: 0 }}>
+          {browsing ? 'Browsing…' : 'Browse'}
+        </button>
+        <button class="btn-save" onClick={() => void handleAdd()} disabled={adding || !label.trim() || !folderPath} style={{ flexShrink: 0 }}>
+          {adding ? 'Adding…' : 'Add'}
         </button>
       </div>
 

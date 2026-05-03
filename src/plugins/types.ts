@@ -559,6 +559,7 @@ export interface JarvisApi {
   groupsRemoveGithubRepo(groupId: number, githubRepoId: number): Promise<{ ok: boolean; error?: string }>;
   // OneDrive
   onedriveListRoots(): Promise<OnedriveRoot[]>;
+  onedriveBrowseFolder(): Promise<{ canceled: boolean; folderPath?: string }>;
   onedriveAddRoot(label: string, folderPath?: string): Promise<{ ok: boolean; root?: OnedriveRoot; canceled?: boolean; error?: string }>;
   onedriveRemoveRoot(rootId: number): Promise<{ ok: boolean; error?: string }>;
   onedriveDiscoverForGroup(groupId: number): Promise<{ ok: boolean; folders?: OnedriveFolderInfo[]; error?: string }>;

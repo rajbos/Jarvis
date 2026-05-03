@@ -133,6 +133,7 @@ const EXPECTED_CHANNELS = [
   'groups:remove-github-repo',
   // onedrive plugin
   'onedrive:list-roots',
+  'onedrive:browse-folder',
   'onedrive:add-root',
   'onedrive:remove-root',
   'onedrive:discover-for-group',

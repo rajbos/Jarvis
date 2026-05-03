@@ -20,6 +20,18 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
     return listOnedriveRoots(db);
   });
 
+  ipcMain.handle('onedrive:browse-folder', async () => {
+    const win = getWindow();
+    const result = await dialog.showOpenDialog(win ?? new BrowserWindow({ show: false }), {
+      properties: ['openDirectory'],
+      title: 'Select OneDrive root folder',
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+      return { canceled: true };
+    }
+    return { canceled: false, folderPath: result.filePaths[0] };
+  });
+
   ipcMain.handle('onedrive:add-root', async (_event, label: string, folderPath?: string) => {
     if (typeof label !== 'string' || label.trim().length === 0) {
       return { ok: false, error: 'Label is required' };
