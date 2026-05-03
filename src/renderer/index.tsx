@@ -28,6 +28,7 @@ import { BrowserCompanionPanel } from '../plugins/browser-companion/BrowserCompa
 import { GroupsStep } from '../plugins/groups/GroupsStep';
 import { GroupsPanel } from '../plugins/groups/GroupsPanel';
 import { OneNoteSectionPanel } from '../plugins/groups/OneNoteSectionPanel';
+import { GroupsDashboardPanel } from '../plugins/groups/GroupsDashboardPanel';
 
 // ── Types (imported from single source of truth in plugins/types.ts) ─────────
 // The global augmentation `Window.jarvis` is declared in plugins/types.ts and
@@ -53,7 +54,7 @@ import type {
 } from '../plugins/types';
 import '../plugins/types'; // activate the global Window augmentation
 
-type AppTab = 'dashboard' | 'browser' | 'setup';
+type AppTab = 'dashboard' | 'groups-dashboard' | 'browser' | 'setup';
 
 // ── App ──────────────────────────────────────────────────────────────────────
 
@@ -758,7 +759,11 @@ function App() {
         <button
           class={`tab-btn ${activeTab === 'dashboard' ? 'tab-active' : ''}`}
           onClick={() => setActiveTab('dashboard')}
-        >📊 Dashboard</button>
+        >📊 Repo Dashboard</button>
+        <button
+          class={`tab-btn ${activeTab === 'groups-dashboard' ? 'tab-active' : ''}`}
+          onClick={() => setActiveTab('groups-dashboard')}
+        >📁 Groups Dashboard</button>
         <button
           class={`tab-btn ${activeTab === 'browser' ? 'tab-active' : ''}`}
           onClick={() => setActiveTab('browser')}
@@ -772,6 +777,11 @@ function App() {
       {/* ── Dashboard tab ────────────────────────────────────────────────── */}
       {activeTab === 'dashboard' && (
         <DashboardPanel dismissedNotifIds={dismissedNotifIds} />
+      )}
+
+      {/* ── Groups Dashboard tab ─────────────────────────────────────────── */}
+      {activeTab === 'groups-dashboard' && (
+        <GroupsDashboardPanel />
       )}
 
       {/* ── Browser Companion tab ─────────────────────────────────────────── */}

@@ -147,7 +147,7 @@ function RecoverableBanner({
       </button>
       <button
         class="dash-recoverable-nav-btn"
-        title={`Open ${topEntry.repoFullName.split('/')[1]} in the dashboard`}
+        title={`Open ${topEntry.repoFullName.split('/')[1]} in Repo Dashboard`}
         onClick={() => onNavigate(topEntry.repoFullName)}
       >
         View {topEntry.repoFullName.split('/')[1]} ›
@@ -1271,7 +1271,7 @@ export function DashboardPanel({ dismissedNotifIds }: { dismissedNotifIds?: Read
   if (loading && !summary) {
     return (
       <div class="dashboard-panel">
-        <div class="dash-loading">Loading dashboard…</div>
+        <div class="dash-loading">Loading Repo Dashboard…</div>
       </div>
     );
   }
@@ -1326,7 +1326,7 @@ export function DashboardPanel({ dismissedNotifIds }: { dismissedNotifIds?: Read
   return (
     <div class="dashboard-panel">
       <div class="dash-header">
-        <h2>📊 Dashboard</h2>
+        <h2>📊 Repo Dashboard</h2>
         <div class="dash-header-right">
           <span class="dash-updated">Last updated: {new Date(summary.generatedAt).toLocaleTimeString()}</span>
           <button class="dash-refresh-btn" onClick={load} disabled={loading} title="Refresh">

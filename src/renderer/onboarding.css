@@ -2795,6 +2795,95 @@ h5.ec-heading { font-size: 0.85rem; }
 .agent-start-btn:hover:not(:disabled) { background: #c23152; }
 .agent-start-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
+/* ── Groups Dashboard ──────────────────────────────────────────────────────── */
+.groups-dashboard-panel {
+  padding: 1.2rem 1.4rem;
+  min-width: 320px;
+  box-sizing: border-box;
+}
+
+.groups-dash-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.2rem;
+}
+
+.groups-dash-header h2 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+  flex: 1;
+}
+
+.groups-dash-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0.9rem;
+}
+
+.groups-dash-card {
+  background: #16213e;
+  border: 1px solid #0f3460;
+  border-radius: 8px;
+  padding: 1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.groups-dash-card:hover {
+  border-color: #e94560;
+  box-shadow: 0 2px 8px rgba(233, 69, 96, 0.15);
+}
+
+.groups-dash-card-name {
+  font-weight: 600;
+  font-size: 0.98rem;
+  color: #e0e0e0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.groups-dash-card-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.groups-dash-stat {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.84rem;
+  color: #a0a8c0;
+}
+
+.groups-dash-stat-icon {
+  flex-shrink: 0;
+}
+
+.groups-dash-stat-value {
+  font-weight: 600;
+  color: #e0e0e0;
+  min-width: 1.2rem;
+  text-align: right;
+}
+
+.groups-dash-stat-label {
+  color: #a0a8c0;
+}
+  padding: 0.4rem 0.9rem;
+  cursor: pointer;
+  font-size: 0.88rem;
+  font-weight: 600;
+  transition: background 0.15s;
+}
+.agent-start-btn:hover:not(:disabled) { background: #c23152; }
+.agent-start-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
 /* ── Agent mode banner in EmbeddedChatPanel ───────────────────────────────── */
 .ec-agent-banner {
   background: #1a0a40;
