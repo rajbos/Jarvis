@@ -496,7 +496,7 @@ export interface JarvisApi {
   dismissNotification(id: string): Promise<void>;
   checkMergedDependabotPRs(): Promise<StoredNotification[]>;
   getRunUrlForCheckSuite(checkSuiteApiUrl: string): Promise<string | null>;
-  githubGetPrState(subjectUrl: string): Promise<'open' | 'closed' | 'merged' | null>;
+  githubGetPrState(subjectUrl: string): Promise<{ state: 'open' | 'closed' | 'merged'; isDependabot: boolean; closedByMe: boolean } | null>;
   getPreferences(): Promise<{ sortByNotifications: boolean; localSortByNotifs: boolean; localRepoSortKey: 'name' | 'scanned' | 'notifs' }>;
   setPreferences(prefs: { sortByNotifications?: boolean; localSortByNotifs?: boolean; localRepoSortKey?: 'name' | 'scanned' | 'notifs' }): Promise<{ ok: boolean }>;
   onOpenChat(cb: () => void): () => void;

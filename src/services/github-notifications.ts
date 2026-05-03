@@ -483,7 +483,7 @@ export async function markNotificationRead(
   const response = await fetch(
     `${GITHUB_API_BASE}/notifications/threads/${encodeURIComponent(threadId)}`,
     {
-      method: 'DELETE',
+      method: 'PATCH',
       headers: {
         Authorization: `Bearer ${accessToken}`,
         Accept: 'application/vnd.github+json',

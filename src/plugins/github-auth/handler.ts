@@ -108,10 +108,29 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
         },
       });
       if (!res.ok) return null;
-      const pr = (await res.json()) as { state: string; merged: boolean };
-      if (pr.merged) return 'merged';
-      if (pr.state === 'closed') return 'closed';
-      return 'open';
+      const pr = (await res.json()) as {
+        state: string;
+        merged: boolean;
+        user: { login: string } | null;
+        merged_by: { login: string } | null;
+      };
+      const authorLogin = (pr.user?.login ?? '').toLowerCase();
+      const isDependabot = authorLogin.includes('dependabot');
+      const myLogin = auth.login.toLowerCase();
+      let state: 'open' | 'closed' | 'merged';
+      let closedByMe: boolean;
+      if (pr.merged) {
+        state = 'merged';
+        closedByMe = (pr.merged_by?.login ?? '').toLowerCase() === myLogin;
+      } else if (pr.state === 'closed') {
+        state = 'closed';
+        // No direct "closed_by" field in GitHub PR API; use PR authorship as proxy:
+        // if you authored the PR and it was closed without merge, you most likely closed it.
+        closedByMe = authorLogin === myLogin;
+      } else {
+        return { state: 'open' as const, isDependabot, closedByMe: false };
+      }
+      return { state, isDependabot, closedByMe };
     } catch { return null; }
   });
 

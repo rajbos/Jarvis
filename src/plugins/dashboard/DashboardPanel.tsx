@@ -161,12 +161,15 @@ function RecoverableBanner({
 interface ClosedPrEntry {
   repoFullName: string;
   prTitle: string;
+  state: 'closed' | 'merged';
+  dismissReason: 'dependabot' | 'closed-by-me' | 'merged-by-me';
   ids: string[];
 }
 
 /**
  * Scans ALL stored PullRequest notifications and surfaces those whose PR is
- * already closed or merged. Shows a single top-level dismiss button.
+ * already closed or merged AND was either authored by Dependabot or actioned
+ * by the current user. Shows a single top-level dismiss button.
  */
 function ClosedPrBanner({
   onDismissed,
@@ -203,15 +206,22 @@ function ClosedPrBanner({
             const idx = nextIdx++;
             const [url, urlNotifs] = urlEntries[idx];
             try {
-              const state = await window.jarvis.githubGetPrState(url);
+              const result = await window.jarvis.githubGetPrState(url);
               if (cancelled) return;
-              if (state === 'closed' || state === 'merged') {
-                found.push({
-                  repoFullName: urlNotifs[0].repo_full_name,
-                  prTitle: urlNotifs[0].subject_title,
-                  ids: urlNotifs.map((n) => n.id),
-                });
-              }
+              if (!result || result.state === 'open') continue;
+              const { state, isDependabot, closedByMe } = result;
+              if (!isDependabot && !closedByMe) continue;
+              const dismissReason: ClosedPrEntry['dismissReason'] =
+                isDependabot ? 'dependabot'
+                : state === 'merged' ? 'merged-by-me'
+                : 'closed-by-me';
+              found.push({
+                repoFullName: urlNotifs[0].repo_full_name,
+                prTitle: urlNotifs[0].subject_title,
+                state,
+                dismissReason,
+                ids: urlNotifs.map((n) => n.id),
+              });
             } catch { /* skip individual PR */ }
           }
         };
@@ -227,8 +237,22 @@ function ClosedPrBanner({
   const totalIds = entries.flatMap((e) => e.ids);
   if (checking || totalIds.length === 0) return null;
 
-  const summary = `${totalIds.length} notification${totalIds.length !== 1 ? 's' : ''} from ${entries.length} closed/merged PR${entries.length !== 1 ? 's' : ''}.`;
-  const tooltip = entries.map((e) => `${e.repoFullName.split('/')[1]} · ${e.prTitle}`).join(', ');
+  const mergedCount = entries.filter((e) => e.state === 'merged').length;
+  const closedCount = entries.filter((e) => e.state === 'closed').length;
+  const dependabotCount = entries.filter((e) => e.dismissReason === 'dependabot').length;
+  const stateBreakdown = [
+    mergedCount > 0 ? `${mergedCount} merged` : '',
+    closedCount > 0 ? `${closedCount} closed without merging` : '',
+  ].filter(Boolean).join(', ');
+  const reasonBreakdown = dependabotCount === entries.length
+    ? 'all Dependabot'
+    : dependabotCount > 0
+      ? `${dependabotCount} Dependabot, ${entries.length - dependabotCount} closed/merged by you`
+      : 'closed/merged by you';
+  const summary = `${totalIds.length} notification${totalIds.length !== 1 ? 's' : ''} from ${entries.length} PR${entries.length !== 1 ? 's' : ''} (${stateBreakdown}; ${reasonBreakdown}).`;
+  const dismissReasonLabel = (r: ClosedPrEntry['dismissReason']) =>
+    r === 'dependabot' ? 'Dependabot' : r === 'merged-by-me' ? 'merged by you' : 'closed by you';
+  const tooltip = `Only showing PRs safe to dismiss: Dependabot PRs and PRs you closed/merged yourself.\n\n${entries.map((e) => `[${e.state}, ${dismissReasonLabel(e.dismissReason)}] ${e.repoFullName.split('/')[1]} · ${e.prTitle}`).join('\n')}`;
 
   const handleDismissAll = async () => {
     setDismissing(true);
@@ -236,6 +260,7 @@ function ClosedPrBanner({
       try { await window.jarvis.dismissNotification(id); } catch { /* skip */ }
     }
     setDismissing(false);
+    setEntries([]);
     onDismissed();
   };
 
