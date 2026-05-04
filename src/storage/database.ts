@@ -52,7 +52,7 @@ function initializeSchema(database: SqlJsDatabase): void {
   if (userVersion === 0) {
     database.run(getSchema());
     seedBuiltInAgents(database);
-    database.run('PRAGMA user_version = 18');
+    database.run('PRAGMA user_version = 19');
   }
 
   if (userVersion === 1) {
@@ -394,6 +394,12 @@ function initializeSchema(database: SqlJsDatabase): void {
     // Migration v17 → v18: add workflow_path to github_workflow_runs for filter URL support
     database.run('ALTER TABLE github_workflow_runs ADD COLUMN workflow_path TEXT');
     database.run('PRAGMA user_version = 18');
+  }
+
+  if (userVersion === 18) {
+    // Migration v18 → v19: add ruddr_project_name to groups for Ruddr project linking
+    database.run('ALTER TABLE groups ADD COLUMN ruddr_project_name TEXT');
+    database.run('PRAGMA user_version = 19');
   }
 }
 

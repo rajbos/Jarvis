@@ -15,6 +15,8 @@ export interface BridgeCommand {
     | 'navigate'
     | 'evaluate'
     | 'extract'
+    | 'scroll-extract'
+    | 'scrape-stats'
     | 'click'
     | 'fill'
     | 'screenshot'

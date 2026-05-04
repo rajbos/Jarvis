@@ -38,6 +38,8 @@ declare const window: Window & {
     onedriveListRoots(): Promise<OnedriveRoot[]>;
     onedriveAddRoot(label: string, folderPath?: string): Promise<{ ok?: boolean; root?: OnedriveRoot; canceled?: boolean; error?: string }>;
     onedriveRemoveRoot(rootId: number): Promise<{ ok: boolean; error?: string }>;
+    groupsGetRuddrWorkspace(): Promise<{ ok: boolean; workspace: string }>;
+    groupsSetRuddrWorkspace(workspace: string): Promise<{ ok: boolean; error?: string }>;
   };
 };
 
@@ -488,6 +490,65 @@ function OneDriveSection() {
   );
 }
 
+// ── Ruddr Section ───────────────────────────────────────────────────────────
+
+function RuddrSection() {
+  const [workspace, setWorkspace] = useState('');
+  const [draft, setDraft] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    window.jarvis.groupsGetRuddrWorkspace()
+      .then((res) => { setWorkspace(res.workspace); setDraft(res.workspace); })
+      .catch(() => { /* non-fatal */ });
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    setSaved(false);
+    try {
+      await window.jarvis.groupsSetRuddrWorkspace(draft.trim());
+      setWorkspace(draft.trim());
+      setSaved(true);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div class="section">
+      <h2>Ruddr</h2>
+      <p class="hint">
+        Enter your Ruddr workspace slug — the part after <code>ruddr.io/app/</code>.
+        Used when matching groups to Ruddr projects.
+      </p>
+      <div class="btn-row" style={{ alignItems: 'center', gap: '0.5rem' }}>
+        <input
+          id="ruddr-ws-input"
+          type="text"
+          placeholder="e.g. my-company"
+          value={draft}
+          onInput={(e) => { setDraft((e.target as HTMLInputElement).value); setSaved(false); }}
+          onKeyDown={(e: KeyboardEvent) => { if (e.key === 'Enter') void handleSave(); }}
+        />
+        <button
+          class="btn-save"
+          onClick={() => void handleSave()}
+          disabled={saving || draft.trim() === workspace}
+        >
+          {saving ? 'Saving…' : saved ? '\u2713 Saved' : 'Save'}
+        </button>
+      </div>
+      {workspace && (
+        <p class="hint" style={{ marginTop: '0.4rem' }}>
+          Current: <code>ruddr.io/app/<strong>{workspace}</strong>/…</code>
+        </p>
+      )}
+    </div>
+  );
+}
+
 // ── App ──────────────────────────────────────────────────────────────────────
 
 function App() {
@@ -497,6 +558,7 @@ function App() {
       <OAuthSection />
       <PatSection />
       <OneDriveSection />
+      <RuddrSection />
       <AgentPromptsSection />
     </>
   );

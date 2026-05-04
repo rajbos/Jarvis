@@ -409,6 +409,23 @@ export interface Group {
   localRepoCount: number;
   githubRepoCount: number;
   fileCount: number;
+  ruddrProjectNames: string[];
+}
+
+export interface RuddrBudget {
+  ok: boolean;
+  actualBillableHours?: string | null;
+  actualNonBillableHours?: string | null;
+  actualTotalHours?: string | null;
+  budget?: string | null;
+  budgetLeft?: string | null;
+  projectUrl?: string;
+  error?: string;
+}
+
+export interface RuddrProjectMatch {
+  name: string;
+  score: number;
 }
 
 export interface GroupLocalRepoMember {
@@ -558,6 +575,14 @@ export interface JarvisApi {
   groupsRemoveLocalRepo(groupId: number, localRepoId: number): Promise<{ ok: boolean; error?: string }>;
   groupsAddGithubRepo(groupId: number, githubRepoId: number): Promise<{ ok: boolean; error?: string }>;
   groupsRemoveGithubRepo(groupId: number, githubRepoId: number): Promise<{ ok: boolean; error?: string }>;
+  groupsFindRuddrProjects(groupName: string): Promise<{ ok: boolean; allCount?: number; matches?: RuddrProjectMatch[]; error?: string }>;
+  groupsSetRuddrProject(groupId: number, projectName: string | null): Promise<{ ok: boolean; error?: string }>;
+  groupsRemoveRuddrProject(groupId: number, projectName: string): Promise<{ ok: boolean; error?: string }>;
+  groupsRefreshRuddrCache(): Promise<{ ok: boolean }>;
+  groupsGetRuddrCache(): Promise<{ ok: boolean; projects: string[] }>;
+  groupsGetRuddrWorkspace(): Promise<{ ok: boolean; workspace: string }>;
+  groupsSetRuddrWorkspace(workspace: string): Promise<{ ok: boolean; error?: string }>;
+  groupsGetRuddrBudget(projectName: string): Promise<RuddrBudget>;
   // OneDrive
   onedriveListRoots(): Promise<OnedriveRoot[]>;
   onedriveBrowseFolder(): Promise<{ canceled: boolean; folderPath?: string }>;

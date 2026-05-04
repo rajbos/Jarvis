@@ -12,6 +12,14 @@
  */
 
 const JARVIS_WS_URL = 'ws://127.0.0.1:35789';
+
+// Catch unhandled errors/rejections so they appear in the SW inspector instead of silently killing the worker
+self.addEventListener('unhandledrejection', (event) => {
+  console.error('[JarvisBridge] Unhandled rejection:', event.reason);
+});
+self.addEventListener('error', (event) => {
+  console.error('[JarvisBridge] Unhandled error:', event.message, '@', event.filename, event.lineno);
+});
 const RECONNECT_DELAY_MS = 3000;
 const MAX_RECONNECT_DELAY_MS = 30000;
 const KEEP_ALIVE_INTERVAL_MS = 20000;
@@ -41,12 +49,16 @@ function connect() {
   }
 
   ws.addEventListener('open', () => {
-    console.log('[JarvisBridge] Connected to Jarvis desktop app');
-    isConnected = true;
-    reconnectDelay = RECONNECT_DELAY_MS; // reset backoff
-    updateBadge(true);
-    startKeepAlive();
-    notifyPopup({ type: 'status', connected: true });
+    try {
+      console.log('[JarvisBridge] Connected to Jarvis desktop app');
+      isConnected = true;
+      reconnectDelay = RECONNECT_DELAY_MS; // reset backoff
+      updateBadge(true);
+      startKeepAlive();
+      notifyPopup({ type: 'status', connected: true });
+    } catch (e) {
+      console.error('[JarvisBridge] Error in open handler:', e);
+    }
   });
 
   ws.addEventListener('message', (event) => {
@@ -100,7 +112,12 @@ function updateBadge(connected) {
 }
 
 function notifyPopup(msg) {
-  chrome.runtime.sendMessage(msg).catch(() => { /* popup may not be open */ });
+  try {
+    const p = chrome.runtime.sendMessage(msg);
+    if (p && typeof p.catch === 'function') p.catch(() => { /* popup not open */ });
+  } catch {
+    // extension context not ready or no listeners — ignore
+  }
 }
 
 // ── Command handling ──────────────────────────────────────────────────────────
@@ -130,6 +147,12 @@ async function handleCommand(rawData) {
         break;
       case 'extract':
         data = await cmdExtract(tabId, payload);
+        break;
+      case 'scroll-extract':
+        data = await cmdScrollExtract(tabId, payload);
+        break;
+      case 'scrape-stats':
+        data = await cmdScrapeStats(tabId, payload);
         break;
       case 'click':
         data = await cmdClick(tabId, payload);
@@ -180,7 +203,23 @@ async function cmdNavigate(tabId, payload) {
   if (!url) throw new Error('url is required');
 
   const targetTabId = await getTargetTabId(tabId);
-  await chrome.tabs.update(targetTabId, { url });
+
+  // If the tab is already on the target URL, use reload() to guarantee a
+  // clean page state.  Calling tabs.update() with the same URL can be a no-op
+  // in some browsers (the SPA stays in whatever — possibly scrolled — state it
+  // was in), which breaks virtual-list scraping (e.g. Ruddr projects).
+  let alreadyOnUrl = false;
+  try {
+    const currentTab = await chrome.tabs.get(targetTabId);
+    alreadyOnUrl = currentTab.url === url;
+  } catch (_) { /* tab may not exist yet — fall through to tabs.update */ }
+
+  if (alreadyOnUrl) {
+    console.log('[JarvisBridge] Tab already on target URL — reloading for clean state');
+    await chrome.tabs.reload(targetTabId);
+  } else {
+    await chrome.tabs.update(targetTabId, { url });
+  }
 
   // Wait for the page to finish loading
   await waitForTabLoaded(targetTabId);
@@ -213,6 +252,148 @@ async function cmdExtract(tabId, payload) {
   });
 
   return results[0]?.result ?? null;
+}
+
+async function cmdScrollExtract(tabId, payload) {
+  const { selector, maxScrolls = 30, waitMs = 700, includeHref = false } = payload;
+  if (!selector) throw new Error('selector is required');
+  const targetTabId = await getTargetTabId(tabId);
+
+  const results = await chrome.scripting.executeScript({
+    target: { tabId: targetTabId },
+    func: scrollAndExtract,
+    args: [selector, maxScrolls, waitMs, includeHref],
+  });
+
+  return results[0]?.result ?? null;
+}
+
+async function cmdScrapeStats(tabId, payload) {
+  const { waitMs = 3000 } = payload;
+  const targetTabId = await getTargetTabId(tabId);
+
+  const results = await chrome.scripting.executeScript({
+    target: { tabId: targetTabId },
+    func: scrapeStatsByLabel,
+    args: [waitMs],
+  });
+
+  return results[0]?.result ?? null;
+}
+
+// Runs inside the page — scrolls the virtual list until no new items appear.
+// Uses a poll-then-scroll strategy to handle SPAs that render their lists
+// asynchronously after navigation (e.g. Ruddr's React virtual table).
+// When includeHref is true each result includes the href of the closest <a> ancestor.
+async function scrollAndExtract(selector, maxScrolls, waitMs, includeHref) {
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  // Find the nearest scrollable ancestor
+  function findScrollParent(el) {
+    if (!el || el === document.body) return document.documentElement;
+    const style = window.getComputedStyle(el);
+    if (/auto|scroll/.test(style.overflow + style.overflowY) && el.scrollHeight > el.clientHeight + 4) {
+      return el;
+    }
+    return findScrollParent(el.parentElement);
+  }
+
+  // Returns a Map<text, item> — deduplicates by text content.
+  const getItems = () => {
+    const map = new Map();
+    document.querySelectorAll(selector).forEach((el) => {
+      const text = (el.innerText || el.textContent || '').trim();
+      if (!text || map.has(text)) return;
+      const item = { text };
+      if (includeHref) {
+        const anchor = el.tagName === 'A' ? el : el.closest('a');
+        item.href = anchor ? (anchor.getAttribute('href') || '') : '';
+      }
+      map.set(text, item);
+    });
+    return map;
+  };
+
+  // Wait for at least one element to appear — SPA may not have rendered yet at
+  // the point this function is injected (React renders asynchronously after
+  // document.readyState === 'complete').  Poll up to 10 s before giving up.
+  let firstEl = document.querySelector(selector);
+  if (!firstEl) {
+    for (let attempt = 0; attempt < 20 && !firstEl; attempt++) {
+      await wait(500);
+      firstEl = document.querySelector(selector);
+    }
+  }
+
+  const container = firstEl ? findScrollParent(firstEl.parentElement) : document.documentElement;
+
+  const collected = new Map(getItems());
+
+  // Ruddr (and many SPAs) use a VIRTUAL list — only visible rows exist in the
+  // DOM at any time.  Jumping straight to scrollHeight skips the middle of the
+  // list entirely.  Instead, scroll ONE PAGE at a time so every batch passes
+  // through the viewport and is captured by getItems().
+  //
+  // Require 3 consecutive page-scrolls with no new items before stopping.
+  let stableRounds = 0;
+  for (let i = 0; i < maxScrolls; i++) {
+    const before = collected.size;
+
+    const pageSize = container === document.documentElement || container === document.body
+      ? (window.innerHeight || document.documentElement.clientHeight || 800)
+      : (container.clientHeight || 800);
+
+    if (container === document.documentElement || container === document.body) {
+      window.scrollBy(0, pageSize);
+    } else {
+      container.scrollTop += pageSize;
+      // Also scroll the window so listeners higher in the DOM fire.
+      window.scrollBy(0, pageSize);
+    }
+
+    await wait(waitMs);
+    getItems().forEach((item, text) => {
+      if (!collected.has(text)) collected.set(text, item);
+    });
+
+    if (collected.size === before) {
+      stableRounds++;
+      if (stableRounds >= 3) break; // three consecutive page-scrolls with no new items → done
+    } else {
+      stableRounds = 0; // new items appeared — reset
+    }
+  }
+
+  return Array.from(collected.values());
+}
+
+// Runs inside the page — finds <small> label elements and pairs them with the
+// preceding sibling element's text (the numeric value). Returns { [label]: value }.
+async function scrapeStatsByLabel(waitMs) {
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  // Wait for stats to render (React populates them asynchronously).
+  let hasSmall = document.querySelector('small') !== null;
+  if (!hasSmall) {
+    for (let i = 0; i < 20 && !hasSmall; i++) {
+      await wait(waitMs / 20);
+      hasSmall = document.querySelector('small') !== null;
+    }
+  }
+  // Extra settle time for numbers to hydrate.
+  await wait(500);
+
+  const stats = {};
+  document.querySelectorAll('small').forEach((small) => {
+    const label = (small.innerText || small.textContent || '').trim();
+    if (!label) return;
+    const valueEl = small.previousElementSibling;
+    if (valueEl) {
+      const value = (valueEl.innerText || valueEl.textContent || '').trim();
+      if (value) stats[label] = value;
+    }
+  });
+  return stats;
 }
 
 async function cmdClick(tabId, payload) {

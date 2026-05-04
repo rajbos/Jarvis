@@ -2816,6 +2816,7 @@ h5.ec-heading { font-size: 0.85rem; }
   flex: 1;
 }
 
+
 .groups-dash-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
@@ -2875,14 +2876,312 @@ h5.ec-heading { font-size: 0.85rem; }
 .groups-dash-stat-label {
   color: #a0a8c0;
 }
-  padding: 0.4rem 0.9rem;
+
+/* ── Ruddr project linking per group card ─────────────────────────────────── */
+.groups-dash-ruddr {
+  margin-top: 0.6rem;
+  border-top: 1px solid #2a2d4a;
+  padding-top: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.groups-dash-ruddr-linked {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: #1a2240;
+  border: 1px solid #2c3d6a;
+  border-radius: 4px;
+  padding: 0.3rem 0.5rem;
+}
+
+.groups-dash-ruddr-icon {
+  flex-shrink: 0;
+  font-size: 0.9rem;
+}
+
+.groups-dash-ruddr-name {
+  flex: 1;
+  font-size: 0.83rem;
+  color: #8ab4f8;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.groups-dash-ruddr-unlink {
+  background: transparent;
+  border: none;
+  color: #6a748a;
   cursor: pointer;
-  font-size: 0.88rem;
-  font-weight: 600;
+  font-size: 0.78rem;
+  padding: 0 0.2rem;
+  line-height: 1;
+  transition: color 0.15s;
+}
+.groups-dash-ruddr-unlink:hover { color: #e55; }
+
+.groups-dash-ruddr-budget-btn {
+  background: transparent;
+  border: none;
+  color: #6a748a;
+  cursor: pointer;
+  font-size: 0.82rem;
+  padding: 0 0.2rem;
+  line-height: 1;
+  transition: color 0.15s;
+}
+.groups-dash-ruddr-budget-btn:hover:not(:disabled) { color: #f0c040; }
+.groups-dash-ruddr-budget-btn:disabled { opacity: 0.5; cursor: default; }
+
+.groups-dash-budget-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.15rem 0;
+  padding: 0.2rem 0.6rem 0.25rem 1.6rem;
+  font-size: 0.78rem;
+  color: #9ab;
+}
+.groups-dash-budget-stat { display: inline-flex; align-items: baseline; gap: 0.15rem; }
+.groups-dash-budget-val { font-weight: 600; color: #c8d8f0; }
+.groups-dash-budget-lbl { color: #7a8a9a; }
+.groups-dash-budget-sep { color: #4a5a7a; margin: 0 0.15rem; }
+.groups-dash-budget-left { color: #7a9a7a; }
+.groups-dash-budget-left--over { color: #e05a5a; }
+.groups-dash-budget-open {
+  background: transparent;
+  border: none;
+  color: #6a8ab0;
+  cursor: pointer;
+  font-size: 0.78rem;
+  padding: 0 0.2rem;
+  margin-left: 0.2rem;
+  line-height: 1;
+  transition: color 0.15s;
+}
+.groups-dash-budget-open:hover { color: #8ab0d0; }
+.groups-dash-budget-error {
+  color: #e07060;
+  font-style: italic;
+}
+
+.groups-dash-budget-warn {
+  color: #e0a030;
+  font-size: 0.85em;
+  margin-left: 4px;
+}
+
+.groups-dash-ruddr-btn {
+  background: #1e2040;
+  border: 1px dashed #3a4a70;
+  border-radius: 4px;
+  color: #8ab4f8;
+  cursor: pointer;
+  font-size: 0.82rem;
+  padding: 0.3rem 0.6rem;
+  text-align: left;
+  transition: background 0.15s, border-color 0.15s;
+  width: 100%;
+}
+.groups-dash-ruddr-btn:hover:not(:disabled) {
+  background: #252850;
+  border-color: #5a7acc;
+}
+.groups-dash-ruddr-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.groups-dash-ruddr-error {
+  font-size: 0.78rem;
+  color: #e06060;
+  padding: 0.2rem 0;
+}
+
+/* login-required inline banner */
+.groups-dash-ruddr-login {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: #1e1830;
+  border: 1px solid #4a3070;
+  border-radius: 4px;
+  padding: 0.3rem 0.5rem;
+}
+
+.groups-dash-ruddr-login-icon {
+  flex-shrink: 0;
+  font-size: 0.9rem;
+}
+
+.groups-dash-ruddr-login-msg {
+  flex: 1;
+  font-size: 0.8rem;
+  color: #c8a8f8;
+}
+
+.groups-dash-ruddr-login-retry {
+  background: #2e1e60;
+  border: 1px solid #6040b0;
+  border-radius: 4px;
+  color: #c8a8f8;
+  cursor: pointer;
+  font-size: 0.78rem;
+  padding: 0.2rem 0.55rem;
+  flex-shrink: 0;
   transition: background 0.15s;
 }
-.agent-start-btn:hover:not(:disabled) { background: #c23152; }
-.agent-start-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.groups-dash-ruddr-login-retry:hover { background: #3e2880; }
+
+/* ── "Link manually" button (inline in error row) ─────────────────────────── */
+.groups-dash-ruddr-manual-btn {
+  background: none;
+  border: 1px solid #4a5068;
+  border-radius: 4px;
+  color: #a0a8c8;
+  cursor: pointer;
+  font-size: 0.76rem;
+  margin-left: 0.5rem;
+  padding: 0.15rem 0.45rem;
+  transition: background 0.15s, color 0.15s;
+}
+.groups-dash-ruddr-manual-btn:hover { background: #2a2f48; color: #d0d8f8; }
+
+/* ── Manual picker panel ──────────────────────────────────────────────────── */
+.groups-dash-ruddr-manual {
+  background: #131825;
+  border: 1px solid #2e3450;
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-top: 0.35rem;
+  overflow: hidden;
+}
+
+.groups-dash-ruddr-manual-header {
+  align-items: center;
+  background: #1a2038;
+  color: #9098b8;
+  display: flex;
+  font-size: 0.78rem;
+  justify-content: space-between;
+  padding: 0.3rem 0.5rem;
+}
+
+.groups-dash-ruddr-manual-close {
+  background: none;
+  border: none;
+  color: #7880a0;
+  cursor: pointer;
+  font-size: 0.85rem;
+  line-height: 1;
+  padding: 0 0.15rem;
+}
+.groups-dash-ruddr-manual-close:hover { color: #d0d8f8; }
+
+.groups-dash-ruddr-manual-search {
+  background: #0e1220;
+  border: none;
+  border-bottom: 1px solid #2e3450;
+  color: #d0d8f8;
+  font-size: 0.8rem;
+  outline: none;
+  padding: 0.3rem 0.5rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.groups-dash-ruddr-manual-list {
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.groups-dash-ruddr-manual-item {
+  align-items: center;
+  border-bottom: 1px solid #1e2438;
+  display: flex;
+  gap: 0.4rem;
+  padding: 0.25rem 0.5rem;
+}
+.groups-dash-ruddr-manual-item:last-child { border-bottom: none; }
+.groups-dash-ruddr-manual-item:hover { background: #1a2038; }
+
+.groups-dash-ruddr-manual-item-name {
+  flex: 1;
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.groups-dash-ruddr-manual-empty {
+  color: #606880;
+  font-size: 0.78rem;
+  padding: 0.4rem 0.5rem;
+  text-align: center;
+}
+
+
+
+.groups-dash-ruddr-matches {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.groups-dash-ruddr-match {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: #161930;
+  border: 1px solid #2a3050;
+  border-radius: 4px;
+  padding: 0.25rem 0.5rem;
+}
+
+.groups-dash-ruddr-match-name {
+  flex: 1;
+  font-size: 0.82rem;
+  color: #c8d8f8;
+  word-break: break-word;
+}
+
+.groups-dash-ruddr-match-score {
+  font-size: 0.74rem;
+  color: #5a7ab0;
+  flex-shrink: 0;
+  min-width: 2.5rem;
+  text-align: right;
+  display: none;
+}
+
+.groups-dash-ruddr-match-btn {
+  background: #243660;
+  border: 1px solid #3d5490;
+  border-radius: 4px;
+  color: #8ab4f8;
+  cursor: pointer;
+  font-size: 0.78rem;
+  padding: 0.2rem 0.55rem;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+.groups-dash-ruddr-match-btn:hover:not(:disabled) { background: #2e4a80; }
+.groups-dash-ruddr-match-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.groups-dash-ruddr-match-btn--linked { background: #1a3a20 !important; border-color: #3a7a4a !important; color: #6ecf80 !important; }
+
+.groups-dash-ruddr-linked-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 0.3rem;
+}
+
 
 /* ── Agent mode banner in EmbeddedChatPanel ───────────────────────────────── */
 .ec-agent-banner {

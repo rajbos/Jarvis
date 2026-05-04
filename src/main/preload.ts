@@ -200,6 +200,23 @@ contextBridge.exposeInMainWorld('jarvis', {
     ipcRenderer.invoke('groups:add-github-repo', groupId, githubRepoId),
   groupsRemoveGithubRepo: (groupId: number, githubRepoId: number) =>
     ipcRenderer.invoke('groups:remove-github-repo', groupId, githubRepoId),
+  groupsFindRuddrProjects: (groupName: string) =>
+    ipcRenderer.invoke('groups:find-ruddr-projects', groupName),
+  groupsSetRuddrProject: (groupId: number, projectName: string | null) =>
+    ipcRenderer.invoke('groups:set-ruddr-project', groupId, projectName),
+  groupsRemoveRuddrProject: (groupId: number, projectName: string) =>
+    ipcRenderer.invoke('groups:remove-ruddr-project', groupId, projectName),
+  groupsRefreshRuddrCache: () =>
+    ipcRenderer.invoke('groups:refresh-ruddr-cache'),
+  groupsGetRuddrCache: () =>
+    ipcRenderer.invoke('groups:get-ruddr-cache'),
+  groupsGetRuddrWorkspace: () =>
+    ipcRenderer.invoke('groups:get-ruddr-workspace'),
+  groupsSetRuddrWorkspace: (workspace: string) =>
+    ipcRenderer.invoke('groups:set-ruddr-workspace', workspace),
+  groupsGetRuddrBudget: (projectName: string) =>
+    ipcRenderer.invoke('groups:get-ruddr-budget', projectName),
+
   // OneDrive
   onedriveListRoots: () => ipcRenderer.invoke('onedrive:list-roots'),
   onedriveBrowseFolder: () => ipcRenderer.invoke('onedrive:browse-folder'),

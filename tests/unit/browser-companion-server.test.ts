@@ -53,6 +53,7 @@ describe('sendCommand', () => {
       'focus-window',
       'evaluate',
       'extract',
+      'scroll-extract',
     ] as const;
     for (const type of types) {
       await expect(
