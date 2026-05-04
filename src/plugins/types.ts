@@ -408,6 +408,7 @@ export interface Group {
   updatedAt: string;
   localRepoCount: number;
   githubRepoCount: number;
+  fileCount: number;
 }
 
 export interface GroupLocalRepoMember {

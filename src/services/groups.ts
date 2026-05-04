@@ -15,7 +15,10 @@ export function listGroups(db: SqlJsDatabase): Group[] {
       g.created_at,
       g.updated_at,
       (SELECT COUNT(*) FROM group_local_repos  glr WHERE glr.group_id = g.id) AS local_repo_count,
-      (SELECT COUNT(*) FROM group_github_repos ggr WHERE ggr.group_id = g.id) AS github_repo_count
+      (SELECT COUNT(*) FROM group_github_repos ggr WHERE ggr.group_id = g.id) AS github_repo_count,
+      (SELECT COUNT(*) FROM onedrive_files f
+         INNER JOIN onedrive_customer_folders cf ON f.folder_id = cf.id
+         WHERE cf.group_id = g.id) AS file_count
     FROM groups g
     ORDER BY g.name COLLATE NOCASE
   `);
@@ -24,7 +27,7 @@ export function listGroups(db: SqlJsDatabase): Group[] {
     while (stmt.step()) {
       const row = stmt.getAsObject() as {
         id: number; name: string; created_at: string; updated_at: string;
-        local_repo_count: number; github_repo_count: number;
+        local_repo_count: number; github_repo_count: number; file_count: number;
       };
       groups.push({
         id: row.id,
@@ -33,6 +36,7 @@ export function listGroups(db: SqlJsDatabase): Group[] {
         updatedAt: row.updated_at,
         localRepoCount: row.local_repo_count,
         githubRepoCount: row.github_repo_count,
+        fileCount: row.file_count,
       });
     }
   } finally {

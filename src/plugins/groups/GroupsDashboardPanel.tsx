@@ -87,6 +87,11 @@ function GroupCard({ group }: { group: Group }) {
           <span class="groups-dash-stat-value">{group.githubRepoCount}</span>
           <span class="groups-dash-stat-label">GitHub repo{group.githubRepoCount !== 1 ? 's' : ''}</span>
         </span>
+        <span class="groups-dash-stat" title="Discovered OneDrive files">
+          <span class="groups-dash-stat-icon">📄</span>
+          <span class="groups-dash-stat-value">{group.fileCount}</span>
+          <span class="groups-dash-stat-label">file{group.fileCount !== 1 ? 's' : ''}</span>
+        </span>
       </div>
     </div>
   );
