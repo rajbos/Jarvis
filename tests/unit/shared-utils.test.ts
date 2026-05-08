@@ -310,3 +310,144 @@ describe('normalizeGitHubUrl (renderer version)', () => {
     expect(normalizeGitHubUrl('')).toBeNull();
   });
 });
+
+// ── deduplicateLocalRepos ─────────────────────────────────────────────────────
+import { deduplicateLocalRepos } from '../../src/plugins/shared/utils';
+import type { LocalRemote } from '../../src/plugins/types';
+
+function makeFullRepo(
+  localPath: string,
+  remotes: { name: string; url: string; githubRepoId?: number | null }[] = [],
+  opts: { id?: number; linkedGithubRepoId?: number | null; lastScanned?: string | null; discoveredAt?: string } = {},
+): LocalRepo {
+  return {
+    id: opts.id ?? 0,
+    localPath,
+    name: localPath.split(/[\\/]/).filter(Boolean).pop() ?? localPath,
+    remotes: remotes as LocalRemote[],
+    discoveredAt: opts.discoveredAt ?? '2024-01-01T00:00:00Z',
+    lastScanned: opts.lastScanned !== undefined ? opts.lastScanned : null,
+    linkedGithubRepoId: opts.linkedGithubRepoId ?? null,
+  };
+}
+
+describe('deduplicateLocalRepos', () => {
+  it('groups two clones of the same GitHub remote URL', () => {
+    const repos = [
+      makeFullRepo('/repos/a/myrepo', [{ name: 'origin', url: 'https://github.com/org/myrepo.git' }]),
+      makeFullRepo('/repos/b/myrepo', [{ name: 'origin', url: 'https://github.com/org/myrepo.git' }]),
+    ];
+    const result = deduplicateLocalRepos(repos);
+    expect(result).toHaveLength(1);
+    expect(result[0].allLocalPaths).toHaveLength(2);
+    expect(result[0].isDuplicate).toBe(true);
+    expect(result[0].githubFullName).toBe('org/myrepo');
+  });
+
+  it('groups by linkedGithubRepoId (handles remote renames)', () => {
+    const repos = [
+      makeFullRepo('/repos/old-name', [{ name: 'origin', url: 'https://github.com/org/old-name.git' }], { linkedGithubRepoId: 42 }),
+      makeFullRepo('/repos/new-name', [{ name: 'origin', url: 'https://github.com/org/new-name.git' }], { linkedGithubRepoId: 42 }),
+    ];
+    const result = deduplicateLocalRepos(repos);
+    expect(result).toHaveLength(1);
+    expect(result[0].isDuplicate).toBe(true);
+    expect(result[0].allLocalPaths).toContain('/repos/old-name');
+    expect(result[0].allLocalPaths).toContain('/repos/new-name');
+  });
+
+  it('groups by remote.githubRepoId even when linkedGithubRepoId is null', () => {
+    const repos = [
+      makeFullRepo('/repos/clone1', [{ name: 'origin', url: 'https://github.com/org/repo.git', githubRepoId: 99 }]),
+      makeFullRepo('/repos/clone2', [{ name: 'origin', url: 'https://github.com/org/repo-renamed.git', githubRepoId: 99 }]),
+    ];
+    const result = deduplicateLocalRepos(repos);
+    expect(result).toHaveLength(1);
+    expect(result[0].isDuplicate).toBe(true);
+  });
+
+  it('does not group repos with different remotes', () => {
+    const repos = [
+      makeFullRepo('/repos/a', [{ name: 'origin', url: 'https://github.com/org/repo-a.git' }]),
+      makeFullRepo('/repos/b', [{ name: 'origin', url: 'https://github.com/org/repo-b.git' }]),
+    ];
+    const result = deduplicateLocalRepos(repos);
+    expect(result).toHaveLength(2);
+    expect(result.every((g) => !g.isDuplicate)).toBe(true);
+  });
+
+  it('treats repos with no remotes as unique entries', () => {
+    const repos = [
+      makeFullRepo('/repos/no-remote-a'),
+      makeFullRepo('/repos/no-remote-b'),
+    ];
+    const result = deduplicateLocalRepos(repos);
+    expect(result).toHaveLength(2);
+  });
+
+  it('selects the most recently scanned clone as primary', () => {
+    const repos = [
+      makeFullRepo('/repos/old', [{ name: 'origin', url: 'https://github.com/org/repo.git' }], { lastScanned: '2024-01-01T00:00:00Z' }),
+      makeFullRepo('/repos/new', [{ name: 'origin', url: 'https://github.com/org/repo.git' }], { lastScanned: '2024-06-01T00:00:00Z' }),
+    ];
+    const result = deduplicateLocalRepos(repos);
+    expect(result[0].primaryRepo.localPath).toBe('/repos/new');
+    expect(result[0].allLocalPaths[0]).toBe('/repos/new');
+  });
+
+  it('uses localPath as tiebreaker for repos with equal lastScanned', () => {
+    const scanned = '2024-01-01T00:00:00Z';
+    const repos = [
+      makeFullRepo('/repos/z-clone', [{ name: 'origin', url: 'https://github.com/org/repo.git' }], { lastScanned: scanned }),
+      makeFullRepo('/repos/a-clone', [{ name: 'origin', url: 'https://github.com/org/repo.git' }], { lastScanned: scanned }),
+    ];
+    const result = deduplicateLocalRepos(repos);
+    // a-clone < z-clone lexicographically → a-clone is primary
+    expect(result[0].primaryRepo.localPath).toBe('/repos/a-clone');
+  });
+
+  it('handles null lastScanned gracefully', () => {
+    const repos = [
+      makeFullRepo('/repos/scanned', [{ name: 'origin', url: 'https://github.com/org/repo.git' }], { lastScanned: '2024-01-01T00:00:00Z' }),
+      makeFullRepo('/repos/unscanned', [{ name: 'origin', url: 'https://github.com/org/repo.git' }], { lastScanned: null }),
+    ];
+    const result = deduplicateLocalRepos(repos);
+    // Scanned repo should be primary (null treated as oldest)
+    expect(result[0].primaryRepo.localPath).toBe('/repos/scanned');
+  });
+
+  it('prefers origin remote for githubFullName', () => {
+    const repos = [
+      makeFullRepo('/repos/myfork', [
+        { name: 'upstream', url: 'https://github.com/org/repo.git' },
+        { name: 'origin', url: 'https://github.com/user/myfork.git' },
+      ]),
+    ];
+    const result = deduplicateLocalRepos(repos);
+    expect(result[0].githubFullName).toBe('user/myfork');
+  });
+
+  it('handles HTTPS and SSH variants of the same URL as identical', () => {
+    const repos = [
+      makeFullRepo('/repos/https', [{ name: 'origin', url: 'https://github.com/org/repo.git' }]),
+      makeFullRepo('/repos/ssh', [{ name: 'origin', url: 'git@github.com:org/repo.git' }]),
+    ];
+    const result = deduplicateLocalRepos(repos);
+    expect(result).toHaveLength(1);
+    expect(result[0].isDuplicate).toBe(true);
+  });
+
+  it('returns single entries unchanged', () => {
+    const repos = [
+      makeFullRepo('/repos/solo', [{ name: 'origin', url: 'https://github.com/org/solo.git' }]),
+    ];
+    const result = deduplicateLocalRepos(repos);
+    expect(result).toHaveLength(1);
+    expect(result[0].isDuplicate).toBe(false);
+    expect(result[0].allLocalPaths).toEqual(['/repos/solo']);
+  });
+
+  it('returns empty array for empty input', () => {
+    expect(deduplicateLocalRepos([])).toEqual([]);
+  });
+});
