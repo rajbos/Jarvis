@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks';
 import { LocalRepoCard } from './LocalRepoCard';
-import { normalizeGitHubUrl } from '../shared/utils';
+import { deduplicateLocalRepos } from '../shared/utils';
 import type { LocalRepo, NotificationCounts } from '../types';
 
 type LocalSortKey = 'name' | 'scanned' | 'notifs';
@@ -19,38 +19,37 @@ interface LocalRepoPanelViewProps {
 export function LocalRepoPanelView({ title, repos, notifCounts, initialSortKey = 'name', onOpenRepoNotif, onClearNotif, onSortChange, onClose }: LocalRepoPanelViewProps) {
   const [sortKey, setSortKey] = useState<LocalSortKey>(initialSortKey);
 
-  /** Best GitHub full_name for a local repo — first linked remote wins. */
-  function getFullName(repo: LocalRepo): string | null {
-    for (const r of repo.remotes) {
-      const fn = normalizeGitHubUrl(r.url);
-      if (fn) return fn;
-    }
-    return null;
+  const deduped = deduplicateLocalRepos(repos);
+
+  function getNotifCount(githubFullName: string | null): number {
+    return githubFullName && notifCounts ? (notifCounts.perRepo[githubFullName] ?? 0) : 0;
   }
 
-  function getNotifCount(repo: LocalRepo): number {
-    const fn = getFullName(repo);
-    return fn && notifCounts ? (notifCounts.perRepo[fn] ?? 0) : 0;
-  }
-
-  const sorted = [...repos].sort((a, b) => {
-    if (sortKey === 'notifs') return getNotifCount(b) - getNotifCount(a) || a.name.localeCompare(b.name);
+  const sorted = [...deduped].sort((a, b) => {
+    if (sortKey === 'notifs') return getNotifCount(b.githubFullName) - getNotifCount(a.githubFullName) || a.primaryRepo.name.localeCompare(b.primaryRepo.name);
     if (sortKey === 'scanned') {
-      const ta = a.lastScanned ? new Date(a.lastScanned).getTime() : 0;
-      const tb = b.lastScanned ? new Date(b.lastScanned).getTime() : 0;
+      const ta = a.primaryRepo.lastScanned ? new Date(a.primaryRepo.lastScanned).getTime() : 0;
+      const tb = b.primaryRepo.lastScanned ? new Date(b.primaryRepo.lastScanned).getTime() : 0;
       return tb - ta;
     }
-    return a.name.localeCompare(b.name);
+    return a.primaryRepo.name.localeCompare(b.primaryRepo.name);
   });
 
-  const totalNotifs = repos.reduce((s, r) => s + getNotifCount(r), 0);
+  const totalNotifs = deduped.reduce((s, g) => s + getNotifCount(g.githubFullName), 0);
+  const totalLocalPaths = repos.length;
+  const hasDuplicates = deduped.some((g) => g.isDuplicate);
 
   return (
     <div class="repo-panel">
       <div class="repo-panel-header">
         <button class="repo-panel-close" title="Back" onClick={onClose}>&#8249;</button>
         <span class="repo-panel-title">{title}</span>
-        <span class="local-panel-count">{repos.length.toLocaleString()} repo{repos.length !== 1 ? 's' : ''}</span>
+        <span class="local-panel-count">
+          {deduped.length.toLocaleString()} repo{deduped.length !== 1 ? 's' : ''}
+          {hasDuplicates && (
+            <span title={`${totalLocalPaths} local copies across ${deduped.length} unique repo${deduped.length !== 1 ? 's' : ''}`}> ({totalLocalPaths} local copies)</span>
+          )}
+        </span>
         <span style={{ flex: 1 }} />
         {notifCounts && totalNotifs > 0 && (
           <span
@@ -80,17 +79,19 @@ export function LocalRepoPanelView({ title, repos, notifCounts, initialSortKey =
       {sorted.length === 0 ? (
         <div style={{ color: '#99a', fontSize: '0.85rem', padding: '0.5rem' }}>No repositories found</div>
       ) : (
-        sorted.map((repo) => {
-          const fullName = getFullName(repo);
-          const notifCount = getNotifCount(repo);
-          const handleClick = fullName && notifCount > 0
-            ? () => { onClearNotif(); onOpenRepoNotif(fullName); }
-            : () => { onClearNotif(); void window.jarvis.localOpenFolder(repo.localPath); };
+        sorted.map((group) => {
+          const { primaryRepo, githubFullName, allLocalPaths, isDuplicate } = group;
+          const notifCount = getNotifCount(githubFullName);
+          const handleClick = githubFullName && notifCount > 0
+            ? () => { onClearNotif(); onOpenRepoNotif(githubFullName); }
+            : () => { onClearNotif(); void window.jarvis.localOpenFolder(primaryRepo.localPath); };
           return (
             <LocalRepoCard
-              key={repo.localPath}
-              repo={repo}
+              key={primaryRepo.localPath}
+              repo={primaryRepo}
               notifCount={notifCount}
+              allLocalPaths={isDuplicate ? allLocalPaths : undefined}
+              onOpenPath={(p) => { onClearNotif(); void window.jarvis.localOpenFolder(p); }}
               onClick={handleClick}
             />
           );

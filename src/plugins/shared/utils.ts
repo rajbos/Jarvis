@@ -36,6 +36,95 @@ export function isDirect(reason: string): boolean {
 
 import type { LocalRepo } from '../types';
 
+// ── Deduplication ─────────────────────────────────────────────────────────────
+
+export interface DeduplicatedLocalRepo {
+  /** The canonical repo (most recently scanned clone, then most recently discovered, then path order). */
+  primaryRepo: LocalRepo;
+  /** All local paths sharing the same remote, primary first. */
+  allLocalPaths: string[];
+  /** Normalized GitHub full_name for the primary remote, or null. */
+  githubFullName: string | null;
+  /** True when 2 or more local clones share the same remote. */
+  isDuplicate: boolean;
+}
+
+/**
+ * Sort remotes deterministically: 'origin' first, then alphabetically by name.
+ */
+function sortedRemotes(repo: LocalRepo): LocalRepo['remotes'] {
+  return [...repo.remotes].sort((a, b) =>
+    a.name === 'origin' ? -1 : b.name === 'origin' ? 1 : a.name.localeCompare(b.name),
+  );
+}
+
+/**
+ * Compute a stable deduplication key for a local repo.
+ * Priority:
+ *   1. `repo.linkedGithubRepoId` — stable across renames
+ *   2. `remote.githubRepoId` (origin preferred) — stable across renames
+ *   3. Normalized GitHub remote URL (origin preferred)
+ *   4. Local path — unique, no grouping
+ */
+function getDedupeKey(repo: LocalRepo): string {
+  if (repo.linkedGithubRepoId != null) return `gid:${repo.linkedGithubRepoId}`;
+
+  const remotes = sortedRemotes(repo);
+  for (const remote of remotes) {
+    if (remote.githubRepoId != null) return `gid:${remote.githubRepoId}`;
+  }
+  for (const remote of remotes) {
+    const gh = normalizeGitHubUrl(remote.url);
+    if (gh) return `gh:${gh.toLowerCase()}`;
+  }
+  return `local:${repo.localPath}`;
+}
+
+/**
+ * Group repos that share the same remote into deduplicated entries.
+ * Repos with no shared remotes appear as individual entries.
+ * Insertion order of first-seen groups is preserved for stable rendering.
+ */
+export function deduplicateLocalRepos(repos: LocalRepo[]): DeduplicatedLocalRepo[] {
+  const groups = new Map<string, LocalRepo[]>();
+  const keyOrder: string[] = [];
+
+  for (const repo of repos) {
+    const key = getDedupeKey(repo);
+    if (!groups.has(key)) {
+      groups.set(key, []);
+      keyOrder.push(key);
+    }
+    groups.get(key)!.push(repo);
+  }
+
+  return keyOrder.map((key) => {
+    const group = groups.get(key)!;
+    // Primary = most recently scanned; break ties by discoveredAt then localPath
+    const sorted = [...group].sort((a, b) => {
+      const ta = a.lastScanned ? new Date(a.lastScanned).getTime() : 0;
+      const tb = b.lastScanned ? new Date(b.lastScanned).getTime() : 0;
+      if (tb !== ta) return tb - ta;
+      const da = a.discoveredAt ? new Date(a.discoveredAt).getTime() : 0;
+      const db = b.discoveredAt ? new Date(b.discoveredAt).getTime() : 0;
+      if (db !== da) return db - da;
+      return a.localPath.localeCompare(b.localPath);
+    });
+    const primaryRepo = sorted[0];
+    let githubFullName: string | null = null;
+    for (const remote of sortedRemotes(primaryRepo)) {
+      const fn = normalizeGitHubUrl(remote.url);
+      if (fn) { githubFullName = fn; break; }
+    }
+    return {
+      primaryRepo,
+      allLocalPaths: sorted.map((r) => r.localPath),
+      githubFullName,
+      isDuplicate: group.length > 1,
+    };
+  });
+}
+
 /** Returns all repos whose localPath is at or under the given parentPath. */
 export function getReposUnder(parentPath: string, repos: LocalRepo[]): LocalRepo[] {
   const norm = parentPath.replace(/[\\/]+$/, '');
