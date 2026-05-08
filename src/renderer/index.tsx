@@ -1131,7 +1131,7 @@ function BackgroundStatusBar({
         </>
       )}
       {hasAnyBadge && (
-        <div class="bg-status-rate-limits">
+        <div class={`bg-status-rate-limits${oauthBadge && patBadge ? ' bg-status-rate-limits--both' : ''}`}>
           {oauthBadge && (
             <span
               class="bg-status-rate-limit"
@@ -1144,6 +1144,9 @@ function BackgroundStatusBar({
                 ? '⚡ OAuth –'
                 : `⚡ OAuth ${oauthBadge.resource.remaining.toLocaleString()}/${oauthBadge.resource.limit.toLocaleString()}`}
             </span>
+          )}
+          {oauthBadge && patBadge && (
+            <span class="bg-status-rate-sep" aria-hidden="true">|</span>
           )}
           {patBadge && (
             <span

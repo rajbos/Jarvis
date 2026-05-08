@@ -3207,6 +3207,25 @@ h5.ec-heading { font-size: 0.85rem; }
   pointer-events: auto;
 }
 
+.bg-status-rate-limits--both {
+  gap: 0;
+  padding: 0.1rem 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.bg-status-rate-limits--both .bg-status-rate-limit {
+  padding: 0 0.4rem;
+}
+
+.bg-status-rate-sep {
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.25);
+  user-select: none;
+  flex-shrink: 0;
+}
+
 .bg-status-rate-limit {
   font-size: 0.72rem;
   font-weight: 600;
