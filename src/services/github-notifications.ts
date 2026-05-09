@@ -386,6 +386,24 @@ export function listPrNotifications(
 }
 
 /**
+ * Returns all unread Issue notifications across all repos.
+ */
+export function listIssueNotifications(
+  db: SqlJsDatabase,
+): StoredNotification[] {
+  const stmt = db.prepare(`
+    SELECT id, repo_full_name, repo_owner, subject_type, subject_title, subject_url, subject_actor_login, subject_actor_type, reason, unread, updated_at, fetched_at
+    FROM github_notifications
+    WHERE subject_type = 'Issue' AND unread = 1 AND subject_url IS NOT NULL
+    ORDER BY updated_at DESC
+  `);
+  const rows: StoredNotification[] = [];
+  while (stmt.step()) rows.push(stmt.getAsObject() as unknown as StoredNotification);
+  stmt.free();
+  return rows;
+}
+
+/**
  * Deletes a single notification from the local database by its ID.
  */
 export function deleteNotification(db: SqlJsDatabase, id: string): void {

@@ -58,6 +58,7 @@ const EXPECTED_CHANNELS = [
   'github:open-url',
   'github:get-run-url-for-check-suite',
   'github:get-pr-state',
+  'github:get-issue-state',
   'github:save-pat',
   'github:delete-pat',
   'github:logout',
@@ -85,6 +86,7 @@ const EXPECTED_CHANNELS = [
   'github:list-notifications-for-owner',
   'github:list-notifications-for-starred',
   'github:list-pr-notifications',
+  'github:list-issue-notifications',
   'github:dismiss-notification',
   'github:check-merged-dependabot-prs',
   // local-repos plugin

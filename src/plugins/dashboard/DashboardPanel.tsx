@@ -284,6 +284,122 @@ function ClosedPrBanner({
   );
 }
 
+// ── Closed Issue notifications banner ────────────────────────────────────────
+
+interface ClosedIssueEntry {
+  repoFullName: string;
+  issueTitle: string;
+  dismissReason: 'closed-by-me' | 'closed-via-pr';
+  ids: string[];
+}
+
+/**
+ * Scans all stored Issue notifications and surfaces those whose issue is
+ * already closed AND was either closed by the current user directly or by
+ * merging a PR with a closing keyword. Shows a single dismiss button.
+ */
+function ClosedIssueBanner({
+  onDismissed,
+}: {
+  onDismissed: () => void;
+}) {
+  const [entries, setEntries] = useState<ClosedIssueEntry[]>([]);
+  const [checking, setChecking] = useState(true);
+  const [dismissing, setDismissing] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setChecking(true);
+
+    const run = async () => {
+      const found: ClosedIssueEntry[] = [];
+      try {
+        const allIssueNotifs = await window.jarvis.listIssueNotifications();
+
+        // Group by issue URL — one API call per unique issue, most recent first, cap at 50
+        const byUrl = new Map<string, StoredNotification[]>();
+        for (const n of allIssueNotifs) {
+          if (!n.subject_url) continue;
+          if (!byUrl.has(n.subject_url)) byUrl.set(n.subject_url, []);
+          byUrl.get(n.subject_url)!.push(n);
+        }
+        const urlEntries = [...byUrl.entries()].slice(0, 50);
+
+        // Parallel checks with concurrency 8
+        const CONCURRENCY = 8;
+        let nextIdx = 0;
+        const worker = async () => {
+          while (nextIdx < urlEntries.length) {
+            const idx = nextIdx++;
+            const [url, urlNotifs] = urlEntries[idx];
+            try {
+              const result = await window.jarvis.githubGetIssueState(url);
+              if (cancelled) return;
+              if (!result || result.state !== 'closed') continue;
+              const { closedByMe, closedViaMergedPr } = result;
+              if (!closedByMe && !closedViaMergedPr) continue;
+              const dismissReason: ClosedIssueEntry['dismissReason'] =
+                closedViaMergedPr ? 'closed-via-pr' : 'closed-by-me';
+              found.push({
+                repoFullName: urlNotifs[0].repo_full_name,
+                issueTitle: urlNotifs[0].subject_title,
+                dismissReason,
+                ids: urlNotifs.map((n) => n.id),
+              });
+            } catch { /* skip individual issue */ }
+          }
+        };
+        await Promise.all(Array.from({ length: Math.min(CONCURRENCY, urlEntries.length) }, worker));
+      } catch { /* non-fatal */ }
+      if (!cancelled) { setEntries(found); setChecking(false); }
+    };
+
+    void run();
+    return () => { cancelled = true; };
+  }, []);
+
+  const totalIds = entries.flatMap((e) => e.ids);
+  if (checking || totalIds.length === 0) return null;
+
+  const closedByMeCount = entries.filter((e) => e.dismissReason === 'closed-by-me').length;
+  const closedViaPrCount = entries.filter((e) => e.dismissReason === 'closed-via-pr').length;
+  const reasonBreakdown = [
+    closedByMeCount > 0 ? `${closedByMeCount} closed by you` : '',
+    closedViaPrCount > 0 ? `${closedViaPrCount} closed via merged PR` : '',
+  ].filter(Boolean).join(', ');
+  const summary = `${totalIds.length} notification${totalIds.length !== 1 ? 's' : ''} from ${entries.length} issue${entries.length !== 1 ? 's' : ''} (${reasonBreakdown}).`;
+  const tooltip = `Only showing issues safe to dismiss: closed by you or by a PR you merged.\n\n${entries.map((e) => `[${e.dismissReason}] ${e.repoFullName.split('/')[1]} · ${e.issueTitle}`).join('\n')}`;
+
+  const handleDismissAll = async () => {
+    setDismissing(true);
+    for (const id of totalIds) {
+      try { await window.jarvis.dismissNotification(id); } catch { /* skip */ }
+    }
+    setDismissing(false);
+    setEntries([]);
+    onDismissed();
+  };
+
+  return (
+    <div class="dash-recoverable-banner">
+      <span class="dash-recoverable-icon">✓</span>
+      <div class="dash-recoverable-body">
+        <span class="dash-recoverable-title">Issues closed</span>
+        <span class="dash-recoverable-detail" title={tooltip}>{summary}</span>
+      </div>
+      <button
+        class={`dash-recoverable-btn${dismissing ? ' dash-recoverable-btn--busy' : ''}`}
+        disabled={dismissing}
+        onClick={() => void handleDismissAll()}
+      >
+        {dismissing
+          ? <span class="dismiss-spinner" />
+          : `Dismiss ${totalIds.length} notification${totalIds.length !== 1 ? 's' : ''}`}
+      </button>
+    </div>
+  );
+}
+
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 function WarningIcon({ kind }: { kind: HealthWarning['kind'] }) {
@@ -1373,6 +1489,11 @@ export function DashboardPanel({ dismissedNotifIds }: { dismissedNotifIds?: Read
 
       {/* Closed / merged PR notifications */}
       <ClosedPrBanner
+        onDismissed={load}
+      />
+
+      {/* Closed Issue notifications — issues closed by me or via a merged PR */}
+      <ClosedIssueBanner
         onDismissed={load}
       />
 

@@ -2054,6 +2054,10 @@ export interface JarvisApi {
 
 
 
+  listIssueNotifications(): Promise<StoredNotification[]>;
+
+
+
   dismissNotification(id: string): Promise<void>;
 
 
@@ -2067,6 +2071,10 @@ export interface JarvisApi {
 
 
   githubGetPrState(subjectUrl: string): Promise<{ state: 'open' | 'closed' | 'merged'; isDependabot: boolean; closedByMe: boolean } | null>;
+
+
+
+  githubGetIssueState(subjectUrl: string): Promise<{ state: 'open' | 'closed'; closedByMe: boolean; closedViaMergedPr: boolean } | null>;
 
 
 
