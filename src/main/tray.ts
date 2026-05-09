@@ -3,7 +3,7 @@ import path from 'path';
 
 export function createTray(onOpen: () => void, onSettings: () => void, onOpenChat: () => void): Tray {
   // Use a simple default icon — can be replaced with a custom asset later
-  const iconPath = path.join(__dirname, '..', '..', 'assets', 'icon.png');
+  const iconPath = path.join(__dirname, '..', '..', 'assets', 'Jarvis48.png');
   let icon: Electron.NativeImage;
   try {
     icon = nativeImage.createFromPath(iconPath);
