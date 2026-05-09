@@ -11,6 +11,38 @@ function getDefaultDbPath(): string {
   return path.join(appData, 'Jarvis', 'jarvis.db');
 }
 
+/**
+ * Keep up to 3 daily rotating backups of the database file.
+ * Only rotates when the existing DB file is larger than a freshly-created empty DB
+ * (empty sql.js DB is ≈ 4–8 KB; anything with real data is significantly larger).
+ * Backups: jarvis.db.bak.1 (newest) … jarvis.db.bak.3 (oldest).
+ */
+function rotateDatabaseBackup(filePath: string): void {
+  if (!fs.existsSync(filePath)) return;
+  try {
+    // Only bother if the file looks like it contains real rows (> 100 KB).
+    const { size } = fs.statSync(filePath);
+    if (size < 100_000) return;
+
+    // Skip if we already backed up today.
+    const bak1 = filePath + '.bak.1';
+    if (fs.existsSync(bak1)) {
+      const mtime = fs.statSync(bak1).mtime;
+      if (mtime.toDateString() === new Date().toDateString()) return;
+    }
+
+    // Rotate: .bak.2 → .bak.3, .bak.1 → .bak.2, current → .bak.1
+    const bak2 = filePath + '.bak.2';
+    const bak3 = filePath + '.bak.3';
+    if (fs.existsSync(bak2)) fs.copyFileSync(bak2, bak3);
+    if (fs.existsSync(bak1)) fs.copyFileSync(bak1, bak2);
+    fs.copyFileSync(filePath, bak1);
+    console.log('[DB] Daily backup rotated →', bak1);
+  } catch (err) {
+    console.warn('[DB] Backup rotation failed (non-fatal):', (err as Error).message);
+  }
+}
+
 export async function getDatabase(customDbPath?: string): Promise<SqlJsDatabase> {
   if (db) return db;
 
@@ -20,6 +52,9 @@ export async function getDatabase(customDbPath?: string): Promise<SqlJsDatabase>
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
+
+  // Rotate a backup before loading — once per day, only if there's data to keep.
+  rotateDatabaseBackup(resolvedPath);
 
   const SQL = await initSqlJs();
 
@@ -52,7 +87,7 @@ function initializeSchema(database: SqlJsDatabase): void {
   if (userVersion === 0) {
     database.run(getSchema());
     seedBuiltInAgents(database);
-    database.run('PRAGMA user_version = 18');
+    database.run('PRAGMA user_version = 19');
   }
 
   if (userVersion === 1) {
@@ -394,6 +429,12 @@ function initializeSchema(database: SqlJsDatabase): void {
     // Migration v17 → v18: add workflow_path to github_workflow_runs for filter URL support
     database.run('ALTER TABLE github_workflow_runs ADD COLUMN workflow_path TEXT');
     database.run('PRAGMA user_version = 18');
+  }
+
+  if (userVersion === 18) {
+    // Migration v18 → v19: add ruddr_project_name to groups for Ruddr project linking
+    database.run('ALTER TABLE groups ADD COLUMN ruddr_project_name TEXT');
+    database.run('PRAGMA user_version = 19');
   }
 }
 

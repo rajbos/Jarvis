@@ -12,6 +12,14 @@
  */
 
 const JARVIS_WS_URL = 'ws://127.0.0.1:35789';
+
+// Catch unhandled errors/rejections so they appear in the SW inspector instead of silently killing the worker
+self.addEventListener('unhandledrejection', (event) => {
+  console.error('[JarvisBridge] Unhandled rejection:', event.reason);
+});
+self.addEventListener('error', (event) => {
+  console.error('[JarvisBridge] Unhandled error:', event.message, '@', event.filename, event.lineno);
+});
 const RECONNECT_DELAY_MS = 3000;
 const MAX_RECONNECT_DELAY_MS = 30000;
 const KEEP_ALIVE_INTERVAL_MS = 20000;
@@ -41,12 +49,16 @@ function connect() {
   }
 
   ws.addEventListener('open', () => {
-    console.log('[JarvisBridge] Connected to Jarvis desktop app');
-    isConnected = true;
-    reconnectDelay = RECONNECT_DELAY_MS; // reset backoff
-    updateBadge(true);
-    startKeepAlive();
-    notifyPopup({ type: 'status', connected: true });
+    try {
+      console.log('[JarvisBridge] Connected to Jarvis desktop app');
+      isConnected = true;
+      reconnectDelay = RECONNECT_DELAY_MS; // reset backoff
+      updateBadge(true);
+      startKeepAlive();
+      notifyPopup({ type: 'status', connected: true });
+    } catch (e) {
+      console.error('[JarvisBridge] Error in open handler:', e);
+    }
   });
 
   ws.addEventListener('message', (event) => {
@@ -100,7 +112,12 @@ function updateBadge(connected) {
 }
 
 function notifyPopup(msg) {
-  chrome.runtime.sendMessage(msg).catch(() => { /* popup may not be open */ });
+  try {
+    const p = chrome.runtime.sendMessage(msg);
+    if (p && typeof p.catch === 'function') p.catch(() => { /* popup not open */ });
+  } catch {
+    // extension context not ready or no listeners — ignore
+  }
 }
 
 // ── Command handling ──────────────────────────────────────────────────────────
@@ -130,6 +147,12 @@ async function handleCommand(rawData) {
         break;
       case 'extract':
         data = await cmdExtract(tabId, payload);
+        break;
+      case 'scroll-extract':
+        data = await cmdScrollExtract(tabId, payload);
+        break;
+      case 'scrape-stats':
+        data = await cmdScrapeStats(tabId, payload);
         break;
       case 'click':
         data = await cmdClick(tabId, payload);
@@ -180,7 +203,23 @@ async function cmdNavigate(tabId, payload) {
   if (!url) throw new Error('url is required');
 
   const targetTabId = await getTargetTabId(tabId);
-  await chrome.tabs.update(targetTabId, { url });
+
+  // If the tab is already on the target URL, use reload() to guarantee a
+  // clean page state.  Calling tabs.update() with the same URL can be a no-op
+  // in some browsers (the SPA stays in whatever — possibly scrolled — state it
+  // was in), which breaks virtual-list scraping (e.g. Ruddr projects).
+  let alreadyOnUrl = false;
+  try {
+    const currentTab = await chrome.tabs.get(targetTabId);
+    alreadyOnUrl = currentTab.url === url;
+  } catch (_) { /* tab may not exist yet — fall through to tabs.update */ }
+
+  if (alreadyOnUrl) {
+    console.log('[JarvisBridge] Tab already on target URL — reloading for clean state');
+    await chrome.tabs.reload(targetTabId);
+  } else {
+    await chrome.tabs.update(targetTabId, { url });
+  }
 
   // Wait for the page to finish loading
   await waitForTabLoaded(targetTabId);
@@ -213,6 +252,233 @@ async function cmdExtract(tabId, payload) {
   });
 
   return results[0]?.result ?? null;
+}
+
+async function cmdScrollExtract(tabId, payload) {
+  const { selector, maxScrolls = 30, waitMs = 700, includeHref = false, debug = false } = payload;
+  if (!selector) throw new Error('selector is required');
+  const targetTabId = await getTargetTabId(tabId);
+
+  const results = await chrome.scripting.executeScript({
+    target: { tabId: targetTabId },
+    func: scrollAndExtract,
+    args: [selector, maxScrolls, waitMs, includeHref, debug],
+  });
+
+  return results[0]?.result ?? null;
+}
+
+async function cmdScrapeStats(tabId, payload) {
+  const { waitMs = 3000 } = payload;
+  const targetTabId = await getTargetTabId(tabId);
+
+  const results = await chrome.scripting.executeScript({
+    target: { tabId: targetTabId },
+    func: scrapeStatsByLabel,
+    args: [waitMs],
+  });
+
+  return results[0]?.result ?? null;
+}
+
+// Runs inside the page — scrolls the virtual list until no new items appear.
+// Uses a poll-then-scroll strategy to handle SPAs that render their lists
+// asynchronously after navigation (e.g. Ruddr's React virtual table).
+// When includeHref is true each result includes the href of the closest <a> ancestor.
+// When debug is true, returns { items, debugLog } instead of just items.
+async function scrollAndExtract(selector, maxScrolls, waitMs, includeHref, debug = false) {
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const debugLog = [];
+  const log = (msg) => { if (debug) debugLog.push(msg); console.log(`[JarvisBridge] ${msg}`); };
+
+  // Returns a Map<text, item> — deduplicates by text content.
+  const getItems = () => {
+    const map = new Map();
+    document.querySelectorAll(selector).forEach((el) => {
+      const text = (el.innerText || el.textContent || '').trim();
+      if (!text || map.has(text)) return;
+      const item = { text };
+      if (includeHref) {
+        const anchor = el.tagName === 'A' ? el : el.closest('a');
+        item.href = anchor ? (anchor.getAttribute('href') || '') : '';
+      }
+      map.set(text, item);
+    });
+    return map;
+  };
+
+  // Find the scrollable container for virtual list items.
+  // Walk up from a sample element and find the ancestor with the LARGEST scroll range.
+  // Virtual lists have huge scrollHeight (all items) but small clientHeight (viewport).
+  // We skip shallow scrollers (like page MAIN) that only scroll a few hundred pixels.
+  const findScrollContainer = (sampleEl) => {
+    let el = sampleEl.parentElement;
+    let best = null;
+    let bestRange = 0;
+    while (el && el !== document.body) {
+      const style = getComputedStyle(el);
+      const overflowY = style.overflowY;
+      // Check if this element can scroll vertically
+      if ((overflowY === 'auto' || overflowY === 'scroll') && el.scrollHeight > el.clientHeight) {
+        const scrollRange = el.scrollHeight - el.clientHeight;
+        // Prefer containers with larger scroll ranges - virtual lists have thousands of pixels
+        if (scrollRange > bestRange) {
+          best = el;
+          bestRange = scrollRange;
+        }
+      }
+      el = el.parentElement;
+    }
+    
+    // Also check siblings near the list items - some virtual lists put the scroller
+    // as a sibling wrapper rather than ancestor
+    const parent = sampleEl.closest('[class*="virtual"], [class*="list"], [class*="table"], [class*="grid"]')?.parentElement;
+    if (parent) {
+      for (const sibling of parent.children) {
+        const style = getComputedStyle(sibling);
+        const overflowY = style.overflowY;
+        if ((overflowY === 'auto' || overflowY === 'scroll') && sibling.scrollHeight > sibling.clientHeight) {
+          const scrollRange = sibling.scrollHeight - sibling.clientHeight;
+          if (scrollRange > bestRange) {
+            best = sibling;
+            bestRange = scrollRange;
+          }
+        }
+      }
+    }
+    
+    return best; // returns the scrollable container with the largest range
+  };
+
+  // Wait for at least one element to appear — SPA may not have rendered yet at
+  // the point this function is injected (React renders asynchronously after
+  // document.readyState === 'complete').  Poll up to 10 s before giving up.
+  let firstEl = document.querySelector(selector);
+  if (!firstEl) {
+    log(`No elements found for "${selector}", polling...`);
+    for (let attempt = 0; attempt < 20 && !firstEl; attempt++) {
+      await wait(500);
+      firstEl = document.querySelector(selector);
+    }
+  }
+
+  const collected = new Map(getItems());
+  log(`scrollAndExtract start — selector="${selector}", initial=${collected.size}, url=${window.location.href}`);
+
+  // Try to find the virtual list's scroll container
+  let scrollContainer = firstEl ? findScrollContainer(firstEl) : null;
+  
+  // Also check document.documentElement - some SPAs scroll the whole page
+  const docScrollRange = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+  const containerScrollRange = scrollContainer ? (scrollContainer.scrollHeight - scrollContainer.clientHeight) : 0;
+  
+  if (docScrollRange > containerScrollRange && docScrollRange > 500) {
+    log(`Document has larger scroll range (${docScrollRange}px vs ${containerScrollRange}px), using document scrolling`);
+    scrollContainer = null; // use window.scrollBy instead
+  } else if (scrollContainer) {
+    log(`Found scroll container: ${scrollContainer.tagName}.${scrollContainer.className.split(' ')[0]}, scrollHeight=${scrollContainer.scrollHeight}, clientHeight=${scrollContainer.clientHeight}`);
+  } else {
+    log(`No scroll container found, will use window.scrollBy`);
+  }
+
+  // Ruddr (and many SPAs) use a VIRTUAL list — only visible rows exist in the
+  // DOM at any time.  We scroll the container directly by manipulating scrollTop.
+  // This triggers the scroll event listeners that virtual lists use to load more items.
+  //
+  // Require 3 consecutive iterations with no new items before stopping.
+  const scrollStep = scrollContainer ? Math.floor(scrollContainer.clientHeight * 0.8) : (window.innerHeight || 800);
+  let stableRounds = 0;
+  let useScrollIntoView = false; // fallback if scrollTop doesn't work
+  for (let i = 0; i < maxScrolls; i++) {
+    const before = collected.size;
+
+    // Get all current elements for scrollIntoView fallback
+    const allEls = document.querySelectorAll(selector);
+    const lastEl = allEls.length > 0 ? allEls[allEls.length - 1] : null;
+
+    // Scroll the container (or window) by a fixed amount
+    if (scrollContainer && !useScrollIntoView) {
+      const prevTop = scrollContainer.scrollTop;
+      scrollContainer.scrollTop += scrollStep;
+      const newTop = scrollContainer.scrollTop;
+      log(`iter ${i}: scrollTop ${prevTop} → ${newTop} (step=${scrollStep}), collected=${before}`);
+      // If scrollTop didn't change after first scroll, the container hit its limit
+      if (newTop === prevTop && i === 0) {
+        log(`scrollTop stuck at ${newTop}, switching to scrollIntoView fallback`);
+        useScrollIntoView = true;
+      }
+    }
+    
+    if (!scrollContainer || useScrollIntoView) {
+      if (lastEl) {
+        // Try scrollIntoView first
+        lastEl.scrollIntoView({ behavior: 'instant', block: 'end' });
+        
+        // Also dispatch a wheel event - some virtual lists respond to wheel but not scroll
+        const wheelTarget = lastEl.closest('[class*="table"], [class*="list"], [class*="grid"]') || lastEl.parentElement;
+        if (wheelTarget) {
+          wheelTarget.dispatchEvent(new WheelEvent('wheel', {
+            deltaY: 500,
+            deltaMode: 0, // pixels
+            bubbles: true,
+            cancelable: true
+          }));
+        }
+        
+        log(`iter ${i}: scrollIntoView + wheel on "${(lastEl.innerText||'').trim().slice(0,30)}", collected=${before}`);
+      } else {
+        window.scrollBy(0, window.innerHeight || 800);
+        log(`iter ${i}: window.scrollBy, collected=${before}`);
+      }
+    }
+
+    await wait(waitMs);
+    getItems().forEach((item, text) => {
+      if (!collected.has(text)) collected.set(text, item);
+    });
+
+    if (collected.size === before) {
+      stableRounds++;
+      log(`iter ${i}: no new items (stable=${stableRounds})`);
+      if (stableRounds >= 3) break; // three consecutive iterations with no new items → done
+    } else {
+      log(`iter ${i}: +${collected.size - before} new items, total=${collected.size}`);
+      stableRounds = 0; // new items appeared — reset
+    }
+  }
+
+  log(`scrollAndExtract done — total=${collected.size}`);
+  const items = Array.from(collected.values());
+  return debug ? { items, debugLog } : items;
+}
+
+// Runs inside the page — finds <small> label elements and pairs them with the
+// preceding sibling element's text (the numeric value). Returns { [label]: value }.
+async function scrapeStatsByLabel(waitMs) {
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  // Wait for stats to render (React populates them asynchronously).
+  let hasSmall = document.querySelector('small') !== null;
+  if (!hasSmall) {
+    for (let i = 0; i < 20 && !hasSmall; i++) {
+      await wait(waitMs / 20);
+      hasSmall = document.querySelector('small') !== null;
+    }
+  }
+  // Extra settle time for numbers to hydrate.
+  await wait(500);
+
+  const stats = {};
+  document.querySelectorAll('small').forEach((small) => {
+    const label = (small.innerText || small.textContent || '').trim();
+    if (!label) return;
+    const valueEl = small.previousElementSibling;
+    if (valueEl) {
+      const value = (valueEl.innerText || valueEl.textContent || '').trim();
+      if (value) stats[label] = value;
+    }
+  });
+  return stats;
 }
 
 async function cmdClick(tabId, payload) {

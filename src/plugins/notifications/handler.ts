@@ -13,6 +13,7 @@ import {
   listNotificationsForOwner,
   listNotificationsForStarred,
   listPrNotifications,
+  listIssueNotifications,
   deleteNotification,
   markNotificationRead,
   listMergedDependabotPRNotifications,
@@ -83,6 +84,10 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
 
   ipcMain.handle('github:list-pr-notifications', () => {
     return listPrNotifications(db);
+  });
+
+  ipcMain.handle('github:list-issue-notifications', () => {
+    return listIssueNotifications(db);
   });
 
   ipcMain.handle('github:dismiss-notification', async (_event, id: string) => {

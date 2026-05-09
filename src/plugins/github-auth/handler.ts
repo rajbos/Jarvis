@@ -108,10 +108,67 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
         },
       });
       if (!res.ok) return null;
-      const pr = (await res.json()) as { state: string; merged: boolean };
-      if (pr.merged) return 'merged';
-      if (pr.state === 'closed') return 'closed';
-      return 'open';
+      const pr = (await res.json()) as {
+        state: string;
+        merged: boolean;
+        user: { login: string } | null;
+        merged_by: { login: string } | null;
+      };
+      const authorLogin = (pr.user?.login ?? '').toLowerCase();
+      const isDependabot = authorLogin.includes('dependabot');
+      const myLogin = auth.login.toLowerCase();
+      let state: 'open' | 'closed' | 'merged';
+      let closedByMe: boolean;
+      if (pr.merged) {
+        state = 'merged';
+        closedByMe = (pr.merged_by?.login ?? '').toLowerCase() === myLogin;
+      } else if (pr.state === 'closed') {
+        state = 'closed';
+        // No direct "closed_by" field in GitHub PR API; use PR authorship as proxy:
+        // if you authored the PR and it was closed without merge, you most likely closed it.
+        closedByMe = authorLogin === myLogin;
+      } else {
+        return { state: 'open' as const, isDependabot, closedByMe: false };
+      }
+      return { state, isDependabot, closedByMe };
+    } catch { return null; }
+  });
+
+  ipcMain.handle('github:get-issue-state', async (_event, subjectUrl: string) => {
+    if (typeof subjectUrl !== 'string') return null;
+    if (!/^https:\/\/api\.github\.com\/repos\/[^/]+\/[^/]+\/issues\/\d+$/.test(subjectUrl)) return null;
+    const auth = loadGitHubAuth(db);
+    if (!auth) return null;
+    const headers = {
+      Authorization: `Bearer ${auth.accessToken}`,
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+    };
+    try {
+      const issueRes = await fetch(subjectUrl, { headers });
+      if (!issueRes.ok) return null;
+      const issue = (await issueRes.json()) as { state: string };
+      if (issue.state !== 'closed') return { state: 'open' as const, closedByMe: false, closedViaMergedPr: false };
+
+      // Fetch events to determine who closed the issue and whether a PR did it
+      const eventsRes = await fetch(`${subjectUrl}/events`, { headers });
+      let closedByMe = false;
+      let closedViaMergedPr = false;
+      if (eventsRes.ok) {
+        const events = (await eventsRes.json()) as Array<{
+          event: string;
+          actor: { login: string } | null;
+          commit_id: string | null;
+        }>;
+        // Find the most recent 'closed' event
+        const closedEvent = [...events].reverse().find((e) => e.event === 'closed');
+        if (closedEvent) {
+          closedByMe = (closedEvent.actor?.login ?? '').toLowerCase() === auth.login.toLowerCase();
+          // commit_id is set when the issue was closed by a commit (e.g. merging a PR with a closing keyword)
+          closedViaMergedPr = closedEvent.commit_id !== null && closedEvent.commit_id !== '';
+        }
+      }
+      return { state: 'closed' as const, closedByMe, closedViaMergedPr };
     } catch { return null; }
   });
 

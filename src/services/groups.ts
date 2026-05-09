@@ -4,6 +4,16 @@ import type { Database as SqlJsDatabase } from 'sql.js';
 import type { Group, GroupDetail, GroupLocalRepoMember, GroupGithubRepoMember } from '../plugins/types';
 import { getCustomerFolderInfo } from './onedrive';
 
+/** Parse ruddr_project_name column: JSON array, single string (legacy), or null → string[] */
+export function parseRuddrNames(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed.filter((s): s is string => typeof s === 'string');
+  } catch { /* legacy plain string */ }
+  return [raw];
+}
+
 // ── List ──────────────────────────────────────────────────────────────────────
 
 /** Return all groups with member counts. */
@@ -14,8 +24,12 @@ export function listGroups(db: SqlJsDatabase): Group[] {
       g.name,
       g.created_at,
       g.updated_at,
+      g.ruddr_project_name,
       (SELECT COUNT(*) FROM group_local_repos  glr WHERE glr.group_id = g.id) AS local_repo_count,
-      (SELECT COUNT(*) FROM group_github_repos ggr WHERE ggr.group_id = g.id) AS github_repo_count
+      (SELECT COUNT(*) FROM group_github_repos ggr WHERE ggr.group_id = g.id) AS github_repo_count,
+      (SELECT COUNT(*) FROM onedrive_files f
+         INNER JOIN onedrive_customer_folders cf ON f.folder_id = cf.id
+         WHERE cf.group_id = g.id) AS file_count
     FROM groups g
     ORDER BY g.name COLLATE NOCASE
   `);
@@ -24,7 +38,8 @@ export function listGroups(db: SqlJsDatabase): Group[] {
     while (stmt.step()) {
       const row = stmt.getAsObject() as {
         id: number; name: string; created_at: string; updated_at: string;
-        local_repo_count: number; github_repo_count: number;
+        ruddr_project_name: string | null;
+        local_repo_count: number; github_repo_count: number; file_count: number;
       };
       groups.push({
         id: row.id,
@@ -33,6 +48,8 @@ export function listGroups(db: SqlJsDatabase): Group[] {
         updatedAt: row.updated_at,
         localRepoCount: row.local_repo_count,
         githubRepoCount: row.github_repo_count,
+        fileCount: row.file_count,
+        ruddrProjectNames: parseRuddrNames(row.ruddr_project_name)
       });
     }
   } finally {
@@ -177,3 +194,4 @@ export function removeGithubRepoFromGroup(db: SqlJsDatabase, groupId: number, gi
   );
   db.run(`UPDATE groups SET updated_at = datetime('now') WHERE id = ?`, [groupId]);
 }
+

@@ -93,6 +93,8 @@ describe('Groups service', () => {
     const [g] = listGroups(db);
     expect(g.localRepoCount).toBe(0);
     expect(g.githubRepoCount).toBe(0);
+    expect(g.fileCount).toBe(0);
+    expect(g.ruddrProjectNames).toEqual([]);
   });
 
   it('getGroup returns null for unknown id', () => {

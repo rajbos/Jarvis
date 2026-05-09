@@ -26,7 +26,9 @@ function extractPreloadKeys(src: string): string[] {
 function extractJarvisApiKeys(src: string): string[] {
   const interfaceBody = src.match(/export interface JarvisApi \{([\s\S]*?)\n\}/)?.[1] ?? '';
   const keys: string[] = [];
-  for (const m of interfaceBody.matchAll(/^\s+(\w+)\s*[(:]/gm)) {
+  // Match only top-level interface members (exactly 2 spaces of indentation),
+  // to avoid picking up nested object-type properties (e.g. inside Promise<{...}>).
+  for (const m of interfaceBody.matchAll(/^  (\w+)\s*[(:]/gm)) {
     keys.push(m[1]);
   }
   return keys;

@@ -227,10 +227,12 @@ export function getSchema(): string {
 
     -- Source groups: named collections of local and/or remote repos
     CREATE TABLE IF NOT EXISTS groups (
-        id         INTEGER PRIMARY KEY AUTOINCREMENT,
-        name       TEXT NOT NULL UNIQUE,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        name                TEXT NOT NULL UNIQUE,
+        ruddr_project_name  TEXT,
+        ruddr_project_paths  TEXT,
+        created_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at          DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
     -- Local repos that belong to a group
