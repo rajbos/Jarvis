@@ -255,14 +255,14 @@ async function cmdExtract(tabId, payload) {
 }
 
 async function cmdScrollExtract(tabId, payload) {
-  const { selector, maxScrolls = 30, waitMs = 700, includeHref = false } = payload;
+  const { selector, maxScrolls = 30, waitMs = 700, includeHref = false, debug = false } = payload;
   if (!selector) throw new Error('selector is required');
   const targetTabId = await getTargetTabId(tabId);
 
   const results = await chrome.scripting.executeScript({
     target: { tabId: targetTabId },
     func: scrollAndExtract,
-    args: [selector, maxScrolls, waitMs, includeHref],
+    args: [selector, maxScrolls, waitMs, includeHref, debug],
   });
 
   return results[0]?.result ?? null;
@@ -285,18 +285,11 @@ async function cmdScrapeStats(tabId, payload) {
 // Uses a poll-then-scroll strategy to handle SPAs that render their lists
 // asynchronously after navigation (e.g. Ruddr's React virtual table).
 // When includeHref is true each result includes the href of the closest <a> ancestor.
-async function scrollAndExtract(selector, maxScrolls, waitMs, includeHref) {
+// When debug is true, returns { items, debugLog } instead of just items.
+async function scrollAndExtract(selector, maxScrolls, waitMs, includeHref, debug = false) {
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-
-  // Find the nearest scrollable ancestor
-  function findScrollParent(el) {
-    if (!el || el === document.body) return document.documentElement;
-    const style = window.getComputedStyle(el);
-    if (/auto|scroll/.test(style.overflow + style.overflowY) && el.scrollHeight > el.clientHeight + 4) {
-      return el;
-    }
-    return findScrollParent(el.parentElement);
-  }
+  const debugLog = [];
+  const log = (msg) => { if (debug) debugLog.push(msg); console.log(`[JarvisBridge] ${msg}`); };
 
   // Returns a Map<text, item> — deduplicates by text content.
   const getItems = () => {
@@ -314,41 +307,129 @@ async function scrollAndExtract(selector, maxScrolls, waitMs, includeHref) {
     return map;
   };
 
+  // Find the scrollable container for virtual list items.
+  // Walk up from a sample element and find the ancestor with the LARGEST scroll range.
+  // Virtual lists have huge scrollHeight (all items) but small clientHeight (viewport).
+  // We skip shallow scrollers (like page MAIN) that only scroll a few hundred pixels.
+  const findScrollContainer = (sampleEl) => {
+    let el = sampleEl.parentElement;
+    let best = null;
+    let bestRange = 0;
+    while (el && el !== document.body) {
+      const style = getComputedStyle(el);
+      const overflowY = style.overflowY;
+      // Check if this element can scroll vertically
+      if ((overflowY === 'auto' || overflowY === 'scroll') && el.scrollHeight > el.clientHeight) {
+        const scrollRange = el.scrollHeight - el.clientHeight;
+        // Prefer containers with larger scroll ranges - virtual lists have thousands of pixels
+        if (scrollRange > bestRange) {
+          best = el;
+          bestRange = scrollRange;
+        }
+      }
+      el = el.parentElement;
+    }
+    
+    // Also check siblings near the list items - some virtual lists put the scroller
+    // as a sibling wrapper rather than ancestor
+    const parent = sampleEl.closest('[class*="virtual"], [class*="list"], [class*="table"], [class*="grid"]')?.parentElement;
+    if (parent) {
+      for (const sibling of parent.children) {
+        const style = getComputedStyle(sibling);
+        const overflowY = style.overflowY;
+        if ((overflowY === 'auto' || overflowY === 'scroll') && sibling.scrollHeight > sibling.clientHeight) {
+          const scrollRange = sibling.scrollHeight - sibling.clientHeight;
+          if (scrollRange > bestRange) {
+            best = sibling;
+            bestRange = scrollRange;
+          }
+        }
+      }
+    }
+    
+    return best; // returns the scrollable container with the largest range
+  };
+
   // Wait for at least one element to appear — SPA may not have rendered yet at
   // the point this function is injected (React renders asynchronously after
   // document.readyState === 'complete').  Poll up to 10 s before giving up.
   let firstEl = document.querySelector(selector);
   if (!firstEl) {
+    log(`No elements found for "${selector}", polling...`);
     for (let attempt = 0; attempt < 20 && !firstEl; attempt++) {
       await wait(500);
       firstEl = document.querySelector(selector);
     }
   }
 
-  const container = firstEl ? findScrollParent(firstEl.parentElement) : document.documentElement;
-
   const collected = new Map(getItems());
+  log(`scrollAndExtract start — selector="${selector}", initial=${collected.size}, url=${window.location.href}`);
+
+  // Try to find the virtual list's scroll container
+  let scrollContainer = firstEl ? findScrollContainer(firstEl) : null;
+  
+  // Also check document.documentElement - some SPAs scroll the whole page
+  const docScrollRange = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+  const containerScrollRange = scrollContainer ? (scrollContainer.scrollHeight - scrollContainer.clientHeight) : 0;
+  
+  if (docScrollRange > containerScrollRange && docScrollRange > 500) {
+    log(`Document has larger scroll range (${docScrollRange}px vs ${containerScrollRange}px), using document scrolling`);
+    scrollContainer = null; // use window.scrollBy instead
+  } else if (scrollContainer) {
+    log(`Found scroll container: ${scrollContainer.tagName}.${scrollContainer.className.split(' ')[0]}, scrollHeight=${scrollContainer.scrollHeight}, clientHeight=${scrollContainer.clientHeight}`);
+  } else {
+    log(`No scroll container found, will use window.scrollBy`);
+  }
 
   // Ruddr (and many SPAs) use a VIRTUAL list — only visible rows exist in the
-  // DOM at any time.  Jumping straight to scrollHeight skips the middle of the
-  // list entirely.  Instead, scroll ONE PAGE at a time so every batch passes
-  // through the viewport and is captured by getItems().
+  // DOM at any time.  We scroll the container directly by manipulating scrollTop.
+  // This triggers the scroll event listeners that virtual lists use to load more items.
   //
-  // Require 3 consecutive page-scrolls with no new items before stopping.
+  // Require 3 consecutive iterations with no new items before stopping.
+  const scrollStep = scrollContainer ? Math.floor(scrollContainer.clientHeight * 0.8) : (window.innerHeight || 800);
   let stableRounds = 0;
+  let useScrollIntoView = false; // fallback if scrollTop doesn't work
   for (let i = 0; i < maxScrolls; i++) {
     const before = collected.size;
 
-    const pageSize = container === document.documentElement || container === document.body
-      ? (window.innerHeight || document.documentElement.clientHeight || 800)
-      : (container.clientHeight || 800);
+    // Get all current elements for scrollIntoView fallback
+    const allEls = document.querySelectorAll(selector);
+    const lastEl = allEls.length > 0 ? allEls[allEls.length - 1] : null;
 
-    if (container === document.documentElement || container === document.body) {
-      window.scrollBy(0, pageSize);
-    } else {
-      container.scrollTop += pageSize;
-      // Also scroll the window so listeners higher in the DOM fire.
-      window.scrollBy(0, pageSize);
+    // Scroll the container (or window) by a fixed amount
+    if (scrollContainer && !useScrollIntoView) {
+      const prevTop = scrollContainer.scrollTop;
+      scrollContainer.scrollTop += scrollStep;
+      const newTop = scrollContainer.scrollTop;
+      log(`iter ${i}: scrollTop ${prevTop} → ${newTop} (step=${scrollStep}), collected=${before}`);
+      // If scrollTop didn't change after first scroll, the container hit its limit
+      if (newTop === prevTop && i === 0) {
+        log(`scrollTop stuck at ${newTop}, switching to scrollIntoView fallback`);
+        useScrollIntoView = true;
+      }
+    }
+    
+    if (!scrollContainer || useScrollIntoView) {
+      if (lastEl) {
+        // Try scrollIntoView first
+        lastEl.scrollIntoView({ behavior: 'instant', block: 'end' });
+        
+        // Also dispatch a wheel event - some virtual lists respond to wheel but not scroll
+        const wheelTarget = lastEl.closest('[class*="table"], [class*="list"], [class*="grid"]') || lastEl.parentElement;
+        if (wheelTarget) {
+          wheelTarget.dispatchEvent(new WheelEvent('wheel', {
+            deltaY: 500,
+            deltaMode: 0, // pixels
+            bubbles: true,
+            cancelable: true
+          }));
+        }
+        
+        log(`iter ${i}: scrollIntoView + wheel on "${(lastEl.innerText||'').trim().slice(0,30)}", collected=${before}`);
+      } else {
+        window.scrollBy(0, window.innerHeight || 800);
+        log(`iter ${i}: window.scrollBy, collected=${before}`);
+      }
     }
 
     await wait(waitMs);
@@ -358,13 +439,17 @@ async function scrollAndExtract(selector, maxScrolls, waitMs, includeHref) {
 
     if (collected.size === before) {
       stableRounds++;
-      if (stableRounds >= 3) break; // three consecutive page-scrolls with no new items → done
+      log(`iter ${i}: no new items (stable=${stableRounds})`);
+      if (stableRounds >= 3) break; // three consecutive iterations with no new items → done
     } else {
+      log(`iter ${i}: +${collected.size - before} new items, total=${collected.size}`);
       stableRounds = 0; // new items appeared — reset
     }
   }
 
-  return Array.from(collected.values());
+  log(`scrollAndExtract done — total=${collected.size}`);
+  const items = Array.from(collected.values());
+  return debug ? { items, debugLog } : items;
 }
 
 // Runs inside the page — finds <small> label elements and pairs them with the

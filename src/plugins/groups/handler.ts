@@ -25,6 +25,9 @@ let ruddrProjectsCacheTime = 0;
 /** Re-fetch after 8 hours so a long-running session stays reasonably fresh. */
 const RUDDR_CACHE_TTL_MS = 8 * 60 * 60 * 1000;
 
+// ── Ruddr budget cache (in-memory, per app session) ──────────────────────────
+const ruddrBudgetCache = new Map<string, Record<string, unknown>>();
+
 const RUDDR_BASE = 'https://www.ruddr.io/app';
 /** Config key for the Ruddr workspace slug (e.g. "xebia-xms-benelux"). */
 const RUDDR_WORKSPACE_KEY = 'ruddr_workspace';
@@ -65,6 +68,97 @@ function scoreMatch(query: string, candidate: string): number {
   );
   if (partial) return 0.2;
   return 0;
+}
+
+/**
+ * Ensures ruddrProjectsCache is populated. Returns an error string on
+ * failure, or null on success (cache is guaranteed non-null after null return).
+ */
+async function ensureRuddrCache(db: SqlJsDatabase): Promise<string | null> {
+  const cacheExpired = Date.now() - ruddrProjectsCacheTime > RUDDR_CACHE_TTL_MS;
+  if (ruddrProjectsCache !== null && ruddrProjectsCache.length > 0 && !cacheExpired) return null;
+
+  const status = getBridgeStatus();
+  if (!status.running || status.connectedClients === 0)
+    return 'No browser extension connected. Open the Browser Companion tab and ensure the extension is active.';
+
+  const ruddrProjectsUrl = getRuddrProjectsUrl(db);
+  if (!ruddrProjectsUrl) return 'ruddr_workspace_not_configured';
+
+  const navResp = await sendCommand({ type: 'navigate', payload: { url: ruddrProjectsUrl } });
+  if (!navResp.ok) return `Navigation failed: ${navResp.error ?? 'unknown'}`;
+
+  const navData = navResp.data as { url?: string; tabId?: number } | null;
+  let finalUrl = navData?.url ?? '';
+  if (finalUrl.includes('/login')) {
+    sendCommand({ type: 'focus-window', tabId: navData?.tabId, payload: {} }).catch(() => { /* non-fatal */ });
+    return 'login_required';
+  }
+
+  let scrapeTabId: number | undefined = navData?.tabId;
+  if (!finalUrl.includes('portfolio/projects')) {
+    console.log(`[Groups] Portfolio URL redirected to ${finalUrl} — trying my-projects fallback`);
+    const fallbackNav = await sendCommand({ type: 'navigate', payload: { url: getRuddrMyProjectsUrl(db) } });
+    if (!fallbackNav.ok) return `Fallback navigation failed: ${fallbackNav.error ?? 'unknown'}`;
+    const fallbackData = fallbackNav.data as { url?: string; tabId?: number } | null;
+    finalUrl = fallbackData?.url ?? '';
+    if (finalUrl.includes('/login')) {
+      sendCommand({ type: 'focus-window', tabId: fallbackData?.tabId, payload: {} }).catch(() => { /* non-fatal */ });
+      return 'login_required';
+    }
+    scrapeTabId = fallbackData?.tabId ?? scrapeTabId;
+  }
+
+  // Focus the tab before scraping — Chrome aggressively throttles background tabs
+  // (setTimeout clamped to 1s+, IntersectionObservers paused), which breaks the
+  // virtual list scroll-and-load mechanism on Ruddr.
+  if (scrapeTabId !== undefined) {
+    await sendCommand({ type: 'focus-window', tabId: scrapeTabId, payload: {} }).catch(() => { /* non-fatal */ });
+  }
+
+  const extractResp = await sendCommand({
+    type: 'scroll-extract',
+    tabId: scrapeTabId,
+    payload: { selector: RUDDR_PROJECT_SELECTOR, maxScrolls: 80, waitMs: 1500, includeHref: true, debug: true },
+  }, 180_000).catch((err) => {
+    console.warn(`[Groups] scroll-extract failed: ${err instanceof Error ? err.message : String(err)}`);
+    return { ok: false, error: err instanceof Error ? err.message : String(err) } as { ok: false; error: string };
+  });
+  if (!extractResp.ok) return `Extract failed: ${extractResp.error ?? 'unknown'}`;
+
+  const rawData = extractResp.data as { items: Array<{ text: string; href?: string }>; debugLog?: string[] } | Array<{ text: string; href?: string }> | null;
+  // Handle both old format (array) and new format (object with items + debugLog)
+  const items = Array.isArray(rawData) ? rawData : (rawData?.items ?? []);
+  const debugLog = Array.isArray(rawData) ? null : rawData?.debugLog;
+  if (debugLog && debugLog.length > 0) {
+    console.log(`[Groups] Ruddr scroll debug:\n  ${debugLog.join('\n  ')}`);
+  }
+  const freshProjects = (items ?? [])
+    .map((i) => ({ name: (i.text ?? '').trim(), path: (i.href ?? '').split('?')[0].split('#')[0] }))
+    .filter((e) => e.name);
+
+  const oldLen = ruddrProjectsCache?.length ?? 0;
+  if (freshProjects.length === 0) {
+    if (oldLen === 0) {
+      console.warn(`[Groups] Ruddr scroll returned 0 projects and cache is empty — scrape may have failed.`);
+      return 'ruddr_no_projects_found';
+    }
+    console.warn(`[Groups] Ruddr scroll returned only ${freshProjects.length} projects — keeping old cache of ${oldLen}.`);
+  } else if (oldLen > 0 && freshProjects.length < oldLen * 0.75) {
+    console.warn(`[Groups] Ruddr scroll returned only ${freshProjects.length} projects — keeping old cache of ${oldLen}.`);
+  } else {
+    ruddrProjectsCache = freshProjects;
+    ruddrProjectsCacheTime = Date.now();
+    console.log(`[Groups] Ruddr projects cached: ${ruddrProjectsCache.length} entries`);
+  }
+
+  return null;
+}
+
+/** Pre-warms the Ruddr projects cache in the background at app startup. */
+export async function prewarmRuddrCache(db: SqlJsDatabase): Promise<void> {
+  const err = await ensureRuddrCache(db);
+  if (err) console.log(`[Groups] Ruddr pre-warm skipped: ${err}`);
 }
 
 export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWindow | null): void {
@@ -172,78 +266,12 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
 
   // ── Ruddr project linking ─────────────────────────────────────────────────
 
-  /**
-   * Ensures ruddrProjectsCache is populated. Returns an error string on
-   * failure, or null on success (cache is guaranteed non-null after null return).
-   */
-  async function ensureRuddrCache(): Promise<string | null> {
-    const cacheExpired = Date.now() - ruddrProjectsCacheTime > RUDDR_CACHE_TTL_MS;
-    if (ruddrProjectsCache !== null && ruddrProjectsCache.length > 0 && !cacheExpired) return null;
-
-    const status = getBridgeStatus();
-    if (!status.running || status.connectedClients === 0)
-      return 'No browser extension connected. Open the Browser Companion tab and ensure the extension is active.';
-
-    const ruddrProjectsUrl = getRuddrProjectsUrl(db);
-    if (!ruddrProjectsUrl) return 'ruddr_workspace_not_configured';
-
-    const navResp = await sendCommand({ type: 'navigate', payload: { url: ruddrProjectsUrl } });
-    if (!navResp.ok) return `Navigation failed: ${navResp.error ?? 'unknown'}`;
-
-    const navData = navResp.data as { url?: string; tabId?: number } | null;
-    let finalUrl = navData?.url ?? '';
-    if (finalUrl.includes('/login')) {
-      sendCommand({ type: 'focus-window', tabId: navData?.tabId, payload: {} }).catch(() => { /* non-fatal */ });
-      return 'login_required';
-    }
-
-    let scrapeTabId: number | undefined = navData?.tabId;
-    if (!finalUrl.includes('portfolio/projects')) {
-      console.log(`[Groups] Portfolio URL redirected to ${finalUrl} — trying my-projects fallback`);
-      const fallbackNav = await sendCommand({ type: 'navigate', payload: { url: getRuddrMyProjectsUrl(db) } });
-      if (!fallbackNav.ok) return `Fallback navigation failed: ${fallbackNav.error ?? 'unknown'}`;
-      const fallbackData = fallbackNav.data as { url?: string; tabId?: number } | null;
-      finalUrl = fallbackData?.url ?? '';
-      if (finalUrl.includes('/login')) {
-        sendCommand({ type: 'focus-window', tabId: fallbackData?.tabId, payload: {} }).catch(() => { /* non-fatal */ });
-        return 'login_required';
-      }
-      scrapeTabId = fallbackData?.tabId ?? scrapeTabId;
-    }
-
-    const extractResp = await sendCommand({
-      type: 'scroll-extract',
-      tabId: scrapeTabId,
-      payload: { selector: RUDDR_PROJECT_SELECTOR, maxScrolls: 80, waitMs: 1500, includeHref: true },
-    });
-    if (!extractResp.ok) return `Extract failed: ${extractResp.error ?? 'unknown'}`;
-
-    const items = extractResp.data as Array<{ text: string; href?: string }> | null;
-    const freshProjects = (items ?? [])
-      .map((i) => ({ name: (i.text ?? '').trim(), path: (i.href ?? '').split('?')[0].split('#')[0] }))
-      .filter((e) => e.name);
-
-    const oldLen = ruddrProjectsCache?.length ?? 0;
-    // Only keep the old cache if the new scrape looks dramatically truncated
-    // (less than 75% of what we had before). This handles both large workspaces
-    // that need full scrolling AND small workspaces with fewer than 50 projects.
-    if (freshProjects.length === 0 || (oldLen > 0 && freshProjects.length < oldLen * 0.75)) {
-      console.warn(`[Groups] Ruddr scroll returned only ${freshProjects.length} projects — keeping old cache of ${oldLen}.`);
-    } else {
-      ruddrProjectsCache = freshProjects;
-      ruddrProjectsCacheTime = Date.now();
-      console.log(`[Groups] Ruddr projects cached: ${ruddrProjectsCache.length} entries`);
-    }
-
-    return null;
-  }
-
   ipcMain.handle('groups:find-ruddr-projects', async (_event, groupName: string) => {
     if (typeof groupName !== 'string' || !groupName.trim())
       return { ok: false, error: 'Invalid groupName' };
 
     try {
-      const err = await ensureRuddrCache();
+      const err = await ensureRuddrCache(db);
       if (err) return { ok: false, error: err };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -252,7 +280,7 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
     const cache = ruddrProjectsCache;
     if (!cache) return { ok: false, error: 'Cache not populated after refresh.' };
     const matches: RuddrProjectMatch[] = cache
-      .map(({ name }) => ({ name, score: scoreMatch(groupName.trim(), name) }))
+      .map(({ name, path }) => ({ name, path, score: scoreMatch(groupName.trim(), name) }))
       .filter((m) => m.score > 0)
       .sort((a, b) => b.score - a.score);
 
@@ -342,7 +370,7 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
 
     // Auto-populate the cache if it's empty or stale
     try {
-      const cacheErr = await ensureRuddrCache();
+      const cacheErr = await ensureRuddrCache(db);
       if (cacheErr) return { ok: false, error: cacheErr };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -355,7 +383,7 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
       ?? ruddrProjectsCache?.find((e) => normalize(e.name) === normalize(trimmed));
     if (!entry?.path) {
       const cacheSize = ruddrProjectsCache?.length ?? 0;
-      console.warn(`[Groups] Budget: no cache entry for "${trimmed}". Cache has: ${ruddrProjectsCache?.map((e) => e.name).join(', ')}`);
+      console.warn(`[Groups] Budget: no cache entry for "${trimmed}". Cache has ${cacheSize} entries: ${(ruddrProjectsCache ?? []).map((e) => e.name).join(', ')}`);
       return {
         ok: false,
         error: cacheSize > 0 ? 'project_not_in_ruddr' : 'project_url_unknown',
@@ -381,7 +409,7 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
       if (!statsResp.ok) return { ok: false, error: `Scrape failed: ${statsResp.error ?? 'unknown'}` };
 
       const raw = statsResp.data as Record<string, string> | null;
-      return {
+      const budgetResult = {
         ok: true,
         actualBillableHours: raw?.['Actual Billable Hours'] ?? null,
         actualNonBillableHours: raw?.['Actual Non-Billable Hours'] ?? null,
@@ -390,9 +418,17 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
         budgetLeft: raw?.['Budget Left'] ?? null,
         projectUrl: overviewUrl,
       };
+      ruddrBudgetCache.set(trimmed, budgetResult);
+      return budgetResult;
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
+  });
+
+  ipcMain.handle('groups:get-ruddr-budget-cache', () => {
+    const budgets: Record<string, Record<string, unknown>> = {};
+    ruddrBudgetCache.forEach((value, key) => { budgets[key] = value; });
+    return { ok: true, budgets };
   });
 
   ipcMain.handle('groups:set-ruddr-workspace', (_event, workspace: string) => {

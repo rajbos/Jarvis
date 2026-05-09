@@ -151,7 +151,7 @@ export function getBridgeStatus(): { running: boolean; port: number; connectedCl
 
 // ── RPC send ──────────────────────────────────────────────────────────────────
 
-const COMMAND_TIMEOUT_MS = 30_000;
+const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
 
 function nextId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -160,8 +160,12 @@ function nextId(): string {
 /**
  * Send a command to the connected browser extension and wait for the response.
  * Rejects if no extension is connected, or if the command times out.
+ * Pass `timeoutMs` to override the default 30s timeout (e.g. for slow scroll-extract).
  */
-export function sendCommand(command: Omit<BridgeCommand, 'id'>): Promise<BridgeResponse> {
+export function sendCommand(
+  command: Omit<BridgeCommand, 'id'>,
+  timeoutMs: number = DEFAULT_COMMAND_TIMEOUT_MS,
+): Promise<BridgeResponse> {
   return new Promise((resolve, reject) => {
     if (connectedClients.size === 0) {
       reject(new Error('No browser extension connected'));
@@ -173,8 +177,8 @@ export function sendCommand(command: Omit<BridgeCommand, 'id'>): Promise<BridgeR
 
     const timer = setTimeout(() => {
       pending.delete(id);
-      reject(new Error(`Browser command timed out after ${COMMAND_TIMEOUT_MS / 1000}s`));
-    }, COMMAND_TIMEOUT_MS);
+      reject(new Error(`Browser command timed out after ${Math.round(timeoutMs / 1000)}s`));
+    }, timeoutMs);
 
     pending.set(id, { resolve, reject, timer });
 

@@ -22,7 +22,14 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
     }
   });
 
-  ipcMain.handle('app:set-preferences', (_event, prefs: Partial<{ sortByNotifications: boolean; localSortByNotifs: boolean; localRepoSortKey: 'name' | 'scanned' | 'notifs' }>) => {
+  ipcMain.handle('app:set-preferences', (_event, prefs: Partial<{
+    sortByNotifications: boolean;
+    localSortByNotifs: boolean;
+    localRepoSortKey: 'name' | 'scanned' | 'notifs';
+    dashboardDefaultFilter: 'all' | 'healthy' | 'warnings' | 'notifications' | 'human-notifications' | 'failed-runs';
+    dashboardSortMode: 'attention' | 'local-activity' | 'remote-activity';
+    dashboardNotifSort: 'count' | 'name';
+  }>) => {
     if (typeof prefs !== 'object' || prefs === null || Array.isArray(prefs)) return { ok: false, error: 'Invalid preferences' };
     try {
       const config = loadConfig();

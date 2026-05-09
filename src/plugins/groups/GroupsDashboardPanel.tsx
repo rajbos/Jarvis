@@ -9,22 +9,88 @@ import type { Group, RuddrProjectMatch, RuddrBudget } from '../types';
 export function GroupsDashboardPanel() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
+  const [budgetData, setBudgetData] = useState<Record<string, RuddrBudget>>({});
+  const [budgetChecking, setBudgetChecking] = useState<string | null>(null);
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [groupsList, budgetCache] = await Promise.all([
+        window.jarvis.groupsList(),
+        window.jarvis.groupsGetRuddrBudgetCache().catch(() => ({ ok: true, budgets: {} })),
+      ]);
+      setGroups(groupsList);
+      const initialBudgets: Record<string, RuddrBudget> = budgetCache.ok ? budgetCache.budgets : {};
+      setBudgetData(initialBudgets);
+
+      // Auto-fetch budgets for linked projects that aren't in the cache yet
+      const allProjectNames = groupsList.flatMap((g: Group) => g.ruddrProjectNames ?? []);
+      const missing = allProjectNames.filter((n: string) => !initialBudgets[n]);
+      for (const name of missing) {
+        setBudgetChecking(name);
+        try {
+          const result = await window.jarvis.groupsGetRuddrBudget(name);
+          setBudgetData((prev) => ({ ...prev, [name]: result }));
+        } catch (err) {
+          setBudgetData((prev) => ({
+            ...prev,
+            [name]: { ok: false, error: err instanceof Error ? err.message : String(err) },
+          }));
+        }
+      }
+      setBudgetChecking(null);
+    } catch (err) {
+      console.error('[GroupsDashboard] Failed to load data:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    setLoading(true);
-    window.jarvis.groupsList()
-      .then((list) => setGroups(list))
-      .catch((err: unknown) => console.error('[GroupsDashboard] Failed to load groups:', err))
-      .finally(() => setLoading(false));
+    loadData();
+
+    // Auto-refresh budget data every 30 seconds
+    const interval = setInterval(() => {
+      window.jarvis.groupsGetRuddrBudgetCache()
+        .catch(() => ({ ok: true, budgets: {} }))
+        .then((budgetCache) => {
+          if (budgetCache.ok) {
+            setBudgetData(budgetCache.budgets);
+          }
+        });
+    }, 30000);
+
+    // Refresh when window regains focus
+    const onFocus = () => {
+      loadData();
+    };
+    window.addEventListener('focus', onFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+    };
   }, []);
 
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
+    // Re-fetch budget for every currently linked Ruddr project across all cards.
+    const allProjectNames = groups.flatMap((g) => g.ruddrProjectNames);
+    if (allProjectNames.length === 0) return;
     setLoading(true);
-    window.jarvis.groupsRefreshRuddrCache().catch(() => { /* non-fatal */ });
-    window.jarvis.groupsList()
-      .then((list) => setGroups(list))
-      .catch((err: unknown) => console.error('[GroupsDashboard] Failed to reload groups:', err))
-      .finally(() => setLoading(false));
+    for (const name of allProjectNames) {
+      setBudgetChecking(name);
+      try {
+        const result = await window.jarvis.groupsGetRuddrBudget(name);
+        setBudgetData((prev) => ({ ...prev, [name]: result }));
+      } catch (err) {
+        setBudgetData((prev) => ({
+          ...prev,
+          [name]: { ok: false, error: err instanceof Error ? err.message : String(err) },
+        }));
+      }
+    }
+    setBudgetChecking(null);
+    setLoading(false);
   };
 
   const handleRuddrLinked = (groupId: number, names: string[]) => {
@@ -69,7 +135,9 @@ export function GroupsDashboardPanel() {
       {groups.length > 0 && (
         <div class="groups-dash-grid">
           {groups.map((group) => (
-            <GroupCard key={group.id} group={group} onRuddrLinked={handleRuddrLinked} />
+            <GroupCard key={group.id} group={group} onRuddrLinked={handleRuddrLinked}
+              budgetData={budgetData} setBudgetData={setBudgetData}
+              budgetChecking={budgetChecking} setBudgetChecking={setBudgetChecking} />
           ))}
         </div>
       )}
@@ -79,7 +147,22 @@ export function GroupsDashboardPanel() {
 
 // ── GroupCard ─────────────────────────────────────────────────────────────────
 
-function GroupCard({ group, onRuddrLinked }: { group: Group; onRuddrLinked: (groupId: number, names: string[]) => void }) {
+function GroupCard(props: {
+  group: Group;
+  onRuddrLinked: (groupId: number, names: string[]) => void;
+  budgetData: Record<string, RuddrBudget>;
+  setBudgetData: (fn: (prev: Record<string, RuddrBudget>) => Record<string, RuddrBudget>) => void;
+  budgetChecking: string | null;
+  setBudgetChecking: (v: string | null) => void;
+}) {
+  const {
+    group,
+    onRuddrLinked,
+    budgetData,
+    setBudgetData,
+    budgetChecking,
+    setBudgetChecking,
+  } = props;
   const [ruddrSearching, setRuddrSearching] = useState(false);
   const [ruddrError, setRuddrError] = useState<string | null>(null);
   const [ruddrMatches, setRuddrMatches] = useState<RuddrProjectMatch[] | null>(null);
@@ -90,8 +173,6 @@ function GroupCard({ group, onRuddrLinked }: { group: Group; onRuddrLinked: (gro
   const [ruddrAllProjects, setRuddrAllProjects] = useState<string[]>([]);
   /** allCount from the most recent search — used to detect thin caches. */
   const [ruddrLastCount, setRuddrLastCount] = useState(0);
-  const [budgetData, setBudgetData] = useState<Record<string, RuddrBudget>>({});
-  const [budgetChecking, setBudgetChecking] = useState<string | null>(null);
 
   const handleOpenManual = async () => {
     setRuddrManualFilter('');
@@ -219,41 +300,51 @@ function GroupCard({ group, onRuddrLinked }: { group: Group; onRuddrLinked: (gro
                   >
                     {budgetChecking === name ? '⏳' : '💰'}
                   </button>
+                  {budgetData[name]?.ok && budgetData[name].projectUrl && (
+                    <button
+                      class="groups-dash-ruddr-open-btn"
+                      onClick={() => void window.jarvis.shellOpenUrl(budgetData[name].projectUrl!)}
+                      title="Open in Ruddr"
+                    >↗️</button>
+                  )}
                   <button class="groups-dash-ruddr-unlink" onClick={() => void handleUnlinkOne(name)} title="Remove Ruddr link">✕</button>
                 </div>
                 {budgetData[name] && (
-                  <div class="groups-dash-budget-row">
+                  <div class="groups-dash-budget-section">
                     {budgetData[name].ok ? (
                       <>
-                        <span class="groups-dash-budget-stat">
-                          <span class="groups-dash-budget-val">{budgetData[name].actualBillableHours ?? '?'}h</span>
-                          <span class="groups-dash-budget-lbl"> billable</span>
-                        </span>
-                        <span class="groups-dash-budget-sep"> / </span>
-                        <span class="groups-dash-budget-stat">
-                          <span class="groups-dash-budget-val">{budgetData[name].budget ?? '?'}h</span>
-                          <span class="groups-dash-budget-lbl"> budget</span>
-                        </span>
-                        <span class={`groups-dash-budget-left${parseFloat(budgetData[name].budgetLeft ?? '0') < 0 ? ' groups-dash-budget-left--over' : ''}`}>
-                          {' '}({budgetData[name].budgetLeft ?? '?'}h left)
-                        </span>
+                        <div class="groups-dash-budget-table">
+                          <div class="groups-dash-budget-cell">
+                            <span class="groups-dash-budget-val">{budgetData[name].actualBillableHours ?? '?'}h</span>
+                            <span class="groups-dash-budget-lbl">billable</span>
+                          </div>
+                          <div class="groups-dash-budget-cell">
+                            <span class="groups-dash-budget-val">{budgetData[name].budget ?? '?'}h</span>
+                            <span class="groups-dash-budget-lbl">budget</span>
+                          </div>
+                          <div class={`groups-dash-budget-cell${parseFloat(budgetData[name].budgetLeft ?? '0') < 0 ? ' groups-dash-budget-cell--over' : ''}`}>
+                            <span class="groups-dash-budget-val">{budgetData[name].budgetLeft ?? '?'}h</span>
+                            <span class="groups-dash-budget-lbl">left</span>
+                          </div>
+                        </div>
                         {(budgetData[name].budget === '0' || budgetData[name].budget === 0) && (
-                          <span class="groups-dash-budget-warn" title="No budget set for this project in Ruddr"> ⚠️ no budget set</span>
-                        )}
-                        {budgetData[name].projectUrl && (
-                          <button
-                            class="groups-dash-budget-open"
-                            onClick={() => void window.jarvis.shellOpenUrl(budgetData[name].projectUrl!)}
-                            title="Open in browser"
-                          >↗️</button>
+                          <div class="groups-dash-budget-alerts">
+                            <span class="groups-dash-budget-warn" title="No budget set for this project in Ruddr">⚠️ No budget set</span>
+                          </div>
                         )}
                       </>
                     ) : (
-                      <span class="groups-dash-budget-error">
-                        {budgetData[name].error === 'project_url_unknown'
-                          ? 'Run “Find Ruddr project” first to cache the project URL'                          : budgetData[name].error === 'project_not_in_ruddr'
-                          ? `"${name}" not found in Ruddr — the name may differ. Use "Find Ruddr project" to re-link.`                          : budgetData[name].error}
-                      </span>
+                      <div class="groups-dash-budget-alerts">
+                        <span class="groups-dash-budget-error">
+                          {budgetData[name].error === 'ruddr_no_projects_found'
+                            ? 'Ruddr project list is empty — browser extension may not have loaded the page yet. Click 💰 to retry.'
+                            : budgetData[name].error === 'project_url_unknown'
+                            ? 'Run "Find Ruddr project" first to cache the project URL'
+                            : budgetData[name].error === 'project_not_in_ruddr'
+                            ? `"${name}" not found in Ruddr — the name may differ. Use "Find Ruddr project" to re-link.`
+                            : budgetData[name].error}
+                        </span>
+                      </div>
                     )}
                   </div>
                 )}
@@ -363,8 +454,7 @@ function GroupCard({ group, onRuddrLinked }: { group: Group; onRuddrLinked: (gro
                       </button>
                     </div>
                   );
-                })
-              }
+                })}
               {ruddrAllProjects.filter((p) => p.toLowerCase().includes(ruddrManualFilter.toLowerCase())).length === 0 && (
                 <div class="groups-dash-ruddr-manual-empty">No projects match</div>
               )}

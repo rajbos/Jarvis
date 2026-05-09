@@ -2819,7 +2819,7 @@ h5.ec-heading { font-size: 0.85rem; }
 
 .groups-dash-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 0.9rem;
 }
 
@@ -2832,6 +2832,7 @@ h5.ec-heading { font-size: 0.85rem; }
   flex-direction: column;
   gap: 0.7rem;
   transition: border-color 0.15s, box-shadow 0.15s;
+  min-width: 0; /* prevent grid cell overflow */
 }
 
 .groups-dash-card:hover {
@@ -2937,33 +2938,76 @@ h5.ec-heading { font-size: 0.85rem; }
 .groups-dash-ruddr-budget-btn:hover:not(:disabled) { color: #f0c040; }
 .groups-dash-ruddr-budget-btn:disabled { opacity: 0.5; cursor: default; }
 
-.groups-dash-budget-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.15rem 0;
-  padding: 0.2rem 0.6rem 0.25rem 1.6rem;
-  font-size: 0.78rem;
-  color: #9ab;
-}
-.groups-dash-budget-stat { display: inline-flex; align-items: baseline; gap: 0.15rem; }
-.groups-dash-budget-val { font-weight: 600; color: #c8d8f0; }
-.groups-dash-budget-lbl { color: #7a8a9a; }
-.groups-dash-budget-sep { color: #4a5a7a; margin: 0 0.15rem; }
-.groups-dash-budget-left { color: #7a9a7a; }
-.groups-dash-budget-left--over { color: #e05a5a; }
-.groups-dash-budget-open {
+.groups-dash-ruddr-open-btn {
   background: transparent;
   border: none;
-  color: #6a8ab0;
+  color: #5a7a9a;
   cursor: pointer;
-  font-size: 0.78rem;
+  font-size: 0.82rem;
   padding: 0 0.2rem;
-  margin-left: 0.2rem;
   line-height: 1;
   transition: color 0.15s;
 }
-.groups-dash-budget-open:hover { color: #8ab0d0; }
+.groups-dash-ruddr-open-btn:hover { color: #8ab0d0; }
+
+/* Budget section container */
+.groups-dash-budget-section {
+  padding: 0.2rem 0 0.35rem 0;
+  font-size: 0.78rem;
+}
+
+/* Table-like row for billable / budget / left */
+.groups-dash-budget-table {
+  display: flex;
+  align-items: stretch;
+  gap: 0.4rem;
+  width: 100%;
+}
+
+.groups-dash-budget-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  padding: 0.35rem 0.4rem;
+  background: rgba(30, 40, 60, 0.6);
+  border-radius: 4px;
+}
+
+.groups-dash-budget-cell--over {
+  background: rgba(180, 60, 60, 0.25);
+}
+
+.groups-dash-budget-val {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #c8d8f0;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.groups-dash-budget-cell--over .groups-dash-budget-val {
+  color: #e05a5a;
+}
+
+.groups-dash-budget-lbl {
+  font-size: 0.7rem;
+  color: #8a9aaa;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 500;
+}
+
+/* Alerts row below the table */
+.groups-dash-budget-alerts {
+  margin-top: 0.3rem;
+  padding-left: 0.1rem;
+}
+/* Open button moved to title row - see .groups-dash-ruddr-open-btn */
 .groups-dash-budget-error {
   color: #e07060;
   font-style: italic;

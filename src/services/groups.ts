@@ -49,7 +49,7 @@ export function listGroups(db: SqlJsDatabase): Group[] {
         localRepoCount: row.local_repo_count,
         githubRepoCount: row.github_repo_count,
         fileCount: row.file_count,
-        ruddrProjectNames: parseRuddrNames(row.ruddr_project_name),
+        ruddrProjectNames: parseRuddrNames(row.ruddr_project_name)
       });
     }
   } finally {
@@ -194,3 +194,4 @@ export function removeGithubRepoFromGroup(db: SqlJsDatabase, groupId: number, gi
   );
   db.run(`UPDATE groups SET updated_at = datetime('now') WHERE id = ?`, [groupId]);
 }
+

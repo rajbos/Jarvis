@@ -230,6 +230,7 @@ export function getSchema(): string {
         id                  INTEGER PRIMARY KEY AUTOINCREMENT,
         name                TEXT NOT NULL UNIQUE,
         ruddr_project_name  TEXT,
+        ruddr_project_paths  TEXT,
         created_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at          DATETIME DEFAULT CURRENT_TIMESTAMP
     );

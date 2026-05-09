@@ -17,6 +17,9 @@ export interface JarvisConfig {
     sortByNotifications: boolean;
     localSortByNotifs: boolean;
     localRepoSortKey: 'name' | 'scanned' | 'notifs';
+    dashboardDefaultFilter?: 'all' | 'healthy' | 'warnings' | 'notifications' | 'human-notifications' | 'failed-runs';
+    dashboardSortMode?: 'attention' | 'local-activity' | 'remote-activity';
+    dashboardNotifSort?: 'count' | 'name';
   };
 }
 

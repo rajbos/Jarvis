@@ -216,6 +216,8 @@ contextBridge.exposeInMainWorld('jarvis', {
     ipcRenderer.invoke('groups:set-ruddr-workspace', workspace),
   groupsGetRuddrBudget: (projectName: string) =>
     ipcRenderer.invoke('groups:get-ruddr-budget', projectName),
+  groupsGetRuddrBudgetCache: () =>
+    ipcRenderer.invoke('groups:get-ruddr-budget-cache'),
 
   // OneDrive
   onedriveListRoots: () => ipcRenderer.invoke('onedrive:list-roots'),
