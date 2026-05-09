@@ -1,3 +1,4 @@
+/** @jsxImportSource preact */
 import { useState, useEffect } from 'preact/hooks';
 import type { Group, RuddrProjectMatch, RuddrBudget } from '../types';
 
@@ -327,7 +328,7 @@ function GroupCard(props: {
                             <span class="groups-dash-budget-lbl">left</span>
                           </div>
                         </div>
-                        {(budgetData[name].budget === '0' || budgetData[name].budget === 0) && (
+                        {budgetData[name].budget === '0' && (
                           <div class="groups-dash-budget-alerts">
                             <span class="groups-dash-budget-warn" title="No budget set for this project in Ruddr">⚠️ No budget set</span>
                           </div>
