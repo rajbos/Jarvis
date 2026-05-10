@@ -10,6 +10,7 @@ import type { Group, RuddrProjectMatch, RuddrBudget, RuddrProjectInfo } from '..
 export function GroupsDashboardPanel() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
+  const [detailsLoading, setDetailsLoading] = useState(false);
   const [budgetData, setBudgetData] = useState<Record<string, RuddrBudget>>({});
   const [budgetChecking, setBudgetChecking] = useState<string | null>(null);
   const [newRuddrProjects, setNewRuddrProjects] = useState<Array<{ name: string; path: string }>>([]);
@@ -87,8 +88,13 @@ export function GroupsDashboardPanel() {
   }, []);
 
   const handleRefresh = async () => {
-    // Sync the Ruddr project list first (detect new projects, persist to DB)
+    // Sync the Ruddr project list first (detect new projects, persist to DB).
+    // Also triggers refreshLinkedProjectDetails in the background for any projects
+    // missing note or cloud folder URL.
     window.jarvis.groupsSyncRuddrCacheNow().catch(() => { /* non-fatal */ });
+    // Show a fetching indicator on note/cloud folder fields while the background
+    // scrape runs (cleared when the main process fires project-details-refreshed).
+    setDetailsLoading(true);
     // Re-fetch budget for every currently linked Ruddr project across all cards.
     const allProjectNames = groups.flatMap((g) => g.ruddrProjectNames);
     if (allProjectNames.length === 0) return;
@@ -177,6 +183,7 @@ export function GroupsDashboardPanel() {
         <div class="groups-dash-grid">
           {groups.map((group) => (
             <GroupCard key={group.id} group={group} onRuddrLinked={handleRuddrLinked}
+              detailsLoading={detailsLoading}
               budgetData={budgetData} setBudgetData={setBudgetData}
               budgetChecking={budgetChecking} setBudgetChecking={setBudgetChecking} />
           ))}
@@ -191,6 +198,7 @@ export function GroupsDashboardPanel() {
 function GroupCard(props: {
   group: Group;
   onRuddrLinked: (groupId: number, names: string[]) => void;
+  detailsLoading: boolean;
   budgetData: Record<string, RuddrBudget>;
   setBudgetData: (fn: (prev: Record<string, RuddrBudget>) => Record<string, RuddrBudget>) => void;
   budgetChecking: string | null;
@@ -199,6 +207,7 @@ function GroupCard(props: {
   const {
     group,
     onRuddrLinked,
+    detailsLoading,
     budgetData,
     setBudgetData,
     budgetChecking,
@@ -239,6 +248,7 @@ function GroupCard(props: {
   // Re-fetch project info when the background refresh updates note/cloud folder data
   useEffect(() => {
     const unsub = window.jarvis.onRuddrProjectDetailsRefreshed(() => {
+      setDetailsLoading(false);
       const names = group.ruddrProjectNames ?? [];
       for (const name of names) {
         window.jarvis.groupsGetRuddrProjectInfo(name)
@@ -413,10 +423,14 @@ function GroupCard(props: {
                   {projectInfo[name]
                     ? (projectInfo[name].note
                       ? <span class="groups-dash-note-text">{projectInfo[name].note}</span>
-                      : <span class="groups-dash-note-empty" title="No note set for this project">❗ No note set</span>)
+                      : (detailsLoading
+                        ? <span class="groups-dash-note-empty" title="Fetching note from Ruddr…">🔄 Fetching note…</span>
+                        : <span class="groups-dash-note-empty" title="No note set for this project">❗ No note set</span>))
                     : null}
                   {projectInfo[name] && !projectInfo[name].cloudFolderUrl && (
-                    <span class="groups-dash-note-empty" title="No cloud folder linked in Ruddr">☁️ No cloud folder</span>
+                    detailsLoading
+                      ? <span class="groups-dash-note-empty" title="Fetching cloud folder from Ruddr…">🔄 Fetching cloud folder…</span>
+                      : <span class="groups-dash-note-empty" title="No cloud folder linked in Ruddr">☁️ No cloud folder</span>
                   )}
                 </div>
                 {budgetData[name] && (

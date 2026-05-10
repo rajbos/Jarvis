@@ -241,8 +241,14 @@ async function refreshLinkedProjectDetails(db: SqlJsDatabase): Promise<void> {
         ? entry.path.replace('/portfolio/projects/', '/portfolio/projects/edit/')
         : entry.path;
       const editUrl = `https://www.ruddr.io${editPath}`;
+      console.log(`[Groups] Refreshing "${entry.name}" → ${editUrl}`);
+
       const navResp = await sendCommand({ type: 'navigate', payload: { url: editUrl } });
-      if (!navResp.ok) continue;
+      console.log(`[Groups]   nav ok=${navResp.ok} data=${JSON.stringify(navResp.data)}`);
+      if (!navResp.ok) {
+        console.warn(`[Groups]   nav failed for "${entry.name}", skipping`);
+        continue;
+      }
 
       const navData = navResp.data as { url?: string; tabId?: number } | null;
       if ((navData?.url ?? '').includes('/login')) {
@@ -250,6 +256,7 @@ async function refreshLinkedProjectDetails(db: SqlJsDatabase): Promise<void> {
         break;
       }
 
+      console.log(`[Groups]   Sending read-form-fields (tabId=${navData?.tabId})`);
       const fieldsResp = await sendCommand({
         type: 'read-form-fields',
         tabId: navData?.tabId,
@@ -258,11 +265,16 @@ async function refreshLinkedProjectDetails(db: SqlJsDatabase): Promise<void> {
           waitMs: 4000,
         },
       });
-      if (!fieldsResp.ok) continue;
+      console.log(`[Groups]   fields ok=${fieldsResp.ok} data=${JSON.stringify(fieldsResp.data)} error=${fieldsResp.error ?? ''}`);
+      if (!fieldsResp.ok) {
+        console.warn(`[Groups]   read-form-fields failed for "${entry.name}": ${fieldsResp.error ?? 'unknown'}, skipping`);
+        continue;
+      }
 
       const raw = fieldsResp.data as Record<string, string | null> | null;
       const note = raw?.['textarea[name="description"]'] ?? null;
       const cloudFolderUrl = raw?.['input[name="cloudFolderUrl"]'] ?? null;
+      console.log(`[Groups]   note=${note ? `"${note.slice(0, 60)}…"` : 'null'}  cloudFolderUrl=${cloudFolderUrl ?? 'null'}`);
 
       if (note !== null || cloudFolderUrl !== null) {
         try {
@@ -278,7 +290,10 @@ async function refreshLinkedProjectDetails(db: SqlJsDatabase): Promise<void> {
           }
           saveDatabase();
           updated = true;
+          console.log(`[Groups]   DB updated for "${entry.name}"`);
         } catch { /* non-fatal */ }
+      } else {
+        console.log(`[Groups]   No values found for "${entry.name}" — both fields null`);
       }
     } catch (err) {
       console.warn(

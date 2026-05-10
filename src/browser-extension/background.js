@@ -180,7 +180,9 @@ async function handleCommand(rawData) {
     }
     sendResponse({ id, ok: true, data });
   } catch (err) {
-    sendResponse({ id, ok: false, error: err.message ?? String(err) });
+    const errMsg = err.message ?? String(err);
+    console.error(`[JarvisBridge] Command "${type}" failed:`, errMsg, err);
+    sendResponse({ id, ok: false, error: errMsg });
   }
 }
 
@@ -522,13 +524,22 @@ async function cmdReadFormFields(tabId, payload) {
   if (!Array.isArray(selectors) || selectors.length === 0) throw new Error('selectors array is required');
   const targetTabId = await getTargetTabId(tabId);
 
-  const results = await chrome.scripting.executeScript({
-    target: { tabId: targetTabId },
-    func: readFormFields,
-    args: [selectors, waitMs],
-  });
+  let results;
+  try {
+    results = await chrome.scripting.executeScript({
+      target: { tabId: targetTabId },
+      func: readFormFields,
+      args: [selectors, waitMs],
+    });
+  } catch (scriptErr) {
+    console.error('[JarvisBridge] executeScript(readFormFields) threw:', scriptErr?.message ?? String(scriptErr));
+    // Re-throw with a clearer message so the caller knows the exact Chrome error.
+    throw new Error(`executeScript failed: ${scriptErr?.message ?? String(scriptErr)}`);
+  }
 
-  return results[0]?.result ?? null;
+  const result = results[0]?.result;
+  console.log('[JarvisBridge] readFormFields result:', JSON.stringify(result));
+  return result ?? null;
 }
 async function cmdFill(tabId, payload) {
   const { selector, value } = payload;
@@ -714,11 +725,17 @@ async function executeInstructions(instructions, testMode) {
 /**
  * Read the .value of form fields (input, textarea, select) matching given CSS selectors.
  * Polls up to waitMs for elements to appear (handles React async rendering / drawer animations).
+ * Scrolls each element into view before reading it (some fields are below the fold).
  * Returns an object keyed by selector with the element's current value, or null if not found.
  */
 async function readFormFields(selectors, waitMs) {
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const result = {};
+
+  // Scroll to the bottom of the page first — some React forms only render
+  // off-screen fields after the page has been scrolled to reveal them.
+  window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+  await wait(600);
 
   // Poll until at least one element appears (any of the provided selectors).
   const combinedSelector = selectors.join(', ');
@@ -738,6 +755,9 @@ async function readFormFields(selectors, waitMs) {
   for (const selector of selectors) {
     const el = document.querySelector(selector);
     if (el) {
+      // Scroll the specific element into view so React virtualized lists render it.
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      await wait(400);
       result[selector] = el.value ?? el.textContent?.trim() ?? null;
     } else {
       result[selector] = null;
