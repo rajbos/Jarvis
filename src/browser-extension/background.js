@@ -478,6 +478,26 @@ async function scrapeStatsByLabel(waitMs) {
       if (value) stats[label] = value;
     }
   });
+
+  // Also look for cloud storage folder links anywhere on the page.
+  // We capture the first link matching a known cloud provider and store it
+  // under the special key '_cloud_folder_url'.
+  const cloudPatterns = [
+    'onedrive.live.com',
+    'sharepoint.com',
+    'drive.google.com',
+    'dropbox.com',
+    '1drv.ms',
+  ];
+  const allAnchors = Array.from(document.querySelectorAll('a[href]'));
+  const cloudAnchor = allAnchors.find((a) => {
+    const href = a.getAttribute('href') || '';
+    return cloudPatterns.some((p) => href.includes(p));
+  });
+  if (cloudAnchor) {
+    stats['_cloud_folder_url'] = cloudAnchor.getAttribute('href') || '';
+  }
+
   return stats;
 }
 

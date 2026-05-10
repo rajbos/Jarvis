@@ -286,6 +286,16 @@ export function getSchema(): string {
     );
     CREATE INDEX IF NOT EXISTS idx_onedrive_files_folder ON onedrive_files(folder_id);
 
+    -- Ruddr project list cache (persisted across restarts)
+    CREATE TABLE IF NOT EXISTS ruddr_projects (
+        name             TEXT NOT NULL,
+        path             TEXT NOT NULL,
+        note             TEXT,
+        cloud_folder_url TEXT,
+        cached_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (path)
+    );
+
     -- Browser companion: reusable automation skills
     CREATE TABLE IF NOT EXISTS browser_skills (
         id                INTEGER PRIMARY KEY AUTOINCREMENT,

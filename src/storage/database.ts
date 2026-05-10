@@ -87,7 +87,7 @@ function initializeSchema(database: SqlJsDatabase): void {
   if (userVersion === 0) {
     database.run(getSchema());
     seedBuiltInAgents(database);
-    database.run('PRAGMA user_version = 19');
+    database.run('PRAGMA user_version = 21');
   }
 
   if (userVersion === 1) {
@@ -435,6 +435,26 @@ function initializeSchema(database: SqlJsDatabase): void {
     // Migration v18 → v19: add ruddr_project_name to groups for Ruddr project linking
     database.run('ALTER TABLE groups ADD COLUMN ruddr_project_name TEXT');
     database.run('PRAGMA user_version = 19');
+  }
+
+  if (userVersion === 19) {
+    // Migration v19 → v20: create ruddr_projects cache table
+    database.run(`
+      CREATE TABLE IF NOT EXISTS ruddr_projects (
+        name      TEXT NOT NULL,
+        path      TEXT NOT NULL,
+        note      TEXT,
+        cached_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (path)
+      )
+    `);
+    database.run('PRAGMA user_version = 20');
+  }
+
+  if (userVersion === 20) {
+    // Migration v20 → v21: add cloud_folder_url to ruddr_projects
+    database.run('ALTER TABLE ruddr_projects ADD COLUMN cloud_folder_url TEXT');
+    database.run('PRAGMA user_version = 21');
   }
 }
 
