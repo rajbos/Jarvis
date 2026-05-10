@@ -235,8 +235,13 @@ async function refreshLinkedProjectDetails(db: SqlJsDatabase): Promise<void> {
 
   for (const entry of toRefresh) {
     try {
-      const overviewUrl = `https://www.ruddr.io${entry.path}/overview`;
-      const navResp = await sendCommand({ type: 'navigate', payload: { url: overviewUrl } });
+      // The edit page URL has 'edit/' inserted after '/portfolio/projects/'
+      // e.g. /app/ws/portfolio/projects/client/project → /app/ws/portfolio/projects/edit/client/project
+      const editPath = entry.path.includes('/portfolio/projects/')
+        ? entry.path.replace('/portfolio/projects/', '/portfolio/projects/edit/')
+        : entry.path;
+      const editUrl = `https://www.ruddr.io${editPath}`;
+      const navResp = await sendCommand({ type: 'navigate', payload: { url: editUrl } });
       if (!navResp.ok) continue;
 
       const navData = navResp.data as { url?: string; tabId?: number } | null;
@@ -245,16 +250,19 @@ async function refreshLinkedProjectDetails(db: SqlJsDatabase): Promise<void> {
         break;
       }
 
-      const statsResp = await sendCommand({
-        type: 'scrape-stats',
+      const fieldsResp = await sendCommand({
+        type: 'read-form-fields',
         tabId: navData?.tabId,
-        payload: { waitMs: 3000 },
+        payload: {
+          selectors: ['textarea[name="description"]', 'input[name="cloudFolderUrl"]'],
+          waitMs: 4000,
+        },
       });
-      if (!statsResp.ok) continue;
+      if (!fieldsResp.ok) continue;
 
-      const raw = statsResp.data as Record<string, string> | null;
-      const note = raw?.['Notes'] ?? raw?.['Note'] ?? raw?.['Description'] ?? null;
-      const cloudFolderUrl = raw?.['_cloud_folder_url'] ?? null;
+      const raw = fieldsResp.data as Record<string, string | null> | null;
+      const note = raw?.['textarea[name="description"]'] ?? null;
+      const cloudFolderUrl = raw?.['input[name="cloudFolderUrl"]'] ?? null;
 
       if (note !== null || cloudFolderUrl !== null) {
         try {
@@ -657,6 +665,10 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
     ruddrProjectsCacheTime = 0;
     const err = await ensureRuddrCache(db);
     if (err) return { ok: false, error: err };
+    // Fire-and-forget: refresh note/cloud folder from the edit page for linked projects.
+    refreshLinkedProjectDetails(db).catch((e: unknown) =>
+      console.warn('[Groups] Manual sync: project details refresh failed:', e instanceof Error ? e.message : String(e)),
+    );
     return { ok: true, count: ruddrProjectsCache?.length ?? 0 };
   });
 

@@ -17,6 +17,7 @@ export interface BridgeCommand {
     | 'extract'
     | 'scroll-extract'
     | 'scrape-stats'
+    | 'read-form-fields'
     | 'click'
     | 'fill'
     | 'screenshot'

@@ -154,6 +154,9 @@ async function handleCommand(rawData) {
       case 'scrape-stats':
         data = await cmdScrapeStats(tabId, payload);
         break;
+      case 'read-form-fields':
+        data = await cmdReadFormFields(tabId, payload);
+        break;
       case 'click':
         data = await cmdClick(tabId, payload);
         break;
@@ -514,7 +517,19 @@ async function cmdClick(tabId, payload) {
 
   return results[0]?.result ?? null;
 }
+async function cmdReadFormFields(tabId, payload) {
+  const { selectors = [], waitMs = 3000 } = payload;
+  if (!Array.isArray(selectors) || selectors.length === 0) throw new Error('selectors array is required');
+  const targetTabId = await getTargetTabId(tabId);
 
+  const results = await chrome.scripting.executeScript({
+    target: { tabId: targetTabId },
+    func: readFormFields,
+    args: [selectors, waitMs],
+  });
+
+  return results[0]?.result ?? null;
+}
 async function cmdFill(tabId, payload) {
   const { selector, value } = payload;
   if (!selector) throw new Error('selector is required');
@@ -694,6 +709,42 @@ async function executeInstructions(instructions, testMode) {
   }
 
   return { steps: results, testMode };
+}
+
+/**
+ * Read the .value of form fields (input, textarea, select) matching given CSS selectors.
+ * Polls up to waitMs for elements to appear (handles React async rendering / drawer animations).
+ * Returns an object keyed by selector with the element's current value, or null if not found.
+ */
+async function readFormFields(selectors, waitMs) {
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const result = {};
+
+  // Poll until at least one element appears (any of the provided selectors).
+  const combinedSelector = selectors.join(', ');
+  let ready = document.querySelector(combinedSelector) !== null;
+  if (!ready) {
+    const pollInterval = Math.max(100, waitMs / 20);
+    const maxAttempts = Math.ceil(waitMs / pollInterval);
+    for (let i = 0; i < maxAttempts && !ready; i++) {
+      await wait(pollInterval);
+      ready = document.querySelector(combinedSelector) !== null;
+    }
+  }
+
+  // Extra settle time for CSS animations (e.g. drawer-appear-done classes).
+  await wait(500);
+
+  for (const selector of selectors) {
+    const el = document.querySelector(selector);
+    if (el) {
+      result[selector] = el.value ?? el.textContent?.trim() ?? null;
+    } else {
+      result[selector] = null;
+    }
+  }
+
+  return result;
 }
 
 /**
