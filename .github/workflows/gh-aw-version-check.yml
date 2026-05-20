@@ -1,0 +1,131 @@
+name: "gh-aw Version Drift Check"
+
+on:
+  schedule:
+    - cron: '0 9 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check-version-drift:
+    runs-on: ubuntu-latest
+    if: ${{ !github.event.repository.fork }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Check for gh-aw version drift
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # Find all gh-aw lock files
+          mapfile -t LOCK_FILES < <(find .github/workflows -name "*.lock.yml" 2>/dev/null | sort)
+
+          if [ ${#LOCK_FILES[@]} -eq 0 ]; then
+            echo "No lock files found, nothing to check."
+            exit 0
+          fi
+
+          # Get the latest released gh-aw-actions version
+          LATEST_VERSION=$(gh release list --repo github/gh-aw-actions --limit 1 --json tagName --jq '.[0].tagName')
+          if [ -z "$LATEST_VERSION" ]; then
+            echo "Could not determine latest gh-aw-actions version. Exiting."
+            exit 1
+          fi
+          echo "Latest gh-aw-actions version: $LATEST_VERSION"
+
+          # Examine each lock file and collect those with outdated compiler versions
+          AFFECTED_FILES=()
+          OUTDATED_VERSIONS=()
+
+          for LOCK_FILE in "${LOCK_FILES[@]}"; do
+            # Extract compiler_version from the gh-aw-metadata comment line
+            COMPILER_VER=$(grep -o '"compiler_version":"[^"]*"' "$LOCK_FILE" 2>/dev/null | head -1 | sed 's/"compiler_version":"//;s/"//')
+
+            if [ -z "$COMPILER_VER" ]; then
+              echo "$LOCK_FILE: no compiler_version found, skipping."
+              continue
+            fi
+
+            echo "$LOCK_FILE: compiler_version=$COMPILER_VER"
+
+            if [ "$COMPILER_VER" != "$LATEST_VERSION" ]; then
+              AFFECTED_FILES+=("$LOCK_FILE")
+              OUTDATED_VERSIONS+=("$COMPILER_VER")
+            fi
+          done
+
+          if [ ${#AFFECTED_FILES[@]} -eq 0 ]; then
+            echo "No version drift detected. All lock files are up to date with $LATEST_VERSION."
+            exit 0
+          fi
+
+          echo "Version drift detected in ${#AFFECTED_FILES[@]} file(s)."
+
+          # Determine the compiler version label for the issue title
+          # Use the single version if all affected files share one; otherwise "various"
+          UNIQUE_VERSIONS=($(printf '%s\n' "${OUTDATED_VERSIONS[@]}" | sort -u))
+          if [ ${#UNIQUE_VERSIONS[@]} -eq 1 ]; then
+            COMPILER_LABEL="${UNIQUE_VERSIONS[0]}"
+          else
+            COMPILER_LABEL="various"
+          fi
+
+          ISSUE_TITLE="chore: gh-aw lock files are out of date (compiler ${COMPILER_LABEL}, latest ${LATEST_VERSION})"
+
+          # Check idempotency: skip if an open issue with the same title already exists
+          EXISTING_COUNT=$(gh issue list \
+            --state open \
+            --search "chore: gh-aw lock files are out of date in:title" \
+            --json title \
+            --jq --arg t "$ISSUE_TITLE" '[.[] | select(.title == $t)] | length')
+
+          if [ "${EXISTING_COUNT:-0}" -gt 0 ]; then
+            echo "Open issue already exists: '$ISSUE_TITLE'. Skipping."
+            exit 0
+          fi
+
+          # Ensure the 'maintenance' label exists (ignore error if it already does)
+          gh label create maintenance \
+            --description "Routine maintenance tasks" \
+            --color "0075ca" 2>/dev/null || true
+
+          # Build the affected-files list for the issue body
+          FILE_LIST=""
+          for i in "${!AFFECTED_FILES[@]}"; do
+            FILE_LIST="${FILE_LIST}- \`${AFFECTED_FILES[$i]}\` (compiler: \`${OUTDATED_VERSIONS[$i]}\`)"$'\n'
+          done
+
+          # Create the issue
+          gh issue create \
+            --title "$ISSUE_TITLE" \
+            --label "maintenance" \
+            --body "## gh-aw Lock File Version Drift Detected
+
+The following lock file(s) were compiled with an older version of \`gh-aw\` than the latest available release:
+
+${FILE_LIST}
+### Details
+
+| | Version |
+|---|---|
+| Compiler version in lock file(s) | \`${COMPILER_LABEL}\` |
+| Latest \`gh-aw-actions\` release | \`${LATEST_VERSION}\` |
+
+### Fix
+
+Run the following commands to upgrade the compiler extension and regenerate the lock files:
+
+\`\`\`bash
+gh extension upgrade gh-aw
+gh aw compile
+\`\`\`
+
+Then commit and push the regenerated lock files."
+
+          echo "Issue created: $ISSUE_TITLE"
