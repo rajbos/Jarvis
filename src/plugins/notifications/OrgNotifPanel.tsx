@@ -40,6 +40,8 @@ interface OrgNotifPanelProps {
 
 export function OrgNotifPanel({ title, notifications, loading, onClose, onRefresh, refreshing, onDismiss }: OrgNotifPanelProps) {
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; notifId: string } | null>(null);
+  const [closedByMeIds, setClosedByMeIds] = useState<string[]>([]);
+  const [dismissingClosed, setDismissingClosed] = useState(false);
 
   useEffect(() => {
     if (!ctxMenu) return;
@@ -48,10 +50,64 @@ export function OrgNotifPanel({ title, notifications, loading, onClose, onRefres
     return () => window.removeEventListener('mousedown', close);
   }, [ctxMenu]);
 
+  // Check which issue notifications are for issues closed by the current user
+  useEffect(() => {
+    if (loading) return;
+    const issueNotifs = notifications.filter((n) => n.subject_type === 'Issue' && n.subject_url);
+    if (issueNotifs.length === 0) { setClosedByMeIds([]); return; }
+
+    let cancelled = false;
+    setClosedByMeIds([]);
+
+    const run = async () => {
+      const ids: string[] = [];
+      const byUrl = new Map<string, typeof issueNotifs>();
+      for (const n of issueNotifs) {
+        if (!n.subject_url) continue;
+        if (!byUrl.has(n.subject_url)) byUrl.set(n.subject_url, []);
+        byUrl.get(n.subject_url)!.push(n);
+      }
+
+      const entries = [...byUrl.entries()];
+      const CONCURRENCY = 6;
+      let next = 0;
+      const worker = async () => {
+        while (next < entries.length) {
+          const idx = next++;
+          const [url, notifs] = entries[idx];
+          try {
+            const result = await window.jarvis.githubGetIssueState(url);
+            if (cancelled) return;
+            if (result?.state === 'closed' && result.closedByMe) {
+              ids.push(...notifs.map((n) => n.id));
+            }
+          } catch { /* skip individual issue */ }
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(CONCURRENCY, entries.length) }, worker));
+      if (!cancelled) setClosedByMeIds(ids);
+    };
+
+    void run();
+    return () => { cancelled = true; };
+  }, [notifications, loading]);
+
   const handleDismiss = async (id: string) => {
     setCtxMenu(null);
     await window.jarvis.dismissNotification(id);
     onDismiss?.(id);
+  };
+
+  const handleDismissClosedByMe = async () => {
+    setDismissingClosed(true);
+    for (const id of closedByMeIds) {
+      try {
+        await window.jarvis.dismissNotification(id);
+        onDismiss?.(id);
+      } catch { /* skip */ }
+    }
+    setClosedByMeIds([]);
+    setDismissingClosed(false);
   };
 
   // Group by repo
@@ -87,6 +143,27 @@ export function OrgNotifPanel({ title, notifications, loading, onClose, onRefres
       )}
       {!loading && notifications.length === 0 && (
         <div style={{ color: '#99a', fontSize: '0.85rem', padding: '0.5rem' }}>No unread notifications</div>
+      )}
+
+      {!loading && closedByMeIds.length > 0 && (
+        <div class="dash-recoverable-banner">
+          <span class="dash-recoverable-icon">{'✓'}</span>
+          <div class="dash-recoverable-body">
+            <span class="dash-recoverable-title">Issues you closed</span>
+            <span class="dash-recoverable-detail">
+              {`${closedByMeIds.length} notification${closedByMeIds.length !== 1 ? 's' : ''} for issues closed by you`}
+            </span>
+          </div>
+          <button
+            class={`dash-recoverable-btn${dismissingClosed ? ' dash-recoverable-btn--busy' : ''}`}
+            disabled={dismissingClosed}
+            onClick={() => void handleDismissClosedByMe()}
+          >
+            {dismissingClosed
+              ? <span class="dismiss-spinner" />
+              : `Dismiss ${closedByMeIds.length}`}
+          </button>
+        </div>
       )}
 
       {!loading && Array.from(groups.entries()).map(([repoFullName, items]) => (
