@@ -1125,6 +1125,17 @@ function BackgroundStatusBar({
     return '#4caf50';                            // green
   }
 
+  // Helper: human-readable time until rate limit reset
+  function formatResetIn(resetUnixSec: number): string {
+    const msLeft = resetUnixSec * 1000 - Date.now();
+    if (msLeft <= 0) return 'resets soon';
+    const totalMins = Math.ceil(msLeft / 60_000);
+    if (totalMins < 60) return `resets in ${totalMins}m`;
+    const hours = Math.floor(totalMins / 60);
+    const mins = totalMins % 60;
+    return mins > 0 ? `resets in ${hours}h ${mins}m` : `resets in ${hours}h`;
+  }
+
   // Build badges for OAuth and PAT sources (only when configured)
   const oauthBadge = rateLimit?.oauth.configured ? rateLimit.oauth : null;
   const patBadge = rateLimit?.pat.configured ? rateLimit.pat : null;
@@ -1152,7 +1163,7 @@ function BackgroundStatusBar({
             >
               {oauthBadge.error || !oauthBadge.resource
                 ? '⚡ OAuth –'
-                : `⚡ OAuth ${oauthBadge.resource.remaining.toLocaleString()}/${oauthBadge.resource.limit.toLocaleString()}`}
+                : `⚡ OAuth ${oauthBadge.resource.remaining.toLocaleString()}/${oauthBadge.resource.limit.toLocaleString()}${oauthBadge.resource.remaining < 500 ? ` · ${formatResetIn(oauthBadge.resource.reset)}` : ''}`}
             </span>
           )}
           {oauthBadge && patBadge && (
@@ -1168,7 +1179,7 @@ function BackgroundStatusBar({
             >
               {patBadge.error || !patBadge.resource
                 ? '⚡ PAT –'
-                : `⚡ PAT ${patBadge.resource.remaining.toLocaleString()}/${patBadge.resource.limit.toLocaleString()}`}
+                : `⚡ PAT ${patBadge.resource.remaining.toLocaleString()}/${patBadge.resource.limit.toLocaleString()}${patBadge.resource.remaining < 500 ? ` · ${formatResetIn(patBadge.resource.reset)}` : ''}`}
             </span>
           )}
         </div>
