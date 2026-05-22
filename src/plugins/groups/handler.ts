@@ -698,4 +698,12 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
     if (dbEntry) return { ok: true, name: dbEntry.name, path: dbEntry.path, note: dbEntry.note ?? null, cloudFolderUrl: dbEntry.cloud_folder_url ?? null };
     return { ok: false, error: 'Project not found in cache' };
   });
+
+  ipcMain.handle('groups:list-ruddr-projects', () => {
+    const projects = loadRuddrProjectsFromDb(db);
+    return {
+      ok: true,
+      projects: projects.map((p) => ({ name: p.name, path: p.path, discoveredAt: p.discovered_at ?? null })),
+    };
+  });
 }

@@ -144,6 +144,7 @@ const EXPECTED_CHANNELS = [
   'groups:get-ruddr-budget-cache',
   'groups:sync-ruddr-cache-now',
   'groups:get-ruddr-project-info',
+  'groups:list-ruddr-projects',
   // onedrive plugin
   'onedrive:list-roots',
   'onedrive:browse-folder',

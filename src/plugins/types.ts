@@ -2370,6 +2370,7 @@ export interface JarvisApi {
 
   groupsGetRuddrProjectInfo(projectName: string): Promise<{ ok: boolean; name?: string; path?: string; note?: string | null; cloudFolderUrl?: string | null; error?: string }>;
 
+  groupsListRuddrProjects(): Promise<{ ok: boolean; projects: Array<{ name: string; path: string; discoveredAt: string | null }> }>;
 
 
   groupsGetRuddrWorkspace(): Promise<{ ok: boolean; workspace: string }>;

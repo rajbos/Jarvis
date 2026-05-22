@@ -1,6 +1,7 @@
 /** @jsxImportSource preact */
-import { useState, useEffect } from 'preact/hooks';
+import { useState, useEffect, useRef } from 'preact/hooks';
 import type { Group, RuddrProjectMatch, RuddrBudget, RuddrProjectInfo } from '../types';
+import { RuddrProjectsPanel } from './RuddrProjectsPanel';
 
 // ── GroupsDashboardPanel ──────────────────────────────────────────────────────
 // A high-level dashboard view over every configured group (project).
@@ -11,6 +12,8 @@ export function GroupsDashboardPanel() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
   const [detailsLoading, setDetailsLoading] = useState(false);
+  const [mainMaxWidth, setMainMaxWidth] = useState<number>(600);
+  const mainRef = useRef<HTMLDivElement>(null);
   const [budgetData, setBudgetData] = useState<Record<string, RuddrBudget>>({});
   const [budgetChecking, setBudgetChecking] = useState<string | null>(null);
   const [newRuddrProjects, setNewRuddrProjects] = useState<Array<{ name: string; path: string }>>([]);
@@ -48,6 +51,28 @@ export function GroupsDashboardPanel() {
       setLoading(false);
     }
   };
+
+  // Keep groups-dash-main width capped to the left of the fixed Ruddr panel.
+  // Measures real DOM positions so no magic numbers or 100vw assumptions are needed.
+  useEffect(() => {
+    const GAP = 19; // ~1.2rem visual gap between grid and panel
+    const recompute = () => {
+      const panel = document.querySelector('.ruddr-projects-panel') as HTMLElement | null;
+      if (!panel || !mainRef.current) return;
+      const panelLeft = panel.getBoundingClientRect().left;
+      const mainLeft  = mainRef.current.getBoundingClientRect().left;
+      setMainMaxWidth(Math.max(280, panelLeft - mainLeft - GAP));
+    };
+    // Defer initial measurement until both elements are painted
+    const raf = requestAnimationFrame(recompute);
+    window.addEventListener('resize', recompute);
+    window.addEventListener('ruddr-panel-resize', recompute);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('resize', recompute);
+      window.removeEventListener('ruddr-panel-resize', recompute);
+    };
+  }, []);
 
   useEffect(() => {
     loadData();
@@ -144,51 +169,57 @@ export function GroupsDashboardPanel() {
         </button>
       </div>
 
-      {/* ── New Ruddr project notification banners ── */}
-      {newRuddrProjects.length > 0 && (
-        <div class="groups-dash-new-projects">
-          {newRuddrProjects.map((p) => {
-            const editUrl = 'https://www.ruddr.io' + p.path.replace('/portfolio/projects/', '/portfolio/projects/edit/');
-            return (
-              <div class="groups-dash-new-project-banner" key={p.path}>
-                <span class="groups-dash-new-project-icon">🆕</span>
-                <span class="groups-dash-new-project-name">{p.name}</span>
-                <button
-                  class="groups-dash-new-project-edit"
-                  onClick={() => void window.jarvis.shellOpenUrl(editUrl)}
-                  title="Edit in Ruddr"
-                >Edit ↗</button>
-                <button
-                  class="groups-dash-new-project-dismiss"
-                  onClick={() => setNewRuddrProjects((prev) => prev.filter((x) => x.path !== p.path))}
-                  title="Dismiss"
-                >✕</button>
-              </div>
-            );
-          })}
-        </div>
-      )}
+      <div class="groups-dash-body">
+        <div class="groups-dash-main" ref={mainRef} style={{ maxWidth: `${mainMaxWidth}px`, overflow: 'hidden' }}>
+          {/* ── New Ruddr project notification banners ── */}
+          {newRuddrProjects.length > 0 && (
+            <div class="groups-dash-new-projects">
+              {newRuddrProjects.map((p) => {
+                const editUrl = 'https://www.ruddr.io' + p.path.replace('/portfolio/projects/', '/portfolio/projects/edit/');
+                return (
+                  <div class="groups-dash-new-project-banner" key={p.path}>
+                    <span class="groups-dash-new-project-icon">🆕</span>
+                    <span class="groups-dash-new-project-name">{p.name}</span>
+                    <button
+                      class="groups-dash-new-project-edit"
+                      onClick={() => void window.jarvis.shellOpenUrl(editUrl)}
+                      title="Edit in Ruddr"
+                    >Edit ↗</button>
+                    <button
+                      class="groups-dash-new-project-dismiss"
+                      onClick={() => setNewRuddrProjects((prev) => prev.filter((x) => x.path !== p.path))}
+                      title="Dismiss"
+                    >✕</button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
-      {loading && groups.length === 0 && (
-        <div class="dash-loading">Loading groups…</div>
-      )}
+          {loading && groups.length === 0 && (
+            <div class="dash-loading">Loading groups…</div>
+          )}
 
-      {!loading && groups.length === 0 && (
-        <div class="dash-empty">
-          No groups configured yet. Add groups in the <strong>Setup → Groups</strong> tab.
-        </div>
-      )}
+          {!loading && groups.length === 0 && (
+            <div class="dash-empty">
+              No groups configured yet. Add groups in the <strong>Setup → Groups</strong> tab.
+            </div>
+          )}
 
-      {groups.length > 0 && (
-        <div class="groups-dash-grid">
-          {groups.map((group) => (
-            <GroupCard key={group.id} group={group} onRuddrLinked={handleRuddrLinked}
-              detailsLoading={detailsLoading}
-              budgetData={budgetData} setBudgetData={setBudgetData}
-              budgetChecking={budgetChecking} setBudgetChecking={setBudgetChecking} />
-          ))}
+          {groups.length > 0 && (
+            <div class="groups-dash-grid">
+              {groups.map((group) => (
+                <GroupCard key={group.id} group={group} onRuddrLinked={handleRuddrLinked}
+                  detailsLoading={detailsLoading}
+                  budgetData={budgetData} setBudgetData={setBudgetData}
+                  budgetChecking={budgetChecking} setBudgetChecking={setBudgetChecking} />
+              ))}
+            </div>
+          )}
         </div>
-      )}
+
+        <RuddrProjectsPanel onGroupCreated={loadData} />
+      </div>
     </div>
   );
 }

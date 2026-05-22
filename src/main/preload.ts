@@ -218,6 +218,8 @@ contextBridge.exposeInMainWorld('jarvis', {
     ipcRenderer.invoke('groups:get-ruddr-cache'),
   groupsGetRuddrProjectInfo: (projectName: string) =>
     ipcRenderer.invoke('groups:get-ruddr-project-info', projectName),
+  groupsListRuddrProjects: () =>
+    ipcRenderer.invoke('groups:list-ruddr-projects'),
   groupsGetRuddrWorkspace: () =>
     ipcRenderer.invoke('groups:get-ruddr-workspace'),
   groupsSetRuddrWorkspace: (workspace: string) =>

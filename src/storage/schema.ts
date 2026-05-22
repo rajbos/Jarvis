@@ -293,6 +293,7 @@ export function getSchema(): string {
         note             TEXT,
         cloud_folder_url TEXT,
         cached_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
+        discovered_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (path)
     );
 

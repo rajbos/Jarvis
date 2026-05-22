@@ -87,7 +87,7 @@ function initializeSchema(database: SqlJsDatabase): void {
   if (userVersion === 0) {
     database.run(getSchema());
     seedBuiltInAgents(database);
-    database.run('PRAGMA user_version = 21');
+    database.run('PRAGMA user_version = 22');
   }
 
   if (userVersion === 1) {
@@ -455,6 +455,15 @@ function initializeSchema(database: SqlJsDatabase): void {
     // Migration v20 → v21: add cloud_folder_url to ruddr_projects
     database.run('ALTER TABLE ruddr_projects ADD COLUMN cloud_folder_url TEXT');
     database.run('PRAGMA user_version = 21');
+  }
+
+  if (userVersion === 21) {
+    // Migration v21 → v22: add discovered_at to ruddr_projects
+    // Use DEFAULT NULL (not CURRENT_TIMESTAMP) — SQLite/sql.js forbids non-constant
+    // defaults in ALTER TABLE. Existing rows get NULL; the value is filled in on the
+    // next Ruddr sync by the COALESCE upsert in saveRuddrProjectsToDb.
+    database.run(`ALTER TABLE ruddr_projects ADD COLUMN discovered_at DATETIME DEFAULT NULL`);
+    database.run('PRAGMA user_version = 22');
   }
 }
 
