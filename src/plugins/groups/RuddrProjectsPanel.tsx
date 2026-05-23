@@ -172,7 +172,6 @@ export function RuddrProjectsPanel(props: { onGroupCreated?: () => void }) {
                     value={newGroupName}
                     onInput={(e) => setNewGroupName((e.target as HTMLInputElement).value)}
                     placeholder="Group name"
-                    // eslint-disable-next-line jsx-a11y/no-autofocus
                     autofocus
                     disabled={creating}
                   />
