@@ -23,7 +23,7 @@
     "@joplin/onenote-converter": "^3.6.3",
     "@types/node": "^25.9.1",
     "@types/ws": "^8.18.1",
-    "@vitest/coverage-v8": "^4.1.6",
+    "@vitest/coverage-v8": "^4.1.7",
     "concurrently": "^9.2.1",
     "electron": "^42.2.0",
     "electron-builder": "^26.8.1",
