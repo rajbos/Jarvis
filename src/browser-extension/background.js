@@ -181,7 +181,7 @@ async function handleCommand(rawData) {
     sendResponse({ id, ok: true, data });
   } catch (err) {
     const errMsg = err.message ?? String(err);
-    console.error(`[JarvisBridge] Command "${type}" failed:`, errMsg, err);
+    console.error('[JarvisBridge] Command "%s" failed:', String(type), errMsg, err);
     sendResponse({ id, ok: false, error: errMsg });
   }
 }
