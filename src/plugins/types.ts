@@ -1716,6 +1716,13 @@ export interface RuddrProjectMatch {
 
 }
 
+export interface RuddrProjectInfo {
+  name: string;
+  path: string;
+  note: string | null;
+  cloudFolderUrl: string | null;
+}
+
 
 
 
@@ -2355,8 +2362,15 @@ export interface JarvisApi {
 
 
 
+  groupsSyncRuddrCacheNow(): Promise<{ ok: boolean; count?: number; error?: string }>;
+
   groupsGetRuddrCache(): Promise<{ ok: boolean; projects: string[] }>;
 
+
+
+  groupsGetRuddrProjectInfo(projectName: string): Promise<{ ok: boolean; name?: string; path?: string; note?: string | null; cloudFolderUrl?: string | null; error?: string }>;
+
+  groupsListRuddrProjects(): Promise<{ ok: boolean; projects: Array<{ name: string; path: string; discoveredAt: string | null }> }>;
 
 
   groupsGetRuddrWorkspace(): Promise<{ ok: boolean; workspace: string }>;
@@ -2372,6 +2386,12 @@ export interface JarvisApi {
 
 
   groupsGetRuddrBudgetCache(): Promise<{ ok: boolean; budgets: Record<string, RuddrBudget> }>;
+
+
+
+  onNewRuddrProjects(callback: (projects: Array<{ name: string; path: string }>) => void): () => void;
+
+  onRuddrProjectDetailsRefreshed(callback: () => void): () => void;
 
 
 

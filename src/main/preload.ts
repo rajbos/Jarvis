@@ -212,8 +212,14 @@ contextBridge.exposeInMainWorld('jarvis', {
     ipcRenderer.invoke('groups:remove-ruddr-project', groupId, projectName),
   groupsRefreshRuddrCache: () =>
     ipcRenderer.invoke('groups:refresh-ruddr-cache'),
+  groupsSyncRuddrCacheNow: () =>
+    ipcRenderer.invoke('groups:sync-ruddr-cache-now'),
   groupsGetRuddrCache: () =>
     ipcRenderer.invoke('groups:get-ruddr-cache'),
+  groupsGetRuddrProjectInfo: (projectName: string) =>
+    ipcRenderer.invoke('groups:get-ruddr-project-info', projectName),
+  groupsListRuddrProjects: () =>
+    ipcRenderer.invoke('groups:list-ruddr-projects'),
   groupsGetRuddrWorkspace: () =>
     ipcRenderer.invoke('groups:get-ruddr-workspace'),
   groupsSetRuddrWorkspace: (workspace: string) =>
@@ -267,6 +273,16 @@ contextBridge.exposeInMainWorld('jarvis', {
     const listener = (_event: unknown, message: string) => callback(message);
     ipcRenderer.on('app:background-status', listener);
     return () => { ipcRenderer.removeListener('app:background-status', listener); };
+  },
+  onNewRuddrProjects: (callback: (projects: Array<{ name: string; path: string }>) => void) => {
+    const listener = (_event: unknown, projects: Array<{ name: string; path: string }>) => callback(projects);
+    ipcRenderer.on('groups:new-ruddr-projects', listener);
+    return () => { ipcRenderer.removeListener('groups:new-ruddr-projects', listener); };
+  },
+  onRuddrProjectDetailsRefreshed: (callback: () => void) => {
+    const listener = () => callback();
+    ipcRenderer.on('groups:project-details-refreshed', listener);
+    return () => { ipcRenderer.removeListener('groups:project-details-refreshed', listener); };
   },
   // GitHub rate limit
   getGitHubRateLimit: () => ipcRenderer.invoke('github:get-rate-limit'),

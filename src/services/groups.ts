@@ -14,6 +14,80 @@ export function parseRuddrNames(raw: string | null): string[] {
   return [raw];
 }
 
+// ── Ruddr project cache (DB-persisted) ────────────────────────────────────────
+
+export interface RuddrProjectEntry { name: string; path: string; note?: string | null; cloud_folder_url?: string | null; discovered_at?: string | null; }
+
+/** Load all cached Ruddr projects from the database. */
+export function loadRuddrProjectsFromDb(db: SqlJsDatabase): RuddrProjectEntry[] {
+  const stmt = db.prepare('SELECT name, path, note, cloud_folder_url, discovered_at FROM ruddr_projects ORDER BY discovered_at DESC, name COLLATE NOCASE');
+  const results: RuddrProjectEntry[] = [];
+  try {
+    while (stmt.step()) {
+      const r = stmt.getAsObject() as { name: string; path: string; note: string | null; cloud_folder_url: string | null; discovered_at: string | null };
+      results.push({ name: r.name, path: r.path, note: r.note, cloud_folder_url: r.cloud_folder_url, discovered_at: r.discovered_at });
+    }
+  } finally {
+    stmt.free();
+  }
+  return results;
+}
+
+/** Persist the full Ruddr project list to the database (replaces all existing rows). */
+export function saveRuddrProjectsToDb(db: SqlJsDatabase, projects: RuddrProjectEntry[]): void {
+  // Upsert each project: preserve existing note, cloud_folder_url, and discovered_at on update.
+  // discovered_at is only set on first INSERT (COALESCE keeps the existing value on conflict).
+  for (const p of projects) {
+    db.run(
+      `INSERT INTO ruddr_projects (name, path, note, cloud_folder_url, cached_at, discovered_at)
+       VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
+       ON CONFLICT(path) DO UPDATE SET
+         name             = excluded.name,
+         cached_at        = excluded.cached_at,
+         note             = COALESCE(ruddr_projects.note, excluded.note),
+         cloud_folder_url = COALESCE(ruddr_projects.cloud_folder_url, excluded.cloud_folder_url),
+         discovered_at    = COALESCE(ruddr_projects.discovered_at, excluded.discovered_at)`,
+      [p.name, p.path, p.note ?? null, p.cloud_folder_url ?? null],
+    );
+  }
+  // Remove projects that no longer exist in Ruddr
+  if (projects.length > 0) {
+    db.run(
+      `DELETE FROM ruddr_projects WHERE path NOT IN (${projects.map(() => '?').join(',')})`,
+      projects.map((p) => p.path),
+    );
+  }
+}
+
+/** Update (or clear) the note for a single project identified by its URL path. */
+export function updateRuddrProjectNote(db: SqlJsDatabase, projectPath: string, note: string | null): void {
+  db.run(
+    `UPDATE ruddr_projects SET note = ? WHERE path = ?`,
+    [note, projectPath],
+  );
+}
+
+/** Update (or clear) the cloud folder URL for a single project identified by its URL path. */
+export function updateRuddrProjectCloudFolderUrl(db: SqlJsDatabase, projectPath: string, cloudFolderUrl: string | null): void {
+  db.run(
+    `UPDATE ruddr_projects SET cloud_folder_url = ? WHERE path = ?`,
+    [cloudFolderUrl, projectPath],
+  );
+}
+
+/** Look up a single project entry by name (case-insensitive). */
+export function lookupRuddrProject(db: SqlJsDatabase, name: string): RuddrProjectEntry | null {
+  const stmt = db.prepare('SELECT name, path, note, cloud_folder_url FROM ruddr_projects WHERE lower(name) = lower(?)');
+  stmt.bind([name]);
+  try {
+    if (!stmt.step()) return null;
+    const r = stmt.getAsObject() as { name: string; path: string; note: string | null; cloud_folder_url: string | null };
+    return { name: r.name, path: r.path, note: r.note, cloud_folder_url: r.cloud_folder_url };
+  } finally {
+    stmt.free();
+  }
+}
+
 // ── List ──────────────────────────────────────────────────────────────────────
 
 /** Return all groups with member counts. */

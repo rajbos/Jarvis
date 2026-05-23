@@ -154,6 +154,9 @@ async function handleCommand(rawData) {
       case 'scrape-stats':
         data = await cmdScrapeStats(tabId, payload);
         break;
+      case 'read-form-fields':
+        data = await cmdReadFormFields(tabId, payload);
+        break;
       case 'click':
         data = await cmdClick(tabId, payload);
         break;
@@ -177,7 +180,9 @@ async function handleCommand(rawData) {
     }
     sendResponse({ id, ok: true, data });
   } catch (err) {
-    sendResponse({ id, ok: false, error: err.message ?? String(err) });
+    const errMsg = err.message ?? String(err);
+    console.error('[JarvisBridge] Command "%s" failed:', String(type), errMsg, err);
+    sendResponse({ id, ok: false, error: errMsg });
   }
 }
 
@@ -478,6 +483,26 @@ async function scrapeStatsByLabel(waitMs) {
       if (value) stats[label] = value;
     }
   });
+
+  // Also look for cloud storage folder links anywhere on the page.
+  // We capture the first link matching a known cloud provider and store it
+  // under the special key '_cloud_folder_url'.
+  const cloudPatterns = [
+    'onedrive.live.com',
+    'sharepoint.com',
+    'drive.google.com',
+    'dropbox.com',
+    '1drv.ms',
+  ];
+  const allAnchors = Array.from(document.querySelectorAll('a[href]'));
+  const cloudAnchor = allAnchors.find((a) => {
+    const href = a.getAttribute('href') || '';
+    return cloudPatterns.some((p) => href.includes(p));
+  });
+  if (cloudAnchor) {
+    stats['_cloud_folder_url'] = cloudAnchor.getAttribute('href') || '';
+  }
+
   return stats;
 }
 
@@ -494,7 +519,28 @@ async function cmdClick(tabId, payload) {
 
   return results[0]?.result ?? null;
 }
+async function cmdReadFormFields(tabId, payload) {
+  const { selectors = [], waitMs = 3000 } = payload;
+  if (!Array.isArray(selectors) || selectors.length === 0) throw new Error('selectors array is required');
+  const targetTabId = await getTargetTabId(tabId);
 
+  let results;
+  try {
+    results = await chrome.scripting.executeScript({
+      target: { tabId: targetTabId },
+      func: readFormFields,
+      args: [selectors, waitMs],
+    });
+  } catch (scriptErr) {
+    console.error('[JarvisBridge] executeScript(readFormFields) threw:', scriptErr?.message ?? String(scriptErr));
+    // Re-throw with a clearer message so the caller knows the exact Chrome error.
+    throw new Error(`executeScript failed: ${scriptErr?.message ?? String(scriptErr)}`);
+  }
+
+  const result = results[0]?.result;
+  console.log('[JarvisBridge] readFormFields result:', JSON.stringify(result));
+  return result ?? null;
+}
 async function cmdFill(tabId, payload) {
   const { selector, value } = payload;
   if (!selector) throw new Error('selector is required');
@@ -674,6 +720,51 @@ async function executeInstructions(instructions, testMode) {
   }
 
   return { steps: results, testMode };
+}
+
+/**
+ * Read the .value of form fields (input, textarea, select) matching given CSS selectors.
+ * Polls up to waitMs for elements to appear (handles React async rendering / drawer animations).
+ * Scrolls each element into view before reading it (some fields are below the fold).
+ * Returns an object keyed by selector with the element's current value, or null if not found.
+ */
+async function readFormFields(selectors, waitMs) {
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const result = {};
+
+  // Scroll to the bottom of the page first — some React forms only render
+  // off-screen fields after the page has been scrolled to reveal them.
+  window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+  await wait(600);
+
+  // Poll until at least one element appears (any of the provided selectors).
+  const combinedSelector = selectors.join(', ');
+  let ready = document.querySelector(combinedSelector) !== null;
+  if (!ready) {
+    const pollInterval = Math.max(100, waitMs / 20);
+    const maxAttempts = Math.ceil(waitMs / pollInterval);
+    for (let i = 0; i < maxAttempts && !ready; i++) {
+      await wait(pollInterval);
+      ready = document.querySelector(combinedSelector) !== null;
+    }
+  }
+
+  // Extra settle time for CSS animations (e.g. drawer-appear-done classes).
+  await wait(500);
+
+  for (const selector of selectors) {
+    const el = document.querySelector(selector);
+    if (el) {
+      // Scroll the specific element into view so React virtualized lists render it.
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      await wait(400);
+      result[selector] = el.value ?? el.textContent?.trim() ?? null;
+    } else {
+      result[selector] = null;
+    }
+  }
+
+  return result;
 }
 
 /**

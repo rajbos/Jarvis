@@ -1,0 +1,662 @@
+
+> jarvis@0.1.0 test:coverage
+> vitest run --coverage
+
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.5 [39m[90mC:/Users/RobBos/code/repos/rajbos/Jarvis[39m
+      [2mCoverage enabled with [22m[33mv8[39m
+
+ [32m✓[39m tests/unit/onedrive.test.ts [2m([22m[2m19 tests[22m[2m)[22m[33m 636[2mms[22m[39m
+ [32m✓[39m tests/unit/encryption.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 371[2mms[22m[39m
+[90mstdout[2m | tests/unit/onenote-folder-integration.test.ts[2m > [22m[2mOneNote folder integration — full pipeline[2m > [22m[2mgroup "single-page"[2m > [22m[2mreads each .one file and returns a named section with pages
+[22m[39m  Section: "Untitled Section"  (1 page(s))
+    Page 1: "10:57 AM"  [Thursday, September 25, 2025]
+      ↳ Untitled Section Henry Heino ²`ą ²8ą test ²Àȝ
+
+ [32m✓[39m tests/unit/groups.test.ts [2m([22m[2m21 tests[22m[2m)[22m[33m 710[2mms[22m[39m
+[90mstdout[2m | tests/unit/onenote-folder-integration.test.ts[2m > [22m[2mOneNote folder integration — full pipeline[2m > [22m[2mgroup "onenote-2016"[2m > [22m[2mreads each .one file and returns pages with content
+[22m[39m  Section: "OneWithFileData"  (1 page(s))
+    Page 1: "W]8\[9"  [E:\Works\Protocol team\Test Suites\Package upgrade for 2019\FileSyncandWOPI\testing.docx]
+      ↳ V7"^a Xinwei Li (Shang Hai Wei Chuang Ruan Jian) XL(HWCRJ 2019t 17:06 n0ukD >Ā<resolutionId provider="AD" hash="FULNxf3G…
+
+[90mstdout[2m | tests/unit/onenote-folder-integration.test.ts[2m > [22m[2mOneNote folder integration — full pipeline[2m > [22m[2mcan scan both groups and produce a combined section summary
+[22m[39m
+── OneNote section summary ──────────────────────────────
+
+Group: "single-page"  (1 .one file(s) found)
+  Section: "Untitled Section"  (1 page(s))
+    Page 1: "10:57 AM"  [Thursday, September 25, 2025]
+      ↳ Untitled Section Henry Heino ²`ą ²8ą test ²Àȝ
+
+Group: "onenote-2016"  (1 .one file(s) found)
+  Section: "OneWithFileData"  (1 page(s))
+    Page 1: "W]8\[9"  [E:\Works\Protocol team\Test Suites\Package upgrade for 2019\FileSyncandWOPI\testing.docx]
+      ↳ V7"^a Xinwei Li (Shang Hai Wei Chuang Ruan Jian) XL(HWCRJ 2019t 17:06 n0ukD >Ā<resolutionId provider="AD" hash="FULNxf3G…
+
+─────────────────────────────────────────────────────────
+
+ [32m✓[39m tests/unit/onenote-folder-integration.test.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 381[2mms[22m[39m
+ [32m✓[39m tests/unit/github-workflows.test.ts [2m([22m[2m25 tests[22m[2m)[22m[33m 380[2mms[22m[39m
+[90mstdout[2m | tests/unit/github-oauth.test.ts[2m > [22m[2mpollForToken[2m > [22m[2mreturns null when authorization is pending
+[22m[39m[OAuth] pollForToken raw response: {"error":"authorization_pending"}
+
+[90mstdout[2m | tests/unit/github-oauth.test.ts[2m > [22m[2mpollForToken[2m > [22m[2mreturns null and adjusts interval on slow_down
+[22m[39m[OAuth] pollForToken raw response: {"error":"slow_down","interval":"10"}
+[OAuth] slow_down — new interval: [33m15000[39m ms
+
+[90mstdout[2m | tests/unit/github-oauth.test.ts[2m > [22m[2mpollForToken[2m > [22m[2mreturns the token on success
+[22m[39m[OAuth] pollForToken raw response: {"access_token":"gho_abc","token_type":"bearer","scope":"repo"}
+
+[90mstdout[2m | tests/unit/github-oauth.test.ts[2m > [22m[2mpollForToken[2m > [22m[2mthrows on OAuth error response
+[22m[39m[OAuth] pollForToken raw response: {"error":"expired_token","error_description":"The device code has expired"}
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mfetches orgs, org repos, and user repos then stores them
+[22m[39m[Discovery] Starting — fetching organizations…
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mfetches orgs, org repos, and user repos then stores them
+[22m[39m[Discovery] /user/orgs?per_page=100 — rate limit: 4998/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mfetches orgs, org repos, and user repos then stores them
+[22m[39m[Discovery] Found 1 organization(s)
+[Discovery] Fetching repos for org: org1
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mfetches orgs, org repos, and user repos then stores them
+[22m[39m[Discovery] /orgs/org1/repos?type=all&per_page=100 — rate limit: 4996/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mfetches orgs, org repos, and user repos then stores them
+[22m[39m[Discovery]   org1: 2 repos (total: 2)
+[Discovery] Fetching personal + collaborator + org-member repos…
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mfetches orgs, org repos, and user repos then stores them
+[22m[39m[Discovery] /user/repos?affiliation=owner,collaborator,organization_member&per_page=100 — rate limit: 4995/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mfetches orgs, org repos, and user repos then stores them
+[22m[39m[Discovery] Personal + collaborator + org-member repos: 2 (total: 4)
+[Discovery] Fetching starred repos…
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mfetches orgs, org repos, and user repos then stores them
+[22m[39m[Discovery] /user/starred?per_page=100 — rate limit: 4990/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mfetches orgs, org repos, and user repos then stores them
+[22m[39m[Discovery] Starred repos: 0
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mfetches orgs, org repos, and user repos then stores them
+[22m[39m[Discovery] Complete — 1 orgs, 4 repos
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mfollows pagination links
+[22m[39m[Discovery] Starting — fetching organizations…
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mfollows pagination links
+[22m[39m[Discovery] /user/orgs?per_page=100 — rate limit: 4999/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mfollows pagination links
+[22m[39m[Discovery] /user/orgs?per_page=100&page=2 — rate limit: 4998/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mfollows pagination links
+[22m[39m[Discovery] Found 2 organization(s)
+[Discovery] Fetching repos for org: paged-org
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mfollows pagination links
+[22m[39m[Discovery] /orgs/paged-org/repos?type=all&per_page=100 — rate limit: 4997/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mfollows pagination links
+[22m[39m[Discovery]   paged-org: 0 repos (total: 0)
+[Discovery] Fetching repos for org: paged-org-2
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mfollows pagination links
+[22m[39m[Discovery] /orgs/paged-org-2/repos?type=all&per_page=100 — rate limit: 4997/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mfollows pagination links
+[22m[39m[Discovery]   paged-org-2: 0 repos (total: 0)
+[Discovery] Fetching personal + collaborator + org-member repos…
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mfollows pagination links
+[22m[39m[Discovery] /user/repos?affiliation=owner,collaborator,organization_member&per_page=100 — rate limit: 4996/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mfollows pagination links
+[22m[39m[Discovery] Personal + collaborator + org-member repos: 0 (total: 0)
+[Discovery] Fetching starred repos…
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mfollows pagination links
+[22m[39m[Discovery] /user/starred?per_page=100 — rate limit: 4990/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mfollows pagination links
+[22m[39m[Discovery] Starred repos: 0
+
+[90mstdout[2m | tests/unit/github-auth-handler.test.ts[2m > [22m[2mGitHub Auth plugin — IPC handlers[2m > [22m[2mgithub:oauth-status[2m > [22m[2mreturns { authenticated: false } when no auth is stored
+[22m[39m[IPC] github:oauth-status called
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mfollows pagination links
+[22m[39m[Discovery] Complete — 2 orgs, 0 repos
+
+ [32m✓[39m tests/unit/github-oauth.test.ts [2m([22m[2m15 tests[22m[2m)[22m[33m 1085[2mms[22m[39m
+     [33m[2m✓[22m[39m should save and load an encrypted token [33m 327[2mms[22m[39m
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mcan be aborted mid-run
+[22m[39m[Discovery] Starting — fetching organizations…
+[Discovery] Starting — fetching organizations…
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mcan be aborted mid-run
+[22m[39m[Discovery] /user/orgs?per_page=100 — rate limit: 4999/5000
+[Discovery] /user/orgs?per_page=100 — rate limit: 4999/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mcan be aborted mid-run
+[22m[39m[Discovery] Found 3 organization(s)
+[Discovery] Fetching repos for org: org1
+[Discovery] Found 3 organization(s)
+[Discovery] Fetching repos for org: org1
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mcan be aborted mid-run
+[22m[39m[Discovery] /orgs/org1/repos?type=all&per_page=100 — rate limit: 4998/5000
+[Discovery] /orgs/org1/repos?type=all&per_page=100 — rate limit: 4998/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mcan be aborted mid-run
+[22m[39m[Discovery]   org1: 1 repos (total: 1)
+[Discovery] Fetching repos for org: org2
+[Discovery]   org1: 1 repos (total: 1)
+[Discovery] Fetching repos for org: org2
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mcan be aborted mid-run
+[22m[39m[Discovery] /orgs/org2/repos?type=all&per_page=100 — rate limit: 4998/5000
+[Discovery] /orgs/org2/repos?type=all&per_page=100 — rate limit: 4998/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mskips disabled orgs during discovery
+[22m[39m[Discovery] Starting — fetching organizations…
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mskips disabled orgs during discovery
+[22m[39m[Discovery] /user/orgs?per_page=100 — rate limit: 4998/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mskips disabled orgs during discovery
+[22m[39m[Discovery] Found 2 organization(s)
+[Discovery] Fetching repos for org: enabled-org
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mskips disabled orgs during discovery
+[22m[39m[Discovery] /orgs/enabled-org/repos?type=all&per_page=100 — rate limit: 4997/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mskips disabled orgs during discovery
+[22m[39m[Discovery]   enabled-org: 1 repos (total: 1)
+[Discovery] Fetching repos for org: disabled-org
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mskips disabled orgs during discovery
+[22m[39m[Discovery] /orgs/disabled-org/repos?type=all&per_page=100 — rate limit: 4996/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mskips disabled orgs during discovery
+[22m[39m[Discovery]   disabled-org: 1 repos (total: 2)
+[Discovery] Fetching personal + collaborator + org-member repos…
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mskips disabled orgs during discovery
+[22m[39m[Discovery] /user/repos?affiliation=owner,collaborator,organization_member&per_page=100 — rate limit: 4995/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mskips disabled orgs during discovery
+[22m[39m[Discovery] Personal + collaborator + org-member repos: 0 (total: 2)
+[Discovery] Fetching starred repos…
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mskips disabled orgs during discovery
+[22m[39m[Discovery] /user/starred?per_page=100 — rate limit: 4990/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mskips disabled orgs during discovery
+[22m[39m[Discovery] Starred repos: 0
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mskips disabled orgs during discovery
+[22m[39m[Discovery] Complete — 2 orgs, 2 repos
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mskips disabled orgs during discovery
+[22m[39m[Discovery] Starting — fetching organizations…
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mskips disabled orgs during discovery
+[22m[39m[Discovery] /user/orgs?per_page=100 — rate limit: 4998/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mskips disabled orgs during discovery
+[22m[39m[Discovery] Found 2 organization(s)
+[Discovery] Fetching repos for org: enabled-org
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mskips disabled orgs during discovery
+[22m[39m[Discovery] /orgs/enabled-org/repos?type=all&per_page=100 — rate limit: 4997/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mskips disabled orgs during discovery
+[22m[39m[Discovery]   enabled-org: 1 repos (total: 1)
+[Discovery] Skipping disabled org: disabled-org
+[Discovery] Fetching personal + collaborator + org-member repos…
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mskips disabled orgs during discovery
+[22m[39m[Discovery] /user/repos?affiliation=owner,collaborator,organization_member&per_page=100 — rate limit: 4995/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mskips disabled orgs during discovery
+[22m[39m[Discovery] Personal + collaborator + org-member repos: 0 (total: 1)
+[Discovery] Fetching starred repos…
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mskips disabled orgs during discovery
+[22m[39m[Discovery] /user/starred?per_page=100 — rate limit: 4990/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mskips disabled orgs during discovery
+[22m[39m[Discovery] Starred repos: 0
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mskips disabled orgs during discovery
+[22m[39m[Discovery] Complete — 2 orgs, 1 repos
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mrunLightweightRefresh fetches orgs and personal+collaborator repos
+[22m[39m[LightRefresh] Checking for new organizations…
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mrunLightweightRefresh fetches orgs and personal+collaborator repos
+[22m[39m[Discovery] /user/orgs?per_page=100 — rate limit: 4998/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mrunLightweightRefresh fetches orgs and personal+collaborator repos
+[22m[39m[LightRefresh] 1 org(s) synced
+[LightRefresh] Updating personal + collaborator + org-member repos…
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mrunLightweightRefresh fetches orgs and personal+collaborator repos
+[22m[39m[Discovery] /user/repos?affiliation=owner,collaborator,organization_member&per_page=100&sort=updated&direction=desc — rate limit: 4997/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mrunLightweightRefresh fetches orgs and personal+collaborator repos
+[22m[39m[LightRefresh] 2 personal + collaborator + org-member repo(s) synced
+[Discovery] Fetching starred repos…
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mrunLightweightRefresh fetches orgs and personal+collaborator repos
+[22m[39m[Discovery] /user/starred?per_page=100 — rate limit: 4990/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mrunLightweightRefresh fetches orgs and personal+collaborator repos
+[22m[39m[Discovery] Starred repos: 0
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mdiscovers PAT-only orgs in Phase 1.5 and scans their repos in Phase 2
+[22m[39m[Discovery] Starting — fetching organizations…
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mdiscovers PAT-only orgs in Phase 1.5 and scans their repos in Phase 2
+[22m[39m[Discovery] /user/orgs?per_page=100 — rate limit: 4998/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mdiscovers PAT-only orgs in Phase 1.5 and scans their repos in Phase 2
+[22m[39m[Discovery] Found 1 organization(s)
+[Discovery] Checking for orgs visible only via PAT…
+
+[90mstdout[2m | tests/unit/github-auth-handler.test.ts[2m > [22m[2mGitHub Auth plugin — IPC handlers[2m > [22m[2mgithub:oauth-status[2m > [22m[2mreturns { authenticated: true } with login when auth is stored
+[22m[39m[IPC] github:oauth-status called
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mdiscovers PAT-only orgs in Phase 1.5 and scans their repos in Phase 2
+[22m[39m[Discovery] /user/orgs?per_page=100 — rate limit: 4997/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mdiscovers PAT-only orgs in Phase 1.5 and scans their repos in Phase 2
+[22m[39m[Discovery] Found 1 org(s) only visible via PAT: xebia
+[Discovery] Fetching repos for org: org1
+
+ [32m✓[39m tests/unit/github-notifications.test.ts [2m([22m[2m39 tests[22m[2m)[22m[33m 894[2mms[22m[39m
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mdiscovers PAT-only orgs in Phase 1.5 and scans their repos in Phase 2
+[22m[39m[Discovery] /orgs/org1/repos?type=all&per_page=100 — rate limit: 4996/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mdiscovers PAT-only orgs in Phase 1.5 and scans their repos in Phase 2
+[22m[39m[Discovery]   org1: 1 repos (total: 1)
+[Discovery] Fetching repos for PAT-only org: xebia
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mdiscovers PAT-only orgs in Phase 1.5 and scans their repos in Phase 2
+[22m[39m[Discovery] /orgs/xebia/repos?type=all&per_page=100 — rate limit: 4995/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mdiscovers PAT-only orgs in Phase 1.5 and scans their repos in Phase 2
+[22m[39m[Discovery]   xebia (PAT): 2 repos (total: 3)
+[Discovery] Fetching personal + collaborator + org-member repos…
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mdiscovers PAT-only orgs in Phase 1.5 and scans their repos in Phase 2
+[22m[39m[Discovery] /user/repos?affiliation=owner,collaborator,organization_member&per_page=100 — rate limit: 4993/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mdiscovers PAT-only orgs in Phase 1.5 and scans their repos in Phase 2
+[22m[39m[Discovery] Personal + collaborator + org-member repos: 0 (total: 3)
+[Discovery] Fetching starred repos…
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mdiscovers PAT-only orgs in Phase 1.5 and scans their repos in Phase 2
+[22m[39m[Discovery] /user/starred?per_page=100 — rate limit: 4990/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mdiscovers PAT-only orgs in Phase 1.5 and scans their repos in Phase 2
+[22m[39m[Discovery] Starred repos: 0
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mdiscovers PAT-only orgs in Phase 1.5 and scans their repos in Phase 2
+[22m[39m[PAT Discovery] Starting smart PAT pass…
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mdiscovers PAT-only orgs in Phase 1.5 and scans their repos in Phase 2
+[22m[39m[Discovery] /user/orgs?per_page=100 — rate limit: 4997/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mdiscovers PAT-only orgs in Phase 1.5 and scans their repos in Phase 2
+[22m[39m[PAT Discovery] 2 org(s) via PAT, 2 already indexed with repos, 0 new/empty/OAuth-blocked org(s) to scan
+[PAT Discovery] Fetching direct collaborator repos…
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mdiscovers PAT-only orgs in Phase 1.5 and scans their repos in Phase 2
+[22m[39m[Discovery] /user/repos?affiliation=collaborator&per_page=100 — rate limit: 4992/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mdiscovers PAT-only orgs in Phase 1.5 and scans their repos in Phase 2
+[22m[39m[PAT Discovery] Collaborator repos: 0
+[PAT Discovery] Complete — 2 new orgs, 3 repos
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mdiscovers PAT-only orgs in Phase 1.5 and scans their repos in Phase 2
+[22m[39m[Discovery] Complete — 2 orgs, 3 repos
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mruns PAT supplemental pass when PAT is provided
+[22m[39m[Discovery] Starting — fetching organizations…
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mruns PAT supplemental pass when PAT is provided
+[22m[39m[Discovery] /user/orgs?per_page=100 — rate limit: 4998/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mruns PAT supplemental pass when PAT is provided
+[22m[39m[Discovery] Found 1 organization(s)
+[Discovery] Checking for orgs visible only via PAT…
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mruns PAT supplemental pass when PAT is provided
+[22m[39m[Discovery] /user/orgs?per_page=100 — rate limit: 4995/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mruns PAT supplemental pass when PAT is provided
+[22m[39m[Discovery] Found 1 org(s) only visible via PAT: secret-org
+[Discovery] Fetching repos for org: org1
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mruns PAT supplemental pass when PAT is provided
+[22m[39m[Discovery] /orgs/org1/repos?type=all&per_page=100 — rate limit: 4997/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mruns PAT supplemental pass when PAT is provided
+[22m[39m[Discovery]   org1: 1 repos (total: 1)
+[Discovery] Fetching repos for PAT-only org: secret-org
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mruns PAT supplemental pass when PAT is provided
+[22m[39m[Discovery] /orgs/secret-org/repos?type=all&per_page=100 — rate limit: 4994/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mruns PAT supplemental pass when PAT is provided
+[22m[39m[Discovery]   secret-org (PAT): 1 repos (total: 2)
+[Discovery] Fetching personal + collaborator + org-member repos…
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mruns PAT supplemental pass when PAT is provided
+[22m[39m[Discovery] /user/repos?affiliation=owner,collaborator,organization_member&per_page=100 — rate limit: 4996/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mruns PAT supplemental pass when PAT is provided
+[22m[39m[Discovery] Personal + collaborator + org-member repos: 1 (total: 3)
+[Discovery] Fetching starred repos…
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mruns PAT supplemental pass when PAT is provided
+[22m[39m[Discovery] /user/starred?per_page=100 — rate limit: 4990/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mruns PAT supplemental pass when PAT is provided
+[22m[39m[Discovery] Starred repos: 0
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mruns PAT supplemental pass when PAT is provided
+[22m[39m[PAT Discovery] Starting smart PAT pass…
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mruns PAT supplemental pass when PAT is provided
+[22m[39m[Discovery] /user/orgs?per_page=100 — rate limit: 4995/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mruns PAT supplemental pass when PAT is provided
+[22m[39m[PAT Discovery] 2 org(s) via PAT, 2 already indexed with repos, 0 new/empty/OAuth-blocked org(s) to scan
+[PAT Discovery] Fetching direct collaborator repos…
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mruns PAT supplemental pass when PAT is provided
+[22m[39m[Discovery] /user/repos?affiliation=collaborator&per_page=100 — rate limit: 4993/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mruns PAT supplemental pass when PAT is provided
+[22m[39m[PAT Discovery] Collaborator repos: 0
+[PAT Discovery] Complete — 2 new orgs, 3 repos
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mruns PAT supplemental pass when PAT is provided
+[22m[39m[Discovery] Complete — 2 orgs, 3 repos
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mrunPatDiscovery can run standalone without full discovery
+[22m[39m[PAT Discovery] Starting smart PAT pass…
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mrunPatDiscovery can run standalone without full discovery
+[22m[39m[Discovery] /user/orgs?per_page=100 — rate limit: 4999/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mrunPatDiscovery can run standalone without full discovery
+[22m[39m[PAT Discovery] 2 org(s) via PAT, 1 already indexed with repos, 1 new/empty/OAuth-blocked org(s) to scan
+[PAT Discovery] Fetching repos for org: secret-org
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mrunPatDiscovery can run standalone without full discovery
+[22m[39m[Discovery] /orgs/secret-org/repos?type=all&per_page=100 — rate limit: 4998/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mrunPatDiscovery can run standalone without full discovery
+[22m[39m[PAT Discovery]   secret-org: 1 repos
+[PAT Discovery] Fetching direct collaborator repos…
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mrunPatDiscovery can run standalone without full discovery
+[22m[39m[Discovery] /user/repos?affiliation=collaborator&per_page=100 — rate limit: 4997/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mrunPatDiscovery can run standalone without full discovery
+[22m[39m[PAT Discovery] Collaborator repos: 1
+[PAT Discovery] Complete — 1 new orgs, 2 repos
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mPAT pass failure does not crash full discovery
+[22m[39m[Discovery] Starting — fetching organizations…
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mPAT pass failure does not crash full discovery
+[22m[39m[Discovery] /user/orgs?per_page=100 — rate limit: 4998/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mPAT pass failure does not crash full discovery
+[22m[39m[Discovery] Found 1 organization(s)
+[Discovery] Checking for orgs visible only via PAT…
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mPAT pass failure does not crash full discovery
+[22m[39m[Discovery] Fetching repos for org: org1
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mPAT pass failure does not crash full discovery
+[22m[39m[Discovery] /orgs/org1/repos?type=all&per_page=100 — rate limit: 4997/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mPAT pass failure does not crash full discovery
+[22m[39m[Discovery]   org1: 1 repos (total: 1)
+[Discovery] Fetching personal + collaborator + org-member repos…
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mPAT pass failure does not crash full discovery
+[22m[39m[Discovery] /user/repos?affiliation=owner,collaborator,organization_member&per_page=100 — rate limit: 4996/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mPAT pass failure does not crash full discovery
+[22m[39m[Discovery] Personal + collaborator + org-member repos: 1 (total: 2)
+[Discovery] Fetching starred repos…
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mPAT pass failure does not crash full discovery
+[22m[39m[Discovery] /user/starred?per_page=100 — rate limit: 4990/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mPAT pass failure does not crash full discovery
+[22m[39m[Discovery] Starred repos: 0
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mPAT pass failure does not crash full discovery
+[22m[39m[PAT Discovery] Starting smart PAT pass…
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mPAT pass failure does not crash full discovery
+[22m[39m[Discovery] Complete — 1 orgs, 2 repos
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mrescans OAuth-blocked orgs that already have repos in DB
+[22m[39m[Discovery] Starting — fetching organizations…
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mrescans OAuth-blocked orgs that already have repos in DB
+[22m[39m[Discovery] /user/orgs?per_page=100 — rate limit: 4998/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mrescans OAuth-blocked orgs that already have repos in DB
+[22m[39m[Discovery] Found 1 organization(s)
+[Discovery] Checking for orgs visible only via PAT…
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mrescans OAuth-blocked orgs that already have repos in DB
+[22m[39m[Discovery] /user/orgs?per_page=100 — rate limit: 4995/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mrescans OAuth-blocked orgs that already have repos in DB
+[22m[39m[Discovery] Found 1 org(s) only visible via PAT: xebia
+[Discovery] Fetching repos for org: org1
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mrescans OAuth-blocked orgs that already have repos in DB
+[22m[39m[Discovery] /orgs/org1/repos?type=all&per_page=100 — rate limit: 4997/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mrescans OAuth-blocked orgs that already have repos in DB
+[22m[39m[Discovery]   org1: 1 repos (total: 1)
+[Discovery] Fetching repos for PAT-only org: xebia
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mrescans OAuth-blocked orgs that already have repos in DB
+[22m[39m[Discovery] /orgs/xebia/repos?type=all&per_page=100 — rate limit: 4994/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mrescans OAuth-blocked orgs that already have repos in DB
+[22m[39m[Discovery]   xebia (PAT): 2 repos (total: 3)
+[Discovery] Fetching personal + collaborator + org-member repos…
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mrescans OAuth-blocked orgs that already have repos in DB
+[22m[39m[Discovery] /user/repos?affiliation=owner,collaborator,organization_member&per_page=100 — rate limit: 4996/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mrescans OAuth-blocked orgs that already have repos in DB
+[22m[39m[Discovery] Personal + collaborator + org-member repos: 0 (total: 3)
+[Discovery] Fetching starred repos…
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mrescans OAuth-blocked orgs that already have repos in DB
+[22m[39m[Discovery] /user/starred?per_page=100 — rate limit: 4990/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mrescans OAuth-blocked orgs that already have repos in DB
+[22m[39m[Discovery] Starred repos: 0
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mrescans OAuth-blocked orgs that already have repos in DB
+[22m[39m[PAT Discovery] Starting smart PAT pass…
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mrescans OAuth-blocked orgs that already have repos in DB
+[22m[39m[Discovery] /user/orgs?per_page=100 — rate limit: 4995/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mrescans OAuth-blocked orgs that already have repos in DB
+[22m[39m[PAT Discovery] 2 org(s) via PAT, 2 already indexed with repos, 0 new/empty/OAuth-blocked org(s) to scan
+[PAT Discovery] Fetching direct collaborator repos…
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mrescans OAuth-blocked orgs that already have repos in DB
+[22m[39m[Discovery] /user/repos?affiliation=collaborator&per_page=100 — rate limit: 4993/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mrescans OAuth-blocked orgs that already have repos in DB
+[22m[39m[PAT Discovery] Collaborator repos: 0
+[PAT Discovery] Complete — 2 new orgs, 3 repos
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — runDiscovery[2m > [22m[2mrescans OAuth-blocked orgs that already have repos in DB
+[22m[39m[Discovery] Complete — 2 orgs, 3 repos
+
+ [32m✓[39m tests/unit/local-discovery.test.ts [2m([22m[2m24 tests[22m[2m)[22m[33m 630[2mms[22m[39m
+ [32m✓[39m tests/unit/github-secrets.test.ts [2m([22m[2m23 tests[22m[2m)[22m[33m 754[2mms[22m[39m
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — collaboration reason[2m > [22m[2mresolveCollaborationReason returns "pr" when search finds only PRs
+[22m[39m[Discovery] /search/issues?q=author%3Ame%20repo%3Aother%2Frepo&per_page=30 — rate limit: 29/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — collaboration reason[2m > [22m[2mresolveCollaborationReason returns "issue" when search finds only issues
+[22m[39m[Discovery] /search/issues?q=author%3Ame%20repo%3Aother%2Frepo&per_page=30 — rate limit: 29/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — collaboration reason[2m > [22m[2mresolveCollaborationReason returns "pr,issue" when search finds both
+[22m[39m[Discovery] /search/issues?q=author%3Ame%20repo%3Aother%2Frepo&per_page=30 — rate limit: 29/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — collaboration reason[2m > [22m[2mresolveCollaborationReason returns "collaborator" when search finds nothing
+[22m[39m[Discovery] /search/issues?q=author%3Ame%20repo%3Aother%2Frepo&per_page=30 — rate limit: 29/5000
+
+ [32m✓[39m tests/unit/agents-runner.test.ts [2m([22m[2m22 tests[22m[2m)[22m[33m 669[2mms[22m[39m
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — collaboration reason[2m > [22m[2mresolveCollaborationReasons assigns owner for own repos, org_member for org repos, and queries external
+[22m[39m[Discovery] /search/issues?q=author%3Ame%20repo%3Astranger%2Fext-repo&per_page=30 — rate limit: 29/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — collaboration reason[2m > [22m[2mrunDiscovery sets collaboration_reason for user repos when userLogin is provided
+[22m[39m[Discovery] Starting — fetching organizations…
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — collaboration reason[2m > [22m[2mrunDiscovery sets collaboration_reason for user repos when userLogin is provided
+[22m[39m[Discovery] /user/orgs?per_page=100 — rate limit: 4998/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — collaboration reason[2m > [22m[2mrunDiscovery sets collaboration_reason for user repos when userLogin is provided
+[22m[39m[Discovery] Found 0 organization(s)
+[Discovery] Fetching personal + collaborator + org-member repos…
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — collaboration reason[2m > [22m[2mrunDiscovery sets collaboration_reason for user repos when userLogin is provided
+[22m[39m[Discovery] /user/repos?affiliation=owner,collaborator,organization_member&per_page=100 — rate limit: 4995/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — collaboration reason[2m > [22m[2mrunDiscovery sets collaboration_reason for user repos when userLogin is provided
+[22m[39m[Discovery] Resolving collaboration reasons for 1 external repos…
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — collaboration reason[2m > [22m[2mrunDiscovery sets collaboration_reason for user repos when userLogin is provided
+[22m[39m[Discovery] /search/issues?q=author%3Ame%20repo%3Aother%2Fcollab&per_page=30 — rate limit: 4990/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — collaboration reason[2m > [22m[2mrunDiscovery sets collaboration_reason for user repos when userLogin is provided
+[22m[39m[Discovery] Personal + collaborator + org-member repos: 2 (total: 2)
+[Discovery] Fetching starred repos…
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — collaboration reason[2m > [22m[2mrunDiscovery sets collaboration_reason for user repos when userLogin is provided
+[22m[39m[Discovery] /user/starred?per_page=100 — rate limit: 4990/5000
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — collaboration reason[2m > [22m[2mrunDiscovery sets collaboration_reason for user repos when userLogin is provided
+[22m[39m[Discovery] Starred repos: 0
+
+[90mstdout[2m | tests/unit/github-discovery.test.ts[2m > [22m[2mGitHub Discovery — collaboration reason[2m > [22m[2mrunDiscovery sets collaboration_reason for user repos when userLogin is provided
+[22m[39m[Discovery] Complete — 0 orgs, 2 repos
+
+ [32m✓[39m tests/unit/chat-helpers.test.ts [2m([22m[2m22 tests[22m[2m)[22m[33m 880[2mms[22m[39m
+ [32m✓[39m tests/unit/github-discovery.test.ts [2m([22m[2m30 tests[22m[2m)[22m[33m 1094[2mms[22m[39m
+ [32m✓[39m tests/unit/git-health.test.ts [2m([22m[2m21 tests[22m[2m)[22m[32m 88[2mms[22m[39m
+ [32m✓[39m tests/unit/database.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 216[2mms[22m[39m
+ [32m✓[39m tests/unit/boot-workflow-check.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 219[2mms[22m[39m
+ [32m✓[39m tests/unit/onboarding.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 176[2mms[22m[39m
+[90mstdout[2m | tests/unit/ollama.test.ts[2m > [22m[2mcheckOllama[2m > [22m[2mreturns available=true with models when fetch returns 200
+[22m[39m[Ollama] Available — 1 model(s): llama3.2:3b
+
+[90mstdout[2m | tests/unit/ollama.test.ts[2m > [22m[2mcheckOllama[2m > [22m[2mreturns available=false with "Connection timed out" on AbortError
+[22m[39m[Ollama] Not available: Connection timed out
+
+[90mstdout[2m | tests/unit/ollama.test.ts[2m > [22m[2mcheckOllama[2m > [22m[2mreturns available=false with error message for generic network errors
+[22m[39m[Ollama] Not available: ECONNREFUSED
+
+ [32m✓[39m tests/unit/ollama.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 55[2mms[22m[39m
+ [32m✓[39m tests/unit/agent-config.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 27[2mms[22m[39m
+ [32m✓[39m tests/unit/dashboard-handler.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 272[2mms[22m[39m
+ [32m✓[39m tests/unit/onenote-reader.test.ts [2m([22m[2m19 tests[22m[2m)[22m[32m 91[2mms[22m[39m
+ [32m✓[39m tests/unit/browser-companion-server.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m tests/unit/event-bus.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m tests/unit/shared-utils.test.ts [2m([22m[2m73 tests[22m[2m)[22m[32m 34[2mms[22m[39m
+ [32m✓[39m tests/unit/preload-jarvisapi-parity.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m tests/unit/url-shortcut.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m tests/unit/discovery-state.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+[90mstdout[2m | tests/unit/ipc-registration.test.ts
+[22m[39m[BrowserBridge] Listening on ws://localhost:35789
+
+ [32m✓[39m tests/unit/ipc-registration.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 157[2mms[22m[39m
+ [32m✓[39m tests/unit/agents-handler.test.ts [2m([22m[2m30 tests[22m[2m)[22m[33m 1835[2mms[22m[39m
+       [33m[2m✓[22m[39m returns an empty array on a fresh DB [33m 494[2mms[22m[39m
+[90mstdout[2m | tests/unit/github-auth-handler.test.ts[2m > [22m[2mGitHub Auth plugin — IPC handlers[2m > [22m[2mgithub:start-oauth[2m > [22m[2mreturns error when oauthClientId is not configured
+[22m[39m[IPC] github:start-oauth called
+
+[90mstdout[2m | tests/unit/handler-validation.test.ts[2m > [22m[2mIPC handler input validation[2m > [22m[2mgithub:oauth-status[2m > [22m[2mreturns { authenticated: false } on a fresh DB
+[22m[39m[IPC] github:oauth-status called
+
+[90mstdout[2m | tests/unit/handler-validation.test.ts[2m > [22m[2mIPC handler input validation[2m > [22m[2mgithub:start-oauth[2m > [22m[2mreturns an error when oauthClientId is not configured
+[22m[39m[IPC] github:start-oauth called
+
+[90mstdout[2m | tests/unit/handler-validation.test.ts
+[22m[39m[BrowserBridge] Listening on ws://localhost:35789
+
+ [32m✓[39m tests/unit/handler-validation.test.ts [2m([22m[2m53 tests[22m[2m)[22m[33m 1456[2mms[22m[39m
+ [32m✓[39m tests/unit/github-auth-handler.test.ts [2m([22m[2m21 tests[22m[2m)[22m[33m 4037[2mms[22m[39m
+       [33m[2m✓[22m[39m returns { hasPat: true } with login when PAT is stored and valid [33m 511[2mms[22m[39m
+       [33m[2m✓[22m[39m returns { hasPat: true } without user info when fetchGitHubUser throws [33m 369[2mms[22m[39m
+       [33m[2m✓[22m[39m returns ok:true when PAT is valid and matches authenticated user [33m 338[2mms[22m[39m
+       [33m[2m✓[22m[39m returns { ok: true } when authenticated and PAT is deleted [33m 375[2mms[22m[39m
+       [33m[2m✓[22m[39m shows both oauth and pat rate limits when both tokens exist [33m 411[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m30 passed[39m[22m[90m (30)[39m
+[2m      Tests [22m [1m[32m562 passed[39m[22m[90m (562)[39m
+[2m   Start at [22m 14:40:48
+[2m   Duration [22m 7.26s[2m (transform 13.11s, setup 0ms, import 20.64s, tests 17.19s, environment 4ms)[22m
+
+[34m % [39m[2mCoverage report from [22m[33mv8[39m
+-------------------|---------|----------|---------|---------|-------------------
+File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-------------------|---------|----------|---------|---------|-------------------
+All files          |   82.46 |    69.97 |   86.89 |   83.47 |                   
+ agent             |     100 |    56.25 |     100 |     100 |                   
+  config.ts        |     100 |    57.14 |     100 |     100 | 33,52             
+  onboarding.ts    |     100 |       50 |     100 |     100 | 19                
+ plugins           |     100 |    83.33 |     100 |     100 |                   
+  event-bus.ts     |     100 |    83.33 |     100 |     100 | 16                
+ plugins/agents    |   83.33 |    57.81 |   93.75 |    82.9 |                   
+  runner.ts        |   83.33 |    57.81 |   93.75 |    82.9 | 167-168,197-223   
+ ...wser-companion |   34.61 |    18.18 |   46.15 |   34.21 |                   
+  server.ts        |   34.61 |    18.18 |   46.15 |   34.21 | ...37,158,176-193 
+ plugins/chat      |    69.6 |    72.41 |      90 |   67.67 |                   
+  db-helpers.ts    |    69.6 |    72.41 |      90 |   67.67 | 96-105,181-218    
+ plugins/discovery |     100 |      100 |     100 |     100 |                   
+  state.ts         |     100 |      100 |     100 |     100 |                   
+ plugins/shared    |   97.31 |    86.44 |     100 |     100 |                   
+  utils.ts         |   97.31 |    86.44 |     100 |     100 | ...46,152,159,230 
+ services          |   85.05 |    71.44 |   87.29 |   86.94 |                   
+  git-health.ts    |    98.5 |    86.48 |     100 |   98.46 | 128               
+  ...-discovery.ts |   76.08 |    60.71 |   80.85 |   78.68 | ...1072,1093-1094 
+  ...ifications.ts |   83.63 |    76.05 |   88.88 |   86.98 | ...74-185,376-403 
+  github-oauth.ts  |   90.32 |    95.83 |     100 |   91.37 | 178-179,206-208   
+  ...ub-secrets.ts |     100 |    83.33 |     100 |     100 | 37,113-140        
+  ...-workflows.ts |   98.75 |    66.07 |     100 |     100 | ...58-188,217-232 
+  groups.ts        |   63.85 |    33.33 |   55.55 |   65.38 | 10-87             
+  ...-discovery.ts |   83.08 |    81.63 |   89.47 |   84.42 | ...05,130,350-373 
+  ollama.ts        |      92 |    71.69 |    87.5 |    94.2 | 238-241           
+  onedrive.ts      |   93.25 |    73.33 |     100 |   94.31 | ...65,212,231-232 
+  ...ote-reader.ts |   97.95 |    91.66 |     100 |     100 | 87-90,127,255-261 
+  url-shortcut.ts  |     100 |      100 |     100 |     100 |                   
+ storage           |   43.13 |     6.25 |   66.66 |      44 |                   
+  encryption.ts    |      42 |     6.25 |    62.5 |   42.85 | 55-114,135-151    
+  schema.ts        |     100 |      100 |     100 |     100 |                   
+ types             |       0 |        0 |       0 |       0 |                   
+  ipc-payloads.ts  |       0 |        0 |       0 |       0 |                   
+-------------------|---------|----------|---------|---------|-------------------

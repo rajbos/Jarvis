@@ -14,12 +14,17 @@ import {
   addGithubRepoToGroup,
   removeGithubRepoFromGroup,
   parseRuddrNames,
+  loadRuddrProjectsFromDb,
+  saveRuddrProjectsToDb,
+  updateRuddrProjectNote,
+  updateRuddrProjectCloudFolderUrl,
+  lookupRuddrProject,
 } from '../../services/groups';
+import type { RuddrProjectEntry } from '../../services/groups';
 import { sendCommand, getBridgeStatus } from '../browser-companion/server';
 import type { RuddrProjectMatch } from '../types';
 
-// ── Ruddr project list cache (in-memory, per app session) ─────────────────────
-interface RuddrProjectEntry { name: string; path: string; }
+// ── Ruddr project list cache (in-memory, backed by DB for persistence) ──────────
 let ruddrProjectsCache: RuddrProjectEntry[] | null = null;
 let ruddrProjectsCacheTime = 0;
 /** Re-fetch after 8 hours so a long-running session stays reasonably fresh. */
@@ -147,9 +152,33 @@ async function ensureRuddrCache(db: SqlJsDatabase): Promise<string | null> {
   } else if (oldLen > 0 && freshProjects.length < oldLen * 0.75) {
     console.warn(`[Groups] Ruddr scroll returned only ${freshProjects.length} projects — keeping old cache of ${oldLen}.`);
   } else {
-    ruddrProjectsCache = freshProjects;
+    // Merge notes from old DB entries into the fresh list before saving
+    const oldEntries = loadRuddrProjectsFromDb(db);
+    const oldByPath = new Map(oldEntries.map((e) => [e.path, e]));
+    const mergedProjects = freshProjects.map((p) => ({
+      ...p,
+      note: oldByPath.get(p.path)?.note ?? null,
+      cloud_folder_url: oldByPath.get(p.path)?.cloud_folder_url ?? null,
+    }));
+
+    // Detect truly new projects (not in old DB cache)
+    const oldNames = new Set(oldEntries.map((e) => e.name));
+    const newProjects = mergedProjects.filter((p) => !oldNames.has(p.name));
+
+    ruddrProjectsCache = mergedProjects;
     ruddrProjectsCacheTime = Date.now();
     console.log(`[Groups] Ruddr projects cached: ${ruddrProjectsCache.length} entries`);
+    try {
+      saveRuddrProjectsToDb(db, mergedProjects);
+      saveDatabase();
+    } catch (err) {
+      console.warn('[Groups] Failed to persist Ruddr projects to DB:', err);
+    }
+
+    if (newProjects.length > 0) {
+      console.log(`[Groups] ${newProjects.length} new Ruddr project(s) found:`, newProjects.map((p) => p.name).join(', '));
+      _notifyNewProjects(newProjects);
+    }
   }
 
   return null;
@@ -157,8 +186,168 @@ async function ensureRuddrCache(db: SqlJsDatabase): Promise<string | null> {
 
 /** Pre-warms the Ruddr projects cache in the background at app startup. */
 export async function prewarmRuddrCache(db: SqlJsDatabase): Promise<void> {
+  // Seed the in-memory cache from DB immediately — no browser extension needed.
+  if (ruddrProjectsCache === null || ruddrProjectsCache.length === 0) {
+    const persisted = loadRuddrProjectsFromDb(db);
+    if (persisted.length > 0) {
+      ruddrProjectsCache = persisted;
+      ruddrProjectsCacheTime = Date.now();
+      console.log(`[Groups] Ruddr cache seeded from DB: ${persisted.length} projects`);
+    }
+  }
+  // Then try to refresh from browser if connected.
   const err = await ensureRuddrCache(db);
   if (err) console.log(`[Groups] Ruddr pre-warm skipped: ${err}`);
+}
+
+// ── Hourly Ruddr project refresh ─────────────────────────────────────────────
+// Holds the window getter so we can emit notifications to the renderer.
+let _notifyNewProjects: (projects: RuddrProjectEntry[]) => void = () => { /* no-op until scheduled */ };
+let _getWindowFn: () => BrowserWindow | null = () => null;
+
+/**
+ * After a successful project-list refresh, silently scrape the overview page
+ * for each group-linked project that is still missing a note or cloud folder URL.
+ * Emits 'groups:project-details-refreshed' when at least one project was updated.
+ */
+async function refreshLinkedProjectDetails(db: SqlJsDatabase): Promise<void> {
+  const status = getBridgeStatus();
+  if (!status.running || status.connectedClients === 0) return;
+
+  const groups = listGroups(db);
+  const linkedNames = [...new Set(groups.flatMap((g) => g.ruddrProjectNames ?? []))];
+  if (linkedNames.length === 0) return;
+
+  // Collect cache entries that are missing note or cloud_folder_url
+  const toRefresh = linkedNames.reduce<RuddrProjectEntry[]>((acc, name) => {
+    const entry = ruddrProjectsCache?.find((e) => e.name === name)
+      ?? ruddrProjectsCache?.find((e) => e.name.toLowerCase() === name.toLowerCase());
+    if (entry?.path && (!entry.note || !entry.cloud_folder_url)) {
+      acc.push(entry);
+    }
+    return acc;
+  }, []);
+
+  if (toRefresh.length === 0) return;
+
+  console.log(`[Groups] Auto-refreshing details for ${toRefresh.length} linked project(s) missing note/cloud folder`);
+  let updated = false;
+
+  for (const entry of toRefresh) {
+    try {
+      // The edit page URL has 'edit/' inserted after '/portfolio/projects/'
+      // e.g. /app/ws/portfolio/projects/client/project → /app/ws/portfolio/projects/edit/client/project
+      const editPath = entry.path.includes('/portfolio/projects/')
+        ? entry.path.replace('/portfolio/projects/', '/portfolio/projects/edit/')
+        : entry.path;
+      const editUrl = `https://www.ruddr.io${editPath}`;
+      console.log(`[Groups] Refreshing "${entry.name}" → ${editUrl}`);
+
+      const navResp = await sendCommand({ type: 'navigate', payload: { url: editUrl } });
+      console.log(`[Groups]   nav ok=${navResp.ok} data=${JSON.stringify(navResp.data)}`);
+      if (!navResp.ok) {
+        console.warn(`[Groups]   nav failed for "${entry.name}", skipping`);
+        continue;
+      }
+
+      const navData = navResp.data as { url?: string; tabId?: number } | null;
+      if ((navData?.url ?? '').includes('/login')) {
+        console.log('[Groups] Auto-refresh: Ruddr login required — stopping detail refresh');
+        break;
+      }
+
+      console.log(`[Groups]   Sending read-form-fields (tabId=${navData?.tabId})`);
+      const fieldsResp = await sendCommand({
+        type: 'read-form-fields',
+        tabId: navData?.tabId,
+        payload: {
+          selectors: ['textarea[name="description"]', 'input[name="cloudFolderUrl"]'],
+          waitMs: 4000,
+        },
+      });
+      console.log(`[Groups]   fields ok=${fieldsResp.ok} data=${JSON.stringify(fieldsResp.data)} error=${fieldsResp.error ?? ''}`);
+      if (!fieldsResp.ok) {
+        console.warn(`[Groups]   read-form-fields failed for "${entry.name}": ${fieldsResp.error ?? 'unknown'}, skipping`);
+        continue;
+      }
+
+      const raw = fieldsResp.data as Record<string, string | null> | null;
+      const note = raw?.['textarea[name="description"]'] ?? null;
+      const cloudFolderUrl = raw?.['input[name="cloudFolderUrl"]'] ?? null;
+      console.log(`[Groups]   note=${note ? `"${note.slice(0, 60)}…"` : 'null'}  cloudFolderUrl=${cloudFolderUrl ?? 'null'}`);
+
+      if (note !== null || cloudFolderUrl !== null) {
+        try {
+          if (note !== null) updateRuddrProjectNote(db, entry.path, note);
+          if (cloudFolderUrl !== null) updateRuddrProjectCloudFolderUrl(db, entry.path, cloudFolderUrl);
+          if (ruddrProjectsCache) {
+            const idx = ruddrProjectsCache.findIndex((e) => e.path === entry.path);
+            if (idx !== -1) ruddrProjectsCache[idx] = {
+              ...ruddrProjectsCache[idx],
+              ...(note !== null ? { note } : {}),
+              ...(cloudFolderUrl !== null ? { cloud_folder_url: cloudFolderUrl } : {}),
+            };
+          }
+          saveDatabase();
+          updated = true;
+          console.log(`[Groups]   DB updated for "${entry.name}"`);
+        } catch { /* non-fatal */ }
+      } else {
+        console.log(`[Groups]   No values found for "${entry.name}" — both fields null`);
+      }
+    } catch (err) {
+      console.warn(
+        `[Groups] Auto-refresh detail failed for "${entry.name}":`,
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+
+    // Small delay between project scrapes to avoid hammering Ruddr
+    await new Promise<void>((r) => setTimeout(r, 1000));
+  }
+
+  if (updated) {
+    const win = _getWindowFn();
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('groups:project-details-refreshed');
+    }
+  }
+}
+
+/** Schedules an hourly refresh of the Ruddr project list. Emits a renderer event when new projects are found. */
+export function scheduleRuddrProjectsRefresh(db: SqlJsDatabase, getWindow: () => BrowserWindow | null): void {
+  _getWindowFn = getWindow;
+  _notifyNewProjects = (projects: RuddrProjectEntry[]) => {
+    const win = getWindow();
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('groups:new-ruddr-projects', projects);
+    }
+  };
+
+  const HOUR_MS = 60 * 60 * 1000;
+  // First run after 30 seconds (let the app settle and browser extension connect).
+  setTimeout(async () => {
+    const err = await ensureRuddrCache(db).catch((e: unknown) => String(e));
+    if (err) {
+      console.log('[Groups] Hourly Ruddr refresh skipped:', err);
+    } else {
+      refreshLinkedProjectDetails(db).catch((e: unknown) =>
+        console.warn('[Groups] Auto-refresh project details failed:', e instanceof Error ? e.message : String(e)),
+      );
+    }
+    setInterval(async () => {
+      // Force a fresh scrape by resetting the cache time so ensureRuddrCache re-fetches
+      ruddrProjectsCacheTime = 0;
+      const e = await ensureRuddrCache(db).catch((ex: unknown) => String(ex));
+      if (e) {
+        console.log('[Groups] Hourly Ruddr refresh skipped:', e);
+      } else {
+        refreshLinkedProjectDetails(db).catch((ex: unknown) =>
+          console.warn('[Groups] Auto-refresh project details failed:', ex instanceof Error ? ex.message : String(ex)),
+        );
+      }
+    }, HOUR_MS);
+  }, 30_000);
 }
 
 export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWindow | null): void {
@@ -368,22 +557,35 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
     const workspace = getRuddrWorkspace(db);
     if (!workspace) return { ok: false, error: 'ruddr_workspace_not_configured' };
 
-    // Auto-populate the cache if it's empty or stale
-    try {
-      const cacheErr = await ensureRuddrCache(db);
-      if (cacheErr) return { ok: false, error: cacheErr };
-    } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
-    }
-
+    // Look up the project path from the in-memory cache or DB.
+    // Do NOT trigger a full scroll-extract scrape just for a path lookup —
+    // that causes the browser to loop over all projects every time a budget is loaded.
     const trimmed = projectName.trim();
-    // Try exact match first, then case-insensitive, then normalized (strips punctuation/spaces).
-    const entry = ruddrProjectsCache?.find((e) => e.name === trimmed)
+    const findEntry = () =>
+      ruddrProjectsCache?.find((e) => e.name === trimmed)
       ?? ruddrProjectsCache?.find((e) => e.name.toLowerCase() === trimmed.toLowerCase())
       ?? ruddrProjectsCache?.find((e) => normalize(e.name) === normalize(trimmed));
+
+    let entry = findEntry();
+    // Fallback: check DB directly (in case the in-memory cache was never populated
+    // but the DB has the row, e.g. immediately after app restart).
+    if (!entry?.path) {
+      try {
+        const dbEntry = lookupRuddrProject(db, trimmed);
+        if (dbEntry?.path) {
+          entry = dbEntry;
+          // Also warm the in-memory cache with DB data so subsequent lookups are fast.
+          if (ruddrProjectsCache === null) ruddrProjectsCache = [];
+          if (!ruddrProjectsCache.find((e) => e.path === dbEntry.path)) {
+            ruddrProjectsCache.push(dbEntry);
+          }
+        }
+      } catch { /* table may not exist yet — handled below */ }
+    }
+
     if (!entry?.path) {
       const cacheSize = ruddrProjectsCache?.length ?? 0;
-      console.warn(`[Groups] Budget: no cache entry for "${trimmed}". Cache has ${cacheSize} entries: ${(ruddrProjectsCache ?? []).map((e) => e.name).join(', ')}`);
+      console.warn(`[Groups] Budget: no cache entry for "${trimmed}". Cache has ${cacheSize} entries.`);
       return {
         ok: false,
         error: cacheSize > 0 ? 'project_not_in_ruddr' : 'project_url_unknown',
@@ -409,6 +611,8 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
       if (!statsResp.ok) return { ok: false, error: `Scrape failed: ${statsResp.error ?? 'unknown'}` };
 
       const raw = statsResp.data as Record<string, string> | null;
+      const note = raw?.['Notes'] ?? raw?.['Note'] ?? raw?.['Description'] ?? null;
+      const cloudFolderUrl = raw?.['_cloud_folder_url'] ?? null;
       const budgetResult = {
         ok: true,
         actualBillableHours: raw?.['Actual Billable Hours'] ?? null,
@@ -417,8 +621,30 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
         budget: raw?.['Budget'] ?? null,
         budgetLeft: raw?.['Budget Left'] ?? null,
         projectUrl: overviewUrl,
+        note: note,
+        cloudFolderUrl: cloudFolderUrl,
       };
       ruddrBudgetCache.set(trimmed, budgetResult);
+      // Persist the note and cloud folder URL to the DB cache for display in group cards.
+      if ((note !== null || cloudFolderUrl !== null) && entry.path) {
+        try {
+          if (note !== null) {
+            updateRuddrProjectNote(db, entry.path, note);
+          }
+          if (cloudFolderUrl !== null) {
+            updateRuddrProjectCloudFolderUrl(db, entry.path, cloudFolderUrl);
+          }
+          if (ruddrProjectsCache) {
+            const idx = ruddrProjectsCache.findIndex((e) => e.path === entry.path);
+            if (idx !== -1) ruddrProjectsCache[idx] = {
+              ...ruddrProjectsCache[idx],
+              ...(note !== null ? { note } : {}),
+              ...(cloudFolderUrl !== null ? { cloud_folder_url: cloudFolderUrl } : {}),
+            };
+          }
+          saveDatabase();
+        } catch { /* non-fatal */ }
+      }
       return budgetResult;
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -445,5 +671,39 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
     ruddrProjectsCache = null;
     ruddrProjectsCacheTime = 0;
     return { ok: true };
+  });
+
+  // ── Ruddr: manual sync + project info ──────────────────────────────────────
+
+  ipcMain.handle('groups:sync-ruddr-cache-now', async () => {
+    // Force re-fetch regardless of TTL
+    ruddrProjectsCacheTime = 0;
+    const err = await ensureRuddrCache(db);
+    if (err) return { ok: false, error: err };
+    // Fire-and-forget: refresh note/cloud folder from the edit page for linked projects.
+    refreshLinkedProjectDetails(db).catch((e: unknown) =>
+      console.warn('[Groups] Manual sync: project details refresh failed:', e instanceof Error ? e.message : String(e)),
+    );
+    return { ok: true, count: ruddrProjectsCache?.length ?? 0 };
+  });
+
+  ipcMain.handle('groups:get-ruddr-project-info', (_event, projectName: string) => {
+    if (typeof projectName !== 'string') return { ok: false, error: 'Invalid projectName' };
+    // Try in-memory cache first, then DB
+    const memEntry = ruddrProjectsCache?.find(
+      (e) => e.name.toLowerCase() === projectName.trim().toLowerCase(),
+    );
+    if (memEntry) return { ok: true, name: memEntry.name, path: memEntry.path, note: memEntry.note ?? null, cloudFolderUrl: memEntry.cloud_folder_url ?? null };
+    const dbEntry = lookupRuddrProject(db, projectName.trim());
+    if (dbEntry) return { ok: true, name: dbEntry.name, path: dbEntry.path, note: dbEntry.note ?? null, cloudFolderUrl: dbEntry.cloud_folder_url ?? null };
+    return { ok: false, error: 'Project not found in cache' };
+  });
+
+  ipcMain.handle('groups:list-ruddr-projects', () => {
+    const projects = loadRuddrProjectsFromDb(db);
+    return {
+      ok: true,
+      projects: projects.map((p) => ({ name: p.name, path: p.path, discoveredAt: p.discovered_at ?? null })),
+    };
   });
 }

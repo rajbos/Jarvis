@@ -1,6 +1,7 @@
 /** @jsxImportSource preact */
-import { useState, useEffect } from 'preact/hooks';
-import type { Group, RuddrProjectMatch, RuddrBudget } from '../types';
+import { useState, useEffect, useRef } from 'preact/hooks';
+import type { Group, RuddrProjectMatch, RuddrBudget, RuddrProjectInfo } from '../types';
+import { RuddrProjectsPanel } from './RuddrProjectsPanel';
 
 // ── GroupsDashboardPanel ──────────────────────────────────────────────────────
 // A high-level dashboard view over every configured group (project).
@@ -10,8 +11,12 @@ import type { Group, RuddrProjectMatch, RuddrBudget } from '../types';
 export function GroupsDashboardPanel() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [mainMaxWidth, setMainMaxWidth] = useState<number>(600);
+  const mainRef = useRef<HTMLDivElement>(null);
   const [budgetData, setBudgetData] = useState<Record<string, RuddrBudget>>({});
   const [budgetChecking, setBudgetChecking] = useState<string | null>(null);
+  const [newRuddrProjects, setNewRuddrProjects] = useState<Array<{ name: string; path: string }>>([]);
 
   const loadData = async () => {
     setLoading(true);
@@ -47,6 +52,28 @@ export function GroupsDashboardPanel() {
     }
   };
 
+  // Keep groups-dash-main width capped to the left of the fixed Ruddr panel.
+  // Measures real DOM positions so no magic numbers or 100vw assumptions are needed.
+  useEffect(() => {
+    const GAP = 19; // ~1.2rem visual gap between grid and panel
+    const recompute = () => {
+      const panel = document.querySelector('.ruddr-projects-panel') as HTMLElement | null;
+      if (!panel || !mainRef.current) return;
+      const panelLeft = panel.getBoundingClientRect().left;
+      const mainLeft  = mainRef.current.getBoundingClientRect().left;
+      setMainMaxWidth(Math.max(280, panelLeft - mainLeft - GAP));
+    };
+    // Defer initial measurement until both elements are painted
+    const raf = requestAnimationFrame(recompute);
+    window.addEventListener('resize', recompute);
+    window.addEventListener('ruddr-panel-resize', recompute);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('resize', recompute);
+      window.removeEventListener('ruddr-panel-resize', recompute);
+    };
+  }, []);
+
   useEffect(() => {
     loadData();
 
@@ -73,7 +100,26 @@ export function GroupsDashboardPanel() {
     };
   }, []);
 
+  useEffect(() => {
+    // Subscribe to new-project notifications pushed from main process
+    const unsub = window.jarvis.onNewRuddrProjects((projects) => {
+      setNewRuddrProjects((prev) => {
+        const existing = new Set(prev.map((p) => p.path));
+        const fresh = projects.filter((p) => !existing.has(p.path));
+        return fresh.length > 0 ? [...prev, ...fresh] : prev;
+      });
+    });
+    return () => { unsub(); };
+  }, []);
+
   const handleRefresh = async () => {
+    // Sync the Ruddr project list first (detect new projects, persist to DB).
+    // Also triggers refreshLinkedProjectDetails in the background for any projects
+    // missing note or cloud folder URL.
+    window.jarvis.groupsSyncRuddrCacheNow().catch(() => { /* non-fatal */ });
+    // Show a fetching indicator on note/cloud folder fields while the background
+    // scrape runs (cleared when the main process fires project-details-refreshed).
+    setDetailsLoading(true);
     // Re-fetch budget for every currently linked Ruddr project across all cards.
     const allProjectNames = groups.flatMap((g) => g.ruddrProjectNames);
     if (allProjectNames.length === 0) return;
@@ -123,25 +169,57 @@ export function GroupsDashboardPanel() {
         </button>
       </div>
 
-      {loading && groups.length === 0 && (
-        <div class="dash-loading">Loading groups…</div>
-      )}
+      <div class="groups-dash-body">
+        <div class="groups-dash-main" ref={mainRef} style={{ maxWidth: `${mainMaxWidth}px`, overflow: 'hidden' }}>
+          {/* ── New Ruddr project notification banners ── */}
+          {newRuddrProjects.length > 0 && (
+            <div class="groups-dash-new-projects">
+              {newRuddrProjects.map((p) => {
+                const editUrl = 'https://www.ruddr.io' + p.path.replace('/portfolio/projects/', '/portfolio/projects/edit/');
+                return (
+                  <div class="groups-dash-new-project-banner" key={p.path}>
+                    <span class="groups-dash-new-project-icon">🆕</span>
+                    <span class="groups-dash-new-project-name">{p.name}</span>
+                    <button
+                      class="groups-dash-new-project-edit"
+                      onClick={() => void window.jarvis.shellOpenUrl(editUrl)}
+                      title="Edit in Ruddr"
+                    >Edit ↗</button>
+                    <button
+                      class="groups-dash-new-project-dismiss"
+                      onClick={() => setNewRuddrProjects((prev) => prev.filter((x) => x.path !== p.path))}
+                      title="Dismiss"
+                    >✕</button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
-      {!loading && groups.length === 0 && (
-        <div class="dash-empty">
-          No groups configured yet. Add groups in the <strong>Setup → Groups</strong> tab.
-        </div>
-      )}
+          {loading && groups.length === 0 && (
+            <div class="dash-loading">Loading groups…</div>
+          )}
 
-      {groups.length > 0 && (
-        <div class="groups-dash-grid">
-          {groups.map((group) => (
-            <GroupCard key={group.id} group={group} onRuddrLinked={handleRuddrLinked}
-              budgetData={budgetData} setBudgetData={setBudgetData}
-              budgetChecking={budgetChecking} setBudgetChecking={setBudgetChecking} />
-          ))}
+          {!loading && groups.length === 0 && (
+            <div class="dash-empty">
+              No groups configured yet. Add groups in the <strong>Setup → Groups</strong> tab.
+            </div>
+          )}
+
+          {groups.length > 0 && (
+            <div class="groups-dash-grid">
+              {groups.map((group) => (
+                <GroupCard key={group.id} group={group} onRuddrLinked={handleRuddrLinked}
+                  detailsLoading={detailsLoading}
+                  budgetData={budgetData} setBudgetData={setBudgetData}
+                  budgetChecking={budgetChecking} setBudgetChecking={setBudgetChecking} />
+              ))}
+            </div>
+          )}
         </div>
-      )}
+
+        <RuddrProjectsPanel onGroupCreated={loadData} />
+      </div>
     </div>
   );
 }
@@ -151,6 +229,7 @@ export function GroupsDashboardPanel() {
 function GroupCard(props: {
   group: Group;
   onRuddrLinked: (groupId: number, names: string[]) => void;
+  detailsLoading: boolean;
   budgetData: Record<string, RuddrBudget>;
   setBudgetData: (fn: (prev: Record<string, RuddrBudget>) => Record<string, RuddrBudget>) => void;
   budgetChecking: string | null;
@@ -159,6 +238,7 @@ function GroupCard(props: {
   const {
     group,
     onRuddrLinked,
+    detailsLoading,
     budgetData,
     setBudgetData,
     budgetChecking,
@@ -174,6 +254,48 @@ function GroupCard(props: {
   const [ruddrAllProjects, setRuddrAllProjects] = useState<string[]>([]);
   /** allCount from the most recent search — used to detect thin caches. */
   const [ruddrLastCount, setRuddrLastCount] = useState(0);
+  /** Per-project info (path, note) keyed by project name */
+  const [projectInfo, setProjectInfo] = useState<Record<string, RuddrProjectInfo>>({});
+
+  // Load project info for each linked Ruddr project
+  useEffect(() => {
+    const names = group.ruddrProjectNames ?? [];
+    if (names.length === 0) return;
+    for (const name of names) {
+      if (projectInfo[name]) continue;
+      window.jarvis.groupsGetRuddrProjectInfo(name)
+        .then((res) => {
+          if (res.ok && res.name) {
+            setProjectInfo((prev) => ({
+              ...prev,
+              [name]: { name: res.name!, path: res.path!, note: res.note ?? null, cloudFolderUrl: res.cloudFolderUrl ?? null },
+            }));
+          }
+        })
+        .catch(() => { /* non-fatal */ });
+    }
+  }, [group.ruddrProjectNames]);
+
+  // Re-fetch project info when the background refresh updates note/cloud folder data
+  useEffect(() => {
+    const unsub = window.jarvis.onRuddrProjectDetailsRefreshed(() => {
+      setDetailsLoading(false);
+      const names = group.ruddrProjectNames ?? [];
+      for (const name of names) {
+        window.jarvis.groupsGetRuddrProjectInfo(name)
+          .then((res) => {
+            if (res.ok && res.name) {
+              setProjectInfo((prev) => ({
+                ...prev,
+                [name]: { name: res.name!, path: res.path!, note: res.note ?? null, cloudFolderUrl: res.cloudFolderUrl ?? null },
+              }));
+            }
+          })
+          .catch(() => { /* non-fatal */ });
+      }
+    });
+    return () => { unsub(); };
+  }, [group.ruddrProjectNames]);
 
   const handleOpenManual = async () => {
     setRuddrManualFilter('');
@@ -308,7 +430,39 @@ function GroupCard(props: {
                       title="Open in Ruddr"
                     >↗️</button>
                   )}
+                  {projectInfo[name]?.path && (() => {
+                    const editUrl = 'https://www.ruddr.io' + projectInfo[name].path.replace('/portfolio/projects/', '/portfolio/projects/edit/');
+                    return (
+                      <button
+                        class="groups-dash-ruddr-edit-btn"
+                        onClick={() => void window.jarvis.shellOpenUrl(editUrl)}
+                        title="Edit project in Ruddr"
+                      >✏️</button>
+                    );
+                  })()}
+                  {projectInfo[name]?.cloudFolderUrl && (
+                    <button
+                      class="groups-dash-ruddr-edit-btn"
+                      onClick={() => void window.jarvis.shellOpenUrl(projectInfo[name].cloudFolderUrl!)}
+                      title="Open cloud folder"
+                    >☁️</button>
+                  )}
                   <button class="groups-dash-ruddr-unlink" onClick={() => void handleUnlinkOne(name)} title="Remove Ruddr link">✕</button>
+                </div>
+                {/* Project note */}
+                <div class="groups-dash-ruddr-note">
+                  {projectInfo[name]
+                    ? (projectInfo[name].note
+                      ? <span class="groups-dash-note-text">{projectInfo[name].note}</span>
+                      : (detailsLoading
+                        ? <span class="groups-dash-note-empty" title="Fetching note from Ruddr…">🔄 Fetching note…</span>
+                        : <span class="groups-dash-note-empty" title="No note set for this project">❗ No note set</span>))
+                    : null}
+                  {projectInfo[name] && !projectInfo[name].cloudFolderUrl && (
+                    detailsLoading
+                      ? <span class="groups-dash-note-empty" title="Fetching cloud folder from Ruddr…">🔄 Fetching cloud folder…</span>
+                      : <span class="groups-dash-note-empty" title="No cloud folder linked in Ruddr">☁️ No cloud folder</span>
+                  )}
                 </div>
                 {budgetData[name] && (
                   <div class="groups-dash-budget-section">
