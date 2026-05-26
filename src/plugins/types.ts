@@ -2451,6 +2451,14 @@ export interface JarvisApi {
 
 
 
+  browserGetToken(): Promise<{ token: string }>;
+
+
+
+  browserRegenerateToken(): Promise<{ token: string }>;
+
+
+
   browserListSkills(): Promise<BrowserSkill[]>;
 
 

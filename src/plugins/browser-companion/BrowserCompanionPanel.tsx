@@ -185,6 +185,9 @@ export function BrowserCompanionPanel({ onBack }: { onBack: () => void }) {
   const [runningSkillId, setRunningSkillId] = useState<number | null>(null);
   const [lastResult, setLastResult] = useState<{ skillId: number; ok: boolean; data?: unknown; error?: string; testMode: boolean } | null>(null);
   const [selectedSkillId, setSelectedSkillId] = useState<number | null>(null);
+  const [pairingToken, setPairingToken] = useState<string | null>(null);
+  const [tokenCopied, setTokenCopied] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
 
   const loadStatus = useCallback(async () => {
     try {
@@ -192,6 +195,15 @@ export function BrowserCompanionPanel({ onBack }: { onBack: () => void }) {
       setStatus(s);
     } catch (e) {
       console.warn('[BrowserCompanion] status error:', e);
+    }
+  }, []);
+
+  const loadToken = useCallback(async () => {
+    try {
+      const result = await window.jarvis.browserGetToken();
+      setPairingToken(result.token);
+    } catch (e) {
+      console.warn('[BrowserCompanion] get-token error:', e);
     }
   }, []);
 
@@ -217,11 +229,12 @@ export function BrowserCompanionPanel({ onBack }: { onBack: () => void }) {
     void loadStatus();
     void loadSkills();
     void loadRuns();
+    void loadToken();
 
     // Poll connection status every 3 seconds
     const timer = setInterval(() => void loadStatus(), 3000);
     return () => clearInterval(timer);
-  }, [loadStatus, loadSkills, loadRuns]);
+  }, [loadStatus, loadSkills, loadRuns, loadToken]);
 
   // Listen for extension connection events
   useEffect(() => {
@@ -283,6 +296,27 @@ export function BrowserCompanionPanel({ onBack }: { onBack: () => void }) {
       console.warn('[BrowserCompanion] focus-window error:', e);
     } finally {
       setFocusing(false);
+    }
+  };
+
+  const handleCopyToken = async () => {
+    if (!pairingToken) return;
+    await navigator.clipboard.writeText(pairingToken);
+    setTokenCopied(true);
+    setTimeout(() => setTokenCopied(false), 2000);
+  };
+
+  const handleRegenerateToken = async () => {
+    if (!confirm('Regenerate the pairing token? The extension will disconnect and you will need to paste the new token into the extension popup.')) return;
+    setRegenerating(true);
+    try {
+      const result = await window.jarvis.browserRegenerateToken();
+      setPairingToken(result.token);
+      await loadStatus();
+    } catch (e) {
+      console.warn('[BrowserCompanion] regenerate-token error:', e);
+    } finally {
+      setRegenerating(false);
     }
   };
 
@@ -354,10 +388,54 @@ export function BrowserCompanionPanel({ onBack }: { onBack: () => void }) {
             <li>Open Edge/Chrome and navigate to <code>edge://extensions</code> or <code>chrome://extensions</code></li>
             <li>Enable <strong>Developer mode</strong></li>
             <li>Click <strong>Load unpacked</strong> and select the <code>src/browser-extension</code> folder from the Jarvis source directory</li>
-            <li>The extension icon should appear in your toolbar — click it to confirm connection</li>
+            <li>Click the extension icon in your toolbar and paste the pairing token below</li>
           </ol>
         </div>
       )}
+
+      {/* Pairing token section */}
+      <div style={{ background: '#1e1e1e', border: '1px solid #444', borderRadius: 6, padding: '10px 12px' }}>
+        <div style={{ fontWeight: 600, fontSize: 12, color: '#ccc', marginBottom: 6 }}>
+          🔑 Pairing Token
+        </div>
+        <div style={{ fontSize: 11, color: '#888', marginBottom: 8 }}>
+          Paste this token into the extension popup to authorise it. Keep it private — it grants the extension access to browser automation.
+        </div>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <code style={{
+            flex: 1, background: '#111', border: '1px solid #555', borderRadius: 4,
+            padding: '4px 8px', fontSize: 12, color: '#6cf', userSelect: 'all',
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>
+            {pairingToken ?? '…'}
+          </code>
+          <button
+            onClick={() => void handleCopyToken()}
+            disabled={!pairingToken}
+            title="Copy token to clipboard"
+            style={{
+              padding: '4px 10px', borderRadius: 4, border: 'none',
+              background: tokenCopied ? '#1b5e20' : '#333', color: tokenCopied ? '#a5d6a7' : '#ccc',
+              cursor: !pairingToken ? 'not-allowed' : 'pointer', fontSize: 11, whiteSpace: 'nowrap',
+            }}
+          >
+            {tokenCopied ? '✓ Copied' : '📋 Copy'}
+          </button>
+          <button
+            onClick={() => void handleRegenerateToken()}
+            disabled={regenerating}
+            title="Generate a new token (disconnects current extension)"
+            style={{
+              padding: '4px 10px', borderRadius: 4, border: 'none',
+              background: '#2a1a0a', color: '#ffb74d',
+              cursor: regenerating ? 'not-allowed' : 'pointer', fontSize: 11, whiteSpace: 'nowrap',
+              opacity: regenerating ? 0.6 : 1,
+            }}
+          >
+            {regenerating ? '⏳' : '🔄'} Regenerate
+          </button>
+        </div>
+      </div>
 
       {/* Skills section */}
       <div>

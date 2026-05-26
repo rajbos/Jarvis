@@ -159,6 +159,8 @@ const EXPECTED_CHANNELS = [
   'shell:open-url',
   // browser-companion plugin
   'browser:status',
+  'browser:get-token',
+  'browser:regenerate-token',
   'browser:list-skills',
   'browser:create-skill',
   'browser:update-skill',

@@ -251,6 +251,8 @@ contextBridge.exposeInMainWorld('jarvis', {
     ipcRenderer.invoke('shell:open-url', url),
   // Browser Companion
   browserStatus: () => ipcRenderer.invoke('browser:status'),
+  browserGetToken: () => ipcRenderer.invoke('browser:get-token'),
+  browserRegenerateToken: () => ipcRenderer.invoke('browser:regenerate-token'),
   browserListSkills: () => ipcRenderer.invoke('browser:list-skills'),
   browserCreateSkill: (name: string, description: string, startUrl: string, instructions: string, extractSelector: string) =>
     ipcRenderer.invoke('browser:create-skill', name, description, startUrl, instructions, extractSelector),
