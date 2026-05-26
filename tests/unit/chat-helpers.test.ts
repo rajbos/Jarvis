@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import initSqlJs, { Database as SqlJsDatabase } from 'sql.js';
 import { getSchema } from '../../src/storage/schema';
 import { saveGitHubAuth } from '../../src/services/github-oauth';
-import { searchReposForChat, buildSystemContext } from '../../src/plugins/chat/db-helpers';
+import { searchReposForChat, buildSystemContext, searchOneNoteForChat } from '../../src/plugins/chat/db-helpers';
 
 // Helpers for seeding test data
 function insertOrg(db: SqlJsDatabase, login: string, enabled = true): number {
@@ -223,5 +223,137 @@ describe('buildSystemContext', () => {
     const ctx = buildSystemContext(db);
     expect(ctx).toContain('IMPORTANT');
     expect(ctx).toContain('Do NOT fabricate');
+  });
+
+  it('includes OneNote cache summary when pages exist', () => {
+    // Seed a group, folder, and cached page
+    db.run(`INSERT INTO groups (name) VALUES ('ACME')`);
+    const gid = (db.exec('SELECT last_insert_rowid() AS id')[0].values[0][0]) as number;
+    db.run(`INSERT INTO onedrive_roots (path, label) VALUES ('C:\\onedrive', 'Main')`);
+    const rid = (db.exec('SELECT last_insert_rowid() AS id')[0].values[0][0]) as number;
+    db.run(`INSERT INTO onedrive_customer_folders (group_id, root_id, status) VALUES (?, ?, 'found')`, [gid, rid]);
+    const fid = (db.exec('SELECT last_insert_rowid() AS id')[0].values[0][0]) as number;
+    db.run(
+      `INSERT INTO onedrive_onenote_cache (folder_id, relative_path, section_name, page_index, page_level, page_title, page_content, read_source)
+       VALUES (?, 'Notes.one', 'Notes', 1, 1, 'Hello', 'World content', 'binary')`,
+      [fid],
+    );
+    const ctx = buildSystemContext(db);
+    expect(ctx).toContain('OneNote pages cached');
+    expect(ctx).toContain('search_onenote');
+  });
+
+  it('omits OneNote section when no pages cached', () => {
+    const ctx = buildSystemContext(db);
+    expect(ctx).not.toContain('OneNote pages cached');
+  });
+});
+
+// ── searchOneNoteForChat ──────────────────────────────────────────────────────
+describe('searchOneNoteForChat', () => {
+  let db: SqlJsDatabase;
+  let folderId: number;
+
+  beforeEach(async () => {
+    process.env.JARVIS_ENCRYPTION_KEY = 'test-key-for-chat-helpers';
+    const SQL = await initSqlJs();
+    db = new SQL.Database();
+    db.run(getSchema());
+
+    // group A with one folder and two section files
+    db.run(`INSERT INTO groups (name) VALUES ('Acme Corp')`);
+    const gid = (db.exec('SELECT last_insert_rowid() AS id')[0].values[0][0]) as number;
+    db.run(`INSERT INTO onedrive_roots (path, label) VALUES ('C:\\od', 'Root')`);
+    const rid = (db.exec('SELECT last_insert_rowid() AS id')[0].values[0][0]) as number;
+    db.run(`INSERT INTO onedrive_customer_folders (group_id, root_id, status) VALUES (?, ?, 'found')`, [gid, rid]);
+    folderId = (db.exec('SELECT last_insert_rowid() AS id')[0].values[0][0]) as number;
+
+    // group B
+    db.run(`INSERT INTO groups (name) VALUES ('Beta LLC')`);
+    const gid2 = (db.exec('SELECT last_insert_rowid() AS id')[0].values[0][0]) as number;
+    db.run(`INSERT INTO onedrive_customer_folders (group_id, root_id, status) VALUES (?, ?, 'found')`, [gid2, rid]);
+    const fid2 = (db.exec('SELECT last_insert_rowid() AS id')[0].values[0][0]) as number;
+
+    // Seed pages
+    db.run(
+      `INSERT INTO onedrive_onenote_cache (folder_id, relative_path, section_name, page_index, page_level, page_title, page_content, read_source)
+       VALUES (?, 'General.one', 'General', 1, 1, 'Project kickoff', 'We decided to use TypeScript for all services.', 'binary')`,
+      [folderId],
+    );
+    db.run(
+      `INSERT INTO onedrive_onenote_cache (folder_id, relative_path, section_name, page_index, page_level, page_title, page_content, read_source)
+       VALUES (?, 'General.one', 'General', 2, 2, 'Sub-page note', 'Additional details on the architecture decision.', 'binary')`,
+      [folderId],
+    );
+    db.run(
+      `INSERT INTO onedrive_onenote_cache (folder_id, relative_path, section_name, page_index, page_level, page_title, page_content, read_source)
+       VALUES (?, 'Finance.one', 'Finance', 1, 1, 'Budget Q1', 'The total budget for Q1 is 50000 EUR.', 'binary')`,
+      [folderId],
+    );
+    db.run(
+      `INSERT INTO onedrive_onenote_cache (folder_id, relative_path, section_name, page_index, page_level, page_title, page_content, read_source)
+       VALUES (?, 'Beta.one', 'Beta', 1, 1, 'Beta planning', 'We plan to launch the beta in Q2.', 'binary')`,
+      [fid2],
+    );
+  });
+
+  afterEach(() => {
+    db.close();
+    delete process.env.JARVIS_ENCRYPTION_KEY;
+  });
+
+  it('finds pages matching a single term in content', () => {
+    const result = searchOneNoteForChat(db, 'TypeScript');
+    expect(result).toContain('Project kickoff');
+    expect(result).toContain('Acme Corp');
+  });
+
+  it('finds pages matching a term in page title', () => {
+    const result = searchOneNoteForChat(db, 'Budget');
+    expect(result).toContain('Budget Q1');
+    expect(result).toContain('Finance');
+  });
+
+  it('requires all words to match (AND logic)', () => {
+    const result = searchOneNoteForChat(db, 'budget Q1');
+    expect(result).toContain('Budget Q1');
+    expect(result).not.toContain('Project kickoff');
+  });
+
+  it('includes sub-page indentation indicator for page_level > 1', () => {
+    const result = searchOneNoteForChat(db, 'architecture');
+    expect(result).toContain('↳');
+  });
+
+  it('filters by group name when provided', () => {
+    const result = searchOneNoteForChat(db, 'Q2', 'Beta');
+    expect(result).toContain('Beta LLC');
+    expect(result).not.toContain('Acme Corp');
+  });
+
+  it('returns no-match message when nothing found', () => {
+    const result = searchOneNoteForChat(db, 'zzznomatch999');
+    expect(result).toContain('No OneNote pages found matching');
+    expect(result).toContain('zzznomatch999');
+  });
+
+  it('returns no-search-terms message for empty query', () => {
+    expect(searchOneNoteForChat(db, '')).toBe('No search terms provided.');
+    expect(searchOneNoteForChat(db, '   ')).toBe('No search terms provided.');
+  });
+
+  it('is case-insensitive', () => {
+    expect(searchOneNoteForChat(db, 'TYPESCRIPT')).toContain('Project kickoff');
+    expect(searchOneNoteForChat(db, 'typescript')).toContain('Project kickoff');
+  });
+
+  it('includes section name in output', () => {
+    const result = searchOneNoteForChat(db, 'TypeScript');
+    expect(result).toContain('General');
+  });
+
+  it('includes a content snippet', () => {
+    const result = searchOneNoteForChat(db, 'TypeScript');
+    expect(result).toContain('TypeScript');
   });
 });
