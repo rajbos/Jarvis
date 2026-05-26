@@ -21,6 +21,7 @@ vi.mock('electron', () => ({
   },
   shell: { openExternal: vi.fn(), openPath: vi.fn() },
   dialog: { showOpenDialog: vi.fn() },
+  app: { isPackaged: false },
   Notification: vi.fn().mockImplementation(() => ({ show: vi.fn() })),
   BrowserWindow: {
     fromWebContents: vi.fn(),
@@ -159,6 +160,9 @@ const EXPECTED_CHANNELS = [
   'onedrive:list-files-for-folder',
   'onedrive:read-onenote-file',
   'onedrive:read-url-shortcut',
+  'onedrive:cache-onenote-files-for-group',
+  'onedrive:get-onenote-cache',
+  'onedrive:get-onenote-cache-for-group',
   'shell:open-url',
   // browser-companion plugin
   'browser:status',

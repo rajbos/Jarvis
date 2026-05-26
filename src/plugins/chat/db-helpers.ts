@@ -10,6 +10,7 @@ import { listOrgs } from '../../services/github-discovery';
 export function buildSystemContext(db: SqlJsDatabase): string {
   const lines: string[] = [
     'You are Jarvis, a personal GitHub repository assistant.',
+    `Today's date: ${new Date().toISOString().slice(0, 10)}.`,
     'You have access to the user\'s GitHub data that has been indexed into a local database (snapshot shown below).',
     'Help the user find repos, understand their codebase, and answer questions about their repositories.',
     'Be concise and helpful. When listing repos, use the full_name format (org/repo).',
@@ -117,6 +118,31 @@ export function buildSystemContext(db: SqlJsDatabase): string {
     }
   }
 
+  // OneNote cache summary — tell the LLM this data exists and is searchable
+  try {
+    const onStmt = db.prepare(
+      `SELECT COUNT(*) as page_count,
+              COUNT(DISTINCT c.folder_id || '|' || c.relative_path) as section_count,
+              COUNT(DISTINCT cf.group_id) as group_count
+       FROM onedrive_onenote_cache c
+       JOIN onedrive_customer_folders cf ON cf.id = c.folder_id`,
+    );
+    if (onStmt.step()) {
+      const r = onStmt.getAsObject() as { page_count: number; section_count: number; group_count: number };
+      if (r.page_count > 0) {
+        lines.push('');
+        lines.push(
+          `OneNote pages cached: ${r.page_count} pages across ${r.section_count} section(s) in ${r.group_count} group(s). ` +
+          'Use the search_onenote tool to find relevant notes when the user asks about project-specific information, ' +
+          'meeting notes, decisions, or any topic that may be documented in OneNote.',
+        );
+      }
+    }
+    onStmt.free();
+  } catch {
+    // table not yet created in older DB; skip
+  }
+
   return lines.join('\n');
 }
 
@@ -217,3 +243,92 @@ export function searchSecretsForChat(db: SqlJsDatabase, pattern: string): string
   }
   return lines.join('\n');
 }
+
+// ── OneNote search ────────────────────────────────────────────────────────────
+
+const ONENOTE_SNIPPET_LENGTH = 400;
+
+/**
+ * Search cached OneNote pages for content matching all words in `query`.
+ * Returns up to 10 pages with a short content snippet around the first match.
+ * Optionally filter to a specific group name.
+ */
+export function searchOneNoteForChat(db: SqlJsDatabase, query: string, groupName?: string, since?: string): string {
+  const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return 'No search terms provided.';
+
+  // Build WHERE clauses: every word must appear in title OR content
+  const wordConditions = words.map(() =>
+    `(LOWER(COALESCE(c.page_title,'')) LIKE ? OR LOWER(COALESCE(c.page_content,'')) LIKE ?)`,
+  ).join(' AND ');
+  const wordParams = words.flatMap(w => [`%${w}%`, `%${w}%`]);
+
+  const groupFilter = groupName ? 'AND LOWER(g.name) LIKE LOWER(?)' : '';
+  const groupParams = groupName ? [`%${groupName}%`] : [];
+
+  const sinceFilter = since ? 'AND c.page_last_modified >= ?' : '';
+  const sinceParams = since ? [since] : [];
+
+  const sql = `
+    SELECT g.name AS group_name,
+           c.section_name,
+           c.page_level,
+           c.page_title,
+           c.page_date,
+           c.page_last_modified,
+           SUBSTR(c.page_content, 1, ${ONENOTE_SNIPPET_LENGTH * 3}) AS raw_content
+    FROM onedrive_onenote_cache c
+    JOIN onedrive_customer_folders cf ON cf.id = c.folder_id
+    JOIN groups g ON g.id = cf.group_id
+    WHERE ${wordConditions}
+    ${groupFilter}
+    ${sinceFilter}
+    ORDER BY c.page_last_modified DESC, g.name, c.section_name, c.page_index
+    LIMIT 10`;
+
+  const stmt = db.prepare(sql);
+  type Row = { group_name: string; section_name: string | null; page_level: number; page_title: string | null; page_date: string | null; page_last_modified: string | null; raw_content: string | null };
+  const rows: Row[] = [];
+  try {
+    stmt.bind([...wordParams, ...groupParams, ...sinceParams]);
+    while (stmt.step()) rows.push(stmt.getAsObject() as unknown as Row);
+  } finally {
+    stmt.free();
+  }
+
+  if (rows.length === 0) {
+    const hint = groupName ? ` in group "${groupName}"` : '';
+    const dateHint = since ? ` since ${since}` : '';
+    return `No OneNote pages found matching "${query}"${hint}${dateHint}. Try broader terms or check that files have been cached via the OneDrive panel.`;
+  }
+
+  const lines = [`Found ${rows.length} OneNote page(s) matching "${query}":`];
+  for (const r of rows) {
+    const levelPrefix = r.page_level > 1 ? `${'  '.repeat(r.page_level - 1)}↳ ` : '';
+    const section = r.section_name ? ` › ${r.section_name}` : '';
+    const title = r.page_title || '(untitled)';
+    const modified = r.page_last_modified ? ` [modified: ${r.page_last_modified.slice(0, 10)}]` : '';
+    const date = r.page_date ? ` (${r.page_date})` : '';
+    lines.push(`\n[${r.group_name}${section}] ${levelPrefix}${title}${date}${modified}`);
+
+    // Extract a short snippet around the first matching word
+    const content = r.raw_content ?? '';
+    const lower = content.toLowerCase();
+    let snippetStart = 0;
+    for (const w of words) {
+      const idx = lower.indexOf(w);
+      if (idx !== -1) {
+        snippetStart = Math.max(0, idx - 60);
+        break;
+      }
+    }
+    const snippet = content.slice(snippetStart, snippetStart + ONENOTE_SNIPPET_LENGTH).trim();
+    if (snippet) {
+      const prefix = snippetStart > 0 ? '…' : '';
+      const suffix = snippetStart + ONENOTE_SNIPPET_LENGTH < content.length ? '…' : '';
+      lines.push(`  ${prefix}${snippet}${suffix}`);
+    }
+  }
+  return lines.join('\n');
+}
+

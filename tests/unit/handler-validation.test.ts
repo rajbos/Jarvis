@@ -44,6 +44,7 @@ vi.mock('electron', () => ({
   },
   shell: { openExternal: vi.fn(), openPath: vi.fn() },
   dialog: { showOpenDialog: vi.fn() },
+  app: { isPackaged: false },
   Notification: vi.fn().mockImplementation(() => ({ show: vi.fn() })),
   BrowserWindow: {
     fromWebContents: vi.fn(),

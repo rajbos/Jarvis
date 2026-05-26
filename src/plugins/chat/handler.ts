@@ -10,7 +10,7 @@ import {
   type OllamaToolCall,
 } from '../../services/ollama';
 import { getConfigValue } from '../../storage/database';
-import { buildSystemContext, searchReposForChat, searchSecretsForChat } from './db-helpers';
+import { buildSystemContext, searchReposForChat, searchSecretsForChat, searchOneNoteForChat } from './db-helpers';
 
 const activeChatAborts = new Map<number, AbortController>();
 
@@ -58,6 +58,36 @@ const CHAT_TOOLS: OllamaTool[] = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'search_onenote',
+      description:
+        'Search the locally cached OneNote pages for content matching a query. ' +
+        'Use this when the user asks about project-specific topics, meeting notes, decisions, ' +
+        'requirements, or any information that may be documented in OneNote sections linked to a group. ' +
+        'Supports partial matching: all words in the query must appear in the page title or content. ' +
+        'Optionally filter results to a specific group by name.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: 'One or more search terms (space-separated). All terms must match somewhere in the page.',
+          },
+          group: {
+            type: 'string',
+            description: 'Optional group name to restrict the search (partial match). Omit to search all groups.',
+          },
+          since: {
+            type: 'string',
+            description: 'Optional ISO date string (YYYY-MM-DD). When provided, only pages last modified on or after this date are returned. Use this to answer questions like "notes from this week" by computing the date from today.',
+          },
+        },
+        required: ['query'],
+      },
+    },
+  },
 ];
 
 function dispatchToolCall(db: SqlJsDatabase, call: OllamaToolCall): string {
@@ -68,6 +98,12 @@ function dispatchToolCall(db: SqlJsDatabase, call: OllamaToolCall): string {
   if (call.function.name === 'search_secrets') {
     const pattern = String(call.function.arguments['pattern'] ?? '');
     return searchSecretsForChat(db, pattern);
+  }
+  if (call.function.name === 'search_onenote') {
+    const query = String(call.function.arguments['query'] ?? '');
+    const group = call.function.arguments['group'] != null ? String(call.function.arguments['group']) : undefined;
+    const since = call.function.arguments['since'] != null ? String(call.function.arguments['since']) : undefined;
+    return searchOneNoteForChat(db, query, group, since);
   }
   return `Unknown tool: ${call.function.name}`;
 }

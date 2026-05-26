@@ -87,7 +87,7 @@ function initializeSchema(database: SqlJsDatabase): void {
   if (userVersion === 0) {
     database.run(getSchema());
     seedBuiltInAgents(database);
-    database.run('PRAGMA user_version = 23');
+    database.run('PRAGMA user_version = 25');
   }
 
   if (userVersion === 1) {
@@ -481,6 +481,43 @@ function initializeSchema(database: SqlJsDatabase): void {
     `);
     database.run('CREATE INDEX IF NOT EXISTS idx_auto_dismiss_log_date ON auto_dismiss_log(dismissed_at)');
     database.run('PRAGMA user_version = 23');
+  }
+
+  if (userVersion === 23) {
+    // Migration v23 → v24: add OneNote page content cache table
+    database.run(`
+      CREATE TABLE IF NOT EXISTS onedrive_onenote_cache (
+          id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+          folder_id           INTEGER NOT NULL,
+          relative_path       TEXT NOT NULL,
+          section_name        TEXT,
+          page_index          INTEGER NOT NULL,
+          page_level          INTEGER NOT NULL DEFAULT 1,
+          page_title          TEXT,
+          page_date           TEXT,
+          page_last_modified  TEXT,
+          page_content        TEXT,
+          file_last_modified  TEXT,
+          read_source         TEXT NOT NULL DEFAULT 'binary',
+          cached_at           DATETIME DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(folder_id, relative_path, page_index)
+      )
+    `);
+    database.run(`
+      CREATE INDEX IF NOT EXISTS idx_onenote_cache_lookup
+      ON onedrive_onenote_cache(folder_id, relative_path)
+    `);
+    database.run('PRAGMA user_version = 24');
+  }
+
+  if (userVersion === 24) {
+    // Migration v24 → v25: add page_last_modified column and index to OneNote cache
+    database.run(`ALTER TABLE onedrive_onenote_cache ADD COLUMN page_last_modified TEXT`);
+    database.run(`
+      CREATE INDEX IF NOT EXISTS idx_onenote_cache_modified
+      ON onedrive_onenote_cache(page_last_modified)
+    `);
+    database.run('PRAGMA user_version = 25');
   }
 }
 

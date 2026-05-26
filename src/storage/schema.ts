@@ -332,5 +332,25 @@ export function getSchema(): string {
         subject_type    TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_auto_dismiss_log_date ON auto_dismiss_log(dismissed_at);
+
+    -- Cached OneNote page content (keyed by folder + relative path; stable across file rescans)
+    CREATE TABLE IF NOT EXISTS onedrive_onenote_cache (
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        folder_id           INTEGER NOT NULL,
+        relative_path       TEXT NOT NULL,
+        section_name        TEXT,
+        page_index          INTEGER NOT NULL,
+        page_level          INTEGER NOT NULL DEFAULT 1,
+        page_title          TEXT,
+        page_date           TEXT,
+        page_last_modified  TEXT,
+        page_content        TEXT,
+        file_last_modified  TEXT,
+        read_source         TEXT NOT NULL DEFAULT 'binary',
+        cached_at           DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(folder_id, relative_path, page_index)
+    );
+    CREATE INDEX IF NOT EXISTS idx_onenote_cache_lookup ON onedrive_onenote_cache(folder_id, relative_path);
+    CREATE INDEX IF NOT EXISTS idx_onenote_cache_modified ON onedrive_onenote_cache(page_last_modified);
   `;
 }
