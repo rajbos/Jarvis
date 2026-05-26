@@ -8,9 +8,10 @@ import type { Group, GroupDetail, LocalRepo, OnedriveFolderInfo, OnedriveFile, U
 interface GroupsPanelProps {
   onClose: () => void;
   onOpenOneNote?: (filePath: string) => void;
+  onOpenOneNoteCache?: (groupId: number, groupName: string) => void;
 }
 
-export function GroupsPanel({ onClose, onOpenOneNote }: GroupsPanelProps) {
+export function GroupsPanel({ onClose, onOpenOneNote, onOpenOneNoteCache }: GroupsPanelProps) {
   const [groups, setGroups] = useState<Group[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<GroupDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -389,14 +390,26 @@ export function GroupsPanel({ onClose, onOpenOneNote }: GroupsPanelProps) {
                   <div style={{ fontSize: '0.8rem', color: '#99a', fontWeight: 600 }}>
                     Customer Data (OneDrive)
                   </div>
-                  <button
-                    class="btn-save"
-                    style={{ padding: '0.15rem 0.5rem', fontSize: '0.75rem' }}
-                    onClick={() => void handleOnedriveDiscover()}
-                    disabled={onedriveDiscovering}
-                  >
-                    {onedriveDiscovering ? 'Scanning…' : '🔍 Discover'}
-                  </button>
+                  <div style={{ display: 'flex', gap: '0.25rem' }}>
+                    <button
+                      class="btn-save"
+                      style={{ padding: '0.15rem 0.5rem', fontSize: '0.75rem' }}
+                      onClick={() => void handleOnedriveDiscover()}
+                      disabled={onedriveDiscovering}
+                    >
+                      {onedriveDiscovering ? 'Scanning…' : '🔍 Discover'}
+                    </button>
+                    {onOpenOneNoteCache && selectedGroup.onedriveFolders.some(f => f.status === 'found') && (
+                      <button
+                        class="btn-secondary"
+                        style={{ padding: '0.15rem 0.5rem', fontSize: '0.75rem' }}
+                        title="View cached OneNote pages for this group"
+                        onClick={() => onOpenOneNoteCache(selectedGroup.id, selectedGroup.name)}
+                      >
+                        📋
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {selectedGroup.onedriveFolders.length === 0 && (

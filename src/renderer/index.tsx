@@ -28,6 +28,7 @@ import { BrowserCompanionPanel } from '../plugins/browser-companion/BrowserCompa
 import { GroupsStep } from '../plugins/groups/GroupsStep';
 import { GroupsPanel } from '../plugins/groups/GroupsPanel';
 import { OneNoteSectionPanel } from '../plugins/groups/OneNoteSectionPanel';
+import { OneNoteCachePanel } from '../plugins/groups/OneNoteCachePanel';
 import { GroupsDashboardPanel } from '../plugins/groups/GroupsDashboardPanel';
 
 // ── Types (imported from single source of truth in plugins/types.ts) ─────────
@@ -124,6 +125,7 @@ function App() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [showGroupsPanel, setShowGroupsPanel] = useState(false);
   const [oneNoteFilePath, setOneNoteFilePath] = useState<string | null>(null);
+  const [oneNoteCacheGroup, setOneNoteCacheGroup] = useState<{ groupId: number; groupName: string } | null>(null);
 
   // GitHub rate limit
   const [rateLimit, setRateLimit] = useState<GitHubRateLimit | null>(null);
@@ -503,6 +505,7 @@ function App() {
     // Groups
     setShowGroupsPanel(false);
     setOneNoteFilePath(null);
+    setOneNoteCacheGroup(null);
     // Ollama + Chat sub-panel
     setShowOllamaPanel(false);
     setShowChatPanel(false);
@@ -707,6 +710,7 @@ function App() {
   const handleGroupsClose = async () => {
     setShowGroupsPanel(false);
     setOneNoteFilePath(null);
+    setOneNoteCacheGroup(null);
     // Refresh group list so the step badge stays current
     try {
       const list = await window.jarvis.groupsList();
@@ -983,7 +987,8 @@ function App() {
         {showGroupsPanel && (
           <GroupsPanel
             onClose={() => void handleGroupsClose()}
-            onOpenOneNote={(path) => setOneNoteFilePath(path)}
+            onOpenOneNote={(path) => { setOneNoteCacheGroup(null); setOneNoteFilePath(path); }}
+            onOpenOneNoteCache={(groupId, groupName) => { setOneNoteFilePath(null); setOneNoteCacheGroup({ groupId, groupName }); }}
           />
         )}
 
@@ -991,6 +996,14 @@ function App() {
           <OneNoteSectionPanel
             filePath={oneNoteFilePath}
             onClose={() => setOneNoteFilePath(null)}
+          />
+        )}
+
+        {oneNoteCacheGroup && (
+          <OneNoteCachePanel
+            groupId={oneNoteCacheGroup.groupId}
+            groupName={oneNoteCacheGroup.groupName}
+            onClose={() => setOneNoteCacheGroup(null)}
           />
         )}
       </div>

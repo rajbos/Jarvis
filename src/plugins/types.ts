@@ -1476,6 +1476,19 @@ export interface OneNoteCacheGroupResult {
   errors: Array<{ relativePath: string; error: string }>;
 }
 
+export interface OneNoteGroupCachePage {
+  relativePath: string;
+  sectionName: string;
+  pageIndex: number;
+  pageLevel: number;
+  pageTitle: string;
+  /** ISO 8601 last-modified from OneNote, or YYYY-MM-DD from title. Empty if unknown. */
+  pageLastModified: string;
+  pageDate: string;
+  readSource: 'com' | 'binary';
+  cachedAt: string;
+}
+
 // ── URL shortcut types ────────────────────────────────────────────────────────
 
 
@@ -2489,6 +2502,10 @@ export interface JarvisApi {
 
 
   onedriveGetOneNoteCache(folderId: number, relativePath: string): Promise<{ pages: OneNoteCachedPage[] }>;
+
+
+
+  onedriveGetOneNoteCacheForGroup(groupId: number): Promise<{ pages: OneNoteGroupCachePage[] }>;
 
 
 

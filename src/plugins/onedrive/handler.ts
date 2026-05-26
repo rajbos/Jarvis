@@ -15,6 +15,7 @@ import { readOneNoteSection } from '../../services/onenote-reader';
 import {
   cacheOneNoteFilesForGroup,
   getCachedPages,
+  getOneNoteCacheForGroup,
 } from '../../services/onedrive-onenote-cache';
 import { readUrlShortcut } from '../../services/url-shortcut';
 import { getGroup } from '../../services/groups';
@@ -180,6 +181,12 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
       return { pages: [] };
     }
     const pages = getCachedPages(db, folderId, relativePath);
+    return { pages };
+  });
+
+  ipcMain.handle('onedrive:get-onenote-cache-for-group', (_event, groupId: number) => {
+    if (typeof groupId !== 'number') return { pages: [] };
+    const pages = getOneNoteCacheForGroup(db, groupId);
     return { pages };
   });
 

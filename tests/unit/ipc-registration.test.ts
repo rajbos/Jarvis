@@ -159,6 +159,7 @@ const EXPECTED_CHANNELS = [
   'onedrive:read-url-shortcut',
   'onedrive:cache-onenote-files-for-group',
   'onedrive:get-onenote-cache',
+  'onedrive:get-onenote-cache-for-group',
   'shell:open-url',
   // browser-companion plugin
   'browser:status',

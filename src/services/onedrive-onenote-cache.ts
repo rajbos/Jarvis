@@ -229,6 +229,71 @@ export function deleteCacheForFolder(db: SqlJsDatabase, folderId: number): void 
   db.run('DELETE FROM onedrive_onenote_cache WHERE folder_id = ?', [folderId]);
 }
 
+export interface OneNoteGroupCachePage {
+  relativePath: string;
+  sectionName: string;
+  pageIndex: number;
+  pageLevel: number;
+  pageTitle: string;
+  pageLastModified: string;
+  pageDate: string;
+  readSource: 'com' | 'binary';
+  cachedAt: string;
+}
+
+/**
+ * Return all cached pages for every .one file belonging to a group,
+ * ordered by section file then page index. Used for the sanity-check UI.
+ */
+export function getOneNoteCacheForGroup(
+  db: SqlJsDatabase,
+  groupId: number,
+): OneNoteGroupCachePage[] {
+  const stmt = db.prepare(`
+    SELECT
+      c.relative_path,
+      COALESCE(c.section_name, '') AS section_name,
+      c.page_index,
+      c.page_level,
+      COALESCE(c.page_title, '')   AS page_title,
+      COALESCE(c.page_last_modified, '') AS page_last_modified,
+      COALESCE(c.page_date, '')    AS page_date,
+      c.read_source,
+      c.cached_at
+    FROM onedrive_onenote_cache c
+    JOIN onedrive_customer_folders cf ON cf.id = c.folder_id
+    WHERE cf.group_id = ?
+    ORDER BY c.relative_path, c.page_index
+  `);
+  stmt.bind([groupId]);
+
+  type Row = {
+    relative_path: string; section_name: string; page_index: number;
+    page_level: number; page_title: string; page_last_modified: string;
+    page_date: string; read_source: string; cached_at: string;
+  };
+  const pages: OneNoteGroupCachePage[] = [];
+  try {
+    while (stmt.step()) {
+      const r = stmt.getAsObject() as unknown as Row;
+      pages.push({
+        relativePath: r.relative_path,
+        sectionName: r.section_name,
+        pageIndex: r.page_index,
+        pageLevel: r.page_level,
+        pageTitle: r.page_title,
+        pageLastModified: r.page_last_modified,
+        pageDate: r.page_date,
+        readSource: r.read_source as 'com' | 'binary',
+        cachedAt: r.cached_at,
+      });
+    }
+  } finally {
+    stmt.free();
+  }
+  return pages;
+}
+
 // ── Main orchestration ────────────────────────────────────────────────────────
 
 /**
