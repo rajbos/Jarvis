@@ -10,6 +10,7 @@ import {
   writeCacheForFile,
   deleteCacheForFolder,
   cacheOneNoteFilesForGroup,
+  getOneNoteCacheForGroup,
 } from '../../src/services/onedrive-onenote-cache';
 
 // ── Mock onenote-reader async function ────────────────────────────────────────
@@ -275,5 +276,90 @@ describe('cacheOneNoteFilesForGroup()', () => {
     const result = await cacheOneNoteFilesForGroup(db, groupId, 'fake.ps1');
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0].relativePath).toBe('Missing.one');
+  });
+
+  it('records an error when readOneNoteSectionAsync throws', async () => {
+    const { readOneNoteSectionAsync } = await import('../../src/services/onenote-reader');
+    const mockReader = readOneNoteSectionAsync as ReturnType<typeof vi.fn>;
+    mockReader.mockRejectedValueOnce(new Error('COM unavailable'));
+
+    // Need a file that actually exists — use a temp file
+    const os = await import('os');
+    const path = await import('path');
+    const fs = await import('fs');
+    const tmpDir = os.tmpdir();
+    const tmpFile = path.join(tmpDir, 'test-section.one');
+    fs.writeFileSync(tmpFile, Buffer.from('fake one file'));
+
+    const groupId = insertGroup(db, 'I');
+    const rootId = insertRoot(db, tmpDir);
+    const folderId = insertFolder(db, groupId, rootId, tmpDir);
+    insertFile(db, folderId, 'test-section.one', 'test-section.one', '2024-01-01T00:00:00.000Z');
+
+    const result = await cacheOneNoteFilesForGroup(db, groupId, 'fake.ps1');
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0].error).toContain('COM unavailable');
+
+    fs.unlinkSync(tmpFile);
+  });
+});
+
+describe('getOneNoteCacheForGroup()', () => {
+  let db: SqlJsDatabase;
+
+  beforeEach(async () => {
+    const SQL = await initSqlJs();
+    db = new SQL.Database();
+    setupDb(db);
+  });
+
+  it('returns empty array when no pages are cached for the group', () => {
+    const groupId = insertGroup(db, 'Empty');
+    expect(getOneNoteCacheForGroup(db, groupId)).toEqual([]);
+  });
+
+  it('returns all cached pages for a group ordered by section and page index', () => {
+    const groupId = insertGroup(db, 'Acme');
+    const rootId = insertRoot(db, 'C:\\OneDrive');
+    const folderId = insertFolder(db, groupId, rootId, 'C:\\OneDrive\\Acme');
+
+    writeCacheForFile(
+      db,
+      folderId,
+      'General.one',
+      [
+        { pageIndex: 1, pageLevel: 1, title: 'Kickoff', date: '2024-01-01', lastModified: '2024-01-01T09:00:00.000Z', content: 'Hello world' },
+        { pageIndex: 2, pageLevel: 2, title: 'Sub note', date: '2024-01-02', lastModified: '2024-01-02T09:00:00.000Z', content: 'Detail' },
+      ],
+      '2024-01-15T10:00:00.000Z',
+      'com',
+    );
+
+    const pages = getOneNoteCacheForGroup(db, groupId);
+    expect(pages).toHaveLength(2);
+    expect(pages[0].pageTitle).toBe('Kickoff');
+    expect(pages[0].pageLevel).toBe(1);
+    expect(pages[0].readSource).toBe('com');
+    expect(pages[0].sectionName).toBe('General');
+    expect(pages[1].pageTitle).toBe('Sub note');
+    expect(pages[1].pageLevel).toBe(2);
+    expect(pages[1].pageLastModified).toBe('2024-01-02T09:00:00.000Z');
+  });
+
+  it('does not return pages from a different group', () => {
+    const groupA = insertGroup(db, 'A');
+    const groupB = insertGroup(db, 'B');
+    const rootId = insertRoot(db, 'C:\\D');
+    const folderA = insertFolder(db, groupA, rootId, 'C:\\D\\A');
+    insertFolder(db, groupB, rootId, 'C:\\D\\B');
+
+    writeCacheForFile(
+      db, folderA, 'Notes.one',
+      [{ pageIndex: 1, pageLevel: 1, title: 'Only A', date: '', lastModified: '', content: '' }],
+      '2024-01-01T00:00:00.000Z', 'binary',
+    );
+
+    expect(getOneNoteCacheForGroup(db, groupB)).toHaveLength(0);
+    expect(getOneNoteCacheForGroup(db, groupA)).toHaveLength(1);
   });
 });
