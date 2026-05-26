@@ -234,8 +234,8 @@ describe('buildSystemContext', () => {
     db.run(`INSERT INTO onedrive_customer_folders (group_id, root_id, status) VALUES (?, ?, 'found')`, [gid, rid]);
     const fid = (db.exec('SELECT last_insert_rowid() AS id')[0].values[0][0]) as number;
     db.run(
-      `INSERT INTO onedrive_onenote_cache (folder_id, relative_path, section_name, page_index, page_level, page_title, page_content, read_source)
-       VALUES (?, 'Notes.one', 'Notes', 1, 1, 'Hello', 'World content', 'binary')`,
+      `INSERT INTO onedrive_onenote_cache (folder_id, relative_path, section_name, page_index, page_level, page_title, page_content, page_last_modified, read_source)
+       VALUES (?, 'Notes.one', 'Notes', 1, 1, 'Hello', 'World content', NULL, 'binary')`,
       [fid],
     );
     const ctx = buildSystemContext(db);
@@ -276,23 +276,23 @@ describe('searchOneNoteForChat', () => {
 
     // Seed pages
     db.run(
-      `INSERT INTO onedrive_onenote_cache (folder_id, relative_path, section_name, page_index, page_level, page_title, page_content, read_source)
-       VALUES (?, 'General.one', 'General', 1, 1, 'Project kickoff', 'We decided to use TypeScript for all services.', 'binary')`,
+      `INSERT INTO onedrive_onenote_cache (folder_id, relative_path, section_name, page_index, page_level, page_title, page_content, page_last_modified, read_source)
+       VALUES (?, 'General.one', 'General', 1, 1, 'Project kickoff', 'We decided to use TypeScript for all services.', '2026-05-01T09:00:00.000Z', 'binary')`,
       [folderId],
     );
     db.run(
-      `INSERT INTO onedrive_onenote_cache (folder_id, relative_path, section_name, page_index, page_level, page_title, page_content, read_source)
-       VALUES (?, 'General.one', 'General', 2, 2, 'Sub-page note', 'Additional details on the architecture decision.', 'binary')`,
+      `INSERT INTO onedrive_onenote_cache (folder_id, relative_path, section_name, page_index, page_level, page_title, page_content, page_last_modified, read_source)
+       VALUES (?, 'General.one', 'General', 2, 2, 'Sub-page note', 'Additional details on the architecture decision.', '2026-05-02T09:00:00.000Z', 'binary')`,
       [folderId],
     );
     db.run(
-      `INSERT INTO onedrive_onenote_cache (folder_id, relative_path, section_name, page_index, page_level, page_title, page_content, read_source)
-       VALUES (?, 'Finance.one', 'Finance', 1, 1, 'Budget Q1', 'The total budget for Q1 is 50000 EUR.', 'binary')`,
+      `INSERT INTO onedrive_onenote_cache (folder_id, relative_path, section_name, page_index, page_level, page_title, page_content, page_last_modified, read_source)
+       VALUES (?, 'Finance.one', 'Finance', 1, 1, 'Budget Q1', 'The total budget for Q1 is 50000 EUR.', '2026-04-15T09:00:00.000Z', 'binary')`,
       [folderId],
     );
     db.run(
-      `INSERT INTO onedrive_onenote_cache (folder_id, relative_path, section_name, page_index, page_level, page_title, page_content, read_source)
-       VALUES (?, 'Beta.one', 'Beta', 1, 1, 'Beta planning', 'We plan to launch the beta in Q2.', 'binary')`,
+      `INSERT INTO onedrive_onenote_cache (folder_id, relative_path, section_name, page_index, page_level, page_title, page_content, page_last_modified, read_source)
+       VALUES (?, 'Beta.one', 'Beta', 1, 1, 'Beta planning', 'We plan to launch the beta in Q2.', '2026-05-20T09:00:00.000Z', 'binary')`,
       [fid2],
     );
   });
@@ -355,5 +355,27 @@ describe('searchOneNoteForChat', () => {
   it('includes a content snippet', () => {
     const result = searchOneNoteForChat(db, 'TypeScript');
     expect(result).toContain('TypeScript');
+  });
+
+  it('filters by since date — excludes older pages', () => {
+    // Budget Q1 was last modified 2026-04-15, kickoff 2026-05-01
+    const result = searchOneNoteForChat(db, 'budget', undefined, '2026-05-01');
+    expect(result).toContain('No OneNote pages found matching');
+  });
+
+  it('filters by since date — includes pages on or after the date', () => {
+    const result = searchOneNoteForChat(db, 'TypeScript', undefined, '2026-05-01');
+    expect(result).toContain('Project kickoff');
+  });
+
+  it('shows modified date in output', () => {
+    const result = searchOneNoteForChat(db, 'TypeScript');
+    expect(result).toContain('modified:');
+  });
+
+  it('includes today\'s date in buildSystemContext', () => {
+    const ctx = buildSystemContext(db);
+    const today = new Date().toISOString().slice(0, 10);
+    expect(ctx).toContain(`Today's date: ${today}`);
   });
 });

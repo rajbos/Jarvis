@@ -23,8 +23,8 @@ vi.mock('../../src/services/onenote-reader', async (importOriginal) => {
       pageCount: 2,
       source: 'binary' as const,
       pages: [
-        { pageIndex: 1, pageLevel: 1, title: 'Page One', date: '2024-01-01', content: 'Hello world' },
-        { pageIndex: 2, pageLevel: 2, title: 'Page Two', date: '2024-01-02', content: 'Second page' },
+        { pageIndex: 1, pageLevel: 1, title: 'Page One', date: '2024-01-01', lastModified: '2024-01-01T10:00:00.000Z', content: 'Hello world' },
+        { pageIndex: 2, pageLevel: 2, title: 'Page Two', date: '2024-01-02', lastModified: '2024-01-02T10:00:00.000Z', content: 'Second page' },
       ],
       textContent: 'Page One 2024-01-01 Hello world\n\nPage Two 2024-01-02 Second page',
     }),
@@ -188,8 +188,8 @@ describe('writeCacheForFile() / getCachedPages()', () => {
       1,
       'Notes.one',
       [
-        { pageIndex: 2, pageLevel: 2, title: 'B', date: '', content: 'second' },
-        { pageIndex: 1, pageLevel: 1, title: 'A', date: '', content: 'first' },
+        { pageIndex: 2, pageLevel: 2, title: 'B', date: '', lastModified: '', content: 'second' },
+        { pageIndex: 1, pageLevel: 1, title: 'A', date: '', lastModified: '2024-01-01', content: 'first' },
       ],
       '2024-01-01T00:00:00.000Z',
       'binary',
@@ -200,14 +200,15 @@ describe('writeCacheForFile() / getCachedPages()', () => {
     expect(pages[0].pageIndex).toBe(1);
     expect(pages[0].pageLevel).toBe(1);
     expect(pages[0].pageTitle).toBe('A');
+    expect(pages[0].pageLastModified).toBe('2024-01-01');
     expect(pages[1].pageIndex).toBe(2);
     expect(pages[1].pageLevel).toBe(2);
     expect(pages[1].pageTitle).toBe('B');
   });
 
   it('replaces existing cache on re-write', () => {
-    writeCacheForFile(db, 1, 'Notes.one', [{ pageIndex: 1, pageLevel: 1, title: 'Old', date: '', content: 'old' }], '2024-01-01T00:00:00.000Z', 'binary');
-    writeCacheForFile(db, 1, 'Notes.one', [{ pageIndex: 1, pageLevel: 1, title: 'New', date: '', content: 'new' }], '2024-02-01T00:00:00.000Z', 'com');
+    writeCacheForFile(db, 1, 'Notes.one', [{ pageIndex: 1, pageLevel: 1, title: 'Old', date: '', lastModified: '', content: 'old' }], '2024-01-01T00:00:00.000Z', 'binary');
+    writeCacheForFile(db, 1, 'Notes.one', [{ pageIndex: 1, pageLevel: 1, title: 'New', date: '', lastModified: '', content: 'new' }], '2024-02-01T00:00:00.000Z', 'com');
 
     const pages = getCachedPages(db, 1, 'Notes.one');
     expect(pages).toHaveLength(1);
@@ -258,7 +259,7 @@ describe('cacheOneNoteFilesForGroup()', () => {
     const mtime = '2024-01-15T10:00:00.000Z';
     insertFile(db, folderId, 'N.one', 'N.one', mtime);
     // Pre-populate cache with matching mtime
-    writeCacheForFile(db, folderId, 'N.one', [{ pageIndex: 1, pageLevel: 1, title: 'T', date: '', content: 'C' }], mtime, 'binary');
+    writeCacheForFile(db, folderId, 'N.one', [{ pageIndex: 1, pageLevel: 1, title: 'T', date: '', lastModified: '', content: 'C' }], mtime, 'binary');
 
     const result = await cacheOneNoteFilesForGroup(db, groupId, 'fake.ps1');
     expect(result.filesSkipped).toBe(1);

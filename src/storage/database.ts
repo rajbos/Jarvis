@@ -87,7 +87,7 @@ function initializeSchema(database: SqlJsDatabase): void {
   if (userVersion === 0) {
     database.run(getSchema());
     seedBuiltInAgents(database);
-    database.run('PRAGMA user_version = 23');
+    database.run('PRAGMA user_version = 24');
   }
 
   if (userVersion === 1) {
@@ -478,6 +478,7 @@ function initializeSchema(database: SqlJsDatabase): void {
           page_level          INTEGER NOT NULL DEFAULT 1,
           page_title          TEXT,
           page_date           TEXT,
+          page_last_modified  TEXT,
           page_content        TEXT,
           file_last_modified  TEXT,
           read_source         TEXT NOT NULL DEFAULT 'binary',
@@ -490,6 +491,16 @@ function initializeSchema(database: SqlJsDatabase): void {
       ON onedrive_onenote_cache(folder_id, relative_path)
     `);
     database.run('PRAGMA user_version = 23');
+  }
+
+  if (userVersion === 23) {
+    // Migration v23 → v24: add page_last_modified column and index
+    database.run(`ALTER TABLE onedrive_onenote_cache ADD COLUMN page_last_modified TEXT`);
+    database.run(`
+      CREATE INDEX IF NOT EXISTS idx_onenote_cache_modified
+      ON onedrive_onenote_cache(page_last_modified)
+    `);
+    database.run('PRAGMA user_version = 24');
   }
 }
 

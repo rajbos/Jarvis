@@ -79,6 +79,10 @@ const CHAT_TOOLS: OllamaTool[] = [
             type: 'string',
             description: 'Optional group name to restrict the search (partial match). Omit to search all groups.',
           },
+          since: {
+            type: 'string',
+            description: 'Optional ISO date string (YYYY-MM-DD). When provided, only pages last modified on or after this date are returned. Use this to answer questions like "notes from this week" by computing the date from today.',
+          },
         },
         required: ['query'],
       },
@@ -98,7 +102,8 @@ function dispatchToolCall(db: SqlJsDatabase, call: OllamaToolCall): string {
   if (call.function.name === 'search_onenote') {
     const query = String(call.function.arguments['query'] ?? '');
     const group = call.function.arguments['group'] != null ? String(call.function.arguments['group']) : undefined;
-    return searchOneNoteForChat(db, query, group);
+    const since = call.function.arguments['since'] != null ? String(call.function.arguments['since']) : undefined;
+    return searchOneNoteForChat(db, query, group, since);
   }
   return `Unknown tool: ${call.function.name}`;
 }

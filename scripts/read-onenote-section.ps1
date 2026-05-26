@@ -59,13 +59,15 @@ try {
 
   foreach ($pageNode in $pageNodes) {
     $pageIndex++
-    $pageId       = $pageNode.GetAttribute('ID')
-    $pageName     = $pageNode.GetAttribute('name')
-    $pageDateTime = $pageNode.GetAttribute('dateTime')
-  $pageLevelStr = $pageNode.GetAttribute('pageLevel')
-  if ($null -eq $pageName)     { $pageName = '' }
-  if ($null -eq $pageDateTime) { $pageDateTime = '' }
-  [int]$pageLevel = if (-not [string]::IsNullOrEmpty($pageLevelStr)) { [int]$pageLevelStr } else { 1 }
+    $pageId            = $pageNode.GetAttribute('ID')
+    $pageName          = $pageNode.GetAttribute('name')
+    $pageDateTime      = $pageNode.GetAttribute('dateTime')
+    $pageLastModified  = $pageNode.GetAttribute('lastModifiedTime')
+    $pageLevelStr      = $pageNode.GetAttribute('pageLevel')
+    if ($null -eq $pageName)         { $pageName = '' }
+    if ($null -eq $pageDateTime)     { $pageDateTime = '' }
+    if ($null -eq $pageLastModified) { $pageLastModified = '' }
+    [int]$pageLevel = if (-not [string]::IsNullOrEmpty($pageLevelStr)) { [int]$pageLevelStr } else { 1 }
 
     # GetPageContent - PageDetail.pdBasic = 0
     $contentXml = [string]''
@@ -97,11 +99,12 @@ try {
     }
 
     $pages.Add(@{
-      pageIndex = $pageIndex
-      pageLevel = $pageLevel
-      title     = $pageName
-      date      = $pageDateTime
-      content   = $textContent
+      pageIndex    = $pageIndex
+      pageLevel    = $pageLevel
+      title        = $pageName
+      date         = $pageDateTime
+      lastModified = $pageLastModified
+      content      = $textContent
     })
   }
 

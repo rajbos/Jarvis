@@ -27,8 +27,14 @@ export interface OneNotePage {
   pageLevel: number;
   /** Best-effort page title extracted from the binary. May be empty. */
   title: string;
-  /** Best-effort page date string, e.g. "Thursday, September 25, 2025". */
+  /** Best-effort page creation date string, e.g. "Thursday, September 25, 2025". */
   date: string;
+  /**
+   * ISO 8601 last-modified timestamp from OneNote metadata, or a date derived
+   * from a YYYYMMDD prefix in the page title (binary fallback). Empty string
+   * when unavailable.
+   */
+  lastModified: string;
   /** All body text found in this page's region of the file, joined with spaces. */
   content: string;
 }
@@ -162,6 +168,20 @@ export function extractStrings(buf: Buffer): ExtractedString[] {
 
 // ── Page segmentation ─────────────────────────────────────────────────────────
 
+// ── YYYYMMDD date pattern in page titles ──────────────────────────────────────
+
+const YYYYMMDD_RE = /\b(\d{4})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\b/;
+
+/**
+ * If the string contains a YYYYMMDD token, convert it to an ISO date string
+ * (e.g. "20260519 Meeting notes" → "2026-05-19"). Returns empty string otherwise.
+ */
+function extractIsoDateFromTitle(text: string): string {
+  const m = YYYYMMDD_RE.exec(text);
+  if (!m) return '';
+  return `${m[1]}-${m[2]}-${m[3]}`;
+}
+
 /**
  * Build a OneNotePage from the strings found between two byte offsets.
  * The first non-noise string after the PageTitle sentinel is used as the
@@ -215,6 +235,7 @@ function buildPage(
     pageLevel: 1,
     title,
     date,
+    lastModified: extractIsoDateFromTitle(title),
     content: contentParts.join(' '),
   };
 }
@@ -245,7 +266,7 @@ export function readOneNoteSection(filePath: string): OneNoteSection {
     // No page structure detected — treat the whole file as one page
     const contentStrings = allStrings.filter(s => !isNoise(s.text));
     const content = contentStrings.map(s => s.text).join(' ');
-    pages = [{ pageIndex: 1, pageLevel: 1, title: sectionName, date: '', content }];
+    pages = [{ pageIndex: 1, pageLevel: 1, title: sectionName, date: '', lastModified: '', content }];
   } else {
     pages = pageSentinels.map((sentinelOffset, i) => {
       const nextSentinelOffset = pageSentinels[i + 1] ?? buf.length;
@@ -289,6 +310,7 @@ interface ComReaderPage {
   pageLevel: number;
   title: string;
   date: string;
+  lastModified: string;
   content: string;
 }
 
@@ -361,6 +383,7 @@ export function readOneNoteSectionViaCom(
         pageLevel: typeof p.pageLevel === 'number' ? p.pageLevel : 1,
         title: p.title ?? '',
         date: p.date ?? '',
+        lastModified: p.lastModified ?? '',
         content: p.content ?? '',
       }));
 

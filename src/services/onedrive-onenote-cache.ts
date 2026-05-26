@@ -20,6 +20,8 @@ export interface OneNoteCachedPage {
   pageLevel: number;
   pageTitle: string;
   pageDate: string;
+  /** ISO 8601 last-modified from OneNote metadata, or YYYY-MM-DD from title prefix. Empty string if unknown. */
+  pageLastModified: string;
   pageContent: string;
   fileLastModified: string | null;
   readSource: 'com' | 'binary';
@@ -127,6 +129,7 @@ export function getCachedPages(
       page_level,
       page_title,
       page_date,
+      page_last_modified,
       page_content,
       file_last_modified,
       read_source,
@@ -145,6 +148,7 @@ export function getCachedPages(
         page_level: number;
         page_title: string | null;
         page_date: string | null;
+        page_last_modified: string | null;
         page_content: string | null;
         file_last_modified: string | null;
         read_source: string;
@@ -155,6 +159,7 @@ export function getCachedPages(
         pageLevel: r.page_level ?? 1,
         pageTitle: r.page_title ?? '',
         pageDate: r.page_date ?? '',
+        pageLastModified: r.page_last_modified ?? '',
         pageContent: r.page_content ?? '',
         fileLastModified: r.file_last_modified,
         readSource: (r.read_source as 'com' | 'binary') ?? 'binary',
@@ -176,7 +181,7 @@ export function writeCacheForFile(
   db: SqlJsDatabase,
   folderId: number,
   relativePath: string,
-  pages: Array<{ pageIndex: number; pageLevel: number; title: string; date: string; content: string }>,
+  pages: Array<{ pageIndex: number; pageLevel: number; title: string; date: string; lastModified: string; content: string }>,
   lastModified: string | null,
   readSource: 'com' | 'binary',
 ): void {
@@ -192,9 +197,9 @@ export function writeCacheForFile(
       db.run(
         `INSERT INTO onedrive_onenote_cache
            (folder_id, relative_path, section_name, page_index, page_level,
-            page_title, page_date, page_content,
+            page_title, page_date, page_last_modified, page_content,
             file_last_modified, read_source, cached_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
         [
           folderId,
           relativePath,
@@ -203,6 +208,7 @@ export function writeCacheForFile(
           page.pageLevel,
           page.title,
           page.date,
+          page.lastModified || null,
           page.content,
           lastModified,
           readSource,

@@ -1366,6 +1366,14 @@ export interface OneNotePageContent {
 
 
 
+  /** ISO 8601 last-modified, or YYYY-MM-DD from title. Empty if unknown. */
+
+
+
+  lastModified: string;
+
+
+
   /** All body text found in this page, joined with spaces. */
 
 
@@ -1445,6 +1453,8 @@ export interface OneNoteCachedPage {
   pageTitle: string;
   /** Page date string (e.g. ISO datetime from OneNote metadata). */
   pageDate: string;
+  /** ISO 8601 last-modified timestamp, or YYYY-MM-DD from title prefix. Empty if unknown. */
+  pageLastModified: string;
   /** Full text content of the page. */
   pageContent: string;
   /** last_modified of the source file at time of caching. */

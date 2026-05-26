@@ -331,6 +331,7 @@ export function getSchema(): string {
         page_level          INTEGER NOT NULL DEFAULT 1,
         page_title          TEXT,
         page_date           TEXT,
+        page_last_modified  TEXT,
         page_content        TEXT,
         file_last_modified  TEXT,
         read_source         TEXT NOT NULL DEFAULT 'binary',
@@ -338,5 +339,6 @@ export function getSchema(): string {
         UNIQUE(folder_id, relative_path, page_index)
     );
     CREATE INDEX IF NOT EXISTS idx_onenote_cache_lookup ON onedrive_onenote_cache(folder_id, relative_path);
+    CREATE INDEX IF NOT EXISTS idx_onenote_cache_modified ON onedrive_onenote_cache(page_last_modified);
   `;
 }

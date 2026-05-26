@@ -10,6 +10,7 @@ import { listOrgs } from '../../services/github-discovery';
 export function buildSystemContext(db: SqlJsDatabase): string {
   const lines: string[] = [
     'You are Jarvis, a personal GitHub repository assistant.',
+    `Today's date: ${new Date().toISOString().slice(0, 10)}.`,
     'You have access to the user\'s GitHub data that has been indexed into a local database (snapshot shown below).',
     'Help the user find repos, understand their codebase, and answer questions about their repositories.',
     'Be concise and helpful. When listing repos, use the full_name format (org/repo).',
@@ -252,7 +253,7 @@ const ONENOTE_SNIPPET_LENGTH = 400;
  * Returns up to 10 pages with a short content snippet around the first match.
  * Optionally filter to a specific group name.
  */
-export function searchOneNoteForChat(db: SqlJsDatabase, query: string, groupName?: string): string {
+export function searchOneNoteForChat(db: SqlJsDatabase, query: string, groupName?: string, since?: string): string {
   const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
   if (words.length === 0) return 'No search terms provided.';
 
@@ -265,26 +266,31 @@ export function searchOneNoteForChat(db: SqlJsDatabase, query: string, groupName
   const groupFilter = groupName ? 'AND LOWER(g.name) LIKE LOWER(?)' : '';
   const groupParams = groupName ? [`%${groupName}%`] : [];
 
+  const sinceFilter = since ? 'AND c.page_last_modified >= ?' : '';
+  const sinceParams = since ? [since] : [];
+
   const sql = `
     SELECT g.name AS group_name,
            c.section_name,
            c.page_level,
            c.page_title,
            c.page_date,
+           c.page_last_modified,
            SUBSTR(c.page_content, 1, ${ONENOTE_SNIPPET_LENGTH * 3}) AS raw_content
     FROM onedrive_onenote_cache c
     JOIN onedrive_customer_folders cf ON cf.id = c.folder_id
     JOIN groups g ON g.id = cf.group_id
     WHERE ${wordConditions}
     ${groupFilter}
-    ORDER BY g.name, c.section_name, c.page_index
+    ${sinceFilter}
+    ORDER BY c.page_last_modified DESC, g.name, c.section_name, c.page_index
     LIMIT 10`;
 
   const stmt = db.prepare(sql);
-  type Row = { group_name: string; section_name: string | null; page_level: number; page_title: string | null; page_date: string | null; raw_content: string | null };
+  type Row = { group_name: string; section_name: string | null; page_level: number; page_title: string | null; page_date: string | null; page_last_modified: string | null; raw_content: string | null };
   const rows: Row[] = [];
   try {
-    stmt.bind([...wordParams, ...groupParams]);
+    stmt.bind([...wordParams, ...groupParams, ...sinceParams]);
     while (stmt.step()) rows.push(stmt.getAsObject() as unknown as Row);
   } finally {
     stmt.free();
@@ -292,7 +298,8 @@ export function searchOneNoteForChat(db: SqlJsDatabase, query: string, groupName
 
   if (rows.length === 0) {
     const hint = groupName ? ` in group "${groupName}"` : '';
-    return `No OneNote pages found matching "${query}"${hint}. Try broader terms or check that files have been cached via the OneDrive panel.`;
+    const dateHint = since ? ` since ${since}` : '';
+    return `No OneNote pages found matching "${query}"${hint}${dateHint}. Try broader terms or check that files have been cached via the OneDrive panel.`;
   }
 
   const lines = [`Found ${rows.length} OneNote page(s) matching "${query}":`];
@@ -300,8 +307,9 @@ export function searchOneNoteForChat(db: SqlJsDatabase, query: string, groupName
     const levelPrefix = r.page_level > 1 ? `${'  '.repeat(r.page_level - 1)}↳ ` : '';
     const section = r.section_name ? ` › ${r.section_name}` : '';
     const title = r.page_title || '(untitled)';
+    const modified = r.page_last_modified ? ` [modified: ${r.page_last_modified.slice(0, 10)}]` : '';
     const date = r.page_date ? ` (${r.page_date})` : '';
-    lines.push(`\n[${r.group_name}${section}] ${levelPrefix}${title}${date}`);
+    lines.push(`\n[${r.group_name}${section}] ${levelPrefix}${title}${date}${modified}`);
 
     // Extract a short snippet around the first matching word
     const content = r.raw_content ?? '';
