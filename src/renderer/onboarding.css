@@ -3935,3 +3935,263 @@ h5.ec-heading { font-size: 0.85rem; }
   flex-shrink: 0;
   cursor: default;
 }
+
+/* ── Auto-dismiss summary banner ─────────────────────────────────────────── */
+.dash-auto-dismiss-banner {
+  border-color: #3a5a9a;
+  background: #0d1a3a;
+}
+
+/* Mini history row — shown when pipeline completed but no banner is visible */
+.dash-auto-dismiss-mini {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.3rem 0.9rem;
+  margin-bottom: 0.5rem;
+  background: transparent;
+}
+
+.dash-auto-dismiss-mini-label {
+  font-size: 0.72rem;
+  color: #3a5a7a;
+}
+
+.dash-auto-dismiss-mini-btn {
+  background: transparent;
+  border: 1px solid #1e3a5a;
+  color: #4a7aaa;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  padding: 0.1rem 0.45rem;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
+}
+
+.dash-auto-dismiss-mini-btn:hover {
+  color: #7ab3f5;
+  border-color: #3a6aaa;
+}
+
+.dash-auto-dismiss-banner .dash-recoverable-icon {
+  color: #7ab3f5;
+}
+
+.dash-auto-dismiss-banner .dash-recoverable-title {
+  color: #7ab3f5;
+}
+
+.dash-auto-dismiss-banner .dash-recoverable-detail {
+  color: #4a6a9a;
+}
+
+/* ── Auto-dismiss history panel ──────────────────────────────────────────── */
+.adh-panel {
+  background: #111827;
+  border: 1px solid #1e3a5a;
+  border-radius: 8px;
+  margin-bottom: 0.85rem;
+  overflow: hidden;
+}
+
+.adh-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.65rem 1rem;
+  background: #0d1f3a;
+  border-bottom: 1px solid #1e3a5a;
+  gap: 0.75rem;
+}
+
+.adh-header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.adh-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #7ab3f5;
+}
+
+.adh-subtitle {
+  font-size: 0.72rem;
+  color: #4a6a9a;
+}
+
+.adh-header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.adh-tab {
+  background: transparent;
+  border: 1px solid #1e3a5a;
+  color: #7ab3f5;
+  border-radius: 5px;
+  font-size: 0.75rem;
+  padding: 0.2rem 0.6rem;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.adh-tab:hover {
+  background: #0d2040;
+}
+
+.adh-tab--active {
+  background: #0d2a50;
+  border-color: #3a6aaa;
+  color: #a0c8ff;
+  font-weight: 600;
+}
+
+.adh-close {
+  background: transparent;
+  border: none;
+  color: #4a6a9a;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0.1rem 0.3rem;
+  border-radius: 4px;
+  transition: color 0.12s;
+}
+
+.adh-close:hover {
+  color: #a0c8ff;
+}
+
+.adh-loading,
+.adh-empty {
+  padding: 1rem;
+  color: #4a6a9a;
+  font-size: 0.82rem;
+  text-align: center;
+}
+
+.adh-list {
+  max-height: 280px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.adh-entry {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid #0d1f3a;
+}
+
+.adh-entry:last-child {
+  border-bottom: none;
+}
+
+.adh-entry-icon {
+  font-size: 0.85rem;
+  flex-shrink: 0;
+  padding-top: 0.1rem;
+  color: #4eca8a;
+}
+
+.adh-entry-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.adh-entry-title {
+  font-size: 0.78rem;
+  color: #c8d8ff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.adh-entry-meta {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.adh-entry-repo {
+  font-size: 0.68rem;
+  color: #4a6a9a;
+}
+
+.adh-entry-reason {
+  font-size: 0.68rem;
+  color: #5a9a74;
+  background: #0d2a1a;
+  border-radius: 3px;
+  padding: 0 0.3rem;
+}
+
+.adh-entry-date {
+  font-size: 0.66rem;
+  color: #3a5a7a;
+}
+
+/* Chart sub-view */
+.adh-chart-view {
+  padding: 0.75rem 1rem 0.5rem;
+}
+
+.adh-chart-controls {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+}
+
+.adh-gran-btn {
+  background: transparent;
+  border: 1px solid #1e3a5a;
+  color: #7ab3f5;
+  border-radius: 5px;
+  font-size: 0.75rem;
+  padding: 0.2rem 0.6rem;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.adh-gran-btn:hover {
+  background: #0d2040;
+}
+
+.adh-gran-btn--active {
+  background: #0d2a50;
+  border-color: #3a6aaa;
+  color: #a0c8ff;
+  font-weight: 600;
+}
+
+.adh-chart-scroll {
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+}
+
+.adh-chart-svg {
+  display: block;
+}
+
+.adh-chart-empty {
+  color: #4a6a9a;
+  font-size: 0.82rem;
+  padding: 0.75rem 0;
+}
+
+.adh-chart-note {
+  font-size: 0.68rem;
+  color: #3a5a7a;
+  margin-top: 0.4rem;
+  text-align: right;
+}

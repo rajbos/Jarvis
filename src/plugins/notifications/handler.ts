@@ -2,6 +2,7 @@
 import { ipcMain } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import type { BrowserWindow } from 'electron';
+import type { AutoDismissLogInput } from '../types';
 import {
   fetchNotifications,
   fetchNotificationsForRepo,
@@ -165,6 +166,59 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
       console.warn('[Jarvis] Could not check merged dependabot PRs:', err instanceof Error ? err.message : String(err));
       return [];
     }
+  });
+
+  // ── Auto-dismiss log IPC handlers ─────────────────────────────────────────
+
+  ipcMain.handle('github:log-auto-dismiss', (_event, entries: AutoDismissLogInput[]) => {
+    if (!Array.isArray(entries) || entries.length === 0) return;
+    const sql =
+      `INSERT INTO auto_dismiss_log (notification_id, dismissed_at, reason, repo_full_name, subject_title, subject_type)
+       VALUES (?, datetime('now'), ?, ?, ?, ?)`;
+    for (const e of entries) {
+      if (typeof e.notification_id !== 'string' || typeof e.reason !== 'string') continue;
+      db.run(sql, [
+        e.notification_id,
+        e.reason,
+        typeof e.repo_full_name === 'string' ? e.repo_full_name : null,
+        typeof e.subject_title === 'string' ? e.subject_title : null,
+        typeof e.subject_type === 'string' ? e.subject_type : null,
+      ]);
+    }
+    saveDatabase();
+  });
+
+  ipcMain.handle('github:list-auto-dismiss-log', (_event, limit = 200) => {
+    const safeLimit = typeof limit === 'number' && limit > 0 ? Math.min(limit, 1000) : 200;
+    const result = db.exec(
+      `SELECT id, notification_id, dismissed_at, reason, repo_full_name, subject_title, subject_type
+       FROM auto_dismiss_log ORDER BY dismissed_at DESC LIMIT ?`,
+      [safeLimit],
+    );
+    if (!result[0]) return [];
+    const cols = result[0].columns;
+    return result[0].values.map((row) => {
+      const obj: Record<string, unknown> = {};
+      cols.forEach((col, i) => { obj[col] = row[i]; });
+      return obj;
+    });
+  });
+
+  ipcMain.handle('github:auto-dismiss-stats', () => {
+    const toRows = (res: ReturnType<typeof db.exec>) => {
+      if (!res[0]) return [];
+      return res[0].values.map((row) => ({ period: row[0] as string, count: row[1] as number }));
+    };
+    return {
+      weekly: toRows(db.exec(
+        `SELECT strftime('%Y-W%W', dismissed_at) as period, COUNT(*) as count
+         FROM auto_dismiss_log GROUP BY period ORDER BY period DESC LIMIT 52`,
+      )),
+      monthly: toRows(db.exec(
+        `SELECT strftime('%Y-%m', dismissed_at) as period, COUNT(*) as count
+         FROM auto_dismiss_log GROUP BY period ORDER BY period DESC LIMIT 24`,
+      )),
+    };
   });
 }
 
