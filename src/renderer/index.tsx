@@ -29,6 +29,7 @@ import { GroupsStep } from '../plugins/groups/GroupsStep';
 import { GroupsPanel } from '../plugins/groups/GroupsPanel';
 import { OneNoteSectionPanel } from '../plugins/groups/OneNoteSectionPanel';
 import { GroupsDashboardPanel } from '../plugins/groups/GroupsDashboardPanel';
+import { AutoDismissHistoryPanel } from '../plugins/notifications/AutoDismissHistoryPanel';
 
 // ── Types (imported from single source of truth in plugins/types.ts) ─────────
 // The global augmentation `Window.jarvis` is declared in plugins/types.ts and
@@ -54,7 +55,7 @@ import type {
 } from '../plugins/types';
 import '../plugins/types'; // activate the global Window augmentation
 
-type AppTab = 'dashboard' | 'groups-dashboard' | 'browser' | 'setup';
+type AppTab = 'dashboard' | 'groups-dashboard' | 'browser' | 'setup' | 'dismiss-history';
 
 // ── App ──────────────────────────────────────────────────────────────────────
 
@@ -772,11 +773,20 @@ function App() {
           class={`tab-btn ${activeTab === 'setup' ? 'tab-active' : ''}`}
           onClick={() => setActiveTab('setup')}
         >⚙️ Setup</button>
+        <button
+          class={`tab-btn ${activeTab === 'dismiss-history' ? 'tab-active' : ''}`}
+          onClick={() => setActiveTab('dismiss-history')}
+        >🚫 Dismissed</button>
       </div>
 
       {/* ── Dashboard tab ────────────────────────────────────────────────── */}
       {activeTab === 'dashboard' && (
-        <DashboardPanel dismissedNotifIds={dismissedNotifIds} />
+        <DashboardPanel dismissedNotifIds={dismissedNotifIds} onOpenHistory={() => setActiveTab('dismiss-history')} />
+      )}
+
+      {/* ── Dismissed notifications history tab ──────────────────────────── */}
+      {activeTab === 'dismiss-history' && (
+        <AutoDismissHistoryPanel onClose={() => setActiveTab('dashboard')} />
       )}
 
       {/* ── Groups Dashboard tab ─────────────────────────────────────────── */}

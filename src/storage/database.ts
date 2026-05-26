@@ -87,7 +87,7 @@ function initializeSchema(database: SqlJsDatabase): void {
   if (userVersion === 0) {
     database.run(getSchema());
     seedBuiltInAgents(database);
-    database.run('PRAGMA user_version = 22');
+    database.run('PRAGMA user_version = 23');
   }
 
   if (userVersion === 1) {
@@ -464,6 +464,23 @@ function initializeSchema(database: SqlJsDatabase): void {
     // next Ruddr sync by the COALESCE upsert in saveRuddrProjectsToDb.
     database.run(`ALTER TABLE ruddr_projects ADD COLUMN discovered_at DATETIME DEFAULT NULL`);
     database.run('PRAGMA user_version = 22');
+  }
+
+  if (userVersion === 22) {
+    // Migration v22 → v23: add auto_dismiss_log table for tracking auto-dismissed notifications
+    database.run(`
+      CREATE TABLE IF NOT EXISTS auto_dismiss_log (
+          id              INTEGER PRIMARY KEY AUTOINCREMENT,
+          notification_id TEXT NOT NULL,
+          dismissed_at    TEXT NOT NULL DEFAULT (datetime('now')),
+          reason          TEXT NOT NULL,
+          repo_full_name  TEXT,
+          subject_title   TEXT,
+          subject_type    TEXT
+      )
+    `);
+    database.run('CREATE INDEX IF NOT EXISTS idx_auto_dismiss_log_date ON auto_dismiss_log(dismissed_at)');
+    database.run('PRAGMA user_version = 23');
   }
 }
 

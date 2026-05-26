@@ -1723,6 +1723,39 @@ export interface RuddrProjectInfo {
   cloudFolderUrl: string | null;
 }
 
+// ── Auto-dismiss types ────────────────────────────────────────────────────────
+
+export type AutoDismissReason =
+  | 'recovered_workflow'
+  | 'closed_pr_dependabot'
+  | 'closed_pr_merged_me'
+  | 'closed_pr_closed_me'
+  | 'closed_issue_me'
+  | 'closed_issue_via_pr';
+
+export interface AutoDismissLogInput {
+  notification_id: string;
+  reason: AutoDismissReason;
+  repo_full_name: string | null;
+  subject_title: string | null;
+  subject_type: string | null;
+}
+
+export interface AutoDismissLogEntry {
+  id: number;
+  notification_id: string;
+  dismissed_at: string;
+  reason: AutoDismissReason;
+  repo_full_name: string | null;
+  subject_title: string | null;
+  subject_type: string | null;
+}
+
+export interface AutoDismissStats {
+  weekly: { period: string; count: number }[];
+  monthly: { period: string; count: number }[];
+}
+
 
 
 
@@ -2504,6 +2537,11 @@ export interface JarvisApi {
 
 
   getGitHubRateLimit(): Promise<GitHubRateLimit>;
+
+  // Auto-dismiss log
+  logAutoDismiss(entries: AutoDismissLogInput[]): Promise<void>;
+  listAutoDismissLog(limit?: number): Promise<AutoDismissLogEntry[]>;
+  getAutoDismissStats(): Promise<AutoDismissStats>;
 
 
 
