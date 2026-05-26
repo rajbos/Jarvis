@@ -3266,9 +3266,11 @@ h5.ec-heading { font-size: 0.85rem; }
 
 /* ── RuddrProjectsPanel ───────────────────────────────────────────────────── */
 .ruddr-projects-panel {
-  /* Fixed to the right side of the viewport — detached from the flex layout */
+  /* Fixed to the right side of the viewport — detached from the flex layout.
+     --chat-panel-width is updated by EmbeddedChatPanel so the panel never
+     slides behind the chat window. */
   position: fixed;
-  right: 1rem;
+  right: calc(var(--chat-panel-width, 0px) + 1rem);
   top: 8rem;
   width: 240px;
   min-width: 180px;

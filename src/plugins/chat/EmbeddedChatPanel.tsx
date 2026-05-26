@@ -41,6 +41,14 @@ export function EmbeddedChatPanel({ visible, selectedModel, onClose, onAgentStar
     return saved ? parseInt(saved, 10) : 380;
   });
 
+  // Keep the CSS variable in sync so fixed-position overlays (e.g. ruddr-projects-panel)
+  // can offset themselves by exactly the chat panel's visible width.
+  useEffect(() => {
+    const w = visible ? panelWidth : 0;
+    document.documentElement.style.setProperty('--chat-panel-width', `${w}px`);
+    window.dispatchEvent(new Event('ruddr-panel-resize'));
+  }, [visible, panelWidth]);
+
   const handlePanelClick = (e: MouseEvent) => {
     const tag = (e.target as HTMLElement).tagName;
     if (tag === 'BUTTON' || tag === 'TEXTAREA' || tag === 'A') return;
