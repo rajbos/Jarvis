@@ -41,6 +41,7 @@ export function removeOnedriveRoot(db: SqlJsDatabase, rootId: number): void {
   if (folders.length > 0 && folders[0].values.length > 0) {
     for (const row of folders[0].values) {
       const folderId = row[0] as number;
+      db.run('DELETE FROM onedrive_onenote_cache WHERE folder_id = ?', [folderId]);
       db.run('DELETE FROM onedrive_files WHERE folder_id = ?', [folderId]);
     }
   }

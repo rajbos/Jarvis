@@ -1,6 +1,6 @@
-// ── OneDrive IPC handlers ─────────────────────────────────────────────────────
-import { ipcMain, dialog, BrowserWindow, shell } from 'electron';
+import { ipcMain, dialog, BrowserWindow, shell, app } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
+import path from 'path';
 import { saveDatabase } from '../../storage/database';
 import {
   listOnedriveRoots,
@@ -12,10 +12,18 @@ import {
   listFilesForFolder,
 } from '../../services/onedrive';
 import { readOneNoteSection } from '../../services/onenote-reader';
+import {
+  cacheOneNoteFilesForGroup,
+  getCachedPages,
+} from '../../services/onedrive-onenote-cache';
 import { readUrlShortcut } from '../../services/url-shortcut';
 import { getGroup } from '../../services/groups';
 
 export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWindow | null): void {
+  // Resolve PS1 script path relative to the compiled main JS, or resourcesPath when packaged.
+  const scriptPath = app.isPackaged
+    ? path.join(process.resourcesPath, 'scripts', 'read-onenote-section.ps1')
+    : path.join(__dirname, '..', '..', '..', 'scripts', 'read-onenote-section.ps1');
   ipcMain.handle('onedrive:list-roots', () => {
     return listOnedriveRoots(db);
   });
@@ -153,6 +161,26 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
       const msg = err instanceof Error ? err.message : String(err);
       return { ok: false, error: msg };
     }
+  });
+
+  ipcMain.handle('onedrive:cache-onenote-files-for-group', async (_event, groupId: number) => {
+    if (typeof groupId !== 'number') return { ok: false, error: 'Invalid groupId' };
+    try {
+      const result = await cacheOneNoteFilesForGroup(db, groupId, scriptPath);
+      saveDatabase();
+      return { ok: true, ...result };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: msg };
+    }
+  });
+
+  ipcMain.handle('onedrive:get-onenote-cache', (_event, folderId: number, relativePath: string) => {
+    if (typeof folderId !== 'number' || typeof relativePath !== 'string') {
+      return { pages: [] };
+    }
+    const pages = getCachedPages(db, folderId, relativePath);
+    return { pages };
   });
 
   ipcMain.handle('shell:open-url', (_event, url: string) => {

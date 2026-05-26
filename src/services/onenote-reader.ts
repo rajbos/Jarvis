@@ -16,12 +16,15 @@
 
 import fs from 'fs';
 import path from 'path';
+import { spawn } from 'child_process';
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
 export interface OneNotePage {
   /** Index of this page within the section (1-based). */
   pageIndex: number;
+  /** Sub-page depth: 1 = top-level, 2 = sub-page, 3 = sub-sub-page. */
+  pageLevel: number;
   /** Best-effort page title extracted from the binary. May be empty. */
   title: string;
   /** Best-effort page date string, e.g. "Thursday, September 25, 2025". */
@@ -209,6 +212,7 @@ function buildPage(
 
   return {
     pageIndex,
+    pageLevel: 1,
     title,
     date,
     content: contentParts.join(' '),
@@ -241,7 +245,7 @@ export function readOneNoteSection(filePath: string): OneNoteSection {
     // No page structure detected — treat the whole file as one page
     const contentStrings = allStrings.filter(s => !isNoise(s.text));
     const content = contentStrings.map(s => s.text).join(' ');
-    pages = [{ pageIndex: 1, title: sectionName, date: '', content }];
+    pages = [{ pageIndex: 1, pageLevel: 1, title: sectionName, date: '', content }];
   } else {
     pages = pageSentinels.map((sentinelOffset, i) => {
       const nextSentinelOffset = pageSentinels[i + 1] ?? buf.length;
@@ -274,4 +278,130 @@ export function readOneNoteSection(filePath: string): OneNoteSection {
     pages,
     textContent,
   };
+}
+
+// ── COM-based reader (Windows, requires OneNote) ──────────────────────────────
+
+const COM_TIMEOUT_MS = 30_000;
+
+interface ComReaderPage {
+  pageIndex: number;
+  pageLevel: number;
+  title: string;
+  date: string;
+  content: string;
+}
+
+interface ComReaderResult {
+  ok: boolean;
+  pages?: ComReaderPage[];
+  error?: string;
+}
+
+/**
+ * Read a OneNote section file using the OneNote COM API via PowerShell.
+ * Returns a structured `OneNoteSection` with full-fidelity page content.
+ *
+ * Requires OneNote to be installed. Falls back gracefully to binary extraction
+ * (see `readOneNoteSection`) when COM is unavailable or fails.
+ *
+ * @param filePath   Absolute path to the `.one` section file.
+ * @param scriptPath Absolute path to `read-onenote-section.ps1`.
+ * @throws if the PowerShell process cannot be spawned or times out.
+ */
+export function readOneNoteSectionViaCom(
+  filePath: string,
+  scriptPath: string,
+): Promise<OneNoteSection> {
+  return new Promise((resolve, reject) => {
+    const args = [
+      '-NonInteractive',
+      '-NoProfile',
+      '-Sta',
+      '-ExecutionPolicy', 'Bypass',
+      '-File', scriptPath,
+      '-FilePath', filePath,
+    ];
+
+    let stdout = '';
+    let stderr = '';
+    let timedOut = false;
+
+    const proc = spawn('powershell.exe', args, { windowsHide: true });
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      proc.kill();
+      reject(new Error(`OneNote COM reader timed out after ${COM_TIMEOUT_MS}ms`));
+    }, COM_TIMEOUT_MS);
+
+    proc.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString('utf8'); });
+    proc.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString('utf8'); });
+
+    proc.on('close', () => {
+      if (timedOut) return;
+      clearTimeout(timer);
+
+      let result: ComReaderResult;
+      try {
+        result = JSON.parse(stdout.trim()) as ComReaderResult;
+      } catch {
+        reject(new Error(`COM reader produced non-JSON output: ${stdout.slice(0, 200)}`));
+        return;
+      }
+
+      if (!result.ok || !result.pages) {
+        reject(new Error(result.error ?? 'COM reader returned ok=false with no error message'));
+        return;
+      }
+
+      const sectionName = path.basename(filePath, path.extname(filePath));
+      const pages: OneNotePage[] = result.pages.map(p => ({
+        pageIndex: p.pageIndex,
+        pageLevel: typeof p.pageLevel === 'number' ? p.pageLevel : 1,
+        title: p.title ?? '',
+        date: p.date ?? '',
+        content: p.content ?? '',
+      }));
+
+      const textContent = pages
+        .map(p => [p.title, p.date, p.content].filter(Boolean).join(' '))
+        .join('\n\n');
+
+      resolve({
+        sectionName,
+        filePath,
+        pageCount: pages.length,
+        pages,
+        textContent,
+      });
+    });
+
+    proc.on('error', (err: Error) => {
+      if (timedOut) return;
+      clearTimeout(timer);
+      reject(err);
+    });
+  });
+}
+
+/**
+ * Read a OneNote section file with the best available method.
+ * Tries OneNote COM first (full fidelity); falls back to binary extraction.
+ *
+ * @param filePath   Absolute path to the `.one` section file.
+ * @param scriptPath Absolute path to `read-onenote-section.ps1`.
+ */
+export async function readOneNoteSectionAsync(
+  filePath: string,
+  scriptPath: string,
+): Promise<OneNoteSection & { source: 'com' | 'binary' }> {
+  try {
+    const section = await readOneNoteSectionViaCom(filePath, scriptPath);
+    return { ...section, source: 'com' };
+  } catch {
+    // OneNote not installed, COM unavailable, or file not recognised — fall back
+    const section = readOneNoteSection(filePath);
+    return { ...section, source: 'binary' };
+  }
 }

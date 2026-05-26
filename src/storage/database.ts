@@ -87,7 +87,7 @@ function initializeSchema(database: SqlJsDatabase): void {
   if (userVersion === 0) {
     database.run(getSchema());
     seedBuiltInAgents(database);
-    database.run('PRAGMA user_version = 22');
+    database.run('PRAGMA user_version = 23');
   }
 
   if (userVersion === 1) {
@@ -464,6 +464,32 @@ function initializeSchema(database: SqlJsDatabase): void {
     // next Ruddr sync by the COALESCE upsert in saveRuddrProjectsToDb.
     database.run(`ALTER TABLE ruddr_projects ADD COLUMN discovered_at DATETIME DEFAULT NULL`);
     database.run('PRAGMA user_version = 22');
+  }
+
+  if (userVersion === 22) {
+    // Migration v22 → v23: add OneNote page content cache table
+    database.run(`
+      CREATE TABLE IF NOT EXISTS onedrive_onenote_cache (
+          id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+          folder_id           INTEGER NOT NULL,
+          relative_path       TEXT NOT NULL,
+          section_name        TEXT,
+          page_index          INTEGER NOT NULL,
+          page_level          INTEGER NOT NULL DEFAULT 1,
+          page_title          TEXT,
+          page_date           TEXT,
+          page_content        TEXT,
+          file_last_modified  TEXT,
+          read_source         TEXT NOT NULL DEFAULT 'binary',
+          cached_at           DATETIME DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(folder_id, relative_path, page_index)
+      )
+    `);
+    database.run(`
+      CREATE INDEX IF NOT EXISTS idx_onenote_cache_lookup
+      ON onedrive_onenote_cache(folder_id, relative_path)
+    `);
+    database.run('PRAGMA user_version = 23');
   }
 }
 

@@ -247,6 +247,10 @@ contextBridge.exposeInMainWorld('jarvis', {
     ipcRenderer.invoke('onedrive:read-onenote-file', filePath),
   onedriveReadUrlShortcut: (filePath: string) =>
     ipcRenderer.invoke('onedrive:read-url-shortcut', filePath),
+  onedriveCacheOneNoteFilesForGroup: (groupId: number) =>
+    ipcRenderer.invoke('onedrive:cache-onenote-files-for-group', groupId),
+  onedriveGetOneNoteCache: (folderId: number, relativePath: string) =>
+    ipcRenderer.invoke('onedrive:get-onenote-cache', folderId, relativePath),
   shellOpenUrl: (url: string) =>
     ipcRenderer.invoke('shell:open-url', url),
   // Browser Companion

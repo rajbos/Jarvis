@@ -1342,6 +1342,14 @@ export interface OneNotePageContent {
 
 
 
+  /** Sub-page depth: 1 = top-level, 2 = sub-page, 3 = sub-sub-page. */
+
+
+
+  pageLevel: number;
+
+
+
   /** Best-effort page title (may be empty for untitled pages). */
 
 
@@ -1426,12 +1434,39 @@ export interface OneNoteSectionContent {
 
 
 
+// ── OneNote cache types ───────────────────────────────────────────────────────
+
+export interface OneNoteCachedPage {
+  /** 1-based page index within the section file. */
+  pageIndex: number;
+  /** Sub-page depth: 1 = top-level, 2 = sub-page, 3 = sub-sub-page. */
+  pageLevel: number;
+  /** Page title extracted from OneNote. */
+  pageTitle: string;
+  /** Page date string (e.g. ISO datetime from OneNote metadata). */
+  pageDate: string;
+  /** Full text content of the page. */
+  pageContent: string;
+  /** last_modified of the source file at time of caching. */
+  fileLastModified: string | null;
+  /** Whether content was read via OneNote COM or binary extraction. */
+  readSource: 'com' | 'binary';
+  /** When this page was cached. */
+  cachedAt: string;
+}
+
+export interface OneNoteCacheGroupResult {
+  /** Number of files that were re-read and cached (stale or new). */
+  filesProcessed: number;
+  /** Total pages written to cache. */
+  pagesCached: number;
+  /** Files skipped because the cache was already up-to-date. */
+  filesSkipped: number;
+  /** Per-file errors (non-fatal — other files continue). */
+  errors: Array<{ relativePath: string; error: string }>;
+}
+
 // ── URL shortcut types ────────────────────────────────────────────────────────
-
-
-
-
-
 
 
 export interface UrlShortcutInfo {
@@ -2436,6 +2471,14 @@ export interface JarvisApi {
 
 
   onedriveReadUrlShortcut(filePath: string): Promise<{ ok: boolean; url?: string; isOneNote?: boolean; isSharePoint?: boolean; error?: string }>;
+
+
+
+  onedriveCacheOneNoteFilesForGroup(groupId: number): Promise<OneNoteCacheGroupResult>;
+
+
+
+  onedriveGetOneNoteCache(folderId: number, relativePath: string): Promise<{ pages: OneNoteCachedPage[] }>;
 
 
 
