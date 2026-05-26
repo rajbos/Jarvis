@@ -21,6 +21,11 @@ export interface JarvisConfig {
     dashboardSortMode?: 'attention' | 'local-activity' | 'remote-activity';
     dashboardNotifSort?: 'count' | 'name';
   };
+  /** Localhost bridge security settings (browser extension pairing). */
+  bridge?: {
+    /** Shared secret token required by the browser extension to authenticate. */
+    token?: string;
+  };
 }
 
 const DEFAULT_CONFIG: JarvisConfig = {

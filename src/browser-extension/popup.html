@@ -7,7 +7,7 @@
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      width: 300px;
+      width: 320px;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       font-size: 13px;
       background: #1a1a1a;
@@ -45,6 +45,11 @@
       border: 1px solid #795548;
       color: #ffb74d;
     }
+    .status-badge.invalid-token {
+      background: #2a0a0a;
+      border: 1px solid #c62828;
+      color: #ef9a9a;
+    }
     .dot {
       width: 8px;
       height: 8px;
@@ -53,17 +58,59 @@
     }
     .connected .dot { background: #4caf50; }
     .disconnected .dot { background: #ff9800; }
-    .help {
+    .invalid-token .dot { background: #f44336; }
+    .token-section {
       margin-top: 10px;
+      background: #222;
+      border: 1px solid #444;
+      border-radius: 6px;
+      padding: 10px;
+    }
+    .token-section label {
+      display: block;
       font-size: 11px;
-      color: #888;
-      line-height: 1.5;
+      font-weight: 600;
+      color: #aaa;
+      margin-bottom: 5px;
     }
-    .help a {
-      color: #6a8caf;
-      text-decoration: none;
+    .token-row {
+      display: flex;
+      gap: 6px;
     }
-    .help a:hover { text-decoration: underline; }
+    .token-row input {
+      flex: 1;
+      background: #111;
+      border: 1px solid #555;
+      border-radius: 4px;
+      color: #ccc;
+      font-size: 12px;
+      font-family: monospace;
+      padding: 4px 6px;
+      min-width: 0;
+    }
+    .token-row input:focus { outline: none; border-color: #6a8caf; }
+    .btn-save {
+      background: #1565c0;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      padding: 4px 10px;
+      font-size: 11px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .btn-save:hover { background: #1976d2; }
+    .token-hint {
+      font-size: 10px;
+      color: #666;
+      margin-top: 5px;
+    }
+    .saved-msg {
+      font-size: 11px;
+      color: #81c784;
+      margin-top: 4px;
+      display: none;
+    }
     .version {
       margin-top: 10px;
       font-size: 10px;
@@ -83,9 +130,14 @@
     <span id="status-text">Connecting…</span>
   </div>
 
-  <div class="help" id="help-text" style="display:none">
-    Make sure the Jarvis desktop app is running. The bridge listens on
-    <code>ws://127.0.0.1:35789</code>.
+  <div class="token-section">
+    <label for="token-input">🔑 Pairing Token</label>
+    <div class="token-row">
+      <input id="token-input" type="text" placeholder="Paste token from Jarvis app" autocomplete="off" spellcheck="false" />
+      <button id="btn-save" class="btn-save">Save</button>
+    </div>
+    <div class="token-hint">Copy the token from the Browser Companion panel in the Jarvis app.</div>
+    <div class="saved-msg" id="saved-msg">✓ Token saved — reconnecting…</div>
   </div>
 
   <div class="version">v1.0.0</div>

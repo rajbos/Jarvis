@@ -6,6 +6,8 @@ import { saveDatabase } from '../../storage/database';
 import {
   startBridgeServer,
   getBridgeStatus,
+  getBridgeToken,
+  regenerateBridgeToken,
   sendCommand,
 } from './server';
 
@@ -20,6 +22,17 @@ export function registerHandlers(
 
   ipcMain.handle('browser:status', () => {
     return getBridgeStatus();
+  });
+
+  // ── Token management ──────────────────────────────────────────────────────
+
+  ipcMain.handle('browser:get-token', () => {
+    return { token: getBridgeToken() };
+  });
+
+  ipcMain.handle('browser:regenerate-token', () => {
+    const token = regenerateBridgeToken();
+    return { token };
   });
 
   // ── Skill CRUD ────────────────────────────────────────────────────────────
