@@ -744,7 +744,8 @@ function App() {
 
   return (
     <div class="app-shell">
-      <div class="main-scroll" ref={mainScrollRef}>
+      <div class="app-main-area">
+        <div class="main-scroll" ref={mainScrollRef}>
         {!showChatPanel && selectedOllamaModel && (
           <button class="chat-reopen-btn" title="Open Chat" onClick={handleOpenChat}>💬</button>
         )}
@@ -1046,6 +1047,7 @@ function App() {
           });
         }}
       />
+      </div>{/* end app-main-area */}
       <BackgroundStatusBar
         notifFetching={notifFetching}
         discoveryProgress={discoveryProgress}
