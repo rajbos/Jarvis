@@ -744,7 +744,8 @@ function App() {
 
   return (
     <div class="app-shell">
-      <div class="main-scroll" ref={mainScrollRef}>
+      <div class="app-main-area">
+        <div class="main-scroll" ref={mainScrollRef}>
         {!showChatPanel && selectedOllamaModel && (
           <button class="chat-reopen-btn" title="Open Chat" onClick={handleOpenChat}>💬</button>
         )}
@@ -1046,6 +1047,7 @@ function App() {
           });
         }}
       />
+      </div>{/* end app-main-area */}
       <BackgroundStatusBar
         notifFetching={notifFetching}
         discoveryProgress={discoveryProgress}
@@ -1079,6 +1081,7 @@ function BackgroundStatusBar({
 }: BackgroundStatusBarProps) {
   const [ipcMessage, setIpcMessage] = useState<string | null>(null);
   const fadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const barRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const unsub = window.jarvis.onBackgroundStatus((msg) => {
@@ -1141,10 +1144,30 @@ function BackgroundStatusBar({
   const patBadge = rateLimit?.pat.configured ? rateLimit.pat : null;
   const hasAnyBadge = oauthBadge !== null || patBadge !== null;
 
+  // Keep --status-bar-height in sync so fixed panels (e.g. ec-panel) can avoid
+  // being hidden behind the status bar.
+  useEffect(() => {
+    const el = barRef.current;
+    if (!el) {
+      document.documentElement.style.setProperty('--status-bar-height', '0px');
+      return;
+    }
+    const update = () => {
+      document.documentElement.style.setProperty('--status-bar-height', `${Math.ceil(el.getBoundingClientRect().height)}px`);
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      document.documentElement.style.setProperty('--status-bar-height', '0px');
+    };
+  });
+
   if (!message && !hasAnyBadge) return null;
 
   return (
-    <div class="bg-status-bar" aria-live="polite">
+    <div class="bg-status-bar" ref={barRef} aria-live="polite">
       {message && (
         <>
           <span class="bg-status-dot" />

@@ -1434,9 +1434,20 @@ body.onboarding {
 
 .app-shell {
   display: flex;
+  flex-direction: column;
   height: 100vh;
   overflow: hidden;
   width: 100%;
+}
+
+/* Row containing the main scroll area and the chat panel side-by-side.
+   Sits above the status bar and fills all remaining vertical space. */
+.app-main-area {
+  display: flex;
+  flex-direction: row;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0; /* allow flex children to shrink below content size */
 }
 
 
@@ -1448,6 +1459,7 @@ body.onboarding {
   flex-direction: column;
   align-items: flex-start;
   padding: 2rem;
+  min-height: 0; /* allow shrinking */
 }
 
 .container {
@@ -2183,7 +2195,8 @@ h1 {
   position: relative;
   width: 380px;
   min-width: 250px;
-  height: 100vh;
+  /* Height is determined by the parent flex container (app-main-area),
+     so it always matches the main content area exactly. */
   display: flex;
   flex-direction: column;
   background: #16213e;
@@ -3266,10 +3279,14 @@ h5.ec-heading { font-size: 0.85rem; }
 
 /* ── RuddrProjectsPanel ───────────────────────────────────────────────────── */
 .ruddr-projects-panel {
-  /* Fixed to the right side of the viewport — detached from the flex layout */
+  /* Fixed to the right side of the viewport — detached from the flex layout.
+     --chat-panel-width (set by EmbeddedChatPanel) keeps it left of the chat
+     window. Using top+bottom instead of top+max-height means it automatically
+     stays above the status bar without any JS measurement. */
   position: fixed;
-  right: 1rem;
+  right: calc(var(--chat-panel-width, 0px) + 1rem);
   top: 8rem;
+  bottom: calc(var(--status-bar-height, 0px) + 1rem);
   width: 240px;
   min-width: 180px;
   max-width: 600px;
@@ -3281,7 +3298,6 @@ h5.ec-heading { font-size: 0.85rem; }
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
-  max-height: calc(100vh - 9.5rem);
   overflow-y: auto;
   z-index: 50;
 }
@@ -3841,18 +3857,16 @@ h5.ec-heading { font-size: 0.85rem; }
 
 /* ── Background status bar ───────────────────────────────────────────────── */
 .bg-status-bar {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  z-index: 1000;
+  /* Natural flex item at the bottom of app-shell — no longer position:fixed.
+     This means the status bar never overlaps any other content; it simply
+     occupies its own row and all panels above it shrink to fit. */
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 0.5rem;
   padding: 0.25rem 1rem;
-  background: rgba(10, 10, 30, 0.88);
+  background: rgba(10, 10, 30, 0.92);
   border-top: 1px solid #1e2040;
-  backdrop-filter: blur(4px);
   animation: bg-status-fadein 0.2s ease;
   pointer-events: none;
 }
