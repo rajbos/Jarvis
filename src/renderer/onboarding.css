@@ -1448,6 +1448,7 @@ body.onboarding {
   flex-direction: column;
   align-items: flex-start;
   padding: 2rem;
+  padding-bottom: calc(2rem + var(--status-bar-height, 0px));
 }
 
 .container {
@@ -2183,7 +2184,7 @@ h1 {
   position: relative;
   width: 380px;
   min-width: 250px;
-  height: 100vh;
+  height: calc(100vh - var(--status-bar-height, 0px));
   display: flex;
   flex-direction: column;
   background: #16213e;
