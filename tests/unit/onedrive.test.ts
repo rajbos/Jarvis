@@ -131,7 +131,9 @@ describe('OneDrive service', () => {
   // ── Folder discovery ─────────────────────────────────────────────────────────
 
   it('discoverCustomerFolderForGroup stores not_found when root does not exist', () => {
-    const root = addOnedriveRoot(db, 'Z:\\NonExistent\\Path', 'Missing');
+    // Use a non-existent path under a real drive to avoid network timeout on Windows
+    const fakePath = path.join(os.tmpdir(), 'jarvis-nonexistent-root-' + Date.now());
+    const root = addOnedriveRoot(db, fakePath, 'Missing');
     const gid = insertGroup(db, 'Acme');
     const info = discoverCustomerFolderForGroup(db, gid, 'Acme');
     expect(info).toHaveLength(1);
@@ -156,8 +158,10 @@ describe('OneDrive service', () => {
   });
 
   it('discoverCustomerFolderForGroup creates records for multiple roots', () => {
-    addOnedriveRoot(db, 'Z:\\RootA', 'Root A');
-    addOnedriveRoot(db, 'Z:\\RootB', 'Root B');
+    const fakeA = path.join(os.tmpdir(), 'jarvis-nonexistent-rootA-' + Date.now());
+    const fakeB = path.join(os.tmpdir(), 'jarvis-nonexistent-rootB-' + Date.now());
+    addOnedriveRoot(db, fakeA, 'Root A');
+    addOnedriveRoot(db, fakeB, 'Root B');
     const gid = insertGroup(db, 'CustomerZ');
     const info = discoverCustomerFolderForGroup(db, gid, 'CustomerZ');
     expect(info).toHaveLength(2);
@@ -165,7 +169,8 @@ describe('OneDrive service', () => {
   });
 
   it('discoverCustomerFolderForGroup is idempotent (upsert)', () => {
-    addOnedriveRoot(db, 'Z:\\R', 'R');
+    const fakeR = path.join(os.tmpdir(), 'jarvis-nonexistent-R-' + Date.now());
+    addOnedriveRoot(db, fakeR, 'R');
     const gid = insertGroup(db, 'Test');
     discoverCustomerFolderForGroup(db, gid, 'Test');
     discoverCustomerFolderForGroup(db, gid, 'Test');
@@ -201,7 +206,8 @@ describe('OneDrive service', () => {
   // ── File scanning ─────────────────────────────────────────────────────────────
 
   it('scanFilesForFolder throws when folder is not_found', () => {
-    const root = addOnedriveRoot(db, 'Z:\\Missing', 'M');
+    const fakePath = path.join(os.tmpdir(), 'jarvis-nonexistent-missing-' + Date.now());
+    const root = addOnedriveRoot(db, fakePath, 'M');
     const gid = insertGroup(db, 'Nope');
     db.run(
       `INSERT INTO onedrive_customer_folders (group_id, root_id, folder_path, status, discovered_at)
