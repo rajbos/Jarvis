@@ -1,5 +1,5 @@
 /** @jsxImportSource preact */
-import { useState, useEffect, useRef } from 'preact/hooks';
+import { useState, useEffect } from 'preact/hooks';
 import type { Group, RuddrProjectMatch, RuddrBudget, RuddrProjectInfo } from '../types';
 import { RuddrProjectsPanel } from './RuddrProjectsPanel';
 
@@ -12,11 +12,10 @@ export function GroupsDashboardPanel() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
   const [detailsLoading, setDetailsLoading] = useState(false);
-  const [mainMaxWidth, setMainMaxWidth] = useState<number>(600);
-  const mainRef = useRef<HTMLDivElement>(null);
+  const [ruddrVisible, setRuddrVisible] = useState(true);
   const [budgetData, setBudgetData] = useState<Record<string, RuddrBudget>>({});
   const [budgetChecking, setBudgetChecking] = useState<string | null>(null);
-  const [newRuddrProjects, setNewRuddrProjects] = useState<Array<{ name: string; path: string }>>([]);
+  const [newRuddrProjects, setNewRuddrProjects] = useState<Array<{ name: string; path: string }>>([]); 
 
   const loadData = async () => {
     setLoading(true);
@@ -51,28 +50,6 @@ export function GroupsDashboardPanel() {
       setLoading(false);
     }
   };
-
-  // Keep groups-dash-main width capped to the left of the fixed Ruddr panel.
-  // Measures real DOM positions so no magic numbers or 100vw assumptions are needed.
-  useEffect(() => {
-    const GAP = 19; // ~1.2rem visual gap between grid and panel
-    const recompute = () => {
-      const panel = document.querySelector('.ruddr-projects-panel') as HTMLElement | null;
-      if (!panel || !mainRef.current) return;
-      const panelLeft = panel.getBoundingClientRect().left;
-      const mainLeft  = mainRef.current.getBoundingClientRect().left;
-      setMainMaxWidth(Math.max(280, panelLeft - mainLeft - GAP));
-    };
-    // Defer initial measurement until both elements are painted
-    const raf = requestAnimationFrame(recompute);
-    window.addEventListener('resize', recompute);
-    window.addEventListener('ruddr-panel-resize', recompute);
-    return () => {
-      cancelAnimationFrame(raf);
-      window.removeEventListener('resize', recompute);
-      window.removeEventListener('ruddr-panel-resize', recompute);
-    };
-  }, []);
 
   useEffect(() => {
     loadData();
@@ -167,10 +144,17 @@ export function GroupsDashboardPanel() {
           </svg>
           {loading ? 'Refreshing…' : 'Refresh'}
         </button>
+        <button
+          class="dash-toggle-ruddr-btn"
+          onClick={() => setRuddrVisible((v) => !v)}
+          title={ruddrVisible ? 'Hide Ruddr Projects panel' : 'Show Ruddr Projects panel'}
+        >
+          {ruddrVisible ? '◀ Ruddr' : '▶ Ruddr'}
+        </button>
       </div>
 
       <div class="groups-dash-body">
-        <div class="groups-dash-main" ref={mainRef} style={{ maxWidth: `${mainMaxWidth}px`, overflow: 'hidden' }}>
+        <div class="groups-dash-main">
           {/* ── New Ruddr project notification banners ── */}
           {newRuddrProjects.length > 0 && (
             <div class="groups-dash-new-projects">
@@ -218,7 +202,7 @@ export function GroupsDashboardPanel() {
           )}
         </div>
 
-        <RuddrProjectsPanel onGroupCreated={loadData} />
+        {ruddrVisible && <RuddrProjectsPanel onGroupCreated={loadData} />}
       </div>
     </div>
   );
