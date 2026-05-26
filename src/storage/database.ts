@@ -87,7 +87,7 @@ function initializeSchema(database: SqlJsDatabase): void {
   if (userVersion === 0) {
     database.run(getSchema());
     seedBuiltInAgents(database);
-    database.run('PRAGMA user_version = 24');
+    database.run('PRAGMA user_version = 25');
   }
 
   if (userVersion === 1) {
@@ -467,7 +467,24 @@ function initializeSchema(database: SqlJsDatabase): void {
   }
 
   if (userVersion === 22) {
-    // Migration v22 → v23: add OneNote page content cache table
+    // Migration v22 → v23: add auto_dismiss_log table for tracking auto-dismissed notifications
+    database.run(`
+      CREATE TABLE IF NOT EXISTS auto_dismiss_log (
+          id              INTEGER PRIMARY KEY AUTOINCREMENT,
+          notification_id TEXT NOT NULL,
+          dismissed_at    TEXT NOT NULL DEFAULT (datetime('now')),
+          reason          TEXT NOT NULL,
+          repo_full_name  TEXT,
+          subject_title   TEXT,
+          subject_type    TEXT
+      )
+    `);
+    database.run('CREATE INDEX IF NOT EXISTS idx_auto_dismiss_log_date ON auto_dismiss_log(dismissed_at)');
+    database.run('PRAGMA user_version = 23');
+  }
+
+  if (userVersion === 23) {
+    // Migration v23 → v24: add OneNote page content cache table
     database.run(`
       CREATE TABLE IF NOT EXISTS onedrive_onenote_cache (
           id                  INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -490,17 +507,17 @@ function initializeSchema(database: SqlJsDatabase): void {
       CREATE INDEX IF NOT EXISTS idx_onenote_cache_lookup
       ON onedrive_onenote_cache(folder_id, relative_path)
     `);
-    database.run('PRAGMA user_version = 23');
+    database.run('PRAGMA user_version = 24');
   }
 
-  if (userVersion === 23) {
-    // Migration v23 → v24: add page_last_modified column and index
+  if (userVersion === 24) {
+    // Migration v24 → v25: add page_last_modified column and index to OneNote cache
     database.run(`ALTER TABLE onedrive_onenote_cache ADD COLUMN page_last_modified TEXT`);
     database.run(`
       CREATE INDEX IF NOT EXISTS idx_onenote_cache_modified
       ON onedrive_onenote_cache(page_last_modified)
     `);
-    database.run('PRAGMA user_version = 24');
+    database.run('PRAGMA user_version = 25');
   }
 }
 

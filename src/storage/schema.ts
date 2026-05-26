@@ -321,6 +321,18 @@ export function getSchema(): string {
     );
     CREATE INDEX IF NOT EXISTS idx_browser_skill_runs_skill ON browser_skill_runs(skill_id);
 
+    -- Automatic dismissal log: tracks notifications dismissed automatically by Jarvis
+    CREATE TABLE IF NOT EXISTS auto_dismiss_log (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        notification_id TEXT NOT NULL,
+        dismissed_at    TEXT NOT NULL DEFAULT (datetime('now')),
+        reason          TEXT NOT NULL,
+        repo_full_name  TEXT,
+        subject_title   TEXT,
+        subject_type    TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_auto_dismiss_log_date ON auto_dismiss_log(dismissed_at);
+
     -- Cached OneNote page content (keyed by folder + relative path; stable across file rescans)
     CREATE TABLE IF NOT EXISTS onedrive_onenote_cache (
         id                  INTEGER PRIMARY KEY AUTOINCREMENT,

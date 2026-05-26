@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback } from 'preact/hooks';
+import { useState, useEffect, useCallback, useRef } from 'preact/hooks';
 import type {
   DashboardSummary,
   RepoHealthStatus,
   HealthWarning,
   StoredNotification,
+  AutoDismissLogInput,
 } from '../types';
 import { AgentSelector } from '../agents/AgentSelector';
 // ── Failure hint helpers ──────────────────────────────────────────────────────────
@@ -28,373 +29,223 @@ function extractErrorHint(logExcerpt: string | null): string | null {
   }
   return null;
 }
-// ── Recoverable notifications banner ─────────────────────────────────────────
+// ── Auto-dismiss pipeline ─────────────────────────────────────────────────────
+// Replaces RecoverableBanner and ClosedPrBanner with fully-automatic dismissal.
+// Runs once after the dashboard summary loads.
 
-interface RecoverableEntry {
-  repoFullName: string;
-  workflowName: string;
-  ids: string[];
+interface AutoDismissStepResult {
+  id: string;
+  label: string;
+  dismissed: number;
 }
 
-/**
- * Scans all repos with CI notifications and surfaces those whose workflow has
- * since succeeded. Shows a single top-level dismiss button for the full set.
- */
-function RecoverableBanner({
-  repoFullNames,
-  onDismissed,
-  onNavigate,
-}: {
-  repoFullNames: string[];
-  onDismissed: () => void;
-  onNavigate: (repoFullName: string) => void;
-}) {
-  const [entries, setEntries] = useState<RecoverableEntry[]>([]);
-  const [checking, setChecking] = useState(true);
-  const [dismissing, setDismissing] = useState(false);
+interface AutoDismissRunResult {
+  steps: AutoDismissStepResult[];
+  total: number;
+}
 
-  useEffect(() => {
-    if (repoFullNames.length === 0) { setChecking(false); return; }
-    let cancelled = false;
-    setChecking(true);
+async function runRecoverableStep(repoFullNames: string[]): Promise<{ dismissed: number; logEntries: AutoDismissLogInput[] }> {
+  const logEntries: AutoDismissLogInput[] = [];
+  let dismissed = 0;
+  for (const repoFullName of repoFullNames) {
+    try {
+      const notifs = await window.jarvis.listNotificationsForRepo(repoFullName);
+      const ciNotifs = notifs.filter((n) => n.subject_type === 'CheckSuite' || n.subject_type === 'WorkflowRun');
+      if (ciNotifs.length === 0) continue;
 
-    const run = async () => {
-      const found: RecoverableEntry[] = [];
-      for (const repoFullName of repoFullNames) {
-        try {
-          const notifs = await window.jarvis.listNotificationsForRepo(repoFullName);
-          const ciNotifs = notifs.filter((n) => n.subject_type === 'CheckSuite' || n.subject_type === 'WorkflowRun');
-          if (ciNotifs.length === 0) continue;
+      let summary = await window.jarvis.githubGetWorkflowSummary(repoFullName);
+      if (summary.total_runs === 0) {
+        await window.jarvis.githubFetchWorkflowRuns(repoFullName);
+        summary = await window.jarvis.githubGetWorkflowSummary(repoFullName);
+      }
 
-          let summary = await window.jarvis.githubGetWorkflowSummary(repoFullName);
-          if (summary.total_runs === 0) {
-            await window.jarvis.githubFetchWorkflowRuns(repoFullName);
-            summary = await window.jarvis.githubGetWorkflowSummary(repoFullName);
+      const byWorkflow = new Map<string, StoredNotification[]>();
+      for (const n of ciNotifs) {
+        const name = n.subject_title.match(/^(.+?)\s+workflow\s+run/i)?.[1]?.trim() ?? n.subject_title;
+        if (!byWorkflow.has(name)) byWorkflow.set(name, []);
+        byWorkflow.get(name)!.push(n);
+      }
+
+      for (const [workflowName, wNotifs] of byWorkflow) {
+        const branch = wNotifs[0].subject_title.match(/\bfor\s+(\S+)\s+branch\b/i)?.[1] ?? null;
+        const latestNotifTime = Math.max(...wNotifs.map((n) => new Date(n.updated_at).getTime()));
+        const recovered = summary.recent_runs.some(
+          (r) =>
+            r.workflow_name === workflowName &&
+            (branch === null || r.head_branch === branch) &&
+            r.conclusion === 'success' &&
+            new Date(r.run_started_at).getTime() > latestNotifTime,
+        );
+        if (recovered) {
+          for (const n of wNotifs) {
+            try {
+              await window.jarvis.dismissNotification(n.id);
+              logEntries.push({
+                notification_id: n.id,
+                reason: 'recovered_workflow',
+                repo_full_name: repoFullName,
+                subject_title: n.subject_title,
+                subject_type: n.subject_type,
+              });
+              dismissed++;
+            } catch { /* skip individual */ }
           }
-          if (cancelled) return;
-
-          // Group CI notifs by normalised workflow name
-          const byWorkflow = new Map<string, StoredNotification[]>();
-          for (const n of ciNotifs) {
-            const name = n.subject_title.match(/^(.+?)\s+workflow\s+run/i)?.[1]?.trim() ?? n.subject_title;
-            if (!byWorkflow.has(name)) byWorkflow.set(name, []);
-            byWorkflow.get(name)!.push(n);
-          }
-
-          for (const [workflowName, wNotifs] of byWorkflow) {
-            const branch = wNotifs[0].subject_title.match(/\bfor\s+(\S+)\s+branch\b/i)?.[1] ?? null;
-            const latestNotifTime = Math.max(...wNotifs.map((n) => new Date(n.updated_at).getTime()));
-            const recovered = summary.recent_runs.some(
-              (r) =>
-                r.workflow_name === workflowName &&
-                (branch === null || r.head_branch === branch) &&
-                r.conclusion === 'success' &&
-                new Date(r.run_started_at).getTime() > latestNotifTime,
-            );
-            if (recovered) {
-              found.push({ repoFullName, workflowName, ids: wNotifs.map((n) => n.id) });
-            }
-          }
-        } catch {
-          // non-fatal per repo
         }
       }
-      if (!cancelled) { setEntries(found); setChecking(false); }
-    };
+    } catch { /* non-fatal per repo */ }
+  }
+  return { dismissed, logEntries };
+}
 
-    void run();
-    return () => { cancelled = true; };
-  }, [repoFullNames.join(',')]);
-
-  const totalIds = entries.flatMap((e) => e.ids);
-  if (totalIds.length === 0) return null;
-
-  const repoCount = new Set(entries.map((e) => e.repoFullName)).size;
-  const recoverableSummary = `${totalIds.length} notification${totalIds.length !== 1 ? 's' : ''} across ${entries.length} workflow${entries.length !== 1 ? 's' : ''} in ${repoCount} repo${repoCount !== 1 ? 's' : ''}.`;
-  const recoverableTooltip = entries
-    .map((e) => `${e.repoFullName.split('/')[1]} · ${e.workflowName}`)
-    .join(', ');
-
-  // Repo with the most recoverable notifications
-  const topEntry = entries.reduce((best, e) => e.ids.length > best.ids.length ? e : best, entries[0]);
-
-  const handleDismissAll = async () => {
-    setDismissing(true);
-    for (const id of totalIds) {
-      try { await window.jarvis.dismissNotification(id); } catch { /* skip */ }
+async function runClosedPrStep(): Promise<{ dismissed: number; logEntries: AutoDismissLogInput[] }> {
+  const logEntries: AutoDismissLogInput[] = [];
+  let dismissed = 0;
+  try {
+    const allPrNotifs = await window.jarvis.listPrNotifications();
+    const byUrl = new Map<string, StoredNotification[]>();
+    for (const n of allPrNotifs) {
+      if (!n.subject_url) continue;
+      if (!byUrl.has(n.subject_url)) byUrl.set(n.subject_url, []);
+      byUrl.get(n.subject_url)!.push(n);
     }
-    setDismissing(false);
-    onDismissed();
-  };
-
-  // Keep showing the banner with the last known results while re-checking.
-  // The totalIds.length === 0 guard above handles the initial-load case.
-  return (
-    <div class="dash-recoverable-banner">
-      <span class="dash-recoverable-icon">✓</span>
-      <div class="dash-recoverable-body">
-        <span class="dash-recoverable-title">Workflows recovered</span>
-        <span class="dash-recoverable-detail" title={recoverableTooltip}>{recoverableSummary}</span>
-      </div>
-      <button
-        class={`dash-recoverable-btn${dismissing ? ' dash-recoverable-btn--busy' : ''}`}
-        disabled={dismissing}
-        onClick={() => void handleDismissAll()}
-      >
-        {dismissing
-          ? <span class="dismiss-spinner" />
-          : `Dismiss ${totalIds.length} notification${totalIds.length !== 1 ? 's' : ''}`}
-      </button>
-      <button
-        class="dash-recoverable-nav-btn"
-        title={`Open ${topEntry.repoFullName.split('/')[1]} in Repo Dashboard`}
-        onClick={() => onNavigate(topEntry.repoFullName)}
-      >
-        View {topEntry.repoFullName.split('/')[1]} ›
-      </button>
-    </div>
-  );
-}
-
-// ── Closed PR notifications banner ───────────────────────────────────────────
-
-interface ClosedPrEntry {
-  repoFullName: string;
-  prTitle: string;
-  state: 'closed' | 'merged';
-  dismissReason: 'dependabot' | 'closed-by-me' | 'merged-by-me';
-  ids: string[];
-}
-
-/**
- * Scans ALL stored PullRequest notifications and surfaces those whose PR is
- * already closed or merged AND was either authored by Dependabot or actioned
- * by the current user. Shows a single top-level dismiss button.
- */
-function ClosedPrBanner({
-  onDismissed,
-}: {
-  onDismissed: () => void;
-}) {
-  const [entries, setEntries] = useState<ClosedPrEntry[]>([]);
-  const [checking, setChecking] = useState(true);
-  const [dismissing, setDismissing] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    setChecking(true);
-
-    const run = async () => {
-      const found: ClosedPrEntry[] = [];
-      try {
-        const allPrNotifs = await window.jarvis.listPrNotifications();
-
-        // Group by PR URL — one API call per unique PR, most recent first, cap at 50
-        const byUrl = new Map<string, StoredNotification[]>();
-        for (const n of allPrNotifs) {
-          if (!n.subject_url) continue;
-          if (!byUrl.has(n.subject_url)) byUrl.set(n.subject_url, []);
-          byUrl.get(n.subject_url)!.push(n);
-        }
-        const urlEntries = [...byUrl.entries()].slice(0, 50);
-
-        // Parallel checks with concurrency 8
-        const CONCURRENCY = 8;
-        let nextIdx = 0;
-        const worker = async () => {
-          while (nextIdx < urlEntries.length) {
-            const idx = nextIdx++;
-            const [url, urlNotifs] = urlEntries[idx];
+    const urlEntries = [...byUrl.entries()].slice(0, 50);
+    const CONCURRENCY = 8;
+    let nextIdx = 0;
+    const worker = async () => {
+      while (nextIdx < urlEntries.length) {
+        const idx = nextIdx++;
+        const [url, urlNotifs] = urlEntries[idx];
+        try {
+          const result = await window.jarvis.githubGetPrState(url);
+          if (!result || result.state === 'open') continue;
+          const { state, isDependabot, closedByMe } = result;
+          if (!isDependabot && !closedByMe) continue;
+          const reason: AutoDismissLogInput['reason'] =
+            isDependabot ? 'closed_pr_dependabot'
+            : state === 'merged' ? 'closed_pr_merged_me'
+            : 'closed_pr_closed_me';
+          for (const n of urlNotifs) {
             try {
-              const result = await window.jarvis.githubGetPrState(url);
-              if (cancelled) return;
-              if (!result || result.state === 'open') continue;
-              const { state, isDependabot, closedByMe } = result;
-              if (!isDependabot && !closedByMe) continue;
-              const dismissReason: ClosedPrEntry['dismissReason'] =
-                isDependabot ? 'dependabot'
-                : state === 'merged' ? 'merged-by-me'
-                : 'closed-by-me';
-              found.push({
-                repoFullName: urlNotifs[0].repo_full_name,
-                prTitle: urlNotifs[0].subject_title,
-                state,
-                dismissReason,
-                ids: urlNotifs.map((n) => n.id),
+              await window.jarvis.dismissNotification(n.id);
+              logEntries.push({
+                notification_id: n.id,
+                reason,
+                repo_full_name: n.repo_full_name,
+                subject_title: n.subject_title,
+                subject_type: n.subject_type,
               });
-            } catch { /* skip individual PR */ }
+              dismissed++;
+            } catch { /* skip individual */ }
           }
-        };
-        await Promise.all(Array.from({ length: Math.min(CONCURRENCY, urlEntries.length) }, worker));
-      } catch { /* non-fatal */ }
-      if (!cancelled) { setEntries(found); setChecking(false); }
+        } catch { /* skip individual PR */ }
+      }
     };
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, urlEntries.length) }, worker));
+  } catch { /* non-fatal */ }
+  return { dismissed, logEntries };
+}
 
-    void run();
-    return () => { cancelled = true; };
-  }, []);
-
-  const totalIds = entries.flatMap((e) => e.ids);
-  if (checking || totalIds.length === 0) return null;
-
-  const mergedCount = entries.filter((e) => e.state === 'merged').length;
-  const closedCount = entries.filter((e) => e.state === 'closed').length;
-  const dependabotCount = entries.filter((e) => e.dismissReason === 'dependabot').length;
-  const stateBreakdown = [
-    mergedCount > 0 ? `${mergedCount} merged` : '',
-    closedCount > 0 ? `${closedCount} closed without merging` : '',
-  ].filter(Boolean).join(', ');
-  const reasonBreakdown = dependabotCount === entries.length
-    ? 'all Dependabot'
-    : dependabotCount > 0
-      ? `${dependabotCount} Dependabot, ${entries.length - dependabotCount} closed/merged by you`
-      : 'closed/merged by you';
-  const summary = `${totalIds.length} notification${totalIds.length !== 1 ? 's' : ''} from ${entries.length} PR${entries.length !== 1 ? 's' : ''} (${stateBreakdown}; ${reasonBreakdown}).`;
-  const dismissReasonLabel = (r: ClosedPrEntry['dismissReason']) =>
-    r === 'dependabot' ? 'Dependabot' : r === 'merged-by-me' ? 'merged by you' : 'closed by you';
-  const tooltip = `Only showing PRs safe to dismiss: Dependabot PRs and PRs you closed/merged yourself.\n\n${entries.map((e) => `[${e.state}, ${dismissReasonLabel(e.dismissReason)}] ${e.repoFullName.split('/')[1]} · ${e.prTitle}`).join('\n')}`;
-
-  const handleDismissAll = async () => {
-    setDismissing(true);
-    for (const id of totalIds) {
-      try { await window.jarvis.dismissNotification(id); } catch { /* skip */ }
+async function runClosedIssueStep(): Promise<{ dismissed: number; logEntries: AutoDismissLogInput[] }> {
+  const logEntries: AutoDismissLogInput[] = [];
+  let dismissed = 0;
+  try {
+    const allIssueNotifs = await window.jarvis.listIssueNotifications();
+    const byUrl = new Map<string, StoredNotification[]>();
+    for (const n of allIssueNotifs) {
+      if (!n.subject_url) continue;
+      if (!byUrl.has(n.subject_url)) byUrl.set(n.subject_url, []);
+      byUrl.get(n.subject_url)!.push(n);
     }
-    setDismissing(false);
-    setEntries([]);
-    onDismissed();
-  };
-
-  return (
-    <div class="dash-recoverable-banner">
-      <span class="dash-recoverable-icon">✓</span>
-      <div class="dash-recoverable-body">
-        <span class="dash-recoverable-title">PRs closed / merged</span>
-        <span class="dash-recoverable-detail" title={tooltip}>{summary}</span>
-      </div>
-      <button
-        class={`dash-recoverable-btn${dismissing ? ' dash-recoverable-btn--busy' : ''}`}
-        disabled={dismissing}
-        onClick={() => void handleDismissAll()}
-      >
-        {dismissing
-          ? <span class="dismiss-spinner" />
-          : `Dismiss ${totalIds.length} notification${totalIds.length !== 1 ? 's' : ''}`}
-      </button>
-    </div>
-  );
-}
-
-// ── Closed Issue notifications banner ────────────────────────────────────────
-
-interface ClosedIssueEntry {
-  repoFullName: string;
-  issueTitle: string;
-  dismissReason: 'closed-by-me' | 'closed-via-pr';
-  ids: string[];
-}
-
-/**
- * Scans all stored Issue notifications and surfaces those whose issue is
- * already closed AND was either closed by the current user directly or by
- * merging a PR with a closing keyword. Shows a single dismiss button.
- */
-function ClosedIssueBanner({
-  onDismissed,
-}: {
-  onDismissed: () => void;
-}) {
-  const [entries, setEntries] = useState<ClosedIssueEntry[]>([]);
-  const [checking, setChecking] = useState(true);
-  const [dismissing, setDismissing] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    setChecking(true);
-
-    const run = async () => {
-      const found: ClosedIssueEntry[] = [];
-      try {
-        const allIssueNotifs = await window.jarvis.listIssueNotifications();
-
-        // Group by issue URL — one API call per unique issue, most recent first, cap at 50
-        const byUrl = new Map<string, StoredNotification[]>();
-        for (const n of allIssueNotifs) {
-          if (!n.subject_url) continue;
-          if (!byUrl.has(n.subject_url)) byUrl.set(n.subject_url, []);
-          byUrl.get(n.subject_url)!.push(n);
-        }
-        const urlEntries = [...byUrl.entries()].slice(0, 50);
-
-        // Parallel checks with concurrency 8
-        const CONCURRENCY = 8;
-        let nextIdx = 0;
-        const worker = async () => {
-          while (nextIdx < urlEntries.length) {
-            const idx = nextIdx++;
-            const [url, urlNotifs] = urlEntries[idx];
+    const urlEntries = [...byUrl.entries()].slice(0, 50);
+    const CONCURRENCY = 8;
+    let nextIdx = 0;
+    const worker = async () => {
+      while (nextIdx < urlEntries.length) {
+        const idx = nextIdx++;
+        const [url, urlNotifs] = urlEntries[idx];
+        try {
+          const result = await window.jarvis.githubGetIssueState(url);
+          if (!result || result.state !== 'closed') continue;
+          const { closedByMe, closedViaMergedPr } = result;
+          if (!closedByMe && !closedViaMergedPr) continue;
+          const reason: AutoDismissLogInput['reason'] =
+            closedViaMergedPr ? 'closed_issue_via_pr' : 'closed_issue_me';
+          for (const n of urlNotifs) {
             try {
-              const result = await window.jarvis.githubGetIssueState(url);
-              if (cancelled) return;
-              if (!result || result.state !== 'closed') continue;
-              const { closedByMe, closedViaMergedPr } = result;
-              if (!closedByMe && !closedViaMergedPr) continue;
-              const dismissReason: ClosedIssueEntry['dismissReason'] =
-                closedViaMergedPr ? 'closed-via-pr' : 'closed-by-me';
-              found.push({
-                repoFullName: urlNotifs[0].repo_full_name,
-                issueTitle: urlNotifs[0].subject_title,
-                dismissReason,
-                ids: urlNotifs.map((n) => n.id),
+              await window.jarvis.dismissNotification(n.id);
+              logEntries.push({
+                notification_id: n.id,
+                reason,
+                repo_full_name: n.repo_full_name,
+                subject_title: n.subject_title,
+                subject_type: n.subject_type,
               });
-            } catch { /* skip individual issue */ }
+              dismissed++;
+            } catch { /* skip individual */ }
           }
-        };
-        await Promise.all(Array.from({ length: Math.min(CONCURRENCY, urlEntries.length) }, worker));
-      } catch { /* non-fatal */ }
-      if (!cancelled) { setEntries(found); setChecking(false); }
+        } catch { /* skip individual issue */ }
+      }
     };
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, Math.max(urlEntries.length, 1)) }, worker));
+  } catch { /* non-fatal */ }
+  return { dismissed, logEntries };
+}
 
-    void run();
-    return () => { cancelled = true; };
-  }, []);
+async function runAutoDismissPipeline(
+  repoFullNames: string[],
+): Promise<{ result: AutoDismissRunResult; logEntries: AutoDismissLogInput[] }> {
+  const steps: AutoDismissStepResult[] = [];
+  const allLog: AutoDismissLogInput[] = [];
 
-  const totalIds = entries.flatMap((e) => e.ids);
-  if (checking || totalIds.length === 0) return null;
+  const [rec, pr, issue] = await Promise.all([
+    runRecoverableStep(repoFullNames),
+    runClosedPrStep(),
+    runClosedIssueStep(),
+  ]);
 
-  const closedByMeCount = entries.filter((e) => e.dismissReason === 'closed-by-me').length;
-  const closedViaPrCount = entries.filter((e) => e.dismissReason === 'closed-via-pr').length;
-  const reasonBreakdown = [
-    closedByMeCount > 0 ? `${closedByMeCount} closed by you` : '',
-    closedViaPrCount > 0 ? `${closedViaPrCount} closed via merged PR` : '',
-  ].filter(Boolean).join(', ');
-  const summary = `${totalIds.length} notification${totalIds.length !== 1 ? 's' : ''} from ${entries.length} issue${entries.length !== 1 ? 's' : ''} (${reasonBreakdown}).`;
-  const tooltip = `Only showing issues safe to dismiss: closed by you or by a PR you merged.\n\n${entries.map((e) => `[${e.dismissReason}] ${e.repoFullName.split('/')[1]} · ${e.issueTitle}`).join('\n')}`;
+  steps.push({ id: 'recovered-workflows', label: 'Recovered workflows', dismissed: rec.dismissed });
+  allLog.push(...rec.logEntries);
+  steps.push({ id: 'closed-prs', label: 'Closed / merged PRs', dismissed: pr.dismissed });
+  allLog.push(...pr.logEntries);
+  steps.push({ id: 'closed-issues', label: 'Closed issues', dismissed: issue.dismissed });
+  allLog.push(...issue.logEntries);
 
-  const handleDismissAll = async () => {
-    setDismissing(true);
-    for (const id of totalIds) {
-      try { await window.jarvis.dismissNotification(id); } catch { /* skip */ }
-    }
-    setDismissing(false);
-    setEntries([]);
-    onDismissed();
+  return {
+    result: { steps, total: steps.reduce((s, r) => s + r.dismissed, 0) },
+    logEntries: allLog,
   };
+}
 
+// ── Auto-dismiss summary banner ───────────────────────────────────────────────
+
+function AutoDismissSummaryBanner({
+  result,
+  onAcknowledge,
+  onViewHistory,
+}: {
+  result: AutoDismissRunResult;
+  onAcknowledge: () => void;
+  onViewHistory: () => void;
+}) {
+  if (result.total === 0) return null;
   return (
-    <div class="dash-recoverable-banner">
-      <span class="dash-recoverable-icon">✓</span>
+    <div class="dash-recoverable-banner dash-auto-dismiss-banner">
+      <span class="dash-recoverable-icon">⚡</span>
       <div class="dash-recoverable-body">
-        <span class="dash-recoverable-title">Issues closed</span>
-        <span class="dash-recoverable-detail" title={tooltip}>{summary}</span>
+        <span class="dash-recoverable-title">
+          Auto-dismissed {result.total} notification{result.total !== 1 ? 's' : ''}
+        </span>
+        <span class="dash-recoverable-detail">
+          {result.steps.filter((s) => s.dismissed > 0).map((s) =>
+            `${s.label}: ${s.dismissed}`,
+          ).join(' · ')}
+        </span>
       </div>
-      <button
-        class={`dash-recoverable-btn${dismissing ? ' dash-recoverable-btn--busy' : ''}`}
-        disabled={dismissing}
-        onClick={() => void handleDismissAll()}
-      >
-        {dismissing
-          ? <span class="dismiss-spinner" />
-          : `Dismiss ${totalIds.length} notification${totalIds.length !== 1 ? 's' : ''}`}
+      <button class="dash-recoverable-nav-btn" onClick={onViewHistory} title="View dismissed notifications">
+        View dismissed ›
+      </button>
+      <button class="dash-recoverable-btn" onClick={onAcknowledge} title="Acknowledge and dismiss this banner">
+        ✕ OK
       </button>
     </div>
   );
@@ -1231,7 +1082,7 @@ function emptyMessage(card: CardFilter): string {
 
 // ── Main Dashboard ────────────────────────────────────────────────────────────
 
-export function DashboardPanel({ dismissedNotifIds }: { dismissedNotifIds?: ReadonlySet<string> }) {
+export function DashboardPanel({ dismissedNotifIds, onOpenHistory }: { dismissedNotifIds?: ReadonlySet<string>; onOpenHistory?: () => void }) {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [cardFilter, setCardFilter] = useState<CardFilter>('all');
@@ -1244,6 +1095,12 @@ export function DashboardPanel({ dismissedNotifIds }: { dismissedNotifIds?: Read
   const [notifSort, setNotifSort] = useState<'count' | 'name'>(
     () => (localStorage.getItem('dashboard-notif-sort') as 'count' | 'name') ?? 'count',
   );
+
+  // Auto-dismiss pipeline state
+  const [autoDismissResult, setAutoDismissResult] = useState<AutoDismissRunResult | null>(null);
+  const [autoDismissAcknowledged, setAutoDismissAcknowledged] = useState(false);
+  const [autoDismissDone, setAutoDismissDone] = useState(false);
+  const autoDismissRan = useRef(false);
 
   const handleNotifSortChange = (sort: 'count' | 'name') => {
     setNotifSort(sort);
@@ -1267,6 +1124,23 @@ export function DashboardPanel({ dismissedNotifIds }: { dismissedNotifIds?: Read
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  // Run the auto-dismiss pipeline once after summary is first available
+  useEffect(() => {
+    if (!summary || autoDismissRan.current) return;
+    autoDismissRan.current = true;
+    const repoFullNames = summary.repos
+      .filter((r) => r.notificationCount > 0 && r.linkedGithubRepo !== null)
+      .map((r) => r.linkedGithubRepo!);
+    void runAutoDismissPipeline(repoFullNames).then(async ({ result, logEntries }) => {
+      if (logEntries.length > 0) {
+        try { await window.jarvis.logAutoDismiss(logEntries); } catch { /* non-fatal */ }
+        void load(); // refresh summary counts after dismissals
+      }
+      if (result.total > 0) setAutoDismissResult(result);
+      setAutoDismissDone(true);
+    });
+  }, [summary, load]);
 
   useEffect(() => {
     if (!summary || !currentUserLogin) {
@@ -1469,33 +1343,32 @@ export function DashboardPanel({ dismissedNotifIds }: { dismissedNotifIds?: Read
         onSelect={setCardFilter}
       />
 
-      {/* Recoverable notifications — repos with CI notifications that have since gone green */}
-      <RecoverableBanner
-        repoFullNames={summary.repos
-          .filter((r) => r.notificationCount > 0 && r.linkedGithubRepo !== null)
-          .map((r) => r.linkedGithubRepo!)}
-        onDismissed={load}
-        onNavigate={(repoFullName) => {
-          const repo = summary.repos.find((r) => r.linkedGithubRepo === repoFullName);
-          if (!repo) return;
-          setExpandedId(repo.localRepoId);
-          // Switch to all/notifications filter so the row is visible
-          setCardFilter('all');
-          requestAnimationFrame(() => {
-            document.getElementById(`dash-repo-${repo.localRepoId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          });
-        }}
-      />
+      {/* Auto-dismiss summary banner — shown after the pipeline runs and dismissed something */}
+      {autoDismissResult && !autoDismissAcknowledged && (
+        <AutoDismissSummaryBanner
+          result={autoDismissResult}
+          onAcknowledge={() => setAutoDismissAcknowledged(true)}
+          onViewHistory={() => onOpenHistory?.()}
+        />
+      )}
 
-      {/* Closed / merged PR notifications */}
-      <ClosedPrBanner
-        onDismissed={load}
-      />
-
-      {/* Closed Issue notifications — issues closed by me or via a merged PR */}
-      <ClosedIssueBanner
-        onDismissed={load}
-      />
+      {/* Mini history button — shown when pipeline is done but banner is absent */}
+      {autoDismissDone && (!autoDismissResult || autoDismissAcknowledged) && (
+        <div class="dash-auto-dismiss-mini">
+          <span class="dash-auto-dismiss-mini-label">
+            {autoDismissResult
+              ? `Auto-dismissed ${autoDismissResult.total} notification${autoDismissResult.total !== 1 ? 's' : ''}`
+              : 'Nothing auto-dismissed this run'}
+          </span>
+          <button
+            class="dash-auto-dismiss-mini-btn"
+            onClick={() => onOpenHistory?.()}
+            title="View auto-dismiss history"
+          >
+            History ›
+          </button>
+        </div>
+      )}
 
       {/* Repo health list — filtered by selected card */}
       <div class="dash-section">

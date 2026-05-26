@@ -30,6 +30,7 @@ import { GroupsPanel } from '../plugins/groups/GroupsPanel';
 import { OneNoteSectionPanel } from '../plugins/groups/OneNoteSectionPanel';
 import { OneNoteCachePanel } from '../plugins/groups/OneNoteCachePanel';
 import { GroupsDashboardPanel } from '../plugins/groups/GroupsDashboardPanel';
+import { AutoDismissHistoryPanel } from '../plugins/notifications/AutoDismissHistoryPanel';
 
 // ── Types (imported from single source of truth in plugins/types.ts) ─────────
 // The global augmentation `Window.jarvis` is declared in plugins/types.ts and
@@ -55,7 +56,7 @@ import type {
 } from '../plugins/types';
 import '../plugins/types'; // activate the global Window augmentation
 
-type AppTab = 'dashboard' | 'groups-dashboard' | 'browser' | 'setup';
+type AppTab = 'dashboard' | 'groups-dashboard' | 'browser' | 'setup' | 'dismiss-history';
 
 // ── App ──────────────────────────────────────────────────────────────────────
 
@@ -748,7 +749,8 @@ function App() {
 
   return (
     <div class="app-shell">
-      <div class="main-scroll" ref={mainScrollRef}>
+      <div class="app-main-area">
+        <div class="main-scroll" ref={mainScrollRef}>
         {!showChatPanel && selectedOllamaModel && (
           <button class="chat-reopen-btn" title="Open Chat" onClick={handleOpenChat}>💬</button>
         )}
@@ -776,11 +778,20 @@ function App() {
           class={`tab-btn ${activeTab === 'setup' ? 'tab-active' : ''}`}
           onClick={() => setActiveTab('setup')}
         >⚙️ Setup</button>
+        <button
+          class={`tab-btn ${activeTab === 'dismiss-history' ? 'tab-active' : ''}`}
+          onClick={() => setActiveTab('dismiss-history')}
+        >🚫 Dismissed</button>
       </div>
 
       {/* ── Dashboard tab ────────────────────────────────────────────────── */}
       {activeTab === 'dashboard' && (
-        <DashboardPanel dismissedNotifIds={dismissedNotifIds} />
+        <DashboardPanel dismissedNotifIds={dismissedNotifIds} onOpenHistory={() => setActiveTab('dismiss-history')} />
+      )}
+
+      {/* ── Dismissed notifications history tab ──────────────────────────── */}
+      {activeTab === 'dismiss-history' && (
+        <AutoDismissHistoryPanel onClose={() => setActiveTab('dashboard')} />
       )}
 
       {/* ── Groups Dashboard tab ─────────────────────────────────────────── */}
@@ -1059,6 +1070,7 @@ function App() {
           });
         }}
       />
+      </div>{/* end app-main-area */}
       <BackgroundStatusBar
         notifFetching={notifFetching}
         discoveryProgress={discoveryProgress}
@@ -1092,6 +1104,7 @@ function BackgroundStatusBar({
 }: BackgroundStatusBarProps) {
   const [ipcMessage, setIpcMessage] = useState<string | null>(null);
   const fadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const barRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const unsub = window.jarvis.onBackgroundStatus((msg) => {
@@ -1154,10 +1167,30 @@ function BackgroundStatusBar({
   const patBadge = rateLimit?.pat.configured ? rateLimit.pat : null;
   const hasAnyBadge = oauthBadge !== null || patBadge !== null;
 
+  // Keep --status-bar-height in sync so fixed panels (e.g. ec-panel) can avoid
+  // being hidden behind the status bar.
+  useEffect(() => {
+    const el = barRef.current;
+    if (!el) {
+      document.documentElement.style.setProperty('--status-bar-height', '0px');
+      return;
+    }
+    const update = () => {
+      document.documentElement.style.setProperty('--status-bar-height', `${Math.ceil(el.getBoundingClientRect().height)}px`);
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      document.documentElement.style.setProperty('--status-bar-height', '0px');
+    };
+  });
+
   if (!message && !hasAnyBadge) return null;
 
   return (
-    <div class="bg-status-bar" aria-live="polite">
+    <div class="bg-status-bar" ref={barRef} aria-live="polite">
       {message && (
         <>
           <span class="bg-status-dot" />

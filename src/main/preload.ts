@@ -292,4 +292,8 @@ contextBridge.exposeInMainWorld('jarvis', {
   },
   // GitHub rate limit
   getGitHubRateLimit: () => ipcRenderer.invoke('github:get-rate-limit'),
+  // Auto-dismiss log
+  logAutoDismiss: (entries: unknown[]) => ipcRenderer.invoke('github:log-auto-dismiss', entries),
+  listAutoDismissLog: (limit?: number) => ipcRenderer.invoke('github:list-auto-dismiss-log', limit),
+  getAutoDismissStats: () => ipcRenderer.invoke('github:auto-dismiss-stats'),
 });
