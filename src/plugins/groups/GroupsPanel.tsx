@@ -33,6 +33,8 @@ export function GroupsPanel({ onClose, onOpenOneNote, onOpenOneNoteCache }: Grou
   // OneDrive state
   const [onedriveDiscovering, setOnedriveDiscovering] = useState(false);
   const [onedriveRescanningId, setOnedriveRescanningId] = useState<number | null>(null);
+  const [cachingOneNote, setCachingOneNote] = useState(false);
+  const [cacheOneNoteResult, setCacheOneNoteResult] = useState<string | null>(null);
   const [expandedFolderId, setExpandedFolderId] = useState<number | null>(null);
   const [folderFiles, setFolderFiles] = useState<Record<number, OnedriveFile[]>>({});
   // Cache parsed .url shortcut info keyed by file path
@@ -161,6 +163,28 @@ export function GroupsPanel({ onClose, onOpenOneNote, onOpenOneNoteCache }: Grou
       console.error('[Groups] OneDrive discover failed:', err);
     } finally {
       setOnedriveDiscovering(false);
+    }
+  };
+
+  const handleCacheOneNoteFiles = async () => {
+    if (!selectedGroup) return;
+    setCachingOneNote(true);
+    setCacheOneNoteResult(null);
+    try {
+      const result = await window.jarvis.onedriveCacheOneNoteFilesForGroup(selectedGroup.id);
+      const parts: string[] = [
+        `Cached ${result.pagesCached} page(s) from ${result.filesProcessed} file(s)`,
+      ];
+      if (result.filesSkipped > 0) parts.push(`skipped ${result.filesSkipped}`);
+      const lines: string[] = [parts.join(', ')];
+      if (result.errors.length > 0) {
+        for (const e of result.errors) lines.push(`⚠ ${e.relativePath}: ${e.error}`);
+      }
+      setCacheOneNoteResult(lines.join('\n'));
+    } catch (err) {
+      setCacheOneNoteResult(`Error: ${String(err)}`);
+    } finally {
+      setCachingOneNote(false);
     }
   };
 
@@ -399,6 +423,17 @@ export function GroupsPanel({ onClose, onOpenOneNote, onOpenOneNoteCache }: Grou
                     >
                       {onedriveDiscovering ? 'Scanning…' : '🔍 Discover'}
                     </button>
+                    {selectedGroup.onedriveFolders.some(f => f.status === 'found') && (
+                      <button
+                        class="btn-secondary"
+                        style={{ padding: '0.15rem 0.5rem', fontSize: '0.75rem' }}
+                        title="Cache OneNote files for this group"
+                        onClick={() => void handleCacheOneNoteFiles()}
+                        disabled={cachingOneNote}
+                      >
+                        {cachingOneNote ? '⏳' : '📓 Cache'}
+                      </button>
+                    )}
                     {onOpenOneNoteCache && selectedGroup.onedriveFolders.some(f => f.status === 'found') && (
                       <button
                         class="btn-secondary"
@@ -411,6 +446,12 @@ export function GroupsPanel({ onClose, onOpenOneNote, onOpenOneNoteCache }: Grou
                     )}
                   </div>
                 </div>
+
+                {cacheOneNoteResult && (
+                  <div style={{ fontSize: '0.75rem', color: cacheOneNoteResult.startsWith('Error') || cacheOneNoteResult.includes('⚠') ? '#f88' : '#6a9', marginBottom: '0.3rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                    {cacheOneNoteResult}
+                  </div>
+                )}
 
                 {selectedGroup.onedriveFolders.length === 0 && (
                   <div style={{ fontSize: '0.78rem', color: '#667' }}>
