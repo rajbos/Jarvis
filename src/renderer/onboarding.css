@@ -3995,7 +3995,7 @@ h5.ec-heading { font-size: 0.85rem; }
 }
 
 .dash-auto-dismiss-banner .dash-recoverable-detail {
-  color: #4a6a9a;
+  color: #8ab4e8;
 }
 
 /* ── Auto-dismiss history panel ──────────────────────────────────────────── */
@@ -4031,8 +4031,8 @@ h5.ec-heading { font-size: 0.85rem; }
 }
 
 .adh-subtitle {
-  font-size: 0.72rem;
-  color: #4a6a9a;
+  font-size: 0.8rem;
+  color: #8ab4e8;
 }
 
 .adh-header-right {
@@ -4083,7 +4083,7 @@ h5.ec-heading { font-size: 0.85rem; }
 .adh-loading,
 .adh-empty {
   padding: 1rem;
-  color: #4a6a9a;
+  color: #8ab4e8;
   font-size: 0.82rem;
   text-align: center;
 }
@@ -4137,8 +4137,8 @@ h5.ec-heading { font-size: 0.85rem; }
 }
 
 .adh-entry-repo {
-  font-size: 0.68rem;
-  color: #4a6a9a;
+  font-size: 0.74rem;
+  color: #8ab4e8;
 }
 
 .adh-entry-reason {
@@ -4150,8 +4150,8 @@ h5.ec-heading { font-size: 0.85rem; }
 }
 
 .adh-entry-date {
-  font-size: 0.66rem;
-  color: #3a5a7a;
+  font-size: 0.72rem;
+  color: #6a9ac0;
 }
 
 /* Chart sub-view */
@@ -4197,14 +4197,14 @@ h5.ec-heading { font-size: 0.85rem; }
 }
 
 .adh-chart-empty {
-  color: #4a6a9a;
+  color: #8ab4e8;
   font-size: 0.82rem;
   padding: 0.75rem 0;
 }
 
 .adh-chart-note {
-  font-size: 0.68rem;
-  color: #3a5a7a;
+  font-size: 0.72rem;
+  color: #6a9ac0;
   margin-top: 0.4rem;
   text-align: right;
 }
