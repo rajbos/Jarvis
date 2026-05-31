@@ -12,6 +12,12 @@ import {
   removeLocalRepoFromGroup,
   addGithubRepoToGroup,
   removeGithubRepoFromGroup,
+  parseRuddrNames,
+  loadRuddrProjectsFromDb,
+  saveRuddrProjectsToDb,
+  updateRuddrProjectNote,
+  updateRuddrProjectCloudFolderUrl,
+  lookupRuddrProject,
 } from '../../src/services/groups';
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -59,6 +65,66 @@ describe('Groups service', () => {
     expect(tableNames).toContain('groups');
     expect(tableNames).toContain('group_local_repos');
     expect(tableNames).toContain('group_github_repos');
+  });
+
+  // ── Ruddr project cache helpers ─────────────────────────────────────────────
+
+  it('parseRuddrNames handles null, JSON array, and legacy plain strings', () => {
+    expect(parseRuddrNames(null)).toEqual([]);
+    expect(parseRuddrNames('["A", 123, "B"]')).toEqual(['A', 'B']);
+    expect(parseRuddrNames('Legacy Project')).toEqual(['Legacy Project']);
+  });
+
+  it('save/load/lookup Ruddr projects and preserve note/cloud values on update', () => {
+    saveRuddrProjectsToDb(db, [
+      { name: 'Project A', path: '/projects/a', note: 'first note', cloud_folder_url: 'https://example.com/a' },
+      { name: 'Project B', path: '/projects/b', note: null, cloud_folder_url: null },
+    ]);
+
+    const loaded = loadRuddrProjectsFromDb(db);
+    expect(loaded).toHaveLength(2);
+    expect(loaded.map((p) => p.path).sort()).toEqual(['/projects/a', '/projects/b']);
+
+    const found = lookupRuddrProject(db, 'project a');
+    expect(found).not.toBeNull();
+    expect(found!.path).toBe('/projects/a');
+
+    saveRuddrProjectsToDb(db, [
+      { name: 'Project A Renamed', path: '/projects/a', note: null, cloud_folder_url: null },
+      { name: 'Project B', path: '/projects/b', note: null, cloud_folder_url: null },
+    ]);
+
+    const updated = lookupRuddrProject(db, 'project a renamed');
+    expect(updated).not.toBeNull();
+    expect(updated!.note).toBe('first note');
+    expect(updated!.cloud_folder_url).toBe('https://example.com/a');
+  });
+
+  it('saveRuddrProjectsToDb removes stale projects only when a non-empty list is provided', () => {
+    saveRuddrProjectsToDb(db, [{ name: 'Keep Me', path: '/projects/keep' }]);
+    saveRuddrProjectsToDb(db, []);
+    expect(loadRuddrProjectsFromDb(db)).toHaveLength(1);
+
+    saveRuddrProjectsToDb(db, [{ name: 'Replace Me', path: '/projects/replace' }]);
+    const loaded = loadRuddrProjectsFromDb(db);
+    expect(loaded).toHaveLength(1);
+    expect(loaded[0].path).toBe('/projects/replace');
+  });
+
+  it('can update Ruddr note and cloud folder URL independently', () => {
+    saveRuddrProjectsToDb(db, [{ name: 'Project C', path: '/projects/c' }]);
+
+    updateRuddrProjectNote(db, '/projects/c', 'updated note');
+    updateRuddrProjectCloudFolderUrl(db, '/projects/c', 'https://example.com/c');
+
+    const updated = lookupRuddrProject(db, 'Project C');
+    expect(updated).not.toBeNull();
+    expect(updated!.note).toBe('updated note');
+    expect(updated!.cloud_folder_url).toBe('https://example.com/c');
+  });
+
+  it('lookupRuddrProject returns null when no project matches', () => {
+    expect(lookupRuddrProject(db, 'missing')).toBeNull();
   });
 
   // ── CRUD ────────────────────────────────────────────────────────────────────
@@ -140,6 +206,20 @@ describe('Groups service', () => {
     expect(detail!.localRepos).toHaveLength(1);
     expect(detail!.localRepos[0].id).toBe(rid);
     expect(detail!.localRepos[0].localPath).toBe('/home/user/proj');
+  });
+
+  it('getGroup falls back to localPath when local repo name is null', () => {
+    const gid = createGroup(db, 'FallbackName');
+    db.run("INSERT INTO local_repos (local_path, name) VALUES (?, NULL)", ['/home/user/no-name']);
+    const stmt = db.prepare('SELECT last_insert_rowid() AS id');
+    stmt.step();
+    const { id } = stmt.getAsObject() as { id: number };
+    stmt.free();
+    addLocalRepoToGroup(db, gid, id);
+
+    const detail = getGroup(db, gid);
+    expect(detail!.localRepos).toHaveLength(1);
+    expect(detail!.localRepos[0].name).toBe('/home/user/no-name');
   });
 
   it('listGroups reflects localRepoCount after add', () => {
