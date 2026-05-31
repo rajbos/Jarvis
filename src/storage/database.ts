@@ -6,6 +6,9 @@ import { getSchema } from './schema';
 let db: SqlJsDatabase | null = null;
 let dbPath: string | null = null;
 
+const SAVE_DEBOUNCE_MS = 500;
+let saveTimeout: ReturnType<typeof setTimeout> | null = null;
+
 /** Check whether a column exists in a table (safe guard for ALTER TABLE ADD COLUMN). */
 function columnExists(database: SqlJsDatabase, table: string, column: string): boolean {
   const result = database.exec(`PRAGMA table_info('${table}')`);
@@ -333,12 +336,33 @@ function seedBuiltInAgents(database: SqlJsDatabase): void {
   );
 }
 
-export function saveDatabase(): void {
+/** Synchronously write the database to disk (no debounce). */
+function writeDatabase(): void {
   if (db && dbPath) {
     const data = db.export();
     const buffer = Buffer.from(data);
     fs.writeFileSync(dbPath, buffer);
   }
+}
+
+/**
+ * Persist the database to disk with debounce (default 500ms).
+ * Rapid successive calls are coalesced into a single write.
+ * Use flushDatabase() to force a synchronous write when data must be
+ * durable immediately (e.g. before app exit, after auth token save).
+ */
+export function saveDatabase(): void {
+  if (saveTimeout) clearTimeout(saveTimeout);
+  saveTimeout = setTimeout(writeDatabase, SAVE_DEBOUNCE_MS);
+}
+
+/** Force an immediate synchronous write. Call before close/exit/important ops. */
+export function flushDatabase(): void {
+  if (saveTimeout) {
+    clearTimeout(saveTimeout);
+    saveTimeout = null;
+  }
+  writeDatabase();
 }
 
 export function getConfigValue(database: SqlJsDatabase, key: string): string | null {
@@ -358,7 +382,7 @@ export function setConfigValue(database: SqlJsDatabase, key: string, value: stri
 
 export function closeDatabase(): void {
   if (db) {
-    saveDatabase();
+    flushDatabase();
     db.close();
     db = null;
     dbPath = null;
