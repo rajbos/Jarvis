@@ -23,16 +23,7 @@ export function RuddrProjectsPanel(props: { onGroupCreated?: () => void }) {
   const [width, setWidth] = useState(240);
   const [creatingFor, setCreatingFor] = useState<string | null>(null);
 
-  // Notify the rest of the page when panel width changes
-  useEffect(() => {
-    document.documentElement.style.setProperty('--ruddr-panel-width', `${width}px`);
-    window.dispatchEvent(new CustomEvent('ruddr-panel-resize', { detail: width }));
-  }, [width]);
-
-  // Clean up on unmount
-  useEffect(() => {
-    return () => { document.documentElement.style.removeProperty('--ruddr-panel-width'); };
-  }, []);
+  // ── Drag-to-resize ──────────────────────────────────────────────────────────
   const [newGroupName, setNewGroupName] = useState('');
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);

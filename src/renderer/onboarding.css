@@ -2826,7 +2826,7 @@ h5.ec-heading { font-size: 0.85rem; }
 .groups-dash-main {
   flex: 1 1 0;
   min-width: 0;
-  /* max-width and overflow are set as inline styles by GroupsDashboardPanel.tsx */
+  overflow: hidden;
 }
 
 .groups-dash-header {
@@ -2841,6 +2841,23 @@ h5.ec-heading { font-size: 0.85rem; }
   font-size: 1.15rem;
   font-weight: 600;
   flex: 1;
+}
+
+.dash-toggle-ruddr-btn {
+  padding: 0.3rem 0.75rem;
+  background: #12183a;
+  border: 1px solid #1e2d5a;
+  border-radius: 6px;
+  color: #8898cc;
+  font-size: 0.78rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.dash-toggle-ruddr-btn:hover {
+  border-color: #3a5aaa;
+  color: #c8d0f0;
 }
 
 
@@ -3279,17 +3296,14 @@ h5.ec-heading { font-size: 0.85rem; }
 
 /* ── RuddrProjectsPanel ───────────────────────────────────────────────────── */
 .ruddr-projects-panel {
-  /* Fixed to the right side of the viewport — detached from the flex layout.
-     --chat-panel-width (set by EmbeddedChatPanel) keeps it left of the chat
-     window. Using top+bottom instead of top+max-height means it automatically
-     stays above the status bar without any JS measurement. */
-  position: fixed;
-  right: calc(var(--chat-panel-width, 0px) + 1rem);
-  top: 8rem;
-  bottom: calc(var(--status-bar-height, 0px) + 1rem);
+  /* Inline flex child — sits to the right of the groups grid, scrolls independently. */
+  position: relative;
+  flex-shrink: 0;
+  align-self: flex-start;
   width: 240px;
   min-width: 180px;
   max-width: 600px;
+  max-height: calc(100vh - 11rem);
   background: #12183a;
   border: 1px solid #1e2d5a;
   border-radius: 8px;
@@ -3299,7 +3313,6 @@ h5.ec-heading { font-size: 0.85rem; }
   flex-direction: column;
   gap: 0.6rem;
   overflow-y: auto;
-  z-index: 50;
 }
 
 /* Left-edge drag handle */
@@ -3982,7 +3995,7 @@ h5.ec-heading { font-size: 0.85rem; }
 }
 
 .dash-auto-dismiss-banner .dash-recoverable-detail {
-  color: #4a6a9a;
+  color: #8ab4e8;
 }
 
 /* ── Auto-dismiss history panel ──────────────────────────────────────────── */
@@ -4018,8 +4031,8 @@ h5.ec-heading { font-size: 0.85rem; }
 }
 
 .adh-subtitle {
-  font-size: 0.72rem;
-  color: #4a6a9a;
+  font-size: 0.8rem;
+  color: #8ab4e8;
 }
 
 .adh-header-right {
@@ -4070,7 +4083,7 @@ h5.ec-heading { font-size: 0.85rem; }
 .adh-loading,
 .adh-empty {
   padding: 1rem;
-  color: #4a6a9a;
+  color: #8ab4e8;
   font-size: 0.82rem;
   text-align: center;
 }
@@ -4124,8 +4137,8 @@ h5.ec-heading { font-size: 0.85rem; }
 }
 
 .adh-entry-repo {
-  font-size: 0.68rem;
-  color: #4a6a9a;
+  font-size: 0.74rem;
+  color: #8ab4e8;
 }
 
 .adh-entry-reason {
@@ -4137,8 +4150,8 @@ h5.ec-heading { font-size: 0.85rem; }
 }
 
 .adh-entry-date {
-  font-size: 0.66rem;
-  color: #3a5a7a;
+  font-size: 0.72rem;
+  color: #6a9ac0;
 }
 
 /* Chart sub-view */
@@ -4184,14 +4197,14 @@ h5.ec-heading { font-size: 0.85rem; }
 }
 
 .adh-chart-empty {
-  color: #4a6a9a;
+  color: #8ab4e8;
   font-size: 0.82rem;
   padding: 0.75rem 0;
 }
 
 .adh-chart-note {
-  font-size: 0.68rem;
-  color: #3a5a7a;
+  font-size: 0.72rem;
+  color: #6a9ac0;
   margin-top: 0.4rem;
   text-align: right;
 }

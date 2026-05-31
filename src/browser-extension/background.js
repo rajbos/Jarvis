@@ -30,12 +30,35 @@ let ws = null;
 let reconnectDelay = RECONNECT_DELAY_MS;
 let reconnectTimer = null;
 let keepAliveTimer = null;
-let isConnected = false;
+let isConnected = false;   // true only after auth-ok received
+let isAuthenticated = false;
+
+// ── Token storage ─────────────────────────────────────────────────────────────
+
+async function getStoredToken() {
+  try {
+    const result = await chrome.storage.local.get('jarvisToken');
+    return typeof result.jarvisToken === 'string' ? result.jarvisToken : null;
+  } catch {
+    return null;
+  }
+}
+
+async function setStoredToken(token) {
+  await chrome.storage.local.set({ jarvisToken: token });
+}
 
 // ── Connection management ─────────────────────────────────────────────────────
 
-function connect() {
+async function connect() {
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+    return;
+  }
+
+  const token = await getStoredToken();
+  if (!token) {
+    console.log('[JarvisBridge] No pairing token configured — not connecting. Open the extension popup to set the token.');
+    notifyPopup({ type: 'status', connected: false, needsToken: true });
     return;
   }
 
@@ -50,28 +73,37 @@ function connect() {
 
   ws.addEventListener('open', () => {
     try {
-      console.log('[JarvisBridge] Connected to Jarvis desktop app');
-      isConnected = true;
-      reconnectDelay = RECONNECT_DELAY_MS; // reset backoff
-      updateBadge(true);
-      startKeepAlive();
-      notifyPopup({ type: 'status', connected: true });
+      console.log('[JarvisBridge] Socket open — sending auth');
+      isAuthenticated = false;
+      // Send auth token immediately; wait for auth-ok before marking connected
+      ws.send(JSON.stringify({ type: 'auth', token }));
     } catch (e) {
       console.error('[JarvisBridge] Error in open handler:', e);
     }
   });
 
   ws.addEventListener('message', (event) => {
+    if (!isAuthenticated) {
+      handleAuthResponse(event.data);
+      return;
+    }
     handleCommand(event.data);
   });
 
   ws.addEventListener('close', (event) => {
     console.log('[JarvisBridge] Disconnected', event.code, event.reason);
     isConnected = false;
+    isAuthenticated = false;
     updateBadge(false);
     stopKeepAlive();
     notifyPopup({ type: 'status', connected: false });
-    scheduleReconnect();
+    // Don't reconnect if the server rejected our token
+    if (event.code === 1008 && event.reason && event.reason.includes('token')) {
+      console.warn('[JarvisBridge] Token rejected by server. Open the extension popup to update the token.');
+      notifyPopup({ type: 'status', connected: false, invalidToken: true });
+    } else {
+      scheduleReconnect();
+    }
   });
 
   ws.addEventListener('error', (event) => {
@@ -79,11 +111,30 @@ function connect() {
   });
 }
 
+function handleAuthResponse(rawData) {
+  let msg;
+  try { msg = JSON.parse(rawData); } catch { return; }
+
+  if (msg.type === 'auth-ok') {
+    isAuthenticated = true;
+    isConnected = true;
+    reconnectDelay = RECONNECT_DELAY_MS; // reset backoff
+    updateBadge(true);
+    startKeepAlive();
+    notifyPopup({ type: 'status', connected: true });
+    console.log('[JarvisBridge] Authenticated — ready');
+  } else if (msg.type === 'auth-fail') {
+    console.warn('[JarvisBridge] Authentication failed:', msg.reason);
+    notifyPopup({ type: 'status', connected: false, invalidToken: msg.reason === 'invalid-token' });
+    // The server will close the socket; let the close handler take over
+  }
+}
+
 function scheduleReconnect() {
   if (reconnectTimer) return;
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
-    connect();
+    void connect();
   }, reconnectDelay);
   // Exponential backoff, capped
   reconnectDelay = Math.min(reconnectDelay * 1.5, MAX_RECONNECT_DELAY_MS);
@@ -206,6 +257,16 @@ async function getTargetTabId(preferredTabId) {
 async function cmdNavigate(tabId, payload) {
   const { url } = payload;
   if (!url) throw new Error('url is required');
+
+  // Defense-in-depth: validate URL scheme (server also validates, but this is a local guard)
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new Error(`URL scheme "${parsed.protocol}" is not allowed`);
+    }
+  } catch (e) {
+    throw new Error(`Invalid or disallowed URL: ${e.message}`);
+  }
 
   const targetTabId = await getTargetTabId(tabId);
 
@@ -823,26 +884,43 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     sendResponse({ connected: isConnected });
     return true;
   }
+  if (msg.type === 'reconnect') {
+    // Popup saved a new token — close existing socket and reconnect immediately
+    if (ws) {
+      ws.close(1000, 'Manual reconnect');
+      ws = null;
+    }
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    reconnectDelay = RECONNECT_DELAY_MS; // reset backoff
+    isConnected = false;
+    isAuthenticated = false;
+    void connect();
+    sendResponse({ ok: true });
+    return true;
+  }
 });
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 
 chrome.runtime.onInstalled.addListener(() => {
   console.log('[JarvisBridge] Extension installed/updated');
-  connect();
+  void connect();
 });
 
 chrome.runtime.onStartup.addListener(() => {
-  connect();
+  void connect();
 });
 
 // Connect immediately when service worker starts
-connect();
+void connect();
 
 // Re-connect if the service worker wakes up and isn't connected
 chrome.alarms.create('keepalive', { periodInMinutes: 0.4 });
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === 'keepalive' && !isConnected) {
-    connect();
+    void connect();
   }
 });
