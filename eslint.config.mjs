@@ -10,7 +10,7 @@ export default tseslint.config(
     files: ['src/**/*.{ts,tsx}'],
     rules: {
       // Downgrade to warnings for rules that are noisy during early development
-      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
       '@typescript-eslint/no-explicit-any': 'warn',
     },
   },

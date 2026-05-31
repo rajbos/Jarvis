@@ -38,7 +38,7 @@ import { registerHandlers as registerSecretsHandlers } from '../plugins/secrets/
 
 import { registerHandlers as registerDashboardHandlers } from '../plugins/dashboard/handler';
 
-import { registerHandlers as registerGroupsHandlers, prewarmRuddrCache } from '../plugins/groups/handler';
+import { registerHandlers as registerGroupsHandlers } from '../plugins/groups/handler';
 
 import { registerHandlers as registerOnedriveHandlers } from '../plugins/onedrive/handler';
 

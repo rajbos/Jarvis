@@ -1092,20 +1092,11 @@ export function DashboardPanel({ dismissedNotifIds, onOpenHistory }: { dismissed
   const [currentUserLogin, setCurrentUserLogin] = useState<string | null>(null);
   const [ownRepoNotifications, setOwnRepoNotifications] = useState<StoredNotification[]>([]);
   const [triageLoading, setTriageLoading] = useState(false);
-  const [notifSort, setNotifSort] = useState<'count' | 'name'>(
-    () => (localStorage.getItem('dashboard-notif-sort') as 'count' | 'name') ?? 'count',
-  );
-
   // Auto-dismiss pipeline state
   const [autoDismissResult, setAutoDismissResult] = useState<AutoDismissRunResult | null>(null);
   const [autoDismissAcknowledged, setAutoDismissAcknowledged] = useState(false);
   const [autoDismissDone, setAutoDismissDone] = useState(false);
   const autoDismissRan = useRef(false);
-
-  const handleNotifSortChange = (sort: 'count' | 'name') => {
-    setNotifSort(sort);
-    localStorage.setItem('dashboard-notif-sort', sort);
-  };
 
   const load = useCallback(async () => {
     setLoading(true);

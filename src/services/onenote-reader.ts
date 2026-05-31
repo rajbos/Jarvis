@@ -396,12 +396,14 @@ export function readOneNoteSectionViaCom(
       try {
         result = JSON.parse(stdout.trim()) as ComReaderResult;
       } catch {
-        reject(new Error(`COM reader produced non-JSON output: ${stdout.slice(0, 200)}`));
+        const detail = stderr.trim() ? ` | stderr: ${stderr.trim().slice(0, 200)}` : '';
+        reject(new Error(`COM reader produced non-JSON output: ${stdout.slice(0, 200)}${detail}`));
         return;
       }
 
       if (!result.ok || !result.pages) {
-        reject(new Error(result.error ?? 'COM reader returned ok=false with no error message'));
+        const detail = result.error ?? 'COM reader returned ok=false with no error message';
+        reject(new Error(stderr.trim() ? `${detail} | stderr: ${stderr.trim().slice(0, 200)}` : detail));
         return;
       }
 
@@ -531,7 +533,7 @@ export function readOneNoteNotebookByCom(
       if (timedOut) return;
       clearTimeout(timer);
 
-      let stdout = '';
+      let stdout: string;
       try {
         stdout = fs.readFileSync(outputFile, 'utf8');
       } catch (err) {
