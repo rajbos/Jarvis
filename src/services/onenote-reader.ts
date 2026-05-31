@@ -141,6 +141,33 @@ export function extractStrings(buf: Buffer): ExtractedString[] {
     }
   }
 
+  // ── UTF-16LE pass ─────────────────────────────────────────────────────────
+  // Windows and .one files store most user-facing strings as UTF-16LE
+  // (little-endian: lo byte first, hi byte second).  Without this pass,
+  // body text in modern OneNote files is silently dropped.
+  for (let i = 0; i < buf.length - 1; i++) {
+    const chars: string[] = [];
+    let j = i;
+    while (j < buf.length - 1) {
+      const lo = buf[j];
+      const hi = buf[j + 1];
+      const cp = (hi << 8) | lo;
+      if ((cp >= 0x0020 && cp < 0x007F) || (cp >= 0x00A0 && cp <= 0x02FF)) {
+        chars.push(String.fromCodePoint(cp));
+        j += 2;
+      } else {
+        break;
+      }
+    }
+    if (chars.length >= MIN_UTF16BE_LEN) {
+      const text = chars.join('').trim();
+      if (text.length >= MIN_UTF16BE_LEN) {
+        results.push({ offset: i, encoding: 'utf16be', text });
+        i = j - 1;
+      }
+    }
+  }
+
   // ── ASCII pass ────────────────────────────────────────────────────────────
   let current = '';
   let startOffset = 0;
