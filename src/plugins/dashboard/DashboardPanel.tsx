@@ -1251,12 +1251,10 @@ export function DashboardPanel({ dismissedNotifIds, onOpenHistory }: { dismissed
   }, []);
 
   const handleTriageNotificationDismissed = useCallback((id: string) => {
-    const dismissed = ownRepoNotifications.find((notification) => String(notification.id) === String(id));
+    // Just remove from state - don't call handleNotifsDismissed as it would trigger
+    // the useEffect to refetch all notifications, instead of just hiding the dismissed one
     setOwnRepoNotifications((prev) => prev.filter((notification) => String(notification.id) !== String(id)));
-    if (!dismissed || !summary) return;
-    const repo = summary.repos.find((item) => item.linkedGithubRepo === dismissed.repo_full_name);
-    if (repo) handleNotifsDismissed(repo.localRepoId, 1);
-  }, [handleNotifsDismissed, ownRepoNotifications, summary]);
+  }, []);
 
   if (loading && !summary) {
     return (

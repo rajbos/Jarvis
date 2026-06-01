@@ -114,6 +114,47 @@ function getOrCreateKeyWithSafeStorage(
   return key;
 }
 
+/** Returns the path to the fallback key file (persisted random key). */
+function getFallbackKeyFilePath(): string {
+  return path.join(getConfigDirPath(), 'keystore.fallback.bin');
+}
+
+/**
+ * Generates or loads a persistent random key stored in keystore.fallback.bin.
+ * This is strictly more secure than the previous COMPUTERNAME-derived key
+ * because the key material is a CSPRNG-generated 32-byte value that requires
+ * file-system access to read (file permissions 0o600).
+ *
+ * If the file doesn't exist, a new key is generated and persisted.
+ * If the file is unreadable/corrupted, a warning is logged and a new key
+ * is generated (existing encrypted data becomes undecryptable, forcing the
+ * caller through the try/catch re-auth path in github-oauth.ts).
+ */
+function getOrCreateFallbackKey(): Buffer {
+  const keyFile = getFallbackKeyFilePath();
+
+  if (fs.existsSync(keyFile)) {
+    try {
+      const data = fs.readFileSync(keyFile);
+      if (data.length === 32) return data;
+      console.warn('[Encryption] keystore.fallback.bin has unexpected length — regenerating');
+    } catch {
+      console.warn('[Encryption] Failed to read keystore.fallback.bin — regenerating');
+    }
+  }
+
+  const key = crypto.randomBytes(32);
+  try {
+    const dir = path.dirname(keyFile);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(keyFile, key, { mode: 0o600 });
+    console.log('[Encryption] New fallback key generated and persisted to keystore.fallback.bin');
+  } catch (err) {
+    console.error('[Encryption] Failed to persist keystore.fallback.bin:', err);
+  }
+  return key;
+}
+
 /**
  * Gets the encryption key used to protect sensitive data at rest.
  *
@@ -121,9 +162,14 @@ function getOrCreateKeyWithSafeStorage(
  * 1. JARVIS_ENCRYPTION_KEY env var — used in tests and CI to provide a
  *    deterministic key without touching the OS credential store.
  * 2. Electron safeStorage — generates/loads a random key protected by the OS
- *    credential store (DPAPI on Windows). Requires the Electron main process.
- * 3. Machine-ID fallback — derives a key from COMPUTERNAME. Used when running
- *    outside Electron (should not occur in production).
+ *    credential store (DPAPI on Windows, Keychain on macOS). Uses keystore.bin.
+ * 3. File-based fallback — a CSPRNG 32-byte key persisted to keystore.fallback.bin
+ *    with 0o600 permissions. Used outside Electron (e.g. dev, CI).
+ *
+ * NOTE: The previous COMPUTERNAME-derived fallback has been removed. Existing
+ * encrypted tokens (OAuth / PAT) will fail decryption with the new key, which
+ * is handled gracefully by the try/catch in loadGitHubAuth / loadGitHubPat —
+ * they return null and the user is prompted to re-authenticate.
  */
 export function getEncryptionKey(): Buffer {
   const envKey = process.env.JARVIS_ENCRYPTION_KEY;
@@ -140,14 +186,13 @@ export function getEncryptionKey(): Buffer {
     }
     console.warn(
       '[Encryption] Electron safeStorage is available but isEncryptionAvailable() ' +
-      'returned false. Falling back to machine-id key derivation. ' +
+      'returned false. Falling back to file-based key store. ' +
       'Set JARVIS_ENCRYPTION_KEY to avoid this weaker fallback.',
     );
   } catch {
     // Not in an Electron context (e.g. unit tests running in plain Node.js)
   }
 
-  // Fallback: derive from a machine-specific value
-  const machineId = process.env.COMPUTERNAME || 'jarvis-default';
-  return deriveKey(`jarvis-local-${machineId}`);
+  // Fallback: generate/persist/load a random 32-byte key from disk
+  return getOrCreateFallbackKey();
 }

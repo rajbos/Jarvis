@@ -48,7 +48,6 @@ vi.mock('../../src/services/git-health', () => ({
 
 vi.mock('../../src/services/local-discovery', () => ({
   listLocalRepos: vi.fn(() => []),
-  normalizeGitHubUrl: vi.fn(() => null),
 }));
 
 // Mock fs.existsSync — default: path does NOT contain a .git folder

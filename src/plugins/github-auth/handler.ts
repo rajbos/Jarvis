@@ -14,7 +14,8 @@ import {
   deleteGitHubAuth,
 } from '../../services/github-oauth';
 import { saveDatabase, setConfigValue } from '../../storage/database';
-import { loadConfig } from '../../agent/config';
+import path from 'path';
+import { loadConfig, getConfigDir } from '../../agent/config';
 import { completeOnboardingStep } from '../../agent/onboarding';
 import { startDiscoveryIfAuthed } from '../discovery/handler';
 
@@ -233,7 +234,16 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
     const config = loadConfig();
     const clientId = config.github.oauthClientId;
     if (!clientId) {
-      return { error: 'GitHub OAuth Client ID is not configured. Set it in config.json.' };
+      return {
+        error: 'GitHub OAuth Client ID is not configured.\n\n' +
+          'To use GitHub integration:\n' +
+          '1. Go to https://github.com/settings/developers and create an OAuth App\n' +
+          '2. Set the Homepage URL to http://localhost\n' +
+          '3. Set the Authorization callback URL to http://localhost\n' +
+          '4. Copy the Client ID and paste it into config.json:\n' +
+          '   { "github": { "oauthClientId": "<your_client_id>" } }\n\n' +
+          'The config file is at: ' + path.join(getConfigDir(), 'config.json'),
+      };
     }
 
     try {

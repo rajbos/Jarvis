@@ -52,6 +52,7 @@ vi.mock('../../src/agent/config', () => ({
     github: { oauthClientId: '', scopes: ['repo', 'read:user'] },
   })),
   saveConfig: vi.fn(),
+  getConfigDir: vi.fn(() => '/mock/jarvis/config'),
 }));
 
 vi.mock('../../src/agent/onboarding', () => ({

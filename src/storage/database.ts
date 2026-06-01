@@ -6,6 +6,17 @@ import { getSchema } from './schema';
 let db: SqlJsDatabase | null = null;
 let dbPath: string | null = null;
 
+const SAVE_DEBOUNCE_MS = 500;
+let saveTimeout: ReturnType<typeof setTimeout> | null = null;
+
+/** Check whether a column exists in a table (safe guard for ALTER TABLE ADD COLUMN). */
+function columnExists(database: SqlJsDatabase, table: string, column: string): boolean {
+  const result = database.exec(`PRAGMA table_info('${table}')`);
+  if (result.length === 0) return false;
+  const columns = result[0].values.map((row) => row[1] as string);
+  return columns.includes(column);
+}
+
 function getDefaultDbPath(): string {
   const appData = process.env.APPDATA || path.join(process.env.USERPROFILE || '', 'AppData', 'Roaming');
   return path.join(appData, 'Jarvis', 'jarvis.db');
@@ -81,442 +92,146 @@ export async function createMemoryDatabase(): Promise<SqlJsDatabase> {
 }
 
 function initializeSchema(database: SqlJsDatabase): void {
+  // Always apply current schema — CREATE TABLE IF NOT EXISTS is idempotent.
+  // This ensures any tables added in new versions are created for existing users
+  // without needing a CREATE TABLE in every migration.
+  database.run(getSchema());
+
   const result = database.exec("PRAGMA user_version");
   const userVersion = result.length > 0 ? (result[0].values[0][0] as number) : 0;
 
   if (userVersion === 0) {
-    database.run(getSchema());
     seedBuiltInAgents(database);
     database.run('PRAGMA user_version = 25');
   }
 
   if (userVersion === 1) {
-    // Migration v1 → v2: add discovery_enabled to github_orgs
-    database.run('ALTER TABLE github_orgs ADD COLUMN discovery_enabled INTEGER DEFAULT 1');
+    if (!columnExists(database, 'github_orgs', 'discovery_enabled')) {
+      database.run('ALTER TABLE github_orgs ADD COLUMN discovery_enabled INTEGER DEFAULT 1');
+    }
     database.run('PRAGMA user_version = 2');
   }
 
   if (userVersion === 2) {
-    // Migration v2 → v3: add avatar_url to github_auth
-    database.run('ALTER TABLE github_auth ADD COLUMN avatar_url TEXT');
+    if (!columnExists(database, 'github_auth', 'avatar_url')) {
+      database.run('ALTER TABLE github_auth ADD COLUMN avatar_url TEXT');
+    }
     database.run('PRAGMA user_version = 3');
   }
 
   if (userVersion === 3) {
-    // Migration v3 → v4: add pat (Personal Access Token) to github_auth
-    database.run('ALTER TABLE github_auth ADD COLUMN pat TEXT');
+    if (!columnExists(database, 'github_auth', 'pat')) {
+      database.run('ALTER TABLE github_auth ADD COLUMN pat TEXT');
+    }
     database.run('PRAGMA user_version = 4');
   }
 
   if (userVersion === 4) {
-    // Migration v4 → v5: add starred flag to github_repos
-    database.run('ALTER TABLE github_repos ADD COLUMN starred INTEGER DEFAULT 0');
+    if (!columnExists(database, 'github_repos', 'starred')) {
+      database.run('ALTER TABLE github_repos ADD COLUMN starred INTEGER DEFAULT 0');
+    }
     database.run('PRAGMA user_version = 5');
   }
 
   if (userVersion === 5) {
-    // Migration v5 → v6: add github_notifications cache table
-    database.run(`
-      CREATE TABLE IF NOT EXISTS github_notifications (
-        id             TEXT PRIMARY KEY,
-        repo_full_name TEXT NOT NULL,
-        repo_owner     TEXT NOT NULL,
-        subject_type   TEXT,
-        subject_title  TEXT,
-        subject_url    TEXT,
-        reason         TEXT,
-        unread         INTEGER DEFAULT 1,
-        updated_at     TEXT,
-        fetched_at     DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-    database.run('CREATE INDEX IF NOT EXISTS idx_notif_repo ON github_notifications(repo_full_name)');
-    database.run('CREATE INDEX IF NOT EXISTS idx_notif_owner ON github_notifications(repo_owner)');
     database.run('PRAGMA user_version = 6');
   }
 
   if (userVersion === 6) {
-    // Migration v6 → v7: add local repo scanning tables
-    database.run('ALTER TABLE local_repos ADD COLUMN name TEXT');
-    database.run(`
-      CREATE TABLE IF NOT EXISTS local_scan_folders (
-        id       INTEGER PRIMARY KEY AUTOINCREMENT,
-        path     TEXT NOT NULL UNIQUE,
-        added_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-    database.run(`
-      CREATE TABLE IF NOT EXISTS local_repo_remotes (
-        id             INTEGER PRIMARY KEY AUTOINCREMENT,
-        local_repo_id  INTEGER NOT NULL REFERENCES local_repos(id) ON DELETE CASCADE,
-        name           TEXT NOT NULL,
-        url            TEXT NOT NULL,
-        github_repo_id INTEGER REFERENCES github_repos(id),
-        UNIQUE(local_repo_id, name)
-      )
-    `);
-    database.run('CREATE INDEX IF NOT EXISTS idx_local_repo_remotes_local_repo_id ON local_repo_remotes(local_repo_id)');
+    if (!columnExists(database, 'local_repos', 'name')) {
+      database.run('ALTER TABLE local_repos ADD COLUMN name TEXT');
+    }
     database.run('PRAGMA user_version = 7');
   }
 
   if (userVersion === 7) {
-    // Migration v7 → v8: add collaboration_reason to github_repos
-    database.run('ALTER TABLE github_repos ADD COLUMN collaboration_reason TEXT');
+    if (!columnExists(database, 'github_repos', 'collaboration_reason')) {
+      database.run('ALTER TABLE github_repos ADD COLUMN collaboration_reason TEXT');
+    }
     database.run('PRAGMA user_version = 8');
   }
 
   if (userVersion === 8) {
-    // Migration v8 → v9: add workflow run cache + agent framework tables
-    database.run(`
-      CREATE TABLE IF NOT EXISTS github_workflow_runs (
-        id              TEXT PRIMARY KEY,
-        repo_full_name  TEXT NOT NULL,
-        workflow_name   TEXT,
-        workflow_id     TEXT,
-        head_branch     TEXT,
-        head_sha        TEXT,
-        event           TEXT,
-        status          TEXT,
-        conclusion      TEXT,
-        run_number      INTEGER,
-        run_started_at  DATETIME,
-        updated_at      DATETIME,
-        html_url        TEXT,
-        fetched_at      DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-    database.run('CREATE INDEX IF NOT EXISTS idx_wf_runs_repo ON github_workflow_runs(repo_full_name)');
-    database.run('CREATE INDEX IF NOT EXISTS idx_wf_runs_conclusion ON github_workflow_runs(repo_full_name, conclusion)');
-    database.run(`
-      CREATE TABLE IF NOT EXISTS github_workflow_jobs (
-        id              TEXT PRIMARY KEY,
-        run_id          TEXT NOT NULL,
-        repo_full_name  TEXT NOT NULL,
-        name            TEXT,
-        status          TEXT,
-        conclusion      TEXT,
-        started_at      DATETIME,
-        completed_at    DATETIME,
-        log_excerpt     TEXT,
-        fetched_at      DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-    database.run('CREATE INDEX IF NOT EXISTS idx_wf_jobs_run ON github_workflow_jobs(run_id)');
-    database.run(`
-      CREATE TABLE IF NOT EXISTS agent_definitions (
-        id            INTEGER PRIMARY KEY AUTOINCREMENT,
-        name          TEXT NOT NULL UNIQUE,
-        description   TEXT,
-        system_prompt TEXT NOT NULL,
-        tools_allowed TEXT,
-        created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-    database.run(`
-      CREATE TABLE IF NOT EXISTS agent_sessions (
-        id            INTEGER PRIMARY KEY AUTOINCREMENT,
-        agent_id      INTEGER NOT NULL REFERENCES agent_definitions(id),
-        scope_type    TEXT NOT NULL,
-        scope_value   TEXT,
-        status        TEXT DEFAULT 'pending',
-        started_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
-        completed_at  DATETIME,
-        summary       TEXT,
-        raw_result    TEXT
-      )
-    `);
-    database.run('CREATE INDEX IF NOT EXISTS idx_agent_sessions_agent ON agent_sessions(agent_id)');
-    database.run(`
-      CREATE TABLE IF NOT EXISTS agent_findings (
-        id              INTEGER PRIMARY KEY AUTOINCREMENT,
-        session_id      INTEGER NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE,
-        finding_type    TEXT NOT NULL,
-        subject         TEXT,
-        reason          TEXT,
-        pattern         TEXT,
-        action_type     TEXT,
-        action_data     TEXT,
-        approved        INTEGER,
-        approved_at     DATETIME,
-        executed_at     DATETIME,
-        execution_error TEXT
-      )
-    `);
-    database.run('CREATE INDEX IF NOT EXISTS idx_findings_session ON agent_findings(session_id)');
-
-    // Seed built-in agent definitions
     seedBuiltInAgents(database);
-
     database.run('PRAGMA user_version = 9');
   }
 
   if (userVersion === 9) {
-    // Migration v9 → v10: add repo_secrets table for GitHub Actions secret names
-    database.run(`
-      CREATE TABLE IF NOT EXISTS repo_secrets (
-        id             INTEGER PRIMARY KEY AUTOINCREMENT,
-        github_repo_id INTEGER NOT NULL REFERENCES github_repos(id) ON DELETE CASCADE,
-        secret_name    TEXT NOT NULL,
-        scanned_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(github_repo_id, secret_name)
-      )
-    `);
-    database.run('CREATE INDEX IF NOT EXISTS idx_repo_secrets_repo_id ON repo_secrets(github_repo_id)');
     database.run('PRAGMA user_version = 10');
   }
 
   if (userVersion === 10) {
-    // Migration v10 → v11: add secret_scan_favorites table
-    database.run(`
-      CREATE TABLE IF NOT EXISTS secret_scan_favorites (
-        id          INTEGER PRIMARY KEY AUTOINCREMENT,
-        target_type TEXT NOT NULL CHECK(target_type IN ('org', 'repo')),
-        target_name TEXT NOT NULL UNIQUE,
-        added_at    DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
     database.run('PRAGMA user_version = 11');
   }
 
   if (userVersion === 11) {
-    // Migration v11 → v12: add groups tables for grouped source configuration
-    database.run(`
-      CREATE TABLE IF NOT EXISTS groups (
-        id         INTEGER PRIMARY KEY AUTOINCREMENT,
-        name       TEXT NOT NULL UNIQUE,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-    database.run(`
-      CREATE TABLE IF NOT EXISTS group_local_repos (
-        group_id      INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
-        local_repo_id INTEGER NOT NULL REFERENCES local_repos(id) ON DELETE CASCADE,
-        added_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (group_id, local_repo_id)
-      )
-    `);
-    database.run(`
-      CREATE TABLE IF NOT EXISTS group_github_repos (
-        group_id       INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
-        github_repo_id INTEGER NOT NULL REFERENCES github_repos(id) ON DELETE CASCADE,
-        added_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (group_id, github_repo_id)
-      )
-    `);
     database.run('PRAGMA user_version = 12');
   }
 
   if (userVersion === 12) {
-    // Migration v12 → v13: add OneDrive customer folder discovery tables
-    database.run(`
-      CREATE TABLE IF NOT EXISTS onedrive_roots (
-        id       INTEGER PRIMARY KEY AUTOINCREMENT,
-        path     TEXT NOT NULL UNIQUE,
-        label    TEXT NOT NULL,
-        added_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-    database.run(`
-      CREATE TABLE IF NOT EXISTS onedrive_customer_folders (
-        id            INTEGER PRIMARY KEY AUTOINCREMENT,
-        group_id      INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
-        root_id       INTEGER NOT NULL REFERENCES onedrive_roots(id) ON DELETE CASCADE,
-        folder_path   TEXT,
-        status        TEXT NOT NULL DEFAULT 'not_found',
-        discovered_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        scanned_at    DATETIME,
-        UNIQUE(group_id, root_id)
-      )
-    `);
-    database.run('CREATE INDEX IF NOT EXISTS idx_onedrive_cf_group ON onedrive_customer_folders(group_id)');
-    database.run(`
-      CREATE TABLE IF NOT EXISTS onedrive_files (
-        id            INTEGER PRIMARY KEY AUTOINCREMENT,
-        folder_id     INTEGER NOT NULL REFERENCES onedrive_customer_folders(id) ON DELETE CASCADE,
-        name          TEXT NOT NULL,
-        extension     TEXT,
-        relative_path TEXT NOT NULL,
-        last_modified DATETIME,
-        size_bytes    INTEGER,
-        scanned_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(folder_id, relative_path)
-      )
-    `);
-    database.run('CREATE INDEX IF NOT EXISTS idx_onedrive_files_folder ON onedrive_files(folder_id)');
     database.run('PRAGMA user_version = 13');
   }
 
   if (userVersion === 14) {
-    // Migration v14 → v15: add OneDrive customer folder discovery tables
-    // (for users who ran the browser-companion build which used v12→v13 and v13→v14)
-    database.run(`
-      CREATE TABLE IF NOT EXISTS onedrive_roots (
-        id       INTEGER PRIMARY KEY AUTOINCREMENT,
-        path     TEXT NOT NULL UNIQUE,
-        label    TEXT NOT NULL,
-        added_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-    database.run(`
-      CREATE TABLE IF NOT EXISTS onedrive_customer_folders (
-        id            INTEGER PRIMARY KEY AUTOINCREMENT,
-        group_id      INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
-        root_id       INTEGER NOT NULL REFERENCES onedrive_roots(id) ON DELETE CASCADE,
-        folder_path   TEXT,
-        status        TEXT NOT NULL DEFAULT 'not_found',
-        discovered_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        scanned_at    DATETIME,
-        UNIQUE(group_id, root_id)
-      )
-    `);
-    database.run('CREATE INDEX IF NOT EXISTS idx_onedrive_cf_group ON onedrive_customer_folders(group_id)');
-    database.run(`
-      CREATE TABLE IF NOT EXISTS onedrive_files (
-        id            INTEGER PRIMARY KEY AUTOINCREMENT,
-        folder_id     INTEGER NOT NULL REFERENCES onedrive_customer_folders(id) ON DELETE CASCADE,
-        name          TEXT NOT NULL,
-        extension     TEXT,
-        relative_path TEXT NOT NULL,
-        last_modified DATETIME,
-        size_bytes    INTEGER,
-        scanned_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(folder_id, relative_path)
-      )
-    `);
-    database.run('CREATE INDEX IF NOT EXISTS idx_onedrive_files_folder ON onedrive_files(folder_id)');
     database.run('PRAGMA user_version = 15');
   }
 
   if (userVersion === 15) {
-    // Migration v15 → v16: add browser companion tables
-    database.run(`
-      CREATE TABLE IF NOT EXISTS browser_skills (
-        id                INTEGER PRIMARY KEY AUTOINCREMENT,
-        name              TEXT NOT NULL UNIQUE,
-        description       TEXT,
-        start_url         TEXT NOT NULL,
-        instructions      TEXT NOT NULL,
-        extract_selector  TEXT,
-        created_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at        DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-    database.run(`
-      CREATE TABLE IF NOT EXISTS browser_skill_runs (
-        id              INTEGER PRIMARY KEY AUTOINCREMENT,
-        skill_id        INTEGER NOT NULL REFERENCES browser_skills(id) ON DELETE CASCADE,
-        status          TEXT DEFAULT 'pending',
-        started_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
-        completed_at    DATETIME,
-        extracted_data  TEXT,
-        error           TEXT
-      )
-    `);
-    database.run('CREATE INDEX IF NOT EXISTS idx_browser_skill_runs_skill ON browser_skill_runs(skill_id)');
     database.run('PRAGMA user_version = 16');
   }
 
   if (userVersion === 15 || userVersion === 16) {
-    // Migration v16 → v17: cache notification subject actor metadata
-    database.run('ALTER TABLE github_notifications ADD COLUMN subject_actor_login TEXT');
-    database.run('ALTER TABLE github_notifications ADD COLUMN subject_actor_type TEXT');
+    if (!columnExists(database, 'github_notifications', 'subject_actor_login')) {
+      database.run('ALTER TABLE github_notifications ADD COLUMN subject_actor_login TEXT');
+      database.run('ALTER TABLE github_notifications ADD COLUMN subject_actor_type TEXT');
+    }
     database.run('PRAGMA user_version = 17');
   }
 
   if (userVersion === 17) {
-    // Migration v17 → v18: add workflow_path to github_workflow_runs for filter URL support
-    database.run('ALTER TABLE github_workflow_runs ADD COLUMN workflow_path TEXT');
+    if (!columnExists(database, 'github_workflow_runs', 'workflow_path')) {
+      database.run('ALTER TABLE github_workflow_runs ADD COLUMN workflow_path TEXT');
+    }
     database.run('PRAGMA user_version = 18');
   }
 
   if (userVersion === 18) {
-    // Migration v18 → v19: add ruddr_project_name to groups for Ruddr project linking
-    database.run('ALTER TABLE groups ADD COLUMN ruddr_project_name TEXT');
+    if (!columnExists(database, 'groups', 'ruddr_project_name')) {
+      database.run('ALTER TABLE groups ADD COLUMN ruddr_project_name TEXT');
+    }
     database.run('PRAGMA user_version = 19');
   }
 
   if (userVersion === 19) {
-    // Migration v19 → v20: create ruddr_projects cache table
-    database.run(`
-      CREATE TABLE IF NOT EXISTS ruddr_projects (
-        name      TEXT NOT NULL,
-        path      TEXT NOT NULL,
-        note      TEXT,
-        cached_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (path)
-      )
-    `);
     database.run('PRAGMA user_version = 20');
   }
 
   if (userVersion === 20) {
-    // Migration v20 → v21: add cloud_folder_url to ruddr_projects
-    database.run('ALTER TABLE ruddr_projects ADD COLUMN cloud_folder_url TEXT');
+    if (!columnExists(database, 'ruddr_projects', 'cloud_folder_url')) {
+      database.run('ALTER TABLE ruddr_projects ADD COLUMN cloud_folder_url TEXT');
+    }
     database.run('PRAGMA user_version = 21');
   }
 
   if (userVersion === 21) {
-    // Migration v21 → v22: add discovered_at to ruddr_projects
-    // Use DEFAULT NULL (not CURRENT_TIMESTAMP) — SQLite/sql.js forbids non-constant
-    // defaults in ALTER TABLE. Existing rows get NULL; the value is filled in on the
-    // next Ruddr sync by the COALESCE upsert in saveRuddrProjectsToDb.
-    database.run(`ALTER TABLE ruddr_projects ADD COLUMN discovered_at DATETIME DEFAULT NULL`);
+    if (!columnExists(database, 'ruddr_projects', 'discovered_at')) {
+      database.run('ALTER TABLE ruddr_projects ADD COLUMN discovered_at DATETIME DEFAULT NULL');
+    }
     database.run('PRAGMA user_version = 22');
   }
 
   if (userVersion === 22) {
-    // Migration v22 → v23: add auto_dismiss_log table for tracking auto-dismissed notifications
-    database.run(`
-      CREATE TABLE IF NOT EXISTS auto_dismiss_log (
-          id              INTEGER PRIMARY KEY AUTOINCREMENT,
-          notification_id TEXT NOT NULL,
-          dismissed_at    TEXT NOT NULL DEFAULT (datetime('now')),
-          reason          TEXT NOT NULL,
-          repo_full_name  TEXT,
-          subject_title   TEXT,
-          subject_type    TEXT
-      )
-    `);
-    database.run('CREATE INDEX IF NOT EXISTS idx_auto_dismiss_log_date ON auto_dismiss_log(dismissed_at)');
     database.run('PRAGMA user_version = 23');
   }
 
   if (userVersion === 23) {
-    // Migration v23 → v24: add OneNote page content cache table
-    database.run(`
-      CREATE TABLE IF NOT EXISTS onedrive_onenote_cache (
-          id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-          folder_id           INTEGER NOT NULL,
-          relative_path       TEXT NOT NULL,
-          section_name        TEXT,
-          page_index          INTEGER NOT NULL,
-          page_level          INTEGER NOT NULL DEFAULT 1,
-          page_title          TEXT,
-          page_date           TEXT,
-          page_last_modified  TEXT,
-          page_content        TEXT,
-          file_last_modified  TEXT,
-          read_source         TEXT NOT NULL DEFAULT 'binary',
-          cached_at           DATETIME DEFAULT CURRENT_TIMESTAMP,
-          UNIQUE(folder_id, relative_path, page_index)
-      )
-    `);
-    database.run(`
-      CREATE INDEX IF NOT EXISTS idx_onenote_cache_lookup
-      ON onedrive_onenote_cache(folder_id, relative_path)
-    `);
     database.run('PRAGMA user_version = 24');
   }
 
   if (userVersion === 24) {
-    // Migration v24 → v25: add page_last_modified column and index to OneNote cache
-    database.run(`ALTER TABLE onedrive_onenote_cache ADD COLUMN page_last_modified TEXT`);
-    database.run(`
-      CREATE INDEX IF NOT EXISTS idx_onenote_cache_modified
-      ON onedrive_onenote_cache(page_last_modified)
-    `);
+    if (!columnExists(database, 'onedrive_onenote_cache', 'page_last_modified')) {
+      database.run('ALTER TABLE onedrive_onenote_cache ADD COLUMN page_last_modified TEXT');
+    }
     database.run('PRAGMA user_version = 25');
   }
 }
@@ -621,12 +336,33 @@ function seedBuiltInAgents(database: SqlJsDatabase): void {
   );
 }
 
-export function saveDatabase(): void {
+/** Synchronously write the database to disk (no debounce). */
+function writeDatabase(): void {
   if (db && dbPath) {
     const data = db.export();
     const buffer = Buffer.from(data);
     fs.writeFileSync(dbPath, buffer);
   }
+}
+
+/**
+ * Persist the database to disk with debounce (default 500ms).
+ * Rapid successive calls are coalesced into a single write.
+ * Use flushDatabase() to force a synchronous write when data must be
+ * durable immediately (e.g. before app exit, after auth token save).
+ */
+export function saveDatabase(): void {
+  if (saveTimeout) clearTimeout(saveTimeout);
+  saveTimeout = setTimeout(writeDatabase, SAVE_DEBOUNCE_MS);
+}
+
+/** Force an immediate synchronous write. Call before close/exit/important ops. */
+export function flushDatabase(): void {
+  if (saveTimeout) {
+    clearTimeout(saveTimeout);
+    saveTimeout = null;
+  }
+  writeDatabase();
 }
 
 export function getConfigValue(database: SqlJsDatabase, key: string): string | null {
@@ -646,7 +382,7 @@ export function setConfigValue(database: SqlJsDatabase, key: string, value: stri
 
 export function closeDatabase(): void {
   if (db) {
-    saveDatabase();
+    flushDatabase();
     db.close();
     db = null;
     dbPath = null;
