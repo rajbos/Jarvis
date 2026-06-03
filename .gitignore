@@ -32,11 +32,6 @@ logs/
 # Test coverage reports
 coverage/
 
-# Compiled test artifacts
-tests/**/*.js
-tests/**/*.d.ts
-tests/**/*.js.map
-
 
 .claude/worktrees/
 test_output.txt

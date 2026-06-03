@@ -26,9 +26,9 @@ let mainWindow: BrowserWindow | null = null;
 
 let settingsWindow: BrowserWindow | null = null;
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- held to prevent GC of the Tray icon
+ 
 
-let tray: Tray | null = null;
+let _tray: Tray | null = null;
 
 let currentDb: Awaited<ReturnType<typeof getDatabase>> | null = null;
 
@@ -138,7 +138,7 @@ async function initialize(): Promise<void> {
 
   // Create system tray
 
-  tray = createTray(() => {
+  _tray = createTray(() => {
 
     showMainWindow();
 
