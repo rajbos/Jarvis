@@ -67,6 +67,66 @@ describe('Groups service', () => {
     expect(tableNames).toContain('group_github_repos');
   });
 
+  // ── Ruddr project cache helpers ─────────────────────────────────────────────
+
+  it('parseRuddrNames handles null, JSON array, and legacy plain strings', () => {
+    expect(parseRuddrNames(null)).toEqual([]);
+    expect(parseRuddrNames('["A", 123, "B"]')).toEqual(['A', 'B']);
+    expect(parseRuddrNames('Legacy Project')).toEqual(['Legacy Project']);
+  });
+
+  it('save/load/lookup Ruddr projects and preserve note/cloud values on update', () => {
+    saveRuddrProjectsToDb(db, [
+      { name: 'Project A', path: '/projects/a', note: 'first note', cloud_folder_url: 'https://example.com/a' },
+      { name: 'Project B', path: '/projects/b', note: null, cloud_folder_url: null },
+    ]);
+
+    const loaded = loadRuddrProjectsFromDb(db);
+    expect(loaded).toHaveLength(2);
+    expect(loaded.map((p) => p.path).sort()).toEqual(['/projects/a', '/projects/b']);
+
+    const found = lookupRuddrProject(db, 'project a');
+    expect(found).not.toBeNull();
+    expect(found!.path).toBe('/projects/a');
+
+    saveRuddrProjectsToDb(db, [
+      { name: 'Project A Renamed', path: '/projects/a', note: null, cloud_folder_url: null },
+      { name: 'Project B', path: '/projects/b', note: null, cloud_folder_url: null },
+    ]);
+
+    const updated = lookupRuddrProject(db, 'project a renamed');
+    expect(updated).not.toBeNull();
+    expect(updated!.note).toBe('first note');
+    expect(updated!.cloud_folder_url).toBe('https://example.com/a');
+  });
+
+  it('saveRuddrProjectsToDb removes stale projects only when a non-empty list is provided', () => {
+    saveRuddrProjectsToDb(db, [{ name: 'Keep Me', path: '/projects/keep' }]);
+    saveRuddrProjectsToDb(db, []);
+    expect(loadRuddrProjectsFromDb(db)).toHaveLength(1);
+
+    saveRuddrProjectsToDb(db, [{ name: 'Replace Me', path: '/projects/replace' }]);
+    const loaded = loadRuddrProjectsFromDb(db);
+    expect(loaded).toHaveLength(1);
+    expect(loaded[0].path).toBe('/projects/replace');
+  });
+
+  it('can update Ruddr note and cloud folder URL independently', () => {
+    saveRuddrProjectsToDb(db, [{ name: 'Project C', path: '/projects/c' }]);
+
+    updateRuddrProjectNote(db, '/projects/c', 'updated note');
+    updateRuddrProjectCloudFolderUrl(db, '/projects/c', 'https://example.com/c');
+
+    const updated = lookupRuddrProject(db, 'Project C');
+    expect(updated).not.toBeNull();
+    expect(updated!.note).toBe('updated note');
+    expect(updated!.cloud_folder_url).toBe('https://example.com/c');
+  });
+
+  it('lookupRuddrProject returns null when no project matches', () => {
+    expect(lookupRuddrProject(db, 'missing')).toBeNull();
+  });
+
   // ── CRUD ────────────────────────────────────────────────────────────────────
 
   it('createGroup returns a numeric id', () => {
@@ -146,6 +206,20 @@ describe('Groups service', () => {
     expect(detail!.localRepos).toHaveLength(1);
     expect(detail!.localRepos[0].id).toBe(rid);
     expect(detail!.localRepos[0].localPath).toBe('/home/user/proj');
+  });
+
+  it('getGroup falls back to localPath when local repo name is null', () => {
+    const gid = createGroup(db, 'FallbackName');
+    db.run("INSERT INTO local_repos (local_path, name) VALUES (?, NULL)", ['/home/user/no-name']);
+    const stmt = db.prepare('SELECT last_insert_rowid() AS id');
+    stmt.step();
+    const { id } = stmt.getAsObject() as { id: number };
+    stmt.free();
+    addLocalRepoToGroup(db, gid, id);
+
+    const detail = getGroup(db, gid);
+    expect(detail!.localRepos).toHaveLength(1);
+    expect(detail!.localRepos[0].name).toBe('/home/user/no-name');
   });
 
   it('listGroups reflects localRepoCount after add', () => {
@@ -257,116 +331,5 @@ describe('Groups service', () => {
     const d2 = getGroup(db, g2);
     expect(d1!.localRepos).toHaveLength(1);
     expect(d2!.localRepos).toHaveLength(1);
-  });
-});
-
-// ── Ruddr project functions ─────────────────────────────────────────────────
-
-describe('parseRuddrNames', () => {
-  it('returns empty array for null input', () => {
-    expect(parseRuddrNames(null)).toEqual([]);
-  });
-
-  it('returns empty array for undefined-like input', () => {
-    expect(parseRuddrNames(undefined as unknown as string | null)).toEqual([]);
-  });
-
-  it('parses a JSON array of strings', () => {
-    expect(parseRuddrNames('["Project A","Project B"]')).toEqual(['Project A', 'Project B']);
-  });
-
-  it('filters out non-string entries from JSON array', () => {
-    expect(parseRuddrNames('[42, "valid", null]')).toEqual(['valid']);
-  });
-
-  it('falls back to single-element array for plain string (legacy)', () => {
-    expect(parseRuddrNames('SingleProject')).toEqual(['SingleProject']);
-  });
-});
-
-describe('Ruddr project DB operations', () => {
-  let db: SqlJsDatabase;
-
-  beforeEach(async () => {
-    const SQL = await initSqlJs();
-    db = new SQL.Database();
-    db.run(getSchema());
-  });
-
-  afterEach(() => {
-    db.close();
-  });
-
-  it('loadRuddrProjectsFromDb returns empty array when no projects exist', () => {
-    expect(loadRuddrProjectsFromDb(db)).toEqual([]);
-  });
-
-  it('saveRuddrProjectsToDb inserts projects', () => {
-    saveRuddrProjectsToDb(db, [
-      { name: 'Alpha', path: '/projects/alpha' },
-      { name: 'Beta', path: '/projects/beta', note: 'urgent' },
-    ]);
-    const projects = loadRuddrProjectsFromDb(db);
-    expect(projects).toHaveLength(2);
-    expect(projects.find((p) => p.name === 'Alpha')).toBeDefined();
-    expect(projects.find((p) => p.name === 'Beta')?.note).toBe('urgent');
-  });
-
-  it('saveRuddrProjectsToDb upserts on conflict and deletes removed projects', () => {
-    saveRuddrProjectsToDb(db, [
-      { name: 'Keep', path: '/projects/keep' },
-      { name: 'Remove', path: '/projects/remove' },
-    ]);
-    // Second save removes /projects/remove and adds /projects/added
-    saveRuddrProjectsToDb(db, [
-      { name: 'Keep', path: '/projects/keep' },
-      { name: 'Added', path: '/projects/added' },
-    ]);
-    const projects = loadRuddrProjectsFromDb(db);
-    const names = projects.map((p) => p.name);
-    expect(names).toContain('Keep');
-    expect(names).toContain('Added');
-    expect(names).not.toContain('Remove');
-  });
-
-  it('saveRuddrProjectsToDb with empty input skips DELETE (size-zero guard)', () => {
-    saveRuddrProjectsToDb(db, [{ name: 'Lonely', path: '/projects/lonely' }]);
-    // Empty array — the DELETE branch is intentionally skipped; we verify
-    // the function does not throw and existing data is retained.
-    saveRuddrProjectsToDb(db, []);
-    expect(loadRuddrProjectsFromDb(db)).toHaveLength(1);
-  });
-
-  it('updateRuddrProjectNote updates the note', () => {
-    saveRuddrProjectsToDb(db, [{ name: 'Proj', path: '/projects/proj' }]);
-    updateRuddrProjectNote(db, '/projects/proj', 'new note');
-    const [p] = loadRuddrProjectsFromDb(db);
-    expect(p.note).toBe('new note');
-  });
-
-  it('updateRuddrProjectNote clears the note when null', () => {
-    saveRuddrProjectsToDb(db, [{ name: 'Proj', path: '/projects/proj', note: 'old' }]);
-    updateRuddrProjectNote(db, '/projects/proj', null);
-    const [p] = loadRuddrProjectsFromDb(db);
-    expect(p.note).toBeNull();
-  });
-
-  it('updateRuddrProjectCloudFolderUrl updates the URL', () => {
-    saveRuddrProjectsToDb(db, [{ name: 'Proj', path: '/projects/proj' }]);
-    updateRuddrProjectCloudFolderUrl(db, '/projects/proj', 'https://1drv.ms/folder');
-    const [p] = loadRuddrProjectsFromDb(db);
-    expect(p.cloud_folder_url).toBe('https://1drv.ms/folder');
-  });
-
-  it('lookupRuddrProject returns null for unknown name', () => {
-    expect(lookupRuddrProject(db, 'nonexistent')).toBeNull();
-  });
-
-  it('lookupRuddrProject returns the matching project (case-insensitive)', () => {
-    saveRuddrProjectsToDb(db, [{ name: 'MyProject', path: '/projects/myproject', note: 'note1' }]);
-    const p = lookupRuddrProject(db, 'myproject');
-    expect(p).not.toBeNull();
-    expect(p!.name).toBe('MyProject');
-    expect(p!.note).toBe('note1');
   });
 });
