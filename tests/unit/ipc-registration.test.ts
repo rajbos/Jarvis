@@ -60,6 +60,7 @@ const EXPECTED_CHANNELS = [
   'github:get-run-url-for-check-suite',
   'github:get-pr-state',
   'github:get-issue-state',
+  'github:check-branch-exists',
   'github:save-pat',
   'github:delete-pat',
   'github:logout',
