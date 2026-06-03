@@ -115,6 +115,7 @@ describe('Encryption', () => {
       else process.env.JARVIS_ENCRYPTION_KEY = originalEnvKey;
       if (originalConfigDir === undefined) delete process.env.JARVIS_CONFIG_DIR;
       else process.env.JARVIS_CONFIG_DIR = originalConfigDir;
+      fs.rmSync(configDir, { recursive: true, force: true });
     }
   });
 
@@ -135,6 +136,8 @@ describe('Encryption', () => {
       else process.env.JARVIS_ENCRYPTION_KEY = originalEnvKey;
       if (originalConfigDir === undefined) delete process.env.JARVIS_CONFIG_DIR;
       else process.env.JARVIS_CONFIG_DIR = originalConfigDir;
+      fs.rmSync(configDir1, { recursive: true, force: true });
+      fs.rmSync(configDir2, { recursive: true, force: true });
     }
   });
 
@@ -160,6 +163,7 @@ describe('Encryption', () => {
       else process.env.JARVIS_ENCRYPTION_KEY = originalEnvKey;
       if (originalConfigDir === undefined) delete process.env.JARVIS_CONFIG_DIR;
       else process.env.JARVIS_CONFIG_DIR = originalConfigDir;
+      fs.rmSync(configDir, { recursive: true, force: true });
     }
   });
 
@@ -184,6 +188,7 @@ describe('Encryption', () => {
       else process.env.JARVIS_ENCRYPTION_KEY = originalEnvKey;
       if (originalConfigDir === undefined) delete process.env.JARVIS_CONFIG_DIR;
       else process.env.JARVIS_CONFIG_DIR = originalConfigDir;
+      fs.rmSync(configDir, { recursive: true, force: true });
     }
   });
 });
