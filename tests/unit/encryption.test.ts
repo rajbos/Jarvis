@@ -107,8 +107,12 @@ describe('Encryption', () => {
     process.env.JARVIS_CONFIG_DIR = configDir;
     process.env.COMPUTERNAME = 'CI-MACHINE';
     try {
-      const key1 = getEncryptionKey();
-      const key2 = getEncryptionKey();
+      // Mock electron with no safeStorage to simulate running outside of an Electron
+      // main-process context (e.g. unit tests / CI) without triggering a binary download.
+      const { key1, key2 } = withMockedElectron({}, () => ({
+        key1: getEncryptionKey(),
+        key2: getEncryptionKey(),
+      }));
       expect(key1.length).toBe(32);
       expect(key2.toString('hex')).toBe(key1.toString('hex'));
       expect(fs.existsSync(path.join(configDir, 'keystore.fallback.bin'))).toBe(true);
@@ -131,9 +135,11 @@ describe('Encryption', () => {
     process.env.JARVIS_CONFIG_DIR = configDir;
     process.env.COMPUTERNAME = 'FIRST-HOST';
     try {
-      const key1 = getEncryptionKey();
+      // Mock electron with no safeStorage to simulate running outside of an Electron
+      // main-process context without triggering a binary download.
+      const key1 = withMockedElectron({}, () => getEncryptionKey());
       process.env.COMPUTERNAME = 'SECOND-HOST';
-      const key2 = getEncryptionKey();
+      const key2 = withMockedElectron({}, () => getEncryptionKey());
       expect(key2.toString('hex')).toBe(key1.toString('hex'));
     } finally {
       if (originalEnvKey === undefined) delete process.env.JARVIS_ENCRYPTION_KEY;

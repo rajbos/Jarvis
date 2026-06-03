@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import initSqlJs, { Database as SqlJsDatabase } from 'sql.js';
 import { getSchema } from '../../src/storage/schema';
-import { isWorkflowDataFresh } from '../../src/plugins/notifications/handler';
+import { isWorkflowDataFresh } from '../../src/plugins/notifications/workflow-cache';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
