@@ -145,8 +145,7 @@ async function runClosedPrStep(): Promise<{ dismissed: number; logEntries: AutoD
   return { dismissed, logEntries };
 }
 
-async function runClosedIssueStep(): Promise<{ dismissed: number; logEntries: AutoDismissLogInput[] }> {
-  const logEntries: AutoDismissLogInput[] = [];
+async function runClosedIssueStep(): Promise<{ dismissed: number; logEntries: AutoDismissLogInput[] }> {  const logEntries: AutoDismissLogInput[] = [];
   let dismissed = 0;
   try {
     const allIssueNotifs = await window.jarvis.listIssueNotifications();
@@ -191,16 +190,59 @@ async function runClosedIssueStep(): Promise<{ dismissed: number; logEntries: Au
   return { dismissed, logEntries };
 }
 
+async function runDeletedBranchCiStep(repoFullNames: string[]): Promise<{ dismissed: number; logEntries: AutoDismissLogInput[] }> {
+  const logEntries: AutoDismissLogInput[] = [];
+  let dismissed = 0;
+  for (const repoFullName of repoFullNames) {
+    try {
+      const notifs = await window.jarvis.listNotificationsForRepo(repoFullName);
+      const ciNotifs = notifs.filter((n) => n.subject_type === 'CheckSuite' || n.subject_type === 'WorkflowRun');
+      if (ciNotifs.length === 0) continue;
+
+      // Group by branch name extracted from notification title
+      const byBranch = new Map<string, StoredNotification[]>();
+      for (const n of ciNotifs) {
+        const branch = n.subject_title.match(/\bfor\s+(\S+)\s+branch\b/i)?.[1] ?? null;
+        if (!branch) continue;
+        if (!byBranch.has(branch)) byBranch.set(branch, []);
+        byBranch.get(branch)!.push(n);
+      }
+
+      for (const [branch, bNotifs] of byBranch) {
+        try {
+          const exists = await window.jarvis.githubCheckBranchExists(repoFullName, branch);
+          if (exists) continue;
+          for (const n of bNotifs) {
+            try {
+              await window.jarvis.dismissNotification(n.id);
+              logEntries.push({
+                notification_id: n.id,
+                reason: 'ci_deleted_branch',
+                repo_full_name: repoFullName,
+                subject_title: n.subject_title,
+                subject_type: n.subject_type,
+              });
+              dismissed++;
+            } catch { /* skip individual */ }
+          }
+        } catch { /* skip individual branch */ }
+      }
+    } catch { /* non-fatal per repo */ }
+  }
+  return { dismissed, logEntries };
+}
+
 async function runAutoDismissPipeline(
   repoFullNames: string[],
 ): Promise<{ result: AutoDismissRunResult; logEntries: AutoDismissLogInput[] }> {
   const steps: AutoDismissStepResult[] = [];
   const allLog: AutoDismissLogInput[] = [];
 
-  const [rec, pr, issue] = await Promise.all([
+  const [rec, pr, issue, deletedBranch] = await Promise.all([
     runRecoverableStep(repoFullNames),
     runClosedPrStep(),
     runClosedIssueStep(),
+    runDeletedBranchCiStep(repoFullNames),
   ]);
 
   steps.push({ id: 'recovered-workflows', label: 'Recovered workflows', dismissed: rec.dismissed });
@@ -209,6 +251,8 @@ async function runAutoDismissPipeline(
   allLog.push(...pr.logEntries);
   steps.push({ id: 'closed-issues', label: 'Closed issues', dismissed: issue.dismissed });
   allLog.push(...issue.logEntries);
+  steps.push({ id: 'ci-deleted-branch', label: 'CI on deleted branches', dismissed: deletedBranch.dismissed });
+  allLog.push(...deletedBranch.logEntries);
 
   return {
     result: { steps, total: steps.reduce((s, r) => s + r.dismissed, 0) },
