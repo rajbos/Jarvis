@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import type { Database as SqlJsDatabase } from 'sql.js';
+import { normalizeGitHubUrl } from '../plugins/shared/utils';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -71,25 +72,6 @@ export function parseGitRemotes(repoPath: string): { name: string; url: string }
   }
 
   return remotes;
-}
-
-/**
- * Normalise a git remote URL to `owner/repo` format for GitHub repos.
- * Handles HTTPS, SSH (git@github.com:...) and bare-path variants.
- * Returns null for non-GitHub remotes.
- */
-export function normalizeGitHubUrl(url: string): string | null {
-  if (!url) return null;
-
-  // HTTPS:  https://github.com/owner/repo[.git]
-  const httpsMatch = url.match(/https?:\/\/(?:[^@]+@)?github\.com\/([^/]+\/[^/]+?)(?:\.git)?\/?$/);
-  if (httpsMatch) return httpsMatch[1];
-
-  // SSH:    git@github.com:owner/repo[.git]
-  const sshMatch = url.match(/git@github\.com:([^/]+\/[^/]+?)(?:\.git)?\/?$/);
-  if (sshMatch) return sshMatch[1];
-
-  return null;
 }
 
 // ── File-system scanning ──────────────────────────────────────────────────────

@@ -1789,7 +1789,8 @@ export type AutoDismissReason =
   | 'closed_pr_merged_me'
   | 'closed_pr_closed_me'
   | 'closed_issue_me'
-  | 'closed_issue_via_pr';
+  | 'closed_issue_via_pr'
+  | 'ci_deleted_branch';
 
 export interface AutoDismissLogInput {
   notification_id: string;
@@ -2173,6 +2174,10 @@ export interface JarvisApi {
 
 
   githubGetIssueState(subjectUrl: string): Promise<{ state: 'open' | 'closed'; closedByMe: boolean; closedViaMergedPr: boolean } | null>;
+
+
+
+  githubCheckBranchExists(repoFullName: string, branch: string): Promise<boolean>;
 
 
 

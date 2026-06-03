@@ -45,32 +45,6 @@ function createFakeRepo(
   fs.writeFileSync(path.join(gitDir, 'config'), configContent, 'utf-8');
 }
 
-// ── normalizeGitHubUrl ────────────────────────────────────────────────────────
-
-describe('normalizeGitHubUrl', () => {
-  it('handles HTTPS URLs with .git suffix', () => {
-    expect(normalizeGitHubUrl('https://github.com/owner/repo.git')).toBe('owner/repo');
-  });
-
-  it('handles HTTPS URLs without .git suffix', () => {
-    expect(normalizeGitHubUrl('https://github.com/owner/repo')).toBe('owner/repo');
-  });
-
-  it('handles SSH URLs', () => {
-    expect(normalizeGitHubUrl('git@github.com:owner/repo.git')).toBe('owner/repo');
-  });
-
-  it('handles SSH URLs without .git', () => {
-    expect(normalizeGitHubUrl('git@github.com:owner/repo')).toBe('owner/repo');
-  });
-
-  it('returns null for non-GitHub remotes', () => {
-    expect(normalizeGitHubUrl('https://gitlab.com/owner/repo.git')).toBeNull();
-    expect(normalizeGitHubUrl('git@bitbucket.org:owner/repo.git')).toBeNull();
-    expect(normalizeGitHubUrl('')).toBeNull();
-  });
-});
-
 // ── parseGitRemotes ───────────────────────────────────────────────────────────
 
 describe('parseGitRemotes', () => {
