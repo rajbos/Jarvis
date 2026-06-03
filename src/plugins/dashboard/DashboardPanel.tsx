@@ -1168,6 +1168,10 @@ export function DashboardPanel({ dismissedNotifIds, onOpenHistory }: { dismissed
         setOwnRepoNotifications(
           lists.flat()
             .filter((notification) => !dismissed.has(String(notification.id)))
+            // Deduplicate by notification ID (in case same notification appears in multiple repos)
+            .filter((notification, index, self) =>
+              index === self.findIndex((n) => String(n.id) === String(notification.id))
+            )
             .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()),
         );
       })
