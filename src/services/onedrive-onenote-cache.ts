@@ -11,7 +11,13 @@
 import fs from 'fs';
 import path from 'path';
 import type { Database as SqlJsDatabase } from 'sql.js';
-import { readOneNoteSectionAsync } from './onenote-reader';
+import { readOneNoteSectionAsync, readOneNoteNotebookByCom } from './onenote-reader';
+
+// Base directory where OneNote stores local notebook backups on Windows.
+const ONENOTE_BACKUP_BASE = path.join(
+  process.env.LOCALAPPDATA ?? path.join(process.env.USERPROFILE ?? '', 'AppData', 'Local'),
+  'Microsoft', 'OneNote', '16.0', 'Backup',
+);
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -297,9 +303,139 @@ export function getOneNoteCacheForGroup(
 // ── Main orchestration ────────────────────────────────────────────────────────
 
 /**
+ * Return all .url files (OneNote notebook shortcuts) for a group's found folders.
+ * These represent SharePoint-hosted notebooks that have no local .one file in the
+ * customer folder itself.
+ */
+function getOneNoteUrlFilesForGroup(
+  db: SqlJsDatabase,
+  groupId: number,
+): OneNoteFileInfo[] {
+  const stmt = db.prepare(`
+    SELECT
+      cf.id         AS folder_id,
+      cf.folder_path,
+      f.name,
+      f.relative_path,
+      f.last_modified
+    FROM onedrive_files f
+    JOIN onedrive_customer_folders cf ON cf.id = f.folder_id
+    WHERE cf.group_id = ?
+      AND cf.status = 'found'
+      AND f.extension = '.url'
+    ORDER BY cf.folder_path, f.relative_path
+  `);
+  stmt.bind([groupId]);
+  const results: OneNoteFileInfo[] = [];
+  try {
+    while (stmt.step()) {
+      const r = stmt.getAsObject() as {
+        folder_id: number;
+        folder_path: string;
+        name: string;
+        relative_path: string;
+        last_modified: string | null;
+      };
+      results.push({
+        folderId: r.folder_id,
+        folderPath: r.folder_path,
+        name: r.name,
+        relativePath: r.relative_path,
+        lastModified: r.last_modified,
+      });
+    }
+  } finally {
+    stmt.free();
+  }
+  return results;
+}
+
+interface BackupSection {
+  sectionName: string;
+  filePath: string;
+  lastModified: string | null;
+}
+
+/**
+ * Given a notebook name (e.g. "Royal London"), scan the OneNote local backup
+ * folder for matching notebook sections.
+ *
+ * OneNote backup layout:
+ *   %LOCALAPPDATA%\Microsoft\OneNote\16.0\Backup\
+ *     {NotebookName} notes\
+ *       {SectionName} (On DD-MM-YYYY).one   ← one file per backup date
+ *
+ * We pick the most-recently-modified backup file for each unique section name.
+ */
+function findBackupSectionsForNotebook(notebookName: string): BackupSection[] {
+  if (!fs.existsSync(ONENOTE_BACKUP_BASE)) return [];
+
+  // Try exact name variations, then fall back to case-insensitive prefix match.
+  const candidates = [
+    path.join(ONENOTE_BACKUP_BASE, `${notebookName} notes`),
+    path.join(ONENOTE_BACKUP_BASE, notebookName),
+  ];
+
+  let notebookDir: string | null = null;
+  for (const c of candidates) {
+    if (fs.existsSync(c)) { notebookDir = c; break; }
+  }
+
+  if (!notebookDir) {
+    // Case-insensitive search
+    try {
+      const lower = notebookName.toLowerCase();
+      const entries = fs.readdirSync(ONENOTE_BACKUP_BASE);
+      const match = entries.find(
+        e => e.toLowerCase() === `${lower} notes` || e.toLowerCase() === lower,
+      );
+      if (match) notebookDir = path.join(ONENOTE_BACKUP_BASE, match);
+    } catch {
+      return [];
+    }
+  }
+
+  if (!notebookDir) return [];
+
+  // Collect the most-recent backup file per section name.
+  const sectionMap = new Map<string, { filePath: string; mtime: number }>();
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(notebookDir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.toLowerCase().endsWith('.one')) continue;
+    // Derive section name: strip " (On DD-MM-YYYY)" date suffix and extension.
+    const sectionName = entry.name
+      .replace(/\.one$/i, '')
+      .replace(/\s*\(On \d{2}-\d{2}-\d{4}\)\s*$/, '')
+      .trim();
+    const fullPath = path.join(notebookDir, entry.name);
+    let mtime = 0;
+    try { mtime = fs.statSync(fullPath).mtimeMs; } catch { /* skip */ }
+    const existing = sectionMap.get(sectionName);
+    if (!existing || mtime > existing.mtime) {
+      sectionMap.set(sectionName, { filePath: fullPath, mtime });
+    }
+  }
+
+  return [...sectionMap.entries()].map(([sectionName, info]) => ({
+    sectionName,
+    filePath: info.filePath,
+    lastModified: info.mtime ? new Date(info.mtime).toISOString() : null,
+  }));
+}
+
+/**
  * Cache the content of every .one file found for a group.
  * Files whose last_modified timestamp matches the cached value are skipped.
  * Uses OneNote COM (full fidelity) with automatic fallback to binary extraction.
+ *
+ * Also handles .url OneNote notebook shortcuts: looks up the corresponding
+ * local OneNote backup files in %LOCALAPPDATA%\Microsoft\OneNote\16.0\Backup\.
  *
  * @param db         Live sql.js database instance.
  * @param groupId    ID of the group to process.
@@ -345,6 +481,94 @@ export async function cacheOneNoteFilesForGroup(
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       result.errors.push({ relativePath: file.relativePath, error: msg });
+    }
+  }
+
+  // ── Also process .url OneNote notebook shortcuts ───────────────────────────
+  // Strategy:
+  //   1. Try live COM enumeration — reads the open notebook directly (full
+  //      fidelity, all current pages, no stale backup data).
+  //   2. Fall back to local OneNote backup files if COM fails (notebook closed,
+  //      OneNote not running, etc.).
+  const urlFiles = getOneNoteUrlFilesForGroup(db, groupId);
+  const notebookScriptPath = path.join(path.dirname(scriptPath), 'read-onenote-notebook.ps1');
+
+  for (const urlFile of urlFiles) {
+    const notebookName = path.basename(urlFile.name, path.extname(urlFile.name));
+
+    // ── Attempt 1: live COM (open notebook) ────────────────────────────────
+    let usedCom = false;
+    let comError = '';
+    try {
+      const sections = await readOneNoteNotebookByCom(notebookName, notebookScriptPath);
+
+      // Clear any stale backup-sourced cache for this notebook before writing fresh data.
+      db.run(
+        `DELETE FROM onedrive_onenote_cache
+         WHERE folder_id = ? AND relative_path LIKE ?`,
+        [urlFile.folderId, `${notebookName}/%`],
+      );
+
+      for (const section of sections) {
+        if (section.pages.length === 0) continue;
+        const syntheticRelPath = `${notebookName}/${section.sectionName}`;
+        // For live COM reads, always refresh (null lastModified skips caching check).
+        writeCacheForFile(
+          db,
+          urlFile.folderId,
+          syntheticRelPath,
+          section.pages,
+          null,   // always re-read live data on next cache run
+          'com',
+        );
+        result.filesProcessed++;
+        result.pagesCached += section.pages.length;
+      }
+      usedCom = true;
+    } catch (err) {
+      comError = err instanceof Error ? err.message : String(err);
+      // Always record the COM error so it surfaces in the UI, even if backup takes over.
+      result.errors.push({ relativePath: urlFile.relativePath, error: `COM failed: ${comError}` });
+    }
+
+    if (usedCom) continue;
+
+    // ── Attempt 2: local backup files ─────────────────────────────────────
+    const backupSections = findBackupSectionsForNotebook(notebookName);
+
+    if (backupSections.length === 0) {
+      const comDetail = comError ? ` COM error: ${comError}` : '';
+      result.errors.push({
+        relativePath: urlFile.relativePath,
+        error: `Notebook "${notebookName}" not found in open notebooks and no local backup found in ${ONENOTE_BACKUP_BASE}.${comDetail}`,
+      });
+      continue;
+    }
+
+    for (const section of backupSections) {
+      const syntheticRelPath = `${notebookName}/${section.sectionName}`;
+
+      if (isCacheValid(db, urlFile.folderId, syntheticRelPath, section.lastModified)) {
+        result.filesSkipped++;
+        continue;
+      }
+
+      try {
+        const parsed = await readOneNoteSectionAsync(section.filePath, scriptPath);
+        writeCacheForFile(
+          db,
+          urlFile.folderId,
+          syntheticRelPath,
+          parsed.pages,
+          section.lastModified,
+          parsed.source,
+        );
+        result.filesProcessed++;
+        result.pagesCached += parsed.pages.length;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        result.errors.push({ relativePath: syntheticRelPath, error: msg });
+      }
     }
   }
 
