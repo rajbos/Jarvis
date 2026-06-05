@@ -71,6 +71,7 @@ vi.mock('../../src/services/ollama', () => ({
 vi.mock('../../src/agent/config', () => ({
   loadConfig: vi.fn(() => ({ preferences: {}, github: { oauthClientId: '', scopes: '' } })),
   saveConfig: vi.fn(),
+  getConfigDir: vi.fn(() => '/mock/jarvis/config'),
 }));
 
 import { registerIpcHandlers } from '../../src/main/ipc-handlers';
