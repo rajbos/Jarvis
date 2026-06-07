@@ -158,6 +158,7 @@ describe('Encryption', () => {
       else process.env.JARVIS_ENCRYPTION_KEY = originalEnvKey;
       if (originalConfigDir === undefined) delete process.env.JARVIS_CONFIG_DIR;
       else process.env.JARVIS_CONFIG_DIR = originalConfigDir;
+      fs.rmSync(configDir, { recursive: true, force: true });
     }
   });
 
