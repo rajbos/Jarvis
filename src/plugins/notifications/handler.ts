@@ -22,11 +22,9 @@ import {
 import { loadGitHubAuth } from '../../services/github-oauth';
 import { saveDatabase } from '../../storage/database';
 import { fetchAndStoreWorkflowData } from '../../services/github-workflows';
+import { isWorkflowDataFresh } from './workflow-cache';
 
 // ── Boot workflow check constants ─────────────────────────────────────────────
-
-/** Workflow cache is considered fresh if fetched within this window. */
-const WORKFLOW_CACHE_MAX_AGE_MS = 30 * 60 * 1000; // 30 minutes
 
 /** When rate limit remaining is below this value, check estimated call count. */
 const BOOT_CHECK_RATE_LIMIT_THRESHOLD = 1000;
@@ -36,23 +34,6 @@ const BOOT_CHECK_MAX_ESTIMATED_CALLS = 50;
 
 /** Conservative per-repo estimate: 1 runs page + up to 5 failing-run details. */
 const BOOT_CHECK_ESTIMATED_CALLS_PER_REPO = 10;
-
-/**
- * Returns true if workflow run data for the given repo was fetched recently
- * (within WORKFLOW_CACHE_MAX_AGE_MS). Avoids redundant API calls on rapid
- * restarts (e.g. during agentic dev sessions with hot reload).
- */
-export function isWorkflowDataFresh(db: SqlJsDatabase, repoFullName: string): boolean {
-  const result = db.exec(
-    `SELECT MAX(fetched_at) FROM github_workflow_runs WHERE repo_full_name = ?`,
-    [repoFullName],
-  );
-  const raw = result[0]?.values[0]?.[0] as string | null | undefined;
-  if (!raw) return false;
-  // SQLite datetime('now') stores UTC without 'Z' suffix — append it before parsing.
-  const fetchedAt = new Date(raw.includes('T') ? raw : raw + 'Z');
-  return Date.now() - fetchedAt.getTime() < WORKFLOW_CACHE_MAX_AGE_MS;
-}
 
 /**
  * Fetches the core rate-limit remaining count for the given token.

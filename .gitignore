@@ -35,3 +35,6 @@ coverage/
 
 .claude/worktrees/
 test_output.txt
+
+# User-specific runtime config (may contain secrets)
+AppData/
