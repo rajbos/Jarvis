@@ -62,10 +62,18 @@ export function createOnboardingWindow(db: SqlJsDatabase): BrowserWindow {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
     },
   });
 
   win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
+
+  // Prevent the window from navigating to external URLs
+  win.webContents.on('will-navigate', (event, url) => {
+    if (!url.startsWith('file://')) {
+      event.preventDefault();
+    }
+  });
 
   // Persist bounds on move/resize
   const persistBounds = () => {
@@ -93,10 +101,18 @@ export function createSettingsWindow(): BrowserWindow {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
     },
   });
 
   win.loadFile(path.join(__dirname, '..', 'renderer', 'settings.html'));
+
+  // Prevent the window from navigating to external URLs
+  win.webContents.on('will-navigate', (event, url) => {
+    if (!url.startsWith('file://')) {
+      event.preventDefault();
+    }
+  });
 
   return win;
 }
