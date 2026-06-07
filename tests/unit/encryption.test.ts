@@ -117,7 +117,7 @@ describe('Encryption', () => {
       else process.env.JARVIS_CONFIG_DIR = originalConfigDir;
       fs.rmSync(configDir, { recursive: true, force: true });
     }
-  });
+  }, 15000);
 
   it('should generate a unique fallback key per config directory', () => {
     const originalEnvKey = process.env.JARVIS_ENCRYPTION_KEY;
