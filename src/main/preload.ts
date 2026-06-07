@@ -79,8 +79,6 @@ contextBridge.exposeInMainWorld('jarvis', {
     ipcRenderer.invoke('github:get-pr-state', subjectUrl),
   githubGetIssueState: (subjectUrl: string) =>
     ipcRenderer.invoke('github:get-issue-state', subjectUrl),
-  githubCheckBranchExists: (repoFullName: string, branch: string) =>
-    ipcRenderer.invoke('github:check-branch-exists', repoFullName, branch),
   // Local repos
   localGetFolders: () => ipcRenderer.invoke('local:get-folders'),
   localAddFolder: (folderPath?: string) => ipcRenderer.invoke('local:add-folder', folderPath),

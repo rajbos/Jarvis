@@ -12,7 +12,7 @@ import {
   type HealthWarning,
 } from '../../services/git-health';
 import { listLocalRepos } from '../../services/local-discovery';
-import { normalizeGitHubUrl } from '../shared/utils';
+import { normalizeGitHubUrl } from '../../services/local-discovery';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -134,15 +134,19 @@ export function registerHandlers(
    * dashboard:get-summary
    * Build a full dashboard summary by scanning all local repos, enriching
    * with notification counts + workflow run data from the DB.
+   * 
+   * Repos are deduplicated by their GitHub full_name (linkedGithubRepo) to avoid
+   * showing the same GitHub repository multiple times when it's cloned in different
+   * locations on disk.
    */
   ipcMain.handle('dashboard:get-summary', async (): Promise<DashboardSummary> => {
     try {
       const localRepos = listLocalRepos(db);
 
-      const repos: RepoHealthStatus[] = [];
-      const warnings: { repoId: number; warnings: HealthWarning[] }[] = [];
-      let totalNotifications = 0;
-      let totalFailedRuns = 0;
+      // Map: deduplication key -> array of {status, repo} for local clones
+      // For repos with a GitHub link, the key is the GitHub full_name
+      // For repos without a GitHub link, the key is the local path (to keep them separate)
+      const dedupKeyToEntries = new Map<string, Array<{ status: RepoHealthStatus; repoId: number }>>();
 
       for (const repo of localRepos) {
         // Resolve linked GitHub repo full_name
@@ -173,15 +177,53 @@ export function registerHandlers(
           lastPushedAt,
         );
 
-        repos.push(status);
+        // Determine the deduplication key
+        // If the repo has a GitHub link, group by GitHub full_name
+        // Otherwise, use the local path to keep each local-only repo separate
+        const dedupKey = linkedGithubRepo || repo.localPath;
 
-        const repoWarnings = deriveWarnings(status);
+        // Group by deduplication key
+        if (!dedupKeyToEntries.has(dedupKey)) {
+          dedupKeyToEntries.set(dedupKey, []);
+        }
+        dedupKeyToEntries.get(dedupKey)!.push({ status, repoId: repo.id });
+      }
+
+      // Build the final repos array with deduplication
+      const repos: RepoHealthStatus[] = [];
+      const warnings: { repoId: number; warnings: HealthWarning[] }[] = [];
+      let totalNotifications = 0;
+      let totalFailedRuns = 0;
+
+      for (const [dedupKey, entries] of dedupKeyToEntries) {
+        // Pick the entry with the most recent lastCommitAt as the representative
+        const bestEntry = entries.reduce((best, current) => {
+          // If current has a more recent commit, it becomes the best
+          if (current.status.lastCommitAt && best.status.lastCommitAt) {
+            return current.status.lastCommitAt > best.status.lastCommitAt ? current : best;
+          }
+          // If only current has a commit time, it's better
+          if (current.status.lastCommitAt && !best.status.lastCommitAt) {
+            return current;
+          }
+          // If only best has a commit time, keep it
+          if (!current.status.lastCommitAt && best.status.lastCommitAt) {
+            return best;
+          }
+          // Neither has commit time, pick the first one
+          return best;
+        });
+
+        repos.push(bestEntry.status);
+
+        const repoWarnings = deriveWarnings(bestEntry.status);
         if (repoWarnings.length > 0) {
-          warnings.push({ repoId: repo.id, warnings: repoWarnings });
+          warnings.push({ repoId: bestEntry.repoId, warnings: repoWarnings });
         }
 
-        totalNotifications += notifCount;
-        totalFailedRuns += failedRuns;
+        // Add to totals (only once per deduplicated repo)
+        totalNotifications += bestEntry.status.notificationCount;
+        totalFailedRuns += bestEntry.status.failedWorkflowRuns;
       }
 
       return {
