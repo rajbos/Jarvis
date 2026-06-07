@@ -229,6 +229,12 @@ function initializeSchema(database: SqlJsDatabase): void {
   }
 
   if (userVersion === 24) {
+    // Migration v24 → v25: add index on page_last_modified
+    // (column was already included in the v23→v24 CREATE TABLE)
+    database.run(`
+      CREATE INDEX IF NOT EXISTS idx_onenote_cache_modified
+      ON onedrive_onenote_cache(page_last_modified)
+    `);
     if (!columnExists(database, 'onedrive_onenote_cache', 'page_last_modified')) {
       database.run('ALTER TABLE onedrive_onenote_cache ADD COLUMN page_last_modified TEXT');
     }
