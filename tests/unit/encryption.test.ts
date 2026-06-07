@@ -1,5 +1,34 @@
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { createRequire } from 'module';
 import { describe, it, expect } from 'vitest';
-import { encrypt, decrypt, deriveKey, generateKey } from '../../src/storage/encryption';
+import { encrypt, decrypt, deriveKey, generateKey, getEncryptionKey } from '../../src/storage/encryption';
+
+const nodeRequire = createRequire(import.meta.url);
+
+function withMockedElectron<T>(exportsObj: unknown, run: () => T): T {
+  const moduleId = nodeRequire.resolve('electron');
+  const originalEntry = nodeRequire.cache[moduleId];
+  nodeRequire.cache[moduleId] = {
+    id: moduleId,
+    filename: moduleId,
+    loaded: true,
+    exports: exportsObj,
+    children: [],
+    paths: [],
+    isPreloading: false,
+    parent: undefined,
+    path: path.dirname(moduleId),
+    require: nodeRequire,
+  } as unknown as NodeJS.Module;
+  try {
+    return run();
+  } finally {
+    if (originalEntry) nodeRequire.cache[moduleId] = originalEntry;
+    else delete nodeRequire.cache[moduleId];
+  }
+}
 
 describe('Encryption', () => {
   it('should encrypt and decrypt a string correctly', () => {
@@ -54,5 +83,104 @@ describe('Encryption', () => {
   it('should generate a 32-byte key', () => {
     const key = generateKey();
     expect(key.length).toBe(32);
+  });
+
+  it('should use JARVIS_ENCRYPTION_KEY when provided', () => {
+    const originalEnvKey = process.env.JARVIS_ENCRYPTION_KEY;
+    process.env.JARVIS_ENCRYPTION_KEY = 'deterministic-test-secret';
+    try {
+      expect(getEncryptionKey().toString('hex')).toBe(
+        deriveKey('deterministic-test-secret').toString('hex'),
+      );
+    } finally {
+      if (originalEnvKey === undefined) delete process.env.JARVIS_ENCRYPTION_KEY;
+      else process.env.JARVIS_ENCRYPTION_KEY = originalEnvKey;
+    }
+  });
+
+  it('should fall back to COMPUTERNAME-based key when env key is absent', () => {
+    const originalEnvKey = process.env.JARVIS_ENCRYPTION_KEY;
+    const originalComputerName = process.env.COMPUTERNAME;
+    delete process.env.JARVIS_ENCRYPTION_KEY;
+    process.env.COMPUTERNAME = 'CI-MACHINE';
+    try {
+      const key1 = withMockedElectron({}, () => getEncryptionKey());
+      const key2 = withMockedElectron({}, () => getEncryptionKey());
+      expect(key1.length).toBe(32);
+      expect(key2.toString('hex')).toBe(key1.toString('hex'));
+    } finally {
+      if (originalEnvKey === undefined) delete process.env.JARVIS_ENCRYPTION_KEY;
+      else process.env.JARVIS_ENCRYPTION_KEY = originalEnvKey;
+      if (originalComputerName === undefined) delete process.env.COMPUTERNAME;
+      else process.env.COMPUTERNAME = originalComputerName;
+    }
+  });
+
+  it('should derive different keys for different COMPUTERNAME values', () => {
+    const originalEnvKey = process.env.JARVIS_ENCRYPTION_KEY;
+    const originalComputerName = process.env.COMPUTERNAME;
+    delete process.env.JARVIS_ENCRYPTION_KEY;
+    try {
+      process.env.COMPUTERNAME = 'MACHINE-A';
+      const keyA = withMockedElectron({}, () => getEncryptionKey());
+      process.env.COMPUTERNAME = 'MACHINE-B';
+      const keyB = withMockedElectron({}, () => getEncryptionKey());
+      expect(keyA.length).toBe(32);
+      expect(keyB.length).toBe(32);
+      expect(keyA.toString('hex')).not.toBe(keyB.toString('hex'));
+    } finally {
+      if (originalEnvKey === undefined) delete process.env.JARVIS_ENCRYPTION_KEY;
+      else process.env.JARVIS_ENCRYPTION_KEY = originalEnvKey;
+      if (originalComputerName === undefined) delete process.env.COMPUTERNAME;
+      else process.env.COMPUTERNAME = originalComputerName;
+    }
+  });
+
+  it('should use mocked safeStorage when available and persist the key', () => {
+    const originalEnvKey = process.env.JARVIS_ENCRYPTION_KEY;
+    const originalConfigDir = process.env.JARVIS_CONFIG_DIR;
+    delete process.env.JARVIS_ENCRYPTION_KEY;
+    const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jarvis-encryption-'));
+    process.env.JARVIS_CONFIG_DIR = configDir;
+    try {
+      const safeStorage = {
+        isEncryptionAvailable: () => true,
+        encryptString: (value: string) => Buffer.from(`enc:${value}`, 'utf8'),
+        decryptString: (value: Buffer) => value.toString('utf8').replace(/^enc:/, ''),
+      };
+      const key1 = withMockedElectron({ safeStorage }, () => getEncryptionKey());
+      const key2 = withMockedElectron({ safeStorage }, () => getEncryptionKey());
+      expect(key1.length).toBe(32);
+      expect(key2.toString('hex')).toBe(key1.toString('hex'));
+      expect(fs.existsSync(path.join(configDir, 'keystore.bin'))).toBe(true);
+    } finally {
+      if (originalEnvKey === undefined) delete process.env.JARVIS_ENCRYPTION_KEY;
+      else process.env.JARVIS_ENCRYPTION_KEY = originalEnvKey;
+      if (originalConfigDir === undefined) delete process.env.JARVIS_CONFIG_DIR;
+      else process.env.JARVIS_CONFIG_DIR = originalConfigDir;
+      fs.rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('should fall back to COMPUTERNAME-based key when mocked safeStorage reports unavailable encryption', () => {
+    const originalEnvKey = process.env.JARVIS_ENCRYPTION_KEY;
+    const originalComputerName = process.env.COMPUTERNAME;
+    delete process.env.JARVIS_ENCRYPTION_KEY;
+    process.env.COMPUTERNAME = 'FALLBACK-PC';
+    try {
+      const key1 = withMockedElectron({
+        safeStorage: { isEncryptionAvailable: () => false },
+      }, () => getEncryptionKey());
+      const key2 = withMockedElectron({
+        safeStorage: { isEncryptionAvailable: () => false },
+      }, () => getEncryptionKey());
+      expect(key1.length).toBe(32);
+      expect(key2.toString('hex')).toBe(key1.toString('hex'));
+    } finally {
+      if (originalEnvKey === undefined) delete process.env.JARVIS_ENCRYPTION_KEY;
+      else process.env.JARVIS_ENCRYPTION_KEY = originalEnvKey;
+      if (originalComputerName === undefined) delete process.env.COMPUTERNAME;
+      else process.env.COMPUTERNAME = originalComputerName;
+    }
   });
 });

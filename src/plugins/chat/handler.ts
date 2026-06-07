@@ -10,7 +10,7 @@ import {
   type OllamaToolCall,
 } from '../../services/ollama';
 import { getConfigValue } from '../../storage/database';
-import { buildSystemContext, searchReposForChat, searchSecretsForChat, searchOneNoteForChat } from './db-helpers';
+import { buildSystemContext, searchReposForChat, searchSecretsForChat, searchOneNoteForChat, searchProjectBudgetForChat } from './db-helpers';
 
 const activeChatAborts = new Map<number, AbortController>();
 
@@ -88,6 +88,27 @@ const CHAT_TOOLS: OllamaTool[] = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'search_project_budget',
+      description:
+        'Search for projects linked to a customer group and retrieve budget/actuals metadata. ' +
+        'Use this when the user asks about project budgets, costs, actuals, spending, financial status, ' +
+        'or project economics for a specific customer. Returns linked project names, paths, and notes. ' +
+        'Actual detailed budget/actuals numbers are in the project management system (Rudder, Jira, finance tools).',
+      parameters: {
+        type: 'object',
+        properties: {
+          group_name: {
+            type: 'string',
+            description: 'The customer group name (e.g., "Royal London", "Colruyt", "UCB"). Will perform a partial match.',
+          },
+        },
+        required: ['group_name'],
+      },
+    },
+  },
 ];
 
 function dispatchToolCall(db: SqlJsDatabase, call: OllamaToolCall): string {
@@ -104,6 +125,10 @@ function dispatchToolCall(db: SqlJsDatabase, call: OllamaToolCall): string {
     const group = call.function.arguments['group'] != null ? String(call.function.arguments['group']) : undefined;
     const since = call.function.arguments['since'] != null ? String(call.function.arguments['since']) : undefined;
     return searchOneNoteForChat(db, query, group, since);
+  }
+  if (call.function.name === 'search_project_budget') {
+    const groupName = String(call.function.arguments['group_name'] ?? '');
+    return searchProjectBudgetForChat(db, groupName);
   }
   return `Unknown tool: ${call.function.name}`;
 }

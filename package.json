@@ -5,7 +5,7 @@
   "main": "dist/main/index.js",
   "scripts": {
     "build": "tsc && node scripts/build-renderer.mjs && npm run copy-static",
-    "copy-static": "node scripts/copy-static.mjs",
+    "copy-static": "node -e \"const fs=require('fs');const p=require('path');fs.mkdirSync('dist/renderer',{recursive:true});for(const f of fs.readdirSync('src/renderer')){if(f.endsWith('.html'))fs.cpSync(p.join('src/renderer',f),p.join('dist/renderer',f));}\"",
     "start": "npm run build && electron dist/main/index.js",
     "dev:tsc": "tsc --watch --preserveWatchOutput",
     "dev:esbuild": "node scripts/build-renderer.mjs --watch",
@@ -14,6 +14,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint src",
+    "lint:fix": "eslint src --fix",
     "test:coverage": "vitest run --coverage"
   },
   "author": "",
@@ -23,16 +24,16 @@
     "@joplin/onenote-converter": "^3.6.3",
     "@types/node": "^25.9.1",
     "@types/ws": "^8.18.1",
-    "@vitest/coverage-v8": "^4.1.7",
-    "concurrently": "^9.2.1",
-    "electron": "^42.3.0",
+    "@vitest/coverage-v8": "^4.1.8",
+    "concurrently": "^10.0.3",
+    "electron": "^42.3.3",
     "electron-builder": "^26.8.1",
     "electron-reloader": "^1.2.3",
     "esbuild": "^0.28.0",
-    "eslint": "^10.4.0",
+    "eslint": "^10.4.1",
     "nodemon": "^3.1.14",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.60.0",
+    "typescript-eslint": "^8.60.1",
     "vitest": "^4.1.4"
   },
   "dependencies": {

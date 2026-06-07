@@ -246,6 +246,37 @@ describe('fetchWorkflowRuns', () => {
     expect(callCount).toBe(2);
   });
 
+  it('stops after two pages even when both pages are full', async () => {
+    const makePage = (start: number, count: number) =>
+      Array.from({ length: count }, (_, i) => ({
+        id: start + i,
+        name: 'CI',
+        workflow_id: 42,
+        head_branch: 'main',
+        head_sha: 'abc',
+        event: 'push',
+        status: 'completed',
+        conclusion: 'success',
+        run_number: start + i,
+        run_started_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T00:01:00Z',
+        html_url: `https://github.com/o/r/actions/runs/${start + i}`,
+      }));
+
+    let callCount = 0;
+    globalThis.fetch = vi.fn(async () => {
+      callCount++;
+      if (callCount === 1) {
+        return new Response(JSON.stringify({ workflow_runs: makePage(1, 50), total_count: 150 }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ workflow_runs: makePage(51, 50), total_count: 150 }), { status: 200 });
+    });
+
+    const result = await fetchWorkflowRuns('token', 'owner/repo', '2024-01-01');
+    expect(result).toHaveLength(100);
+    expect(callCount).toBe(2);
+  });
+
   it('stops paginating when fewer than 50 runs are returned', async () => {
     globalThis.fetch = vi.fn(async () =>
       new Response(JSON.stringify({ workflow_runs: [{ id: 1, name: 'CI', workflow_id: 1, head_branch: 'main', head_sha: 'a', event: 'push', status: 'completed', conclusion: 'success', run_number: 1, run_started_at: '', updated_at: '', html_url: '' }], total_count: 1 }), { status: 200 }),
@@ -334,6 +365,53 @@ describe('fetchAndStoreWorkflowData', () => {
     await fetchAndStoreWorkflowData(db, 'token', 'owner/repo');
     const res = db.exec(`SELECT COUNT(*) FROM github_workflow_jobs`);
     expect(res[0].values[0][0]).toBe(1);
+  });
+
+  it('stores jobs even when failing job log retrieval returns non-OK', async () => {
+    const failRun = makeRun(1, { conclusion: 'failure' });
+    const failedJob = makeJob(10, 1, { conclusion: 'failure' });
+    const successJob = makeJob(11, 1, { conclusion: 'success' });
+
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.includes('/actions/runs') && !url.includes('/jobs') && !url.includes('/logs')) {
+        return new Response(JSON.stringify({ workflow_runs: [failRun], total_count: 1 }), { status: 200 });
+      }
+      if (url.includes('/actions/jobs/') && url.includes('/logs')) {
+        return new Response('unavailable', { status: 503 });
+      }
+      if (url.includes('/jobs')) {
+        return new Response(JSON.stringify({ jobs: [failedJob, successJob] }), { status: 200 });
+      }
+      return new Response('unexpected', { status: 500 });
+    });
+
+    await fetchAndStoreWorkflowData(db, 'token', 'owner/repo');
+    const jobs = db.exec(`SELECT id, log_excerpt FROM github_workflow_jobs ORDER BY id ASC`);
+    expect(jobs[0].values).toEqual([
+      ['10', null],
+      ['11', null],
+    ]);
+  });
+
+  it('handles multiple failing runs from the same workflow', async () => {
+    const failRun1 = makeRun(1, { conclusion: 'failure', workflowId: 77 });
+    const failRun2 = makeRun(2, { conclusion: 'failure', workflowId: 77 });
+
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.includes('/actions/runs') && !url.includes('/jobs') && !url.includes('/logs')) {
+        return new Response(JSON.stringify({ workflow_runs: [failRun1, failRun2], total_count: 2 }), { status: 200 });
+      }
+      if (url.includes('/jobs')) {
+        return new Response(JSON.stringify({ jobs: [] }), { status: 200 });
+      }
+      return new Response('', { status: 200 });
+    });
+
+    const result = await fetchAndStoreWorkflowData(db, 'token', 'owner/repo');
+    expect(result.runsStored).toBe(2);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(3);
   });
 
   it('returns 0 when no runs are found', async () => {

@@ -407,7 +407,9 @@ export function readOneNoteSectionViaCom(
         return;
       }
 
-      const sectionName = path.basename(filePath, path.extname(filePath));
+      // Use path.win32.basename so Windows-style paths (backslashes) are parsed
+      // correctly even when running on Linux (e.g. in CI).
+      const sectionName = path.win32.basename(filePath, path.win32.extname(filePath));
       const pages: OneNotePage[] = result.pages.map(p => ({
         pageIndex: p.pageIndex,
         pageLevel: typeof p.pageLevel === 'number' ? p.pageLevel : 1,
