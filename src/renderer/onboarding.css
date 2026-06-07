@@ -1467,6 +1467,12 @@ body.onboarding {
   width: 100%;
 }
 
+/* Override for tabs that should fill the viewport instead of scrolling horizontally */
+.container--fill {
+  min-width: 0;
+  width: 100%;
+}
+
 h1 {
   font-size: 2rem;
   margin-bottom: 0.5rem;
@@ -2811,7 +2817,8 @@ h5.ec-heading { font-size: 0.85rem; }
 /* ── Groups Dashboard ──────────────────────────────────────────────────────── */
 .groups-dashboard-panel {
   padding: 1.2rem 1.4rem;
-  min-width: 320px;
+  min-width: 0;
+  width: 100%;
   box-sizing: border-box;
   overflow-x: hidden;
 }
@@ -2826,7 +2833,6 @@ h5.ec-heading { font-size: 0.85rem; }
 .groups-dash-main {
   flex: 1 1 0;
   min-width: 0;
-  overflow: hidden;
 }
 
 .groups-dash-header {
@@ -2863,8 +2869,10 @@ h5.ec-heading { font-size: 0.85rem; }
 
 .groups-dash-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 0.9rem;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 0.75rem;
+  width: 100%;
+  justify-content: flex-start;
 }
 
 .groups-dash-card {
@@ -2877,6 +2885,7 @@ h5.ec-heading { font-size: 0.85rem; }
   gap: 0.7rem;
   transition: border-color 0.15s, box-shadow 0.15s;
   min-width: 0; /* prevent grid cell overflow */
+  word-break: break-word;
 }
 
 .groups-dash-card:hover {

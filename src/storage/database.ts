@@ -517,6 +517,7 @@ function initializeSchema(database: SqlJsDatabase): void {
       CREATE INDEX IF NOT EXISTS idx_onenote_cache_modified
       ON onedrive_onenote_cache(page_last_modified)
     `);
+
     database.run('PRAGMA user_version = 25');
   }
 }

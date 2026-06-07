@@ -123,6 +123,18 @@ export function GroupsDashboardPanel() {
     );
   };
 
+
+
+
+
+
+
+
+
+
+
+
+
   return (
     <div class="groups-dashboard-panel">
       <div class="groups-dash-header">
@@ -151,6 +163,7 @@ export function GroupsDashboardPanel() {
         >
           {ruddrVisible ? '◀ Ruddr' : '▶ Ruddr'}
         </button>
+
       </div>
 
       <div class="groups-dash-body">
@@ -201,7 +214,7 @@ export function GroupsDashboardPanel() {
             </div>
           )}
         </div>
-
+        
         {ruddrVisible && <RuddrProjectsPanel onGroupCreated={loadData} />}
       </div>
     </div>

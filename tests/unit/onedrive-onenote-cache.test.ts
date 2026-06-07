@@ -1,5 +1,7 @@
 /// <reference path="../../src/types/sql.js.d.ts" />
 // ── OneNote cache service tests ───────────────────────────────────────────────
+import fs from 'fs';
+import path from 'path';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import initSqlJs, { Database as SqlJsDatabase } from 'sql.js';
 import { getSchema } from '../../src/storage/schema';
@@ -29,6 +31,7 @@ vi.mock('../../src/services/onenote-reader', async (importOriginal) => {
       ],
       textContent: 'Page One 2024-01-01 Hello world\n\nPage Two 2024-01-02 Second page',
     }),
+    readOneNoteNotebookByCom: vi.fn().mockResolvedValue([]),
   };
 });
 
@@ -301,6 +304,98 @@ describe('cacheOneNoteFilesForGroup()', () => {
     expect(result.errors[0].error).toContain('COM unavailable');
 
     fs.unlinkSync(tmpFile);
+  });
+
+  it('caches .url notebook shortcuts from live COM and clears stale backup cache', async () => {
+    const { readOneNoteNotebookByCom } = await import('../../src/services/onenote-reader');
+    const mockNotebookReader = readOneNoteNotebookByCom as ReturnType<typeof vi.fn>;
+    mockNotebookReader.mockResolvedValueOnce([
+      {
+        sectionName: 'Live Section',
+        filePath: 'unused.one',
+        pageCount: 1,
+        source: 'com' as const,
+        pages: [
+          { pageIndex: 1, pageLevel: 1, title: 'Live Page', date: '2024-01-01', lastModified: '2024-01-01T10:00:00.000Z', content: 'Live body' },
+        ],
+        textContent: 'Live Page',
+      },
+    ]);
+
+    const groupId = insertGroup(db, 'Notebook Group');
+    const rootId = insertRoot(db, 'C:\\OneDrive');
+    const folderId = insertFolder(db, groupId, rootId, 'C:\\OneDrive\\Notebook Group');
+    db.run(
+      `INSERT INTO onedrive_files (folder_id, name, extension, relative_path, last_modified, size_bytes)
+       VALUES (?, 'Notebook.url', '.url', 'Notebook.url', '2024-01-15T10:00:00.000Z', 0)`,
+      [folderId],
+    );
+    writeCacheForFile(
+      db,
+      folderId,
+      'Notebook/Stale Section',
+      [{ pageIndex: 1, pageLevel: 1, title: 'Stale', date: '', lastModified: '', content: 'old' }],
+      '2024-01-01T00:00:00.000Z',
+      'binary',
+    );
+
+    const result = await cacheOneNoteFilesForGroup(db, groupId, path.resolve('scripts', 'read-onenote-section.ps1'));
+
+    expect(result.errors).toEqual([]);
+    expect(result.filesProcessed).toBe(1);
+    expect(result.pagesCached).toBe(1);
+
+    const pages = getOneNoteCacheForGroup(db, groupId);
+    expect(pages).toHaveLength(1);
+    expect(pages[0].relativePath).toBe('Notebook/Live Section');
+    expect(pages[0].pageTitle).toBe('Live Page');
+    expect(pages[0].readSource).toBe('com');
+  });
+
+  it('falls back to local backup sections for .url notebook shortcuts when COM fails', async () => {
+    const { readOneNoteNotebookByCom } = await import('../../src/services/onenote-reader');
+    const mockNotebookReader = readOneNoteNotebookByCom as ReturnType<typeof vi.fn>;
+    mockNotebookReader.mockRejectedValueOnce(new Error('Notebook is closed'));
+
+    const notebookName = `Fallback Notebook ${Date.now()}`;
+    const backupBase = path.join(
+      process.env.LOCALAPPDATA ?? path.join(process.env.USERPROFILE ?? '', 'AppData', 'Local'),
+      'Microsoft', 'OneNote', '16.0', 'Backup',
+    );
+    const notebookDir = path.join(backupBase, `${notebookName} notes`);
+    const backupFile = path.join(notebookDir, 'Recovered Section (On 07-06-2026).one');
+    fs.mkdirSync(notebookDir, { recursive: true });
+    fs.writeFileSync(backupFile, Buffer.from('fake backup file'));
+
+    try {
+      const groupId = insertGroup(db, 'Backup Group');
+      const rootId = insertRoot(db, 'C:\\OneDrive');
+      const folderId = insertFolder(db, groupId, rootId, 'C:\\OneDrive\\Backup Group');
+      db.run(
+        `INSERT INTO onedrive_files (folder_id, name, extension, relative_path, last_modified, size_bytes)
+         VALUES (?, ?, '.url', ?, '2024-01-15T10:00:00.000Z', 0)`,
+        [folderId, `${notebookName}.url`, `${notebookName}.url`],
+      );
+
+      const result = await cacheOneNoteFilesForGroup(db, groupId, path.resolve('scripts', 'read-onenote-section.ps1'));
+
+      expect(result.errors).toEqual([
+        expect.objectContaining({
+          relativePath: `${notebookName}.url`,
+          error: expect.stringContaining('COM failed: Notebook is closed'),
+        }),
+      ]);
+      expect(result.filesProcessed).toBe(1);
+      expect(result.pagesCached).toBe(2);
+
+      const pages = getOneNoteCacheForGroup(db, groupId);
+      expect(pages).toHaveLength(2);
+      expect(pages[0].relativePath).toBe(`${notebookName}/Recovered Section`);
+      expect(pages[0].readSource).toBe('binary');
+      expect(pages[1].relativePath).toBe(`${notebookName}/Recovered Section`);
+    } finally {
+      fs.rmSync(notebookDir, { recursive: true, force: true });
+    }
   });
 });
 

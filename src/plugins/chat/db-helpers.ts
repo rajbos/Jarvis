@@ -12,6 +12,23 @@ export function buildSystemContext(db: SqlJsDatabase): string {
     'You are Jarvis, a personal GitHub repository assistant.',
     `Today's date: ${new Date().toISOString().slice(0, 10)}.`,
     'You have access to the user\'s GitHub data that has been indexed into a local database (snapshot shown below).',
+    '',
+    '**CRITICAL TOOL INSTRUCTIONS FOR ONENOTE & PROJECTS:**',
+    'When the user asks ANY question about a customer group, customer notes, project meetings, decisions, ' +
+    'or specific team information (e.g., "what notes about Royal London", "tell me about Colruyt", ' +
+    '"what did we decide on...", "meeting notes for..."), you MUST immediately call the search_onenote tool. ' +
+    'When the user asks about project budgets, costs, spending, project economics, or financial status for a customer, ' +
+    'call the search_project_budget tool. Do not ask for permission — search directly and combine results to give ' +
+    'the user a complete picture of both notes AND financial data.',
+    '',
+    'EXAMPLES:',
+    '- User: "what notes do you have about our royal london customer?"',
+    '  YOU: Call search_onenote with query="royal london" and report findings.',
+    '- User: "what are the budgets for royal london projects?"',
+    '  YOU: Call search_project_budget with group_name="royal london" and report linked projects.',
+    '- User: "give me a full update on royal london"',
+    '  YOU: Call BOTH search_onenote AND search_project_budget, then combine the results into a comprehensive summary.',
+    '',
     'Help the user find repos, understand their codebase, and answer questions about their repositories.',
     'Be concise and helpful. When listing repos, use the full_name format (org/repo).',
     '',
@@ -133,8 +150,9 @@ export function buildSystemContext(db: SqlJsDatabase): string {
         lines.push('');
         lines.push(
           `OneNote pages cached: ${r.page_count} pages across ${r.section_count} section(s) in ${r.group_count} group(s). ` +
-          'Use the search_onenote tool to find relevant notes when the user asks about project-specific information, ' +
-          'meeting notes, decisions, or any topic that may be documented in OneNote.',
+          'You have access to the search_onenote tool. Use it to query these cached notes whenever the user asks about ' +
+          'project-specific information, customer notes, meeting minutes, decisions, requirements, or anything that might be ' +
+          'documented in OneNote. Do NOT ask for permission — automatically search and report findings to the user.',
         );
       }
     }
@@ -142,6 +160,13 @@ export function buildSystemContext(db: SqlJsDatabase): string {
   } catch {
     // table not yet created in older DB; skip
   }
+
+  // Available skills and reference documentation
+  lines.push('');
+  lines.push('AVAILABLE SKILLS:');
+  lines.push('- check-db: Inspect the live Jarvis SQLite database schema version and table list.');
+  lines.push('- onenote-caching: Two-tier caching strategy for OneNote notebooks (live COM API + fallback to local backups). ' +
+    'Reference this when answering questions about OneNote integration, debugging cache issues, or understanding how live notebook data is fetched.');
 
   return lines.join('\n');
 }
@@ -248,13 +273,26 @@ export function searchSecretsForChat(db: SqlJsDatabase, pattern: string): string
 
 const ONENOTE_SNIPPET_LENGTH = 400;
 
+// Common English stop words to filter from search queries
+const STOP_WORDS = new Set([
+  'a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'for', 'from', 'has', 'have', 'he', 'her',
+  'hers', 'him', 'his', 'how', 'i', 'if', 'in', 'into', 'is', 'it', 'its', 'me', 'my', 'of',
+  'on', 'or', 'our', 'she', 'that', 'the', 'to', 'was', 'what', 'which', 'who', 'why', 'you',
+  'your', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'can', 'may', 'might',
+  'must', 'notes', 'information', 'details', 'tell', 'about', 'give', 'provide', 'show',
+]);
+
 /**
  * Search cached OneNote pages for content matching all words in `query`.
  * Returns up to 10 pages with a short content snippet around the first match.
  * Optionally filter to a specific group name.
+ * 
+ * Stop words (a, the, what, do, etc.) are automatically filtered out.
  */
 export function searchOneNoteForChat(db: SqlJsDatabase, query: string, groupName?: string, since?: string): string {
-  const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  let words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  // Remove stop words to focus on content words
+  words = words.filter(w => !STOP_WORDS.has(w));
   if (words.length === 0) return 'No search terms provided.';
 
   // Build WHERE clauses: every word must appear in title OR content
@@ -332,3 +370,81 @@ export function searchOneNoteForChat(db: SqlJsDatabase, query: string, groupName
   return lines.join('\n');
 }
 
+// ── Project Budget & Actuals Search ───────────────────────────────────────
+
+/**
+ * Search for projects linked to a customer group and retrieve budget/actuals metadata.
+ * Returns linked project names, paths, and notes.
+ * Actual budget/actuals details are typically in the cloud folder URLs (Rudder, finance system).
+ */
+export function searchProjectBudgetForChat(db: SqlJsDatabase, groupName: string): string {
+  // Search for a group by name
+  const groupStmt = db.prepare(`
+    SELECT id, name, ruddr_project_name, ruddr_project_paths 
+    FROM groups 
+    WHERE LOWER(name) LIKE LOWER(?)
+  `);
+
+  const groupStmt_param = `%${groupName}%`;
+  groupStmt.bind([groupStmt_param]);
+
+  if (!groupStmt.step()) {
+    groupStmt.free();
+    return `No group found matching "${groupName}". Try a different customer name.`;
+  }
+
+  const group = groupStmt.getAsObject() as {
+    id: number;
+    name: string;
+    ruddr_project_name: string | null;
+    ruddr_project_paths: string | null;
+  };
+  groupStmt.free();
+
+  const lines = [`**Project Information for ${group.name}:**`];
+
+  if (!group.ruddr_project_name) {
+    lines.push('\nNo projects linked to this group yet.');
+    return lines.join('\n');
+  }
+
+  try {
+    const projectNames: string[] = JSON.parse(group.ruddr_project_name);
+
+    const projectStmt = db.prepare(`
+      SELECT name, path, note
+      FROM ruddr_projects
+      WHERE name IN (${projectNames.map(() => '?').join(',')})
+      ORDER BY name
+    `);
+    projectStmt.bind(projectNames);
+
+    const projects: Array<{ name: string; path: string; note: string | null }> = [];
+    while (projectStmt.step()) {
+      projects.push(projectStmt.getAsObject() as typeof projects[0]);
+    }
+    projectStmt.free();
+
+    if (projects.length === 0) {
+      lines.push('\nNo projects found in the database.');
+      return lines.join('\n');
+    }
+
+    lines.push(`\n**Linked Projects (${projects.length}):**`);
+    for (const p of projects) {
+      const note = p.note ? ` — ${p.note}` : '';
+      lines.push(`- **${p.name}**${note}`);
+    }
+
+    lines.push(
+      '\n**Budget & Actuals:** These are tracked in your project management system ' +
+      '(Rudder, Jira, finance tools, etc.). ' +
+      'For detailed financial breakdowns, check the project pages in your Rudder or finance dashboard.',
+    );
+
+    return lines.join('\n');
+  } catch (e) {
+    lines.push(`\nError parsing project data: ${String(e)}`);
+    return lines.join('\n');
+  }
+}
