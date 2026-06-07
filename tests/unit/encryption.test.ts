@@ -107,8 +107,12 @@ describe('Encryption', () => {
     process.env.JARVIS_CONFIG_DIR = configDir;
     process.env.COMPUTERNAME = 'CI-MACHINE';
     try {
-      const key1 = getEncryptionKey();
-      const key2 = getEncryptionKey();
+      // Use withMockedElectron({}) so require('electron') returns {} — safeStorage is
+      // undefined, causing a TypeError caught inside getEncryptionKey, which falls
+      // through to the file-based fallback path. Without this the real Electron binary
+      // is loaded (or hangs downloading) causing a 5s timeout.
+      const key1 = withMockedElectron({}, () => getEncryptionKey());
+      const key2 = withMockedElectron({}, () => getEncryptionKey());
       expect(key1.length).toBe(32);
       expect(key2.toString('hex')).toBe(key1.toString('hex'));
       expect(fs.existsSync(path.join(configDir, 'keystore.fallback.bin'))).toBe(true);
@@ -130,10 +134,11 @@ describe('Encryption', () => {
     const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jarvis-encryption-fallback-'));
     process.env.JARVIS_CONFIG_DIR = configDir;
     process.env.COMPUTERNAME = 'MACHINE-A';
-    const keyWithName = getEncryptionKey();
+    // Use withMockedElectron({}) to prevent real Electron binary from loading (causes timeout)
+    const keyWithName = withMockedElectron({}, () => getEncryptionKey());
     delete process.env.COMPUTERNAME;
     try {
-      const keyWithoutName = getEncryptionKey();
+      const keyWithoutName = withMockedElectron({}, () => getEncryptionKey());
       expect(keyWithoutName.toString('hex')).toBe(keyWithName.toString('hex'));
     } finally {
       if (originalEnvKey === undefined) delete process.env.JARVIS_ENCRYPTION_KEY;
