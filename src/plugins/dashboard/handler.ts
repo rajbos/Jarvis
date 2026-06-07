@@ -12,7 +12,7 @@ import {
   type HealthWarning,
 } from '../../services/git-health';
 import { listLocalRepos } from '../../services/local-discovery';
-import { normalizeGitHubUrl } from '../shared/utils';
+import { normalizeGitHubUrl } from '../../services/local-discovery';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

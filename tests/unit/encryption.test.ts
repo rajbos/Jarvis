@@ -98,52 +98,41 @@ describe('Encryption', () => {
     }
   });
 
-  it('should fall back to a persisted file-based key when env key is absent', () => {
+  it('should fall back to COMPUTERNAME-based key when env key is absent', () => {
     const originalEnvKey = process.env.JARVIS_ENCRYPTION_KEY;
-    const originalConfigDir = process.env.JARVIS_CONFIG_DIR;
     const originalComputerName = process.env.COMPUTERNAME;
     delete process.env.JARVIS_ENCRYPTION_KEY;
-    const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jarvis-encryption-fallback-'));
-    process.env.JARVIS_CONFIG_DIR = configDir;
     process.env.COMPUTERNAME = 'CI-MACHINE';
     try {
       const key1 = withMockedElectron({}, () => getEncryptionKey());
       const key2 = withMockedElectron({}, () => getEncryptionKey());
       expect(key1.length).toBe(32);
       expect(key2.toString('hex')).toBe(key1.toString('hex'));
-      expect(fs.existsSync(path.join(configDir, 'keystore.fallback.bin'))).toBe(true);
     } finally {
       if (originalEnvKey === undefined) delete process.env.JARVIS_ENCRYPTION_KEY;
       else process.env.JARVIS_ENCRYPTION_KEY = originalEnvKey;
-      if (originalConfigDir === undefined) delete process.env.JARVIS_CONFIG_DIR;
-      else process.env.JARVIS_CONFIG_DIR = originalConfigDir;
       if (originalComputerName === undefined) delete process.env.COMPUTERNAME;
       else process.env.COMPUTERNAME = originalComputerName;
-      fs.rmSync(configDir, { recursive: true, force: true });
     }
-  }, 15000);
+  });
 
-  it('should ignore COMPUTERNAME and keep fallback key stable', () => {
+  it('should derive different keys for different COMPUTERNAME values', () => {
     const originalEnvKey = process.env.JARVIS_ENCRYPTION_KEY;
-    const originalConfigDir = process.env.JARVIS_CONFIG_DIR;
     const originalComputerName = process.env.COMPUTERNAME;
     delete process.env.JARVIS_ENCRYPTION_KEY;
-    const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jarvis-encryption-fallback-'));
-    process.env.JARVIS_CONFIG_DIR = configDir;
-    process.env.COMPUTERNAME = 'MACHINE-A';
-    const keyWithName = withMockedElectron({}, () => getEncryptionKey());
-    delete process.env.COMPUTERNAME;
     try {
-      const keyWithoutName = withMockedElectron({}, () => getEncryptionKey());
-      expect(keyWithoutName.toString('hex')).toBe(keyWithName.toString('hex'));
+      process.env.COMPUTERNAME = 'MACHINE-A';
+      const keyA = withMockedElectron({}, () => getEncryptionKey());
+      process.env.COMPUTERNAME = 'MACHINE-B';
+      const keyB = withMockedElectron({}, () => getEncryptionKey());
+      expect(keyA.length).toBe(32);
+      expect(keyB.length).toBe(32);
+      expect(keyA.toString('hex')).not.toBe(keyB.toString('hex'));
     } finally {
       if (originalEnvKey === undefined) delete process.env.JARVIS_ENCRYPTION_KEY;
       else process.env.JARVIS_ENCRYPTION_KEY = originalEnvKey;
-      if (originalConfigDir === undefined) delete process.env.JARVIS_CONFIG_DIR;
-      else process.env.JARVIS_CONFIG_DIR = originalConfigDir;
       if (originalComputerName === undefined) delete process.env.COMPUTERNAME;
       else process.env.COMPUTERNAME = originalComputerName;
-      fs.rmSync(configDir, { recursive: true, force: true });
     }
   });
 
@@ -173,13 +162,10 @@ describe('Encryption', () => {
     }
   });
 
-  it('should fall back to file-based key when mocked safeStorage reports unavailable encryption', () => {
+  it('should fall back to COMPUTERNAME-based key when mocked safeStorage reports unavailable encryption', () => {
     const originalEnvKey = process.env.JARVIS_ENCRYPTION_KEY;
-    const originalConfigDir = process.env.JARVIS_CONFIG_DIR;
     const originalComputerName = process.env.COMPUTERNAME;
     delete process.env.JARVIS_ENCRYPTION_KEY;
-    const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jarvis-encryption-fallback-'));
-    process.env.JARVIS_CONFIG_DIR = configDir;
     process.env.COMPUTERNAME = 'FALLBACK-PC';
     try {
       const key1 = withMockedElectron({
@@ -190,15 +176,11 @@ describe('Encryption', () => {
       }, () => getEncryptionKey());
       expect(key1.length).toBe(32);
       expect(key2.toString('hex')).toBe(key1.toString('hex'));
-      expect(fs.existsSync(path.join(configDir, 'keystore.fallback.bin'))).toBe(true);
     } finally {
       if (originalEnvKey === undefined) delete process.env.JARVIS_ENCRYPTION_KEY;
       else process.env.JARVIS_ENCRYPTION_KEY = originalEnvKey;
-      if (originalConfigDir === undefined) delete process.env.JARVIS_CONFIG_DIR;
-      else process.env.JARVIS_CONFIG_DIR = originalConfigDir;
       if (originalComputerName === undefined) delete process.env.COMPUTERNAME;
       else process.env.COMPUTERNAME = originalComputerName;
-      fs.rmSync(configDir, { recursive: true, force: true });
     }
   });
 });
