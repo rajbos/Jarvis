@@ -107,10 +107,6 @@ describe('Encryption', () => {
     process.env.JARVIS_CONFIG_DIR = configDir;
     process.env.COMPUTERNAME = 'CI-MACHINE';
     try {
-      // Use withMockedElectron({}) so require('electron') returns {} — safeStorage is
-      // undefined, causing a TypeError caught inside getEncryptionKey, which falls
-      // through to the file-based fallback path. Without this the real Electron binary
-      // is loaded (or hangs downloading) causing a 5s timeout.
       const key1 = withMockedElectron({}, () => getEncryptionKey());
       const key2 = withMockedElectron({}, () => getEncryptionKey());
       expect(key1.length).toBe(32);
@@ -123,8 +119,9 @@ describe('Encryption', () => {
       else process.env.JARVIS_CONFIG_DIR = originalConfigDir;
       if (originalComputerName === undefined) delete process.env.COMPUTERNAME;
       else process.env.COMPUTERNAME = originalComputerName;
+      fs.rmSync(configDir, { recursive: true, force: true });
     }
-  });
+  }, 15000);
 
   it('should ignore COMPUTERNAME and keep fallback key stable', () => {
     const originalEnvKey = process.env.JARVIS_ENCRYPTION_KEY;
@@ -134,7 +131,6 @@ describe('Encryption', () => {
     const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jarvis-encryption-fallback-'));
     process.env.JARVIS_CONFIG_DIR = configDir;
     process.env.COMPUTERNAME = 'MACHINE-A';
-    // Use withMockedElectron({}) to prevent real Electron binary from loading (causes timeout)
     const keyWithName = withMockedElectron({}, () => getEncryptionKey());
     delete process.env.COMPUTERNAME;
     try {
@@ -147,6 +143,7 @@ describe('Encryption', () => {
       else process.env.JARVIS_CONFIG_DIR = originalConfigDir;
       if (originalComputerName === undefined) delete process.env.COMPUTERNAME;
       else process.env.COMPUTERNAME = originalComputerName;
+      fs.rmSync(configDir, { recursive: true, force: true });
     }
   });
 
@@ -172,10 +169,11 @@ describe('Encryption', () => {
       else process.env.JARVIS_ENCRYPTION_KEY = originalEnvKey;
       if (originalConfigDir === undefined) delete process.env.JARVIS_CONFIG_DIR;
       else process.env.JARVIS_CONFIG_DIR = originalConfigDir;
+      fs.rmSync(configDir, { recursive: true, force: true });
     }
   });
 
-  it('should fall back when mocked safeStorage reports unavailable encryption', () => {
+  it('should fall back to file-based key when mocked safeStorage reports unavailable encryption', () => {
     const originalEnvKey = process.env.JARVIS_ENCRYPTION_KEY;
     const originalConfigDir = process.env.JARVIS_CONFIG_DIR;
     const originalComputerName = process.env.COMPUTERNAME;
@@ -200,6 +198,7 @@ describe('Encryption', () => {
       else process.env.JARVIS_CONFIG_DIR = originalConfigDir;
       if (originalComputerName === undefined) delete process.env.COMPUTERNAME;
       else process.env.COMPUTERNAME = originalComputerName;
+      fs.rmSync(configDir, { recursive: true, force: true });
     }
   });
 });
