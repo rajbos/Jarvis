@@ -98,15 +98,17 @@ describe('Encryption', () => {
     }
   });
 
-  it('should fall back to a persistent file-based key when env key is absent', () => {
+  it('should fall back to a persisted file-based key when env key is absent', () => {
     const originalEnvKey = process.env.JARVIS_ENCRYPTION_KEY;
     const originalConfigDir = process.env.JARVIS_CONFIG_DIR;
+    const originalComputerName = process.env.COMPUTERNAME;
     delete process.env.JARVIS_ENCRYPTION_KEY;
-    const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jarvis-encryption-'));
+    const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jarvis-encryption-fallback-'));
     process.env.JARVIS_CONFIG_DIR = configDir;
+    process.env.COMPUTERNAME = 'CI-MACHINE';
     try {
-      const key1 = getEncryptionKey();
-      const key2 = getEncryptionKey();
+      const key1 = withMockedElectron({}, () => getEncryptionKey());
+      const key2 = withMockedElectron({}, () => getEncryptionKey());
       expect(key1.length).toBe(32);
       expect(key2.toString('hex')).toBe(key1.toString('hex'));
       expect(fs.existsSync(path.join(configDir, 'keystore.fallback.bin'))).toBe(true);
@@ -115,29 +117,33 @@ describe('Encryption', () => {
       else process.env.JARVIS_ENCRYPTION_KEY = originalEnvKey;
       if (originalConfigDir === undefined) delete process.env.JARVIS_CONFIG_DIR;
       else process.env.JARVIS_CONFIG_DIR = originalConfigDir;
+      if (originalComputerName === undefined) delete process.env.COMPUTERNAME;
+      else process.env.COMPUTERNAME = originalComputerName;
       fs.rmSync(configDir, { recursive: true, force: true });
     }
   }, 15000);
 
-  it('should generate a unique fallback key per config directory', () => {
+  it('should ignore COMPUTERNAME and keep fallback key stable', () => {
     const originalEnvKey = process.env.JARVIS_ENCRYPTION_KEY;
     const originalConfigDir = process.env.JARVIS_CONFIG_DIR;
+    const originalComputerName = process.env.COMPUTERNAME;
     delete process.env.JARVIS_ENCRYPTION_KEY;
-    const configDir1 = fs.mkdtempSync(path.join(os.tmpdir(), 'jarvis-encryption-'));
-    const configDir2 = fs.mkdtempSync(path.join(os.tmpdir(), 'jarvis-encryption-'));
+    const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jarvis-encryption-fallback-'));
+    process.env.JARVIS_CONFIG_DIR = configDir;
+    process.env.COMPUTERNAME = 'MACHINE-A';
+    const keyWithName = withMockedElectron({}, () => getEncryptionKey());
+    delete process.env.COMPUTERNAME;
     try {
-      process.env.JARVIS_CONFIG_DIR = configDir1;
-      const key1 = getEncryptionKey();
-      process.env.JARVIS_CONFIG_DIR = configDir2;
-      const key2 = getEncryptionKey();
-      expect(key1.toString('hex')).not.toBe(key2.toString('hex'));
+      const keyWithoutName = withMockedElectron({}, () => getEncryptionKey());
+      expect(keyWithoutName.toString('hex')).toBe(keyWithName.toString('hex'));
     } finally {
       if (originalEnvKey === undefined) delete process.env.JARVIS_ENCRYPTION_KEY;
       else process.env.JARVIS_ENCRYPTION_KEY = originalEnvKey;
       if (originalConfigDir === undefined) delete process.env.JARVIS_CONFIG_DIR;
       else process.env.JARVIS_CONFIG_DIR = originalConfigDir;
-      fs.rmSync(configDir1, { recursive: true, force: true });
-      fs.rmSync(configDir2, { recursive: true, force: true });
+      if (originalComputerName === undefined) delete process.env.COMPUTERNAME;
+      else process.env.COMPUTERNAME = originalComputerName;
+      fs.rmSync(configDir, { recursive: true, force: true });
     }
   });
 
@@ -170,9 +176,11 @@ describe('Encryption', () => {
   it('should fall back to file-based key when mocked safeStorage reports unavailable encryption', () => {
     const originalEnvKey = process.env.JARVIS_ENCRYPTION_KEY;
     const originalConfigDir = process.env.JARVIS_CONFIG_DIR;
+    const originalComputerName = process.env.COMPUTERNAME;
     delete process.env.JARVIS_ENCRYPTION_KEY;
-    const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jarvis-encryption-'));
+    const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jarvis-encryption-fallback-'));
     process.env.JARVIS_CONFIG_DIR = configDir;
+    process.env.COMPUTERNAME = 'FALLBACK-PC';
     try {
       const key1 = withMockedElectron({
         safeStorage: { isEncryptionAvailable: () => false },
@@ -188,6 +196,8 @@ describe('Encryption', () => {
       else process.env.JARVIS_ENCRYPTION_KEY = originalEnvKey;
       if (originalConfigDir === undefined) delete process.env.JARVIS_CONFIG_DIR;
       else process.env.JARVIS_CONFIG_DIR = originalConfigDir;
+      if (originalComputerName === undefined) delete process.env.COMPUTERNAME;
+      else process.env.COMPUTERNAME = originalComputerName;
       fs.rmSync(configDir, { recursive: true, force: true });
     }
   });
