@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Tray, Menu } from 'electron';
+import { app, BrowserWindow, Tray, Menu, session } from 'electron';
 
 import { getDatabase, closeDatabase } from '../storage/database';
 
@@ -316,6 +316,25 @@ if (app.isPackaged) {
 
 
 app.whenReady().then(() => {
+
+  // Content Security Policy: prevent inline scripts, eval(), and
+  // unauthorized resource loads even if the renderer is compromised.
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [
+          "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https://avatars.githubusercontent.com data:; connect-src 'self'",
+        ],
+      },
+    });
+  });
+
+  // Deny all Chromium permission requests (camera, mic, geo,
+  // notifications, etc.) — Jarvis is a local desktop app.
+  session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
+    callback(false);
+  });
 
   initialize().catch((err) => {
 
