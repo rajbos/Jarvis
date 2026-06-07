@@ -754,7 +754,7 @@ function App() {
         {!showChatPanel && selectedOllamaModel && (
           <button class="chat-reopen-btn" title="Open Chat" onClick={handleOpenChat}>💬</button>
         )}
-        <div class="container">
+        <div class={`container${activeTab === 'groups-dashboard' ? ' container--fill' : ''}`}>
       <h1>Jarvis</h1>
       <p class="subtitle">Personal Assistant</p>
 

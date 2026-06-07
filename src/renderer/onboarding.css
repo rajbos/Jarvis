@@ -1467,6 +1467,12 @@ body.onboarding {
   width: 100%;
 }
 
+/* Override for tabs that should fill the viewport instead of scrolling horizontally */
+.container--fill {
+  min-width: 0;
+  width: 100%;
+}
+
 h1 {
   font-size: 2rem;
   margin-bottom: 0.5rem;
@@ -2811,7 +2817,8 @@ h5.ec-heading { font-size: 0.85rem; }
 /* ── Groups Dashboard ──────────────────────────────────────────────────────── */
 .groups-dashboard-panel {
   padding: 1.2rem 1.4rem;
-  min-width: 320px;
+  min-width: 0;
+  width: 100%;
   box-sizing: border-box;
   overflow-x: hidden;
 }
