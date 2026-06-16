@@ -90,6 +90,7 @@ const EXPECTED_CHANNELS = [
   'github:list-issue-notifications',
   'github:dismiss-notification',
   'github:check-merged-dependabot-prs',
+  'github:check-deleted-branches',
   'github:log-auto-dismiss',
   'github:list-auto-dismiss-log',
   'github:auto-dismiss-stats',

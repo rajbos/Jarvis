@@ -73,6 +73,8 @@ contextBridge.exposeInMainWorld('jarvis', {
     ipcRenderer.invoke('github:dismiss-notification', id),
   checkMergedDependabotPRs: () =>
     ipcRenderer.invoke('github:check-merged-dependabot-prs'),
+  checkDeletedBranches: () =>
+    ipcRenderer.invoke('github:check-deleted-branches'),
   getRunUrlForCheckSuite: (checkSuiteApiUrl: string) =>
     ipcRenderer.invoke('github:get-run-url-for-check-suite', checkSuiteApiUrl),
   githubGetPrState: (subjectUrl: string) =>

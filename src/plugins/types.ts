@@ -1789,7 +1789,8 @@ export type AutoDismissReason =
   | 'closed_pr_merged_me'
   | 'closed_pr_closed_me'
   | 'closed_issue_me'
-  | 'closed_issue_via_pr';
+  | 'closed_issue_via_pr'
+  | 'deleted_branch';
 
 export interface AutoDismissLogInput {
   notification_id: string;
@@ -2161,6 +2162,10 @@ export interface JarvisApi {
 
 
   checkMergedDependabotPRs(): Promise<StoredNotification[]>;
+
+
+
+  checkDeletedBranches(): Promise<StoredNotification[]>;
 
 
 

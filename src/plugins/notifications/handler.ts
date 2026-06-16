@@ -18,6 +18,7 @@ import {
   deleteNotification,
   markNotificationRead,
   listMergedDependabotPRNotifications,
+  listDeletedBranchNotifications,
 } from '../../services/github-notifications';
 import { loadGitHubAuth } from '../../services/github-oauth';
 import { saveDatabase } from '../../storage/database';
@@ -145,6 +146,17 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
       return await listMergedDependabotPRNotifications(db, auth.accessToken);
     } catch (err) {
       console.warn('[Jarvis] Could not check merged dependabot PRs:', err instanceof Error ? err.message : String(err));
+      return [];
+    }
+  });
+
+  ipcMain.handle('github:check-deleted-branches', async () => {
+    const auth = loadGitHubAuth(db);
+    if (!auth) return [];
+    try {
+      return await listDeletedBranchNotifications(db, auth.accessToken);
+    } catch (err) {
+      console.warn('[Jarvis] Could not check deleted branches:', err instanceof Error ? err.message : String(err));
       return [];
     }
   });

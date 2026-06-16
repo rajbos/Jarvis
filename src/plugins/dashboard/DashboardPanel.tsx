@@ -194,16 +194,39 @@ async function runClosedIssueStep(): Promise<{ dismissed: number; logEntries: Au
   return { dismissed, logEntries };
 }
 
+async function runDeletedBranchStep(): Promise<{ dismissed: number; logEntries: AutoDismissLogInput[] }> {
+  const logEntries: AutoDismissLogInput[] = [];
+  let dismissed = 0;
+  try {
+    const notifs = await window.jarvis.checkDeletedBranches();
+    for (const n of notifs) {
+      try {
+        await window.jarvis.dismissNotification(n.id);
+        logEntries.push({
+          notification_id: n.id,
+          reason: 'deleted_branch',
+          repo_full_name: n.repo_full_name,
+          subject_title: n.subject_title,
+          subject_type: n.subject_type,
+        });
+        dismissed++;
+      } catch { /* skip individual */ }
+    }
+  } catch { /* non-fatal */ }
+  return { dismissed, logEntries };
+}
+
 async function runAutoDismissPipeline(
   repoFullNames: string[],
 ): Promise<{ result: AutoDismissRunResult; logEntries: AutoDismissLogInput[] }> {
   const steps: AutoDismissStepResult[] = [];
   const allLog: AutoDismissLogInput[] = [];
 
-  const [rec, pr, issue] = await Promise.all([
+  const [rec, pr, issue, delBranch] = await Promise.all([
     runRecoverableStep(repoFullNames),
     runClosedPrStep(),
     runClosedIssueStep(),
+    runDeletedBranchStep(),
   ]);
 
   steps.push({ id: 'recovered-workflows', label: 'Recovered workflows', dismissed: rec.dismissed });
@@ -212,6 +235,8 @@ async function runAutoDismissPipeline(
   allLog.push(...pr.logEntries);
   steps.push({ id: 'closed-issues', label: 'Closed issues', dismissed: issue.dismissed });
   allLog.push(...issue.logEntries);
+  steps.push({ id: 'deleted-branches', label: 'Deleted branches', dismissed: delBranch.dismissed });
+  allLog.push(...delBranch.logEntries);
 
   return {
     result: { steps, total: steps.reduce((s, r) => s + r.dismissed, 0) },
