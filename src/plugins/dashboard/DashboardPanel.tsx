@@ -44,6 +44,9 @@ interface AutoDismissRunResult {
   total: number;
 }
 
+/** Module-level flag so the pipeline only runs once per app session (survives remounts). */
+let autoDismissRanGlobally = false;
+
 async function runRecoverableStep(repoFullNames: string[]): Promise<{ dismissed: number; logEntries: AutoDismissLogInput[] }> {
   const logEntries: AutoDismissLogInput[] = [];
   let dismissed = 0;
@@ -1096,7 +1099,7 @@ export function DashboardPanel({ dismissedNotifIds, onOpenHistory }: { dismissed
   const [autoDismissResult, setAutoDismissResult] = useState<AutoDismissRunResult | null>(null);
   const [autoDismissAcknowledged, setAutoDismissAcknowledged] = useState(false);
   const [autoDismissDone, setAutoDismissDone] = useState(false);
-  const autoDismissRan = useRef(false);
+  const [pipelineStatus, setPipelineStatus] = useState<'idle' | 'running' | 'done'>('idle');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1116,10 +1119,11 @@ export function DashboardPanel({ dismissedNotifIds, onOpenHistory }: { dismissed
 
   useEffect(() => { void load(); }, [load]);
 
-  // Run the auto-dismiss pipeline once after summary is first available
+  // Run the auto-dismiss pipeline once per session after summary is first available
   useEffect(() => {
-    if (!summary || autoDismissRan.current) return;
-    autoDismissRan.current = true;
+    if (!summary || autoDismissRanGlobally) return;
+    autoDismissRanGlobally = true;
+    setPipelineStatus('running');
     const repoFullNames = summary.repos
       .filter((r) => r.notificationCount > 0 && r.linkedGithubRepo !== null)
       .map((r) => r.linkedGithubRepo!);
@@ -1130,11 +1134,12 @@ export function DashboardPanel({ dismissedNotifIds, onOpenHistory }: { dismissed
       }
       if (result.total > 0) setAutoDismissResult(result);
       setAutoDismissDone(true);
+      setPipelineStatus('done');
     });
   }, [summary, load]);
 
   useEffect(() => {
-    if (!summary || !currentUserLogin) {
+    if (!summary || !currentUserLogin || !autoDismissDone) {
       setOwnRepoNotifications([]);
       return;
     }
@@ -1186,7 +1191,7 @@ export function DashboardPanel({ dismissedNotifIds, onOpenHistory }: { dismissed
       });
 
     return () => { cancelled = true; };
-  }, [summary, currentUserLogin, dismissedNotifIds]);
+  }, [summary, currentUserLogin, dismissedNotifIds, autoDismissDone]);
 
   const handleOpenFolder = (localPath: string) => {
     window.jarvis.localOpenFolder(localPath);
@@ -1337,6 +1342,19 @@ export function DashboardPanel({ dismissedNotifIds, onOpenHistory }: { dismissed
         active={cardFilter}
         onSelect={setCardFilter}
       />
+
+      {/* Pipeline in-progress banner — shown while auto-dismiss is checking notifications */}
+      {pipelineStatus === 'running' && (
+        <div class="dash-recoverable-banner dash-auto-dismiss-banner dash-pipeline-running">
+          <span class="dash-recoverable-icon dash-pipeline-running-icon">⟳</span>
+          <div class="dash-recoverable-body">
+            <span class="dash-recoverable-title">Checking stale notifications…</span>
+            <span class="dash-recoverable-detail">
+              Verifying {summary.totalNotifications} notification{summary.totalNotifications !== 1 ? 's' : ''} against GitHub to auto-dismiss closed issues, merged PRs, and recovered workflows
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Auto-dismiss summary banner — shown after the pipeline runs and dismissed something */}
       {autoDismissResult && !autoDismissAcknowledged && (
