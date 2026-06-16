@@ -547,8 +547,9 @@ function NotificationList({ repoFullName, dismissedNotifIds }: { repoFullName: s
     }
   };
 
-  const handleDismissGroup = async (workflowName: string, ids: string[]) => {
-    setDismissingGroup(workflowName);
+  const handleDismissGroup = async (workflowName: string | null, ids: string[]) => {
+    const key = workflowName ?? '__other__';
+    setDismissingGroup(key);
     let dismissed = 0;
     for (const id of ids) {
       try {
@@ -649,6 +650,15 @@ function NotificationList({ repoFullName, dismissedNotifIds }: { repoFullName: s
                 )}
               </span>
               <span class="dash-notif-group-count">{group.notifications.length}</span>
+              {!group.workflowName && (
+                <button
+                  class={`dash-dismiss-group-btn${dismissingGroup === '__other__' ? ' dash-dismiss-group-btn--busy' : ''}`}
+                  disabled={dismissingGroup === '__other__'}
+                  onClick={() => void handleDismissGroup(null, group.notifications.map((n) => n.id))}
+                >
+                  {dismissingGroup === '__other__' ? <span class="dismiss-spinner" /> : 'Dismiss all'}
+                </button>
+              )}
               {group.workflowName && checkingRecovery && (
                 <span class="dash-group-status dash-group-status--checking">checking…</span>
               )}
