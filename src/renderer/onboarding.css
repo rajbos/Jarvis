@@ -4007,6 +4007,22 @@ h5.ec-heading { font-size: 0.85rem; }
   color: #8ab4e8;
 }
 
+/* Pipeline in-progress state — pulsing icon to show background work */
+.dash-pipeline-running {
+  border-color: #4fc3f7;
+  background: #0a1e3a;
+  pointer-events: none;
+}
+
+.dash-pipeline-running-icon {
+  animation: dash-pipeline-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes dash-pipeline-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.5; transform: scale(0.85); }
+}
+
 /* ── Auto-dismiss history panel ──────────────────────────────────────────── */
 .adh-panel {
   background: #111827;
