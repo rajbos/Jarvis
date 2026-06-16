@@ -490,6 +490,107 @@ export async function listMergedDependabotPRNotifications(
   return merged;
 }
 
+// ── Deleted branch detection ───────────────────────────────────────────────────
+
+const BRANCH_FROM_TITLE_RE = /\bfor\s+(\S+)\s+branch\b/i;
+
+function extractBranchFromTitle(title: string): string | null {
+  const m = title.match(BRANCH_FROM_TITLE_RE);
+  return m ? m[1] : null;
+}
+
+async function fetchOneBranchPage(
+  accessToken: string,
+  pageUrl: string,
+): Promise<{ names: string[]; next: string | null }> {
+  const res = await fetch(pageUrl, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+    },
+  });
+  if (!res.ok) return { names: [], next: null };
+  const json = (await res.json()) as Array<{ name: string }>;
+  const linkH = res.headers.get('Link');
+  const nx = linkH?.match(/<([^>]+)>;\s*rel="next"/);
+  return { names: json.map((b) => b.name), next: nx ? nx[1] : null };
+}
+
+async function fetchLiveBranchNames(
+  accessToken: string,
+  repoFullName: string,
+): Promise<Set<string>> {
+  const [owner, repo] = repoFullName.split('/');
+  const branchNames = new Set<string>();
+  let url: string | null = `${GITHUB_API_BASE}/repos/${owner}/${repo}/branches?per_page=100`;
+
+  for (let page = 0; url !== null && page < 3; page++) {
+    const pageData = await fetchOneBranchPage(accessToken, url);
+    for (const name of pageData.names) branchNames.add(name);
+    url = pageData.next;
+  }
+
+  return branchNames;
+}
+
+/**
+ * Scans all stored unread CheckSuite/WorkflowRun notifications and checks whether
+ * the branch referenced in the subject title still exists on the remote. Returns
+ * notifications whose branches have been deleted (404 from the branches API).
+ * Uses a single `GET /repos/{owner}/{repo}/branches` call per repo for efficiency.
+ */
+export async function listDeletedBranchNotifications(
+  db: SqlJsDatabase,
+  accessToken: string,
+): Promise<StoredNotification[]> {
+  const stmt = db.prepare(`
+    SELECT id, repo_full_name, repo_owner, subject_type, subject_title, subject_url,
+           subject_actor_login, subject_actor_type, reason, unread, updated_at, fetched_at
+    FROM github_notifications
+    WHERE unread = 1 AND subject_type IN ('CheckSuite', 'WorkflowRun')
+    ORDER BY repo_full_name, updated_at DESC
+  `);
+  const rows: StoredNotification[] = [];
+  while (stmt.step()) rows.push(stmt.getAsObject() as unknown as StoredNotification);
+  stmt.free();
+
+  // Group unique (repo, branch) pairs to minimise API calls
+  const repoBranches = new Map<string, Set<string>>();
+  const notifByKey = new Map<string, StoredNotification[]>();
+
+  for (const n of rows) {
+    const branch = extractBranchFromTitle(n.subject_title);
+    if (!branch) continue;
+    const key = `${n.repo_full_name}::${branch}`;
+    if (!notifByKey.has(key)) notifByKey.set(key, []);
+    notifByKey.get(key)!.push(n);
+    if (!repoBranches.has(n.repo_full_name)) repoBranches.set(n.repo_full_name, new Set());
+    repoBranches.get(n.repo_full_name)!.add(branch);
+  }
+
+  if (repoBranches.size === 0) return [];
+
+  const deleted: StoredNotification[] = [];
+
+  for (const [repoFullName, branchesToCheck] of repoBranches) {
+    try {
+      const liveBranches = await fetchLiveBranchNames(accessToken, repoFullName);
+      for (const branch of branchesToCheck) {
+        if (!liveBranches.has(branch)) {
+          const key = `${repoFullName}::${branch}`;
+          const notifs = notifByKey.get(key) ?? [];
+          deleted.push(...notifs);
+        }
+      }
+    } catch {
+      // Non-fatal per repo — skip
+    }
+  }
+
+  return deleted;
+}
+
 /**
  * Calls the GitHub API to mark a notification thread as done (removes it from GitHub inbox).
  * DELETE /notifications/threads/{thread_id} — returns 204 No Content.
