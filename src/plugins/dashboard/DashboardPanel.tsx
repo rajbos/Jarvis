@@ -1406,7 +1406,7 @@ export function DashboardPanel({ dismissedNotifIds, onOpenHistory }: { dismissed
           <span class="dash-auto-dismiss-mini-label">
             {autoDismissResult
               ? `Auto-dismissed ${autoDismissResult.total} notification${autoDismissResult.total !== 1 ? 's' : ''}`
-              : 'Nothing auto-dismissed this run'}
+              : 'No notifications auto-dismissed'}
           </span>
           <button
             class="dash-auto-dismiss-mini-btn"
