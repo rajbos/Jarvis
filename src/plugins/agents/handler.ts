@@ -51,16 +51,16 @@ export function registerHandlers(
       scopeValue: string,
       workflowFilter?: string,
     ) => {
-      if (typeof agentId !== 'number') return { error: 'Invalid agentId' };
-      if (!['repo', 'org', 'global'].includes(scopeType)) return { error: 'Invalid scopeType' };
-      if (typeof scopeValue !== 'string' || scopeValue.length === 0) return { error: 'Invalid scopeValue' };
-      if (workflowFilter !== undefined && typeof workflowFilter !== 'string') return { error: 'Invalid workflowFilter' };
+      if (typeof agentId !== 'number') return { ok: false, error: 'Invalid agentId' };
+      if (!['repo', 'org', 'global'].includes(scopeType)) return { ok: false, error: 'Invalid scopeType' };
+      if (typeof scopeValue !== 'string' || scopeValue.length === 0) return { ok: false, error: 'Invalid scopeValue' };
+      if (workflowFilter !== undefined && typeof workflowFilter !== 'string') return { ok: false, error: 'Invalid workflowFilter' };
 
       const model = getConfigValue(db, 'selected_ollama_model');
-      if (!model) return { error: 'No Ollama model selected. Please select one in settings.' };
+      if (!model) return { ok: false, error: 'No Ollama model selected. Please select one in settings.' };
 
       const agentDef = getAgentDefinition(db, agentId);
-      if (!agentDef) return { error: `Agent definition ${agentId} not found` };
+      if (!agentDef) return { ok: false, error: `Agent definition ${agentId} not found` };
 
       const sessionId = createAgentSession(db, agentId, scopeType, scopeValue);
       saveDatabase();
