@@ -151,22 +151,22 @@ describe('Agents plugin — IPC handlers', () => {
   describe('agents:run', () => {
     it('returns error for non-number agentId', async () => {
       const result = await callHandler('agents:run', 'bad', 'repo', 'owner/repo');
-      expect(result).toEqual({ error: 'Invalid agentId' });
+      expect(result).toEqual({ ok: false, error: 'Invalid agentId' });
     });
 
     it('returns error for invalid scopeType', async () => {
       const result = await callHandler('agents:run', 1, 'invalid', 'owner/repo');
-      expect(result).toEqual({ error: 'Invalid scopeType' });
+      expect(result).toEqual({ ok: false, error: 'Invalid scopeType' });
     });
 
     it('returns error for empty scopeValue', async () => {
       const result = await callHandler('agents:run', 1, 'repo', '');
-      expect(result).toEqual({ error: 'Invalid scopeValue' });
+      expect(result).toEqual({ ok: false, error: 'Invalid scopeValue' });
     });
 
     it('returns error for non-string workflowFilter', async () => {
       const result = await callHandler('agents:run', 1, 'repo', 'owner/repo', 42);
-      expect(result).toEqual({ error: 'Invalid workflowFilter' });
+      expect(result).toEqual({ ok: false, error: 'Invalid workflowFilter' });
     });
 
     it('returns error when no Ollama model is selected', async () => {

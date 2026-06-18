@@ -5,7 +5,7 @@ import type { BrowserWindow } from 'electron';
 
 export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWindow | null): void {
   ipcMain.handle('github:search-repos', (_event, query: string) => {
-    if (!query || query.trim().length < 2) return [];
+    if (typeof query !== 'string' || !query || query.trim().length < 2) return [];
 
     try {
       const words = query.trim().split(/\s+/).filter((w) => w.length > 0);

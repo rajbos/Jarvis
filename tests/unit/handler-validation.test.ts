@@ -204,6 +204,28 @@ describe('IPC handler input validation', () => {
 
   // ── repos handlers ────────────────────────────────────────────────────────
 
+  describe('github:search-repos', () => {
+    it('returns empty array for non-string query', async () => {
+      const result = await callHandler('github:search-repos', 123);
+      expect(result).toEqual([]);
+    });
+
+    it('returns empty array for undefined query', async () => {
+      const result = await callHandler('github:search-repos', undefined);
+      expect(result).toEqual([]);
+    });
+
+    it('returns empty array for empty string query', async () => {
+      const result = await callHandler('github:search-repos', '');
+      expect(result).toEqual([]);
+    });
+
+    it('returns empty array for single character query', async () => {
+      const result = await callHandler('github:search-repos', 'a');
+      expect(result).toEqual([]);
+    });
+  });
+
   describe('github:list-repos-for-org', () => {
     it('accepts null orgLogin (personal repos)', async () => {
       const result = await callHandler('github:list-repos-for-org', null);
@@ -280,6 +302,23 @@ describe('IPC handler input validation', () => {
 
   // ── chat handler ──────────────────────────────────────────────────────────
 
+  describe('window:adjust-width', () => {
+    it('returns { ok: false } for non-number delta', () => {
+      const result = callHandler('window:adjust-width', 'not a number');
+      expect(result).toEqual({ ok: false });
+    });
+
+    it('returns { ok: false } for undefined delta', () => {
+      const result = callHandler('window:adjust-width', undefined);
+      expect(result).toEqual({ ok: false });
+    });
+
+    it('returns { ok: false } when no window exists', () => {
+      const result = callHandler('window:adjust-width', 100);
+      expect(result).toEqual({ ok: false });
+    });
+  });
+
   describe('chat:send', () => {
     it('returns error when messages is not an array', () => {
       const result = callHandler('chat:send', 'hello');
@@ -348,22 +387,22 @@ describe('IPC handler input validation', () => {
   describe('agents:run', () => {
     it('returns error for non-number agentId', async () => {
       const result = await callHandler('agents:run', 'bad', 'repo', 'owner/repo');
-      expect(result).toEqual({ error: 'Invalid agentId' });
+      expect(result).toEqual({ ok: false, error: 'Invalid agentId' });
     });
 
     it('returns error for invalid scopeType', async () => {
       const result = await callHandler('agents:run', 1, 'invalid', 'owner/repo');
-      expect(result).toEqual({ error: 'Invalid scopeType' });
+      expect(result).toEqual({ ok: false, error: 'Invalid scopeType' });
     });
 
     it('returns error for empty scopeValue', async () => {
       const result = await callHandler('agents:run', 1, 'repo', '');
-      expect(result).toEqual({ error: 'Invalid scopeValue' });
+      expect(result).toEqual({ ok: false, error: 'Invalid scopeValue' });
     });
 
     it('returns error for non-string workflowFilter', async () => {
       const result = await callHandler('agents:run', 1, 'repo', 'owner/repo', 42);
-      expect(result).toEqual({ error: 'Invalid workflowFilter' });
+      expect(result).toEqual({ ok: false, error: 'Invalid workflowFilter' });
     });
   });
 

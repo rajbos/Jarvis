@@ -238,6 +238,7 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
   });
 
   ipcMain.handle('window:adjust-width', (event, delta: number) => {
+    if (typeof delta !== 'number') return { ok: false };
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win) return { ok: false };
     const [w, h] = win.getSize();

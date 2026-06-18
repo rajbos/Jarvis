@@ -60,14 +60,14 @@ async function fetchTokenRateLimitRemaining(token: string): Promise<number | nul
 export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWindow | null): void {
   ipcMain.handle('github:fetch-notifications', async () => {
     const auth = loadGitHubAuth(db);
-    if (!auth) return { error: 'Not authenticated' };
+    if (!auth) return { ok: false, error: 'Not authenticated' };
     try {
       const notifications = await fetchNotifications(auth.accessToken);
       storeNotifications(db, notifications);
       saveDatabase();
       return getNotificationCounts(db);
     } catch (err) {
-      return { error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
   });
 
@@ -76,30 +76,30 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
   });
 
   ipcMain.handle('github:fetch-notifications-for-owner', async (_event, owner: string) => {
-    if (typeof owner !== 'string' || owner.length === 0) return { error: 'Invalid owner' };
+    if (typeof owner !== 'string' || owner.length === 0) return { ok: false, error: 'Invalid owner' };
     const auth = loadGitHubAuth(db);
-    if (!auth) return { error: 'Not authenticated' };
+    if (!auth) return { ok: false, error: 'Not authenticated' };
     try {
       const notifications = await fetchNotifications(auth.accessToken);
       storeNotificationsForOwner(db, owner, notifications);
       saveDatabase();
       return getNotificationCounts(db);
     } catch (err) {
-      return { error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
   });
 
   ipcMain.handle('github:fetch-notifications-for-repo', async (_event, repoFullName: string) => {
-    if (typeof repoFullName !== 'string' || !repoFullName.includes('/')) return { error: 'Invalid repo' };
+    if (typeof repoFullName !== 'string' || !repoFullName.includes('/')) return { ok: false, error: 'Invalid repo' };
     const auth = loadGitHubAuth(db);
-    if (!auth) return { error: 'Not authenticated' };
+    if (!auth) return { ok: false, error: 'Not authenticated' };
     try {
       const notifications = await fetchNotificationsForRepo(auth.accessToken, repoFullName);
       storeNotificationsForRepo(db, repoFullName, notifications);
       saveDatabase();
       return getNotificationCounts(db);
     } catch (err) {
-      return { error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
   });
 
