@@ -19,7 +19,7 @@ tools:
   bash: ["*"]
   cache-memory:
     - id: focus-areas
-      key: quality-focus-${{ github.workflow }}
+      key: quality-focus-repository-quality-improver
   github:
     toolsets:
       - default
@@ -33,8 +33,14 @@ safe-outputs:
     max: 1
 
 timeout-minutes: 20
+<<<<<<< current (local changes)
 source: githubnext/agentics/workflows/repository-quality-improver.md@d88ca0e8ee2b080fcba4490ac5b657c98a0eb26b
 engine: copilot
+||||||| base (original)
+source: githubnext/agentics/workflows/repository-quality-improver.md@d88ca0e8ee2b080fcba4490ac5b657c98a0eb26b
+=======
+source: githubnext/agentics/workflows/repository-quality-improver.md@e15e57b40918dbca11b350c55d02ab61934afa75
+>>>>>>> new (upstream)
 ---
 
 # Repository Quality Improvement Agent
