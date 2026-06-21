@@ -22,7 +22,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@joplin/onenote-converter": "^3.6.3",
-    "@types/node": "^25.9.3",
+    "@types/node": "^26.0.0",
     "@types/ws": "^8.18.1",
     "@vitest/coverage-v8": "^4.1.9",
     "concurrently": "^10.0.3",
