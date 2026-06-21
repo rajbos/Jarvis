@@ -1471,6 +1471,10 @@ body.onboarding {
 .container--fill {
   min-width: 0;
   width: 100%;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 h1 {
@@ -4028,8 +4032,11 @@ h5.ec-heading { font-size: 0.85rem; }
   background: #111827;
   border: 1px solid #1e3a5a;
   border-radius: 8px;
-  margin-bottom: 0.85rem;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
 
 .adh-header {
@@ -4114,7 +4121,8 @@ h5.ec-heading { font-size: 0.85rem; }
 }
 
 .adh-list {
-  max-height: 280px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -4181,6 +4189,9 @@ h5.ec-heading { font-size: 0.85rem; }
 
 /* Chart sub-view */
 .adh-chart-view {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   padding: 0.75rem 1rem 0.5rem;
 }
 
