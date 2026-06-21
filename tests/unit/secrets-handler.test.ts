@@ -111,7 +111,7 @@ describe('Secrets plugin — IPC handlers', () => {
 
     it('delegates to listSecretsForRepo for valid input', () => {
       vi.mocked(listSecretsForRepo).mockReturnValue([
-        { secret_name: 'MY_TOKEN' } as Parameters<typeof listSecretsForRepo>[1] extends never ? never : ReturnType<typeof listSecretsForRepo>[0],
+        { secret_name: 'MY_TOKEN' } as any, // eslint-disable-line @typescript-eslint/no-explicit-any
       ]);
       callHandler('secrets:list-for-repo', 'owner/repo');
       expect(listSecretsForRepo).toHaveBeenCalledWith(db, 'owner/repo');

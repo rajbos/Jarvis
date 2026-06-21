@@ -197,9 +197,13 @@ describe('OneDrive plugin — IPC handlers', () => {
     });
 
     it('returns ok:true with folders when group exists', () => {
-      vi.mocked(getGroup).mockReturnValueOnce({ id: 1, name: 'Acme', created_at: '', updated_at: '', ruddr_project_name: null, ruddr_project_paths: null });
+      vi.mocked(getGroup).mockReturnValueOnce({
+        id: 1, name: 'Acme',
+        createdAt: '', updatedAt: '',
+        localRepos: [], githubRepos: [], onedriveFolders: [],
+      } as any); // eslint-disable-line @typescript-eslint/no-explicit-any
       vi.mocked(discoverCustomerFolderForGroup).mockReturnValueOnce([
-        { id: 10, status: 'found' } as never,
+        { id: 10, status: 'found' } as any, // eslint-disable-line @typescript-eslint/no-explicit-any
       ]);
       const result = callHandler('onedrive:discover-for-group', 1) as Record<string, unknown>;
       expect(result.ok).toBe(true);

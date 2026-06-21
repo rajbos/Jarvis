@@ -267,7 +267,7 @@ describe('Notifications plugin — IPC handlers', () => {
     it('delegates to listMergedDependabotPRNotifications when authenticated', async () => {
       vi.mocked(loadGitHubAuth).mockReturnValue({ accessToken: 'tok', login: 'user' } as AuthStub);
       vi.mocked(listMergedDependabotPRNotifications).mockResolvedValueOnce([
-        { id: '1', subject_title: 'chore(deps): bump foo' } as never,
+        { id: '1', subject_title: 'chore(deps): bump foo' } as any, // eslint-disable-line @typescript-eslint/no-explicit-any
       ]);
       const result = (await callHandler('github:check-merged-dependabot-prs')) as unknown[];
       expect(result).toHaveLength(1);
@@ -295,7 +295,7 @@ describe('Notifications plugin — IPC handlers', () => {
     it('delegates to listDeletedBranchNotifications when authenticated', async () => {
       vi.mocked(loadGitHubAuth).mockReturnValue({ accessToken: 'tok', login: 'user' } as AuthStub);
       vi.mocked(listDeletedBranchNotifications).mockResolvedValueOnce([
-        { id: '2', subject_title: 'delete-branch' } as never,
+        { id: '2', subject_title: 'delete-branch' } as any, // eslint-disable-line @typescript-eslint/no-explicit-any
       ]);
       const result = (await callHandler('github:check-deleted-branches')) as unknown[];
       expect(result).toHaveLength(1);
