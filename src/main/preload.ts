@@ -294,6 +294,8 @@ contextBridge.exposeInMainWorld('jarvis', {
     ipcRenderer.on('groups:project-details-refreshed', listener);
     return () => { ipcRenderer.removeListener('groups:project-details-refreshed', listener); };
   },
+  // System locale (for OS-aware number formatting)
+  getSystemLocale: () => ipcRenderer.invoke('app:get-system-locale'),
   // GitHub rate limit
   getGitHubRateLimit: () => ipcRenderer.invoke('github:get-rate-limit'),
   // Auto-dismiss log

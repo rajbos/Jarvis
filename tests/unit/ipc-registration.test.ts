@@ -43,6 +43,7 @@ import { ipcMain } from 'electron';
 const EXPECTED_CHANNELS = [
   // config plugin
   'onboarding:status',
+  'app:get-system-locale',
   'app:get-preferences',
   'app:set-preferences',
   // ollama plugin

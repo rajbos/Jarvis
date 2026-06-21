@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks';
 import { LocalRepoCard } from './LocalRepoCard';
-import { deduplicateLocalRepos } from '../shared/utils';
+import { deduplicateLocalRepos, formatNumber } from '../shared/utils';
 import type { LocalRepo, NotificationCounts } from '../types';
 
 type LocalSortKey = 'name' | 'scanned' | 'notifs';
@@ -45,7 +45,7 @@ export function LocalRepoPanelView({ title, repos, notifCounts, initialSortKey =
         <button class="repo-panel-close" title="Back" onClick={onClose}>&#8249;</button>
         <span class="repo-panel-title">{title}</span>
         <span class="local-panel-count">
-          {deduped.length.toLocaleString()} repo{deduped.length !== 1 ? 's' : ''}
+          {formatNumber(deduped.length)} repo{deduped.length !== 1 ? 's' : ''}
           {hasDuplicates && (
             <span title={`${totalLocalPaths} local copies across ${deduped.length} unique repo${deduped.length !== 1 ? 's' : ''}`}> ({totalLocalPaths} local copies)</span>
           )}

@@ -2615,6 +2615,9 @@ export interface JarvisApi {
 
 
 
+  // System locale
+  getSystemLocale(): Promise<string>;
+
   // GitHub rate limit
 
 

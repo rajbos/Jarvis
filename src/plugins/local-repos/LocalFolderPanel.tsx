@@ -1,4 +1,5 @@
 import type { ScanFolder } from '../types';
+import { formatNumber } from '../shared/utils';
 
 interface LocalFolderPanelProps {
   folders: ScanFolder[];
@@ -36,7 +37,7 @@ export function LocalFolderPanel({
             >
               <span class="org-label" title={folder.path}>{label}</span>
               <span class="org-meta">
-                {(folder.repoCount ?? 0).toLocaleString()} repo{(folder.repoCount ?? 0) !== 1 ? 's' : ''}
+                {formatNumber(folder.repoCount ?? 0)} repo{(folder.repoCount ?? 0) !== 1 ? 's' : ''}
               </span>
             </div>
           );

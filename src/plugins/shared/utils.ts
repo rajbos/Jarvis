@@ -1,5 +1,18 @@
 // ── Shared renderer utility helpers ──────────────────────────────────────────
 
+// System locale for OS-aware number formatting. Set once at app startup via
+// setSystemLocale() so all components share the same locale without re-fetching.
+let _systemLocale: string | undefined;
+
+export function setSystemLocale(locale: string): void {
+  _systemLocale = locale;
+}
+
+/** Format a number using the OS regional number format settings. */
+export function formatNumber(n: number): string {
+  return n.toLocaleString(_systemLocale);
+}
+
 /** Returns a human-readable relative time label (e.g. "3h ago", "2d ago"). */
 export function relativeAge(dateStr: string): string {
   const ms = Date.now() - new Date(dateStr).getTime();
