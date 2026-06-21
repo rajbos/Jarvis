@@ -1962,6 +1962,9 @@ import type {
 
 
   AgentDebugContextPayload,
+  BrowserExtensionEventPayload,
+  NewRuddrProjectsPayload,
+  BrowserExtensionConnectedPayload,
 
 
 
@@ -1998,6 +2001,9 @@ export type {
 
 
   AgentDebugContextPayload,
+  BrowserExtensionEventPayload,
+  NewRuddrProjectsPayload,
+  BrowserExtensionConnectedPayload,
 
 
 
@@ -2485,7 +2491,7 @@ export interface JarvisApi {
 
 
 
-  onNewRuddrProjects(callback: (projects: Array<{ name: string; path: string }>) => void): () => void;
+  onNewRuddrProjects(callback: (payload: NewRuddrProjectsPayload) => void): () => void;
 
   onRuddrProjectDetailsRefreshed(callback: () => void): () => void;
 
@@ -2607,7 +2613,9 @@ export interface JarvisApi {
 
 
 
-  onBrowserExtensionConnected(cb: (data: { count: number }) => void): () => void;
+  onBrowserExtensionConnected(cb: (data: BrowserExtensionConnectedPayload) => void): () => void;
+
+  onBrowserExtensionEvent(cb: (event: BrowserExtensionEventPayload) => void): () => void;
 
 
 
