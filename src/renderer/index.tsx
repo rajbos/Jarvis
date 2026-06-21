@@ -751,14 +751,13 @@ function App() {
     <div class="app-shell">
       <div class="app-main-area">
         <div class="main-scroll" ref={mainScrollRef}>
+        <div class={`container${(activeTab === 'groups-dashboard' || activeTab === 'dismiss-history') ? ' container--fill' : ''}`}>
+      <div class="search-row">
+        <SearchBar />
         {!showChatPanel && selectedOllamaModel && (
           <button class="chat-reopen-btn" title="Open Chat" onClick={handleOpenChat}>💬</button>
         )}
-        <div class={`container${(activeTab === 'groups-dashboard' || activeTab === 'dismiss-history') ? ' container--fill' : ''}`}>
-      <h1>Jarvis</h1>
-      <p class="subtitle">Personal Assistant</p>
-
-      <SearchBar />
+      </div>
 
       {/* ── Tab bar ──────────────────────────────────────────────────────── */}
       <div class="tab-bar">
