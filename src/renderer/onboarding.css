@@ -4189,14 +4189,16 @@ h5.ec-heading { font-size: 0.85rem; }
 .adh-chart-view {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
   padding: 0.75rem 1rem 0.5rem;
+  display: flex;
+  flex-direction: column;
 }
 
 .adh-chart-controls {
   display: flex;
   gap: 0.4rem;
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.5rem;
+  flex-shrink: 0;
 }
 
 .adh-gran-btn {
@@ -4222,12 +4224,16 @@ h5.ec-heading { font-size: 0.85rem; }
 }
 
 .adh-chart-scroll {
-  overflow-x: auto;
-  padding-bottom: 0.25rem;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
 }
 
 .adh-chart-svg {
   display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .adh-chart-empty {
@@ -4241,4 +4247,5 @@ h5.ec-heading { font-size: 0.85rem; }
   color: #6a9ac0;
   margin-top: 0.4rem;
   text-align: right;
+  flex-shrink: 0;
 }
