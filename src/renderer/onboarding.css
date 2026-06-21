@@ -1477,17 +1477,7 @@ body.onboarding {
   min-height: 0;
 }
 
-h1 {
-  font-size: 2rem;
-  margin-bottom: 0.5rem;
-  color: #e94560;
-}
 
-.subtitle {
-  color: #c8c8c8;
-  margin-bottom: 2rem;
-  font-size: 0.95rem;
-}
 
 .step {
   background: #16213e;
@@ -2458,11 +2448,20 @@ h5.ec-heading { font-size: 0.85rem; }
   flex-shrink: 0;
 }
 
+.search-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.search-row .search-wrap {
+  flex: 1;
+  margin-bottom: 0;
+}
+
 .chat-reopen-btn {
-  position: sticky;
-  top: 1rem;
-  float: right;
-  margin: 0.75rem 0.75rem 0 0;
+  flex-shrink: 0;
   background: #0f3460;
   border: 1px solid #1a4a8a;
   color: #e0e0e0;
@@ -2473,7 +2472,6 @@ h5.ec-heading { font-size: 0.85rem; }
   cursor: pointer;
   padding: 0;
   line-height: 1;
-  z-index: 20;
   box-shadow: 0 2px 8px rgba(0,0,0,0.4);
   transition: background 0.15s, transform 0.1s;
 }
