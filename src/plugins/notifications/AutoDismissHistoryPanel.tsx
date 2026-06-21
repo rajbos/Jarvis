@@ -66,45 +66,54 @@ function BarChart({ data, granularity }: {
   // Show oldest→newest left to right
   const sorted = [...data].reverse();
   const maxCount = Math.max(...sorted.map((d) => d.count), 1);
-  const barWidth = 28;
-  const barGap = 6;
-  const chartHeight = 120;
-  const labelH = 56;
-  const paddingLeft = 36;
-  const paddingRight = 8;
-  const totalWidth = paddingLeft + sorted.length * (barWidth + barGap) + paddingRight;
+  const n = sorted.length;
 
-  // Y-axis ticks: 0, half, max (deduplicated)
+  // Coordinate space (abstract units — viewBox scales this to fill the container)
+  const padL = 56;
+  const padR = 16;
+  const padT = 24;
+  const padB = 60;
+  const plotW = 800;
+  const plotH = 300;
+  const svgW = padL + plotW + padR;
+  const svgH = padT + plotH + padB;
+
+  // Bars distributed evenly across the plot area
+  const barUnit = plotW / n;
+  const barW = Math.min(barUnit * 0.7, 100);
+  const plotTop = padT;
+  const plotBottom = padT + plotH;
+  const plotHeight = plotH;
+
+  // Y-axis ticks
   const yTicks = [...new Set([0, Math.round(maxCount / 2), maxCount])];
-  const barsWidth = totalWidth - paddingLeft - paddingRight;
 
   return (
     <div class="adh-chart-scroll">
       <svg
-        width={Math.max(totalWidth, 200)}
-        height={chartHeight + labelH}
-        style="overflow: visible;"
+        viewBox={`0 0 ${svgW} ${svgH}`}
+        preserveAspectRatio="xMinYMin meet"
         class="adh-chart-svg"
       >
         {/* Y-axis grid lines + labels */}
         {yTicks.map((tick) => {
-          const y = chartHeight - Math.round((tick / maxCount) * chartHeight);
+          const y = plotBottom - (tick / maxCount) * plotHeight;
           return (
             <g key={`tick-${tick}`}>
               <line
-                x1={paddingLeft}
+                x1={padL}
                 y1={y}
-                x2={paddingLeft + barsWidth}
+                x2={padL + plotW}
                 y2={y}
                 stroke="#1e3a5a"
                 stroke-width="1"
                 stroke-dasharray={tick === 0 ? undefined : '3 3'}
               />
               <text
-                x={paddingLeft - 4}
+                x={padL - 6}
                 y={y + 4}
                 text-anchor="end"
-                font-size="9"
+                font-size="12"
                 fill="#3a5a7a"
               >
                 {tick}
@@ -114,9 +123,9 @@ function BarChart({ data, granularity }: {
         })}
 
         {sorted.map((d, i) => {
-          const barH = Math.max(2, Math.round((d.count / maxCount) * chartHeight));
-          const x = paddingLeft + i * (barWidth + barGap);
-          const y = chartHeight - barH;
+          const barH = Math.max(1, (d.count / maxCount) * plotHeight);
+          const x = padL + i * barUnit;
+          const y = plotBottom - barH;
           const label = formatPeriod(d.period, granularity);
           return (
             <g key={d.period}>
@@ -124,29 +133,28 @@ function BarChart({ data, granularity }: {
               <rect
                 x={x}
                 y={y}
-                width={barWidth}
+                width={barW}
                 height={barH}
                 fill="#1a7a44"
                 rx={3}
               />
               <text
-                x={x + barWidth / 2}
-                y={y - 4}
+                x={x + barW / 2}
+                y={y - 6}
                 text-anchor="middle"
-                font-size="10"
+                font-size="12"
                 fill="#4eca8a"
               >
                 {d.count}
               </text>
-              {/* Period label — rotated -45° downward from bar centre */}
               <text
-                x={x + barWidth / 2}
-                y={chartHeight + 8}
+                x={x + barW / 2}
+                y={plotBottom + 14}
                 text-anchor="start"
                 dominant-baseline="middle"
-                font-size="9"
+                font-size="11"
                 fill="#5a7a64"
-                transform={`rotate(45, ${x + barWidth / 2}, ${chartHeight + 8})`}
+                transform={`rotate(45, ${x + barW / 2}, ${plotBottom + 14})`}
               >
                 {label}
               </text>
