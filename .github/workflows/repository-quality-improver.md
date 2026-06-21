@@ -2,7 +2,7 @@
 name: Repository Quality Improver
 description: Daily analysis of repository quality focusing on a different software development lifecycle area each run
 on:
-  schedule: daily
+  schedule: daily on weekdays
   workflow_dispatch:
   push:
     paths:
@@ -13,7 +13,6 @@ permissions:
   actions: read
   issues: read
   pull-requests: read
-
 
 tools:
   bash: ["*"]
@@ -33,14 +32,6 @@ safe-outputs:
     max: 1
 
 timeout-minutes: 20
-<<<<<<< current (local changes)
-source: githubnext/agentics/workflows/repository-quality-improver.md@d88ca0e8ee2b080fcba4490ac5b657c98a0eb26b
-engine: copilot
-||||||| base (original)
-source: githubnext/agentics/workflows/repository-quality-improver.md@d88ca0e8ee2b080fcba4490ac5b657c98a0eb26b
-=======
-source: githubnext/agentics/workflows/repository-quality-improver.md@e15e57b40918dbca11b350c55d02ab61934afa75
->>>>>>> new (upstream)
 ---
 
 # Repository Quality Improvement Agent
@@ -144,14 +135,14 @@ gh issue list \
   --state open \
   --json number,title,body,createdAt,labels \
   --limit 10 \
-  > /tmp/existing_quality_issues.json
+  > /tmp/gh-aw/agent/existing_quality_issues.json
 
-EXISTING_COUNT=$(jq length /tmp/existing_quality_issues.json)
+EXISTING_COUNT=$(jq length /tmp/gh-aw/agent/existing_quality_issues.json)
 echo "Found $EXISTING_COUNT existing open quality improvement issue(s)"
 
 if [ "$EXISTING_COUNT" -gt 0 ]; then
   echo "Existing issues:"
-  jq -r '.[] | "  #\(.number): \(.title) (created \(.createdAt))"' /tmp/existing_quality_issues.json
+  jq -r '.[] | "  #\(.number): \(.title) (created \(.createdAt))"' /tmp/gh-aw/agent/existing_quality_issues.json
 fi
 ```
 
@@ -164,17 +155,17 @@ Based on the search results, decide how to proceed:
 
 ```bash
 if [ "$EXISTING_COUNT" -eq 0 ]; then
-  echo "MODE=create" > /tmp/quality_action_mode.env
+  echo "MODE=create" > /tmp/gh-aw/agent/quality_action_mode.env
   echo "Action mode: CREATE new issue"
 else
-  EXISTING_ISSUE_NUMBER=$(jq -r '.[0].number' /tmp/existing_quality_issues.json)
-  EXISTING_ISSUE_TITLE=$(jq -r '.[0].title' /tmp/existing_quality_issues.json)
-  echo "MODE=update" > /tmp/quality_action_mode.env
-  echo "EXISTING_ISSUE_NUMBER=$EXISTING_ISSUE_NUMBER" >> /tmp/quality_action_mode.env
+  EXISTING_ISSUE_NUMBER=$(jq -r '.[0].number' /tmp/gh-aw/agent/existing_quality_issues.json)
+  EXISTING_ISSUE_TITLE=$(jq -r '.[0].title' /tmp/gh-aw/agent/existing_quality_issues.json)
+  echo "MODE=update" > /tmp/gh-aw/agent/quality_action_mode.env
+  echo "EXISTING_ISSUE_NUMBER=$EXISTING_ISSUE_NUMBER" >> /tmp/gh-aw/agent/quality_action_mode.env
   echo "Action mode: UPDATE existing issue #$EXISTING_ISSUE_NUMBER ($EXISTING_ISSUE_TITLE)"
 
   # Save the existing issue body for comparison in Phase 2
-  jq -r '.[0].body' /tmp/existing_quality_issues.json > /tmp/existing_issue_body.md
+  jq -r '.[0].body' /tmp/gh-aw/agent/existing_quality_issues.json > /tmp/gh-aw/agent/existing_issue_body.md
 fi
 ```
 
@@ -344,7 +335,7 @@ find .github/workflows -name "*.yml" -exec wc -l {} \; | sort -rn | head -5
 Before writing the report, check the action mode determined in Phase 0.5:
 
 ```bash
-source /tmp/quality_action_mode.env
+source /tmp/gh-aw/agent/quality_action_mode.env
 echo "Action mode: $MODE"
 ```
 
@@ -442,7 +433,7 @@ The following actionable tasks address the findings above.
 
 When an existing open issue was found, compare your new analysis findings against the existing issue body to determine what's new:
 
-1. **Read the existing issue body** from `/tmp/existing_issue_body.md`
+1. **Read the existing issue body** from `/tmp/gh-aw/agent/existing_issue_body.md`
 2. **Identify new findings**: Compare the focus areas, metrics, and tasks in your new analysis with those already in the existing issue. Look for:
    - A different focus area than what the existing issue covers
    - New metrics or worsened/improved metrics in an area already covered
@@ -478,10 +469,10 @@ When an existing open issue was found, compare your new analysis findings agains
 Use the GitHub CLI to add the comment:
 
 ```bash
-source /tmp/quality_action_mode.env
+source /tmp/gh-aw/agent/quality_action_mode.env
 gh issue comment "$EXISTING_ISSUE_NUMBER" \
   --repo "${{ github.repository }}" \
-  --body-file /tmp/quality_update_comment.md
+  --body-file /tmp/gh-aw/agent/quality_update_comment.md
 echo "Commented on existing issue #$EXISTING_ISSUE_NUMBER with new findings"
 ```
 
@@ -576,13 +567,13 @@ The agentic workflow runtime enforces a security policy that **blocks heredoc sy
 
 Instead of a heredoc, use `printf` or multiple `echo` statements:
 ```bash
-# Instead of: cat > /tmp/file.json << 'EOF'
+# Instead of: cat > /tmp/gh-aw/agent/file.json << 'EOF'
 # Use printf with escaped newlines:
-printf '{\n  "key": "value"\n}\n' > /tmp/file.json
+printf '{\n  "key": "value"\n}\n' > /tmp/gh-aw/agent/file.json
 
 # Or write a Python script to a file using printf, then execute it:
-printf 'import sys\nprint("hello")\n' > /tmp/script.py
-python3 /tmp/script.py
+printf 'import sys\nprint("hello")\n' > /tmp/gh-aw/agent/script.py
+python3 /tmp/gh-aw/agent/script.py
 ```
 
 For writing JSON to the cache-memory history file, construct it with `jq` or write it with `printf`/`echo` line by line.
