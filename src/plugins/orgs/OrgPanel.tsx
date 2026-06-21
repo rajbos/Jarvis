@@ -1,4 +1,5 @@
 import type { Org, NotificationCounts } from '../types';
+import { formatNumber } from '../shared/utils';
 
 interface OrgPanelProps {
   orgs: Org[];
@@ -99,7 +100,7 @@ export function OrgPanel({
                     {nc}
                   </span>
                 )}
-                <span class="org-repos-count">{org.repoCount.toLocaleString()} repo{org.repoCount !== 1 ? 's' : ''}</span>
+                <span class="org-repos-count">{formatNumber(org.repoCount)} repo{org.repoCount !== 1 ? 's' : ''}</span>
               </span>
               <span
                 class={`fav-star${isFav ? ' fav-star-active' : ''}`}
@@ -142,7 +143,7 @@ export function OrgPanel({
                   {personalCount}
                 </span>
               )}
-              <span class="org-repos-count">{directRepoCount.toLocaleString()} repo{directRepoCount !== 1 ? 's' : ''}</span>
+              <span class="org-repos-count">{formatNumber(directRepoCount)} repo{directRepoCount !== 1 ? 's' : ''}</span>
             </span>
           </div>
         )}
@@ -163,7 +164,7 @@ export function OrgPanel({
                   {starredCount}
                 </span>
               )}
-              <span class="org-repos-count">{starredRepoCount.toLocaleString()} repo{starredRepoCount !== 1 ? 's' : ''}</span>
+              <span class="org-repos-count">{formatNumber(starredRepoCount)} repo{starredRepoCount !== 1 ? 's' : ''}</span>
             </span>
           </div>
         )}

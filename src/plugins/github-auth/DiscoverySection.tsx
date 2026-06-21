@@ -1,4 +1,5 @@
 import { StatusBadge } from '../shared/StatusBadge';
+import { formatNumber } from '../shared/utils';
 import type { DiscoveryProgress } from '../types';
 
 interface DiscoverySectionProps {
@@ -16,22 +17,22 @@ export function DiscoverySection({ progress, finished, onToggleOrgs }: Discovery
     badgeStatus = 'completed';
     badgeLabel = 'Complete';
     const p = progress!;
-    detail = `Found ${p.orgsFound.toLocaleString()} org${p.orgsFound !== 1 ? 's' : ''} and ${p.reposFound.toLocaleString()} repo${p.reposFound !== 1 ? 's' : ''}`;
+    detail = `Found ${formatNumber(p.orgsFound)} org${p.orgsFound !== 1 ? 's' : ''} and ${formatNumber(p.reposFound)} repo${p.reposFound !== 1 ? 's' : ''}`;
   } else if (progress) {
     badgeStatus = 'in-progress';
     badgeLabel = 'Running';
     const phaseLabels: Record<string, string> = {
       orgs: 'Discovering organizations...',
-      repos: `Scanning org repositories... (${progress.reposFound.toLocaleString()} repos so far)`,
-      'user-repos': `Scanning personal + collaborator repos... (${progress.reposFound.toLocaleString()} repos so far)`,
-      starred: `Fetching starred repos... (${progress.reposFound.toLocaleString()} repos so far)`,
+      repos: `Scanning org repositories... (${formatNumber(progress.reposFound)} repos so far)`,
+      'user-repos': `Scanning personal + collaborator repos... (${formatNumber(progress.reposFound)} repos so far)`,
+      starred: `Fetching starred repos... (${formatNumber(progress.reposFound)} repos so far)`,
       'pat-repos': progress.currentOrg
-        ? `PAT: scanning ${progress.currentOrg}... (${progress.reposFound.toLocaleString()} new repos)`
-        : `PAT: scanning collaborator repos... (${progress.reposFound.toLocaleString()} new repos)`,
+        ? `PAT: scanning ${progress.currentOrg}... (${formatNumber(progress.reposFound)} new repos)`
+        : `PAT: scanning collaborator repos... (${formatNumber(progress.reposFound)} new repos)`,
     };
     detail = phaseLabels[progress.phase] || 'Working...';
     if (progress.orgsFound > 0) {
-      detail += ` \u2014 ${progress.orgsFound.toLocaleString()} org${progress.orgsFound !== 1 ? 's' : ''} found`;
+      detail += ` \u2014 ${formatNumber(progress.orgsFound)} org${progress.orgsFound !== 1 ? 's' : ''} found`;
     }
   }
 

@@ -1,4 +1,5 @@
 import { StatusBadge } from '../shared/StatusBadge';
+import { formatNumber } from '../shared/utils';
 import type { ScanFolder, LocalScanProgress } from '../types';
 
 interface LocalReposStepProps {
@@ -25,7 +26,7 @@ export function LocalReposStep({
   if (configured && (scanFinished || scanProgress?.phase === 'done')) {
     badgeStatus = 'completed';
     badgeLabel = 'Ready';
-    detail = `${totalRepos.toLocaleString()} local repo${totalRepos !== 1 ? 's' : ''} found`;
+    detail = `${formatNumber(totalRepos)} local repo${totalRepos !== 1 ? 's' : ''} found`;
   } else if (configured && scanning) {
     badgeStatus = 'in-progress';
     badgeLabel = 'Scanning';

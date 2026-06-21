@@ -1,5 +1,5 @@
 // ── Config & onboarding IPC handlers ─────────────────────────────────────────
-import { ipcMain } from 'electron';
+import { ipcMain, app } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import type { BrowserWindow } from 'electron';
 import { getOnboardingStatus } from '../../agent/onboarding';
@@ -13,6 +13,8 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
   });
+
+  ipcMain.handle('app:get-system-locale', () => app.getSystemLocale());
 
   ipcMain.handle('app:get-preferences', () => {
     try {

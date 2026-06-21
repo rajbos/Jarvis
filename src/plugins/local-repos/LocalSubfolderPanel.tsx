@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks';
 import type { LocalRepo, NotificationCounts } from '../types';
-import { getImmediateChildren, normalizeGitHubUrl } from '../shared/utils';
+import { getImmediateChildren, normalizeGitHubUrl, formatNumber } from '../shared/utils';
 
 interface LocalSubfolderPanelProps {
   path: string;
@@ -63,7 +63,7 @@ export function LocalSubfolderPanel({
           <button class="repo-panel-close" title="Back" onClick={onBack}>&#8249;</button>
         )}
         <span class="repo-panel-title">{folderName}</span>
-        <span class="local-panel-count">{totalRepos.toLocaleString()} repo{totalRepos !== 1 ? 's' : ''}</span>
+        <span class="local-panel-count">{formatNumber(totalRepos)} repo{totalRepos !== 1 ? 's' : ''}</span>
         <span style={{ flex: 1 }} />
         {notifCounts && totalNotifs > 0 && (
           <span
@@ -93,7 +93,7 @@ export function LocalSubfolderPanel({
                   {nc > 0 && (
                     <span class="notif-badge" title={`${nc} unread`}>{nc}</span>
                   )}
-                  <span class="org-repos-count">{child.repoCount.toLocaleString()} repo{child.repoCount !== 1 ? 's' : ''}</span>
+                  <span class="org-repos-count">{formatNumber(child.repoCount)} repo{child.repoCount !== 1 ? 's' : ''}</span>
                 </span>
               </div>
             );

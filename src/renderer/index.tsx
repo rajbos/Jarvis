@@ -20,7 +20,7 @@ import { LocalFolderConfigPanel } from '../plugins/local-repos/LocalFolderConfig
 import { LocalFolderPanel } from '../plugins/local-repos/LocalFolderPanel';
 import { LocalSubfolderPanel } from '../plugins/local-repos/LocalSubfolderPanel';
 import { LocalRepoPanelView } from '../plugins/local-repos/LocalRepoPanelView';
-import { getReposUnder, hasDeepRepos } from '../plugins/shared/utils';
+import { getReposUnder, hasDeepRepos, setSystemLocale, formatNumber } from '../plugins/shared/utils';
 import { SecretsStep } from '../plugins/secrets/SecretsStep';
 import { SecretsScanPanel } from '../plugins/secrets/SecretsScanPanel';
 import { DashboardPanel } from '../plugins/dashboard/DashboardPanel';
@@ -139,6 +139,7 @@ function App() {
 
   // Initial status check
   useEffect(() => {
+    window.jarvis.getSystemLocale().then(setSystemLocale).catch(() => {/* use browser default */});
     (async () => {
       try {
         const status = await window.jarvis.getGitHubOAuthStatus();
@@ -1204,12 +1205,12 @@ function BackgroundStatusBar({
               class="bg-status-rate-limit"
               title={oauthBadge.error
                 ? `OAuth rate limit error: ${oauthBadge.error}`
-                : `OAuth: ${oauthBadge.resource!.remaining}/${oauthBadge.resource!.limit} calls remaining (resets ${new Date(oauthBadge.resource!.reset * 1000).toLocaleTimeString()})`}
+                : `OAuth: ${formatNumber(oauthBadge.resource!.remaining)}/${formatNumber(oauthBadge.resource!.limit)} calls remaining (resets ${new Date(oauthBadge.resource!.reset * 1000).toLocaleTimeString()})`}
               style={{ color: oauthBadge.error ? '#888' : (oauthBadge.resource ? rateLimitColor(oauthBadge.resource.remaining) : '#888') }}
             >
               {oauthBadge.error || !oauthBadge.resource
                 ? '⚡ OAuth –'
-                : `⚡ OAuth ${oauthBadge.resource.remaining.toLocaleString()}/${oauthBadge.resource.limit.toLocaleString()}${oauthBadge.resource.remaining < 500 ? ` · ${formatResetIn(oauthBadge.resource.reset)}` : ''}`}
+                : `⚡ OAuth ${formatNumber(oauthBadge.resource.remaining)}/${formatNumber(oauthBadge.resource.limit)}${oauthBadge.resource.remaining < 500 ? ` · ${formatResetIn(oauthBadge.resource.reset)}` : ''}`}
             </span>
           )}
           {oauthBadge && patBadge && (
@@ -1220,12 +1221,12 @@ function BackgroundStatusBar({
               class="bg-status-rate-limit"
               title={patBadge.error
                 ? `PAT rate limit error: ${patBadge.error}`
-                : `PAT: ${patBadge.resource!.remaining}/${patBadge.resource!.limit} calls remaining (resets ${new Date(patBadge.resource!.reset * 1000).toLocaleTimeString()})`}
+                : `PAT: ${formatNumber(patBadge.resource!.remaining)}/${formatNumber(patBadge.resource!.limit)} calls remaining (resets ${new Date(patBadge.resource!.reset * 1000).toLocaleTimeString()})`}
               style={{ color: patBadge.error ? '#888' : (patBadge.resource ? rateLimitColor(patBadge.resource.remaining) : '#888') }}
             >
               {patBadge.error || !patBadge.resource
                 ? '⚡ PAT –'
-                : `⚡ PAT ${patBadge.resource.remaining.toLocaleString()}/${patBadge.resource.limit.toLocaleString()}${patBadge.resource.remaining < 500 ? ` · ${formatResetIn(patBadge.resource.reset)}` : ''}`}
+                : `⚡ PAT ${formatNumber(patBadge.resource.remaining)}/${formatNumber(patBadge.resource.limit)}${patBadge.resource.remaining < 500 ? ` · ${formatResetIn(patBadge.resource.reset)}` : ''}`}
             </span>
           )}
         </div>
