@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { DiscoveryProgress, LocalScanProgress, SecretsScanProgress } from '../plugins/types';
+import type { DiscoveryProgress, LocalScanProgress, SecretsScanProgress, OAuthResult } from '../plugins/types';
 import type {
   AgentSessionStartingPayload,
   AgentAnalysisCompletePayload,
@@ -7,6 +7,9 @@ import type {
   AgentSessionCompletePayload,
   AgentSessionErrorPayload,
   AgentDebugContextPayload,
+  BrowserExtensionEventPayload,
+  NewRuddrProjectsPayload,
+  BrowserExtensionConnectedPayload,
 } from '../types/ipc-payloads';
 
 contextBridge.exposeInMainWorld('jarvis', {
@@ -110,8 +113,8 @@ contextBridge.exposeInMainWorld('jarvis', {
     ipcRenderer.on('chat:open', listener);
     return () => { ipcRenderer.removeListener('chat:open', listener); };
   },
-  onOAuthComplete: (callback: (result: Record<string, string>) => void) => {
-    const listener = (_event: unknown, result: Record<string, string>) => callback(result);
+  onOAuthComplete: (callback: (result: OAuthResult) => void) => {
+    const listener = (_event: unknown, result: OAuthResult) => callback(result);
     ipcRenderer.on('github:oauth-complete', listener);
     return () => { ipcRenderer.removeListener('github:oauth-complete', listener); };
   },
@@ -274,18 +277,23 @@ contextBridge.exposeInMainWorld('jarvis', {
   browserListTabs: () => ipcRenderer.invoke('browser:list-tabs'),
   browserGetPageContent: (tabId?: number) => ipcRenderer.invoke('browser:get-page-content', tabId),
   browserFocusWindow: (tabId?: number) => ipcRenderer.invoke('browser:focus-window', tabId),
-  onBrowserExtensionConnected: (callback: (data: { count: number }) => void) => {
-    const listener = (_event: unknown, data: { count: number }) => callback(data);
+  onBrowserExtensionConnected: (callback: (data: BrowserExtensionConnectedPayload) => void) => {
+    const listener = (_event: unknown, data: BrowserExtensionConnectedPayload) => callback(data);
     ipcRenderer.on('browser:extension-connected', listener);
     return () => { ipcRenderer.removeListener('browser:extension-connected', listener); };
+  },
+  onBrowserExtensionEvent: (callback: (event: BrowserExtensionEventPayload) => void) => {
+    const listener = (_event: unknown, payload: BrowserExtensionEventPayload) => callback(payload);
+    ipcRenderer.on('browser:extension-event', listener);
+    return () => { ipcRenderer.removeListener('browser:extension-event', listener); };
   },
   onBackgroundStatus: (callback: (message: string) => void) => {
     const listener = (_event: unknown, message: string) => callback(message);
     ipcRenderer.on('app:background-status', listener);
     return () => { ipcRenderer.removeListener('app:background-status', listener); };
   },
-  onNewRuddrProjects: (callback: (projects: Array<{ name: string; path: string }>) => void) => {
-    const listener = (_event: unknown, projects: Array<{ name: string; path: string }>) => callback(projects);
+  onNewRuddrProjects: (callback: (payload: NewRuddrProjectsPayload) => void) => {
+    const listener = (_event: unknown, payload: NewRuddrProjectsPayload) => callback(payload);
     ipcRenderer.on('groups:new-ruddr-projects', listener);
     return () => { ipcRenderer.removeListener('groups:new-ruddr-projects', listener); };
   },

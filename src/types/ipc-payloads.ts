@@ -35,3 +35,16 @@ export interface AgentDebugContextPayload {
   systemPrompt: string;
   userMessage: string;
 }
+
+export interface BrowserExtensionEventPayload {
+  type: 'connected' | 'disconnected' | 'tab-updated' | 'navigation-complete';
+  data?: unknown;
+}
+
+export interface NewRuddrProjectsPayload {
+  projects: Array<{ name: string; path: string }>;
+}
+
+export interface BrowserExtensionConnectedPayload {
+  count: number;
+}
