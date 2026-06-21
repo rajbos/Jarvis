@@ -38,3 +38,64 @@ Rob's personal assistant agent — a locally-hosted AI agent built with Electron
 - Cross-repo activity tracking with weekly summary generation and work journal
 - Async background tasks with rate-limit awareness and cron scheduling
 - Optional container isolation for security-sensitive operations
+
+## MCP Server
+
+Jarvis exposes cached data (Ruddr projects, customer groups, OneNote pages) via a [Model Context Protocol](https://modelcontextprotocol.io/) server over stdio. Any MCP-compatible client (VS Code, Claude Desktop, Copilot, etc.) can connect.
+
+### Setup
+
+```bash
+# Build the MCP server
+npm run build:mcp
+
+# Or build everything
+npm run build
+```
+
+The server reads from the Jarvis SQLite database at `%APPDATA%\Jarvis\jarvis.db` (override with `JARVIS_DB` env var). Jarvis must have been started at least once to create the database.
+
+### Connecting from an editor
+
+Configure your editor's MCP client to spawn the server. Examples:
+
+**VS Code** (`.vscode/mcp.json`):
+```json
+{
+  "servers": {
+    "jarvis": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["${workspaceFolder}/dist/mcp-server/index.js"]
+    }
+  }
+}
+```
+
+**Claude Desktop** (`claude_desktop_config.json`):
+```json
+{
+  "mcpServers": {
+    "jarvis": {
+      "command": "node",
+      "args": ["C:\\path\\to\\jarvis\\dist\\mcp-server\\index.js"]
+    }
+  }
+}
+```
+
+### Available tools
+
+After connecting, the following tools are available:
+
+| Tool | Description |
+|---|---|
+| `ruddr_list_projects` | List all cached Ruddr projects |
+| `ruddr_get_project` | Look up a project by name or path |
+| `groups_list` | List all customer/client groups |
+| `groups_with_ruddr` | Groups that have Ruddr associations |
+| `onenote_list_sections` | List cached OneNote sections (filterable by group) |
+| `onenote_search` | Keyword search over page titles + content |
+| `onenote_get_page` | Get full page content |
+
+See [docs/MCP-SERVER.md](docs/MCP-SERVER.md) for detailed usage.
