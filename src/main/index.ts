@@ -20,6 +20,10 @@ import { saveDatabase } from '../storage/database';
 
 import { stopBridgeServer } from '../plugins/browser-companion/server';
 
+import { setLogLevel } from '../services/logger';
+
+setLogLevel(app.isPackaged ? 'warn' : 'debug');
+
 
 
 let mainWindow: BrowserWindow | null = null;

@@ -1,5 +1,6 @@
 import type { Database as SqlJsDatabase } from 'sql.js';
 import { saveDatabase } from '../storage/database';
+import { logger } from './logger';
 
 const GITHUB_API_BASE = 'https://api.github.com';
 const PER_PAGE = 100;
@@ -88,7 +89,7 @@ async function rateLimitAwarePause(state: DiscoveryState): Promise<void> {
   state.callsSinceLastPause++;
 
   if (state.callsSinceLastPause >= CALLS_PER_BATCH) {
-    console.log(`[Discovery] Pausing after ${state.callsSinceLastPause} API calls (batch cooldown)…`);
+    logger.debug(`[Discovery] Pausing after ${state.callsSinceLastPause} API calls (batch cooldown)…`);
     await sleep(BATCH_PAUSE_MS);
     state.callsSinceLastPause = 0;
   }
@@ -96,7 +97,7 @@ async function rateLimitAwarePause(state: DiscoveryState): Promise<void> {
   if (state.lastRateLimit && state.lastRateLimit.remaining < LOW_RATE_LIMIT_THRESHOLD) {
     const waitMs = state.lastRateLimit.reset * 1000 - Date.now() + 1000;
     if (waitMs > 0) {
-      console.log(
+      logger.debug(
         `[Discovery] Rate limit low (${state.lastRateLimit.remaining} remaining). ` +
           `Waiting ${Math.ceil(waitMs / 1000)}s until reset…`,
       );
@@ -132,7 +133,7 @@ async function githubGet<T>(
   const pageInfo = pageNum !== undefined && totalPages !== undefined
     ? ` — ${pageNum}/${totalPages} pages`
     : '';
-  console.log(
+  logger.debug(
     `[Discovery] ${url.replace(GITHUB_API_BASE, '')}${pageInfo} — ` +
       `rate limit: ${state.lastRateLimit.remaining}/${state.lastRateLimit.limit}`,
   );
@@ -141,7 +142,7 @@ async function githubGet<T>(
   if (response.status === 403 && state.lastRateLimit.remaining === 0) {
     const waitMs = state.lastRateLimit.reset * 1000 - Date.now() + 1000;
     if (waitMs > 0) {
-      console.log(`[Discovery] Rate limit exceeded. Waiting ${Math.ceil(waitMs / 1000)}s…`);
+      logger.debug(`[Discovery] Rate limit exceeded. Waiting ${Math.ceil(waitMs / 1000)}s…`);
       await sleep(waitMs);
     }
     state.callsSinceLastPause = 0;
@@ -230,7 +231,7 @@ async function fetchPagesSortedSince(
     if (sinceDate && result.data.length > 0) {
       const oldestOnPage = result.data[result.data.length - 1];
       if (oldestOnPage.updated_at && new Date(oldestOnPage.updated_at) < sinceDate) {
-        console.log(
+        logger.debug(
           `[Discovery] Early-stop after ${pagesFetched} page(s): oldest updated_at ${oldestOnPage.updated_at} < cutoff ${sinceDate.toISOString()}`,
         );
         break;
@@ -434,7 +435,7 @@ export async function runDiscovery(
 
   try {
     // ── Phase 1: Organizations ──────────────────────────────────────
-    console.log('[Discovery] Starting — fetching organizations…');
+    logger.debug('[Discovery] Starting — fetching organizations…');
     onProgress?.({ ...progress });
 
     const orgs = await fetchAllPages<{ login: string; description?: string | null }>(
@@ -444,7 +445,7 @@ export async function runDiscovery(
     );
 
     progress.orgsFound = orgs.length;
-    console.log(`[Discovery] Found ${orgs.length} organization(s)`);
+    logger.debug(`[Discovery] Found ${orgs.length} organization(s)`);
     onProgress?.({ ...progress });
 
     // Store orgs and map login → DB id
@@ -461,7 +462,7 @@ export async function runDiscovery(
     const oauthOrgLogins = new Set(orgs.map((o) => o.login.toLowerCase()));
     let patOnlyOrgs: { login: string; description?: string | null }[] = [];
     if (!state.aborted && pat) {
-      console.log('[Discovery] Checking for orgs visible only via PAT…');
+      logger.debug('[Discovery] Checking for orgs visible only via PAT…');
       try {
         const patOrgs = await fetchAllPages<{ login: string; description?: string | null }>(
           pat,
@@ -470,7 +471,7 @@ export async function runDiscovery(
         );
         patOnlyOrgs = patOrgs.filter((o) => !oauthOrgLogins.has(o.login.toLowerCase()));
         if (patOnlyOrgs.length > 0) {
-          console.log(
+          logger.debug(
             `[Discovery] Found ${patOnlyOrgs.length} org(s) only visible via PAT: ${patOnlyOrgs.map((o) => o.login).join(', ')}`,
           );
           for (const org of patOnlyOrgs) {
@@ -481,10 +482,10 @@ export async function runDiscovery(
           onProgress?.({ ...progress });
           saveDatabase();
         } else {
-          console.log('[Discovery] No additional orgs found via PAT');
+          logger.debug('[Discovery] No additional orgs found via PAT');
         }
       } catch (err) {
-        console.warn('[Discovery] PAT org check failed (non-fatal):', err);
+        logger.warn('[Discovery] PAT org check failed (non-fatal):', err);
       }
     }
 
@@ -498,12 +499,12 @@ export async function runDiscovery(
       if (state.aborted) break;
 
       if (disabledOrgs.has(org.login)) {
-        console.log(`[Discovery] Skipping disabled org: ${org.login}`);
+        logger.debug(`[Discovery] Skipping disabled org: ${org.login}`);
         continue;
       }
 
       progress.currentOrg = org.login;
-      console.log(`[Discovery] Fetching repos for org: ${org.login}`);
+      logger.debug(`[Discovery] Fetching repos for org: ${org.login}`);
       onProgress?.({ ...progress });
 
       const repos = await fetchAllPages<GitHubRepo>(
@@ -518,7 +519,7 @@ export async function runDiscovery(
       }
 
       progress.reposFound += repos.length;
-      console.log(`[Discovery]   ${org.login}: ${repos.length} repos (total: ${progress.reposFound})`);
+      logger.debug(`[Discovery]   ${org.login}: ${repos.length} repos (total: ${progress.reposFound})`);
       onProgress?.({ ...progress });
 
       saveDatabase();
@@ -529,12 +530,12 @@ export async function runDiscovery(
       if (state.aborted) break;
 
       if (disabledOrgs.has(org.login)) {
-        console.log(`[Discovery] Skipping disabled PAT-only org: ${org.login}`);
+        logger.debug(`[Discovery] Skipping disabled PAT-only org: ${org.login}`);
         continue;
       }
 
       progress.currentOrg = org.login;
-      console.log(`[Discovery] Fetching repos for PAT-only org: ${org.login}`);
+      logger.debug(`[Discovery] Fetching repos for PAT-only org: ${org.login}`);
       onProgress?.({ ...progress });
 
       try {
@@ -550,11 +551,11 @@ export async function runDiscovery(
         }
 
         progress.reposFound += repos.length;
-        console.log(`[Discovery]   ${org.login} (PAT): ${repos.length} repos (total: ${progress.reposFound})`);
+        logger.debug(`[Discovery]   ${org.login} (PAT): ${repos.length} repos (total: ${progress.reposFound})`);
         onProgress?.({ ...progress });
         saveDatabase();
       } catch (err) {
-        console.warn(`[Discovery] Skipping PAT-only org ${org.login} — ${err instanceof Error ? err.message : err}`);
+        logger.warn(`[Discovery] Skipping PAT-only org ${org.login} — ${err instanceof Error ? err.message : err}`);
       }
     }
 
@@ -562,7 +563,7 @@ export async function runDiscovery(
 
     // ── Phase 3: User-owned + collaborator + org-member repos
     if (!state.aborted) {
-      console.log('[Discovery] Fetching personal + collaborator + org-member repos…');
+      logger.debug('[Discovery] Fetching personal + collaborator + org-member repos…');
       progress.phase = 'user-repos';
       onProgress?.({ ...progress });
 
@@ -585,7 +586,7 @@ export async function runDiscovery(
         });
 
         if (externalRepos.length > 0) {
-          console.log(`[Discovery] Resolving collaboration reasons for ${externalRepos.length} external repos…`);
+          logger.debug(`[Discovery] Resolving collaboration reasons for ${externalRepos.length} external repos…`);
           collabReasons = await resolveCollaborationReasons(db, accessToken, userLogin, externalRepos, state);
         }
       }
@@ -613,11 +614,11 @@ export async function runDiscovery(
       }
 
       if (skippedDisabledOrg > 0) {
-        console.log(`[Discovery] Skipped ${skippedDisabledOrg} repos from disabled orgs in user-repos phase`);
+        logger.debug(`[Discovery] Skipped ${skippedDisabledOrg} repos from disabled orgs in user-repos phase`);
       }
 
       progress.reposFound += directRepos.length - skippedDisabledOrg;
-      console.log(`[Discovery] Personal + collaborator + org-member repos: ${directRepos.length} (total: ${progress.reposFound})`);
+      logger.debug(`[Discovery] Personal + collaborator + org-member repos: ${directRepos.length} (total: ${progress.reposFound})`);
       onProgress?.({ ...progress });
 
       saveDatabase();
@@ -640,16 +641,16 @@ export async function runDiscovery(
         ]);
         await runPatDiscovery(db, pat, state, progress, onProgress, userLogin, allScannedOrgLogins);
       } catch (err) {
-        console.error('[Discovery] PAT supplemental pass failed (non-fatal):', err);
+        logger.error('[Discovery] PAT supplemental pass failed (non-fatal):', err);
       }
     }
 
     progress.phase = 'done';
     onProgress?.({ ...progress });
-    console.log(`[Discovery] Complete — ${progress.orgsFound} orgs, ${progress.reposFound} repos`);
+    logger.debug(`[Discovery] Complete — ${progress.orgsFound} orgs, ${progress.reposFound} repos`);
   } catch (err) {
     if (!state.aborted) {
-      console.error('[Discovery] Error:', err);
+      logger.error('[Discovery] Error:', err);
     }
   }
 
@@ -679,7 +680,7 @@ export async function runLightweightRefresh(
 
   try {
     // Fetch current orgs
-    console.log('[LightRefresh] Checking for new organizations…');
+    logger.debug('[LightRefresh] Checking for new organizations…');
     onProgress?.({ ...progress });
 
     const orgs = await fetchAllPages<{ login: string; description?: string | null }>(
@@ -693,7 +694,7 @@ export async function runLightweightRefresh(
       upsertOrg(db, org);
     }
     saveDatabase();
-    console.log(`[LightRefresh] ${orgs.length} org(s) synced`);
+    logger.debug(`[LightRefresh] ${orgs.length} org(s) synced`);
     onProgress?.({ ...progress });
 
     const disabledOrgs = new Set(
@@ -703,7 +704,7 @@ export async function runLightweightRefresh(
     // Fetch personal + collaborator + org-member repos
     // Sort by updated desc so we can stop early once we've seen everything
     // newer than the last refresh — avoiding hundreds of pages of stale data.
-    console.log('[LightRefresh] Updating personal + collaborator + org-member repos…');
+    logger.debug('[LightRefresh] Updating personal + collaborator + org-member repos…');
     progress.phase = 'user-repos';
     onProgress?.({ ...progress });
 
@@ -733,7 +734,7 @@ export async function runLightweightRefresh(
       });
 
       if (externalRepos.length > 0) {
-        console.log(`[LightRefresh] Resolving collaboration reasons for ${externalRepos.length} external repos…`);
+        logger.debug(`[LightRefresh] Resolving collaboration reasons for ${externalRepos.length} external repos…`);
         collabReasons = await resolveCollaborationReasons(db, accessToken, userLogin, externalRepos, state);
       }
     }
@@ -761,13 +762,13 @@ export async function runLightweightRefresh(
     }
 
     if (skippedDisabledOrg > 0) {
-      console.log(`[LightRefresh] Skipped ${skippedDisabledOrg} repos from disabled orgs in user-repos phase`);
+      logger.debug(`[LightRefresh] Skipped ${skippedDisabledOrg} repos from disabled orgs in user-repos phase`);
     }
 
     progress.reposFound = directRepos.length - skippedDisabledOrg;
     setConfigValue(db, 'last_user_repos_refresh', new Date().toISOString());
     saveDatabase();
-    console.log(`[LightRefresh] ${directRepos.length} personal + collaborator + org-member repo(s) synced`);
+    logger.debug(`[LightRefresh] ${directRepos.length} personal + collaborator + org-member repo(s) synced`);
 
     // Fetch starred repos
     await fetchStarredRepos(db, accessToken, state, progress, onProgress);
@@ -778,14 +779,14 @@ export async function runLightweightRefresh(
         const oauthOrgLogins = new Set(orgs.map((o) => o.login.toLowerCase()));
         await runPatDiscovery(db, pat, state, progress, onProgress, userLogin, oauthOrgLogins);
       } catch (err) {
-        console.error('[LightRefresh] PAT supplemental pass failed (non-fatal):', err);
+        logger.error('[LightRefresh] PAT supplemental pass failed (non-fatal):', err);
       }
     }
 
     progress.phase = 'done';
     onProgress?.({ ...progress });
   } catch (err) {
-    console.error('[LightRefresh] Error:', err);
+    logger.error('[LightRefresh] Error:', err);
   }
 }
 
@@ -804,7 +805,7 @@ export async function fetchStarredRepos(
   progress: DiscoveryProgress,
   onProgress?: (progress: DiscoveryProgress) => void,
 ): Promise<void> {
-  console.log('[Discovery] Fetching starred repos…');
+  logger.debug('[Discovery] Fetching starred repos…');
   progress.phase = 'starred';
   onProgress?.({ ...progress });
 
@@ -825,7 +826,7 @@ export async function fetchStarredRepos(
   }
 
   progress.reposFound += starred.length;
-  console.log(`[Discovery] Starred repos: ${starred.length}`);
+  logger.debug(`[Discovery] Starred repos: ${starred.length}`);
   onProgress?.({ ...progress });
   saveDatabase();
 }
@@ -1000,7 +1001,7 @@ export async function runPatDiscovery(
     reposFound: 0,
   };
 
-  console.log('[PAT Discovery] Starting smart PAT pass…');
+  logger.debug('[PAT Discovery] Starting smart PAT pass…');
   prog.phase = 'pat-repos';
   onProgress?.({ ...prog });
 
@@ -1031,13 +1032,13 @@ export async function runPatDiscovery(
       (o) => !oauthOrgLogins.has(o.login.toLowerCase()),
     );
     if (oauthBlocked.length > 0) {
-      console.log(
+      logger.debug(
         `[PAT Discovery] Orgs blocked from OAuth (will rescan via PAT): ${oauthBlocked.map((o) => o.login).join(', ')}`,
       );
     }
   }
 
-  console.log(
+  logger.debug(
     `[PAT Discovery] ${patOrgs.length} org(s) via PAT, ` +
       `${existingOrgs.length} already indexed with repos, ` +
       `${orgsToScan.length} new/empty/OAuth-blocked org(s) to scan`,
@@ -1051,7 +1052,7 @@ export async function runPatDiscovery(
     prog.currentOrg = org.login;
     onProgress?.({ ...prog });
 
-    console.log(`[PAT Discovery] Fetching repos for org: ${org.login}`);
+    logger.debug(`[PAT Discovery] Fetching repos for org: ${org.login}`);
     try {
       const repos = await fetchAllPages<GitHubRepo>(
         pat,
@@ -1065,11 +1066,11 @@ export async function runPatDiscovery(
 
       prog.reposFound += repos.length;
       prog.orgsFound = (prog.orgsFound || 0) + 1;
-      console.log(`[PAT Discovery]   ${org.login}: ${repos.length} repos`);
+      logger.debug(`[PAT Discovery]   ${org.login}: ${repos.length} repos`);
       onProgress?.({ ...prog });
       saveDatabase();
     } catch (err) {
-      console.warn(`[PAT Discovery] Skipping org ${org.login} — ${err instanceof Error ? err.message : err}`);
+      logger.warn(`[PAT Discovery] Skipping org ${org.login} — ${err instanceof Error ? err.message : err}`);
     }
   }
   prog.currentOrg = undefined;
@@ -1078,7 +1079,7 @@ export async function runPatDiscovery(
   // affiliation=collaborator returns only repos where user is an
   // outside collaborator — much smaller than the full repo list.
   if (!st.aborted) {
-    console.log('[PAT Discovery] Fetching direct collaborator repos…');
+    logger.debug('[PAT Discovery] Fetching direct collaborator repos…');
     onProgress?.({ ...prog });
 
     const collabRepos = await fetchAllPages<GitHubRepo>(
@@ -1090,7 +1091,7 @@ export async function runPatDiscovery(
     // Resolve collaboration reasons for PAT collaborator repos
     let collabReasons: Map<string, string> | null = null;
     if (userLogin && !st.aborted && collabRepos.length > 0) {
-      console.log(`[PAT Discovery] Resolving collaboration reasons for ${collabRepos.length} collaborator repos…`);
+      logger.debug(`[PAT Discovery] Resolving collaboration reasons for ${collabRepos.length} collaborator repos…`);
       collabReasons = await resolveCollaborationReasons(db, pat, userLogin, collabRepos, st);
     }
 
@@ -1101,10 +1102,10 @@ export async function runPatDiscovery(
     }
 
     prog.reposFound += collabRepos.length;
-    console.log(`[PAT Discovery] Collaborator repos: ${collabRepos.length}`);
+    logger.debug(`[PAT Discovery] Collaborator repos: ${collabRepos.length}`);
     onProgress?.({ ...prog });
     saveDatabase();
   }
 
-  console.log(`[PAT Discovery] Complete — ${prog.orgsFound} new orgs, ${prog.reposFound} repos`);
+  logger.debug(`[PAT Discovery] Complete — ${prog.orgsFound} new orgs, ${prog.reposFound} repos`);
 }
