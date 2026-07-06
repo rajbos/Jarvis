@@ -44,8 +44,14 @@ interface AutoDismissRunResult {
   total: number;
 }
 
-/** Module-level flag so the pipeline only runs once per app session (survives remounts). */
-let autoDismissRanGlobally = false;
+/**
+ * Module-level cooldown so repeated tab switches (which remount DashboardPanel)
+ * don't re-trigger the pipeline more often than this interval. Notifications for
+ * already-closed issues/PRs can surface hours or days after the close (e.g. a new
+ * mention on an old closed issue), so a single run-once-per-session sweep misses them.
+ */
+const AUTO_DISMISS_INTERVAL_MS = 10 * 60 * 1000;
+let lastAutoDismissRunAt = 0;
 
 async function runRecoverableStep(repoFullNames: string[]): Promise<{ dismissed: number; logEntries: AutoDismissLogInput[] }> {
   const logEntries: AutoDismissLogInput[] = [];
@@ -1154,12 +1160,17 @@ export function DashboardPanel({ dismissedNotifIds, onOpenHistory }: { dismissed
 
   useEffect(() => { void load(); }, [load]);
 
-  // Run the auto-dismiss pipeline once per session after summary is first available
-  useEffect(() => {
-    if (!summary || autoDismissRanGlobally) return;
-    autoDismissRanGlobally = true;
+  // Keep a ref to the latest summary so the periodic timer below always reads
+  // fresh repo/notification data without needing to reset on every summary change.
+  const summaryRef = useRef<DashboardSummary | null>(null);
+  useEffect(() => { summaryRef.current = summary; }, [summary]);
+
+  const runAutoDismissIfDue = useCallback(() => {
+    const currentSummary = summaryRef.current;
+    if (!currentSummary || Date.now() - lastAutoDismissRunAt < AUTO_DISMISS_INTERVAL_MS) return;
+    lastAutoDismissRunAt = Date.now();
     setPipelineStatus('running');
-    const repoFullNames = summary.repos
+    const repoFullNames = currentSummary.repos
       .filter((r) => r.notificationCount > 0 && r.linkedGithubRepo !== null)
       .map((r) => r.linkedGithubRepo!);
     void runAutoDismissPipeline(repoFullNames).then(async ({ result, logEntries }) => {
@@ -1171,7 +1182,18 @@ export function DashboardPanel({ dismissedNotifIds, onOpenHistory }: { dismissed
       setAutoDismissDone(true);
       setPipelineStatus('done');
     });
-  }, [summary, load]);
+  }, [load]);
+
+  // Run the auto-dismiss pipeline once summary is first available, then keep
+  // re-checking every AUTO_DISMISS_INTERVAL_MS so notifications for issues/PRs
+  // that get closed (or resurface as unread) mid-session are still swept up,
+  // not just at app start.
+  useEffect(() => {
+    if (!summary) return;
+    runAutoDismissIfDue();
+    const intervalId = setInterval(runAutoDismissIfDue, AUTO_DISMISS_INTERVAL_MS);
+    return () => clearInterval(intervalId);
+  }, [summary, runAutoDismissIfDue]);
 
   useEffect(() => {
     if (!summary || !currentUserLogin || !autoDismissDone) {
