@@ -117,39 +117,43 @@ async function runClosedPrStep(): Promise<{ dismissed: number; logEntries: AutoD
       if (!byUrl.has(n.subject_url)) byUrl.set(n.subject_url, []);
       byUrl.get(n.subject_url)!.push(n);
     }
-    const urlEntries = [...byUrl.entries()].slice(0, 50);
+    const urlEntries = [...byUrl.entries()];
     const CONCURRENCY = 8;
-    let nextIdx = 0;
-    const worker = async () => {
-      while (nextIdx < urlEntries.length) {
-        const idx = nextIdx++;
-        const [url, urlNotifs] = urlEntries[idx];
-        try {
-          const result = await window.jarvis.githubGetPrState(url);
-          if (!result || result.state === 'open') continue;
-          const { state, isDependabot, closedByMe } = result;
-          if (!isDependabot && !closedByMe) continue;
-          const reason: AutoDismissLogInput['reason'] =
-            isDependabot ? 'closed_pr_dependabot'
-            : state === 'merged' ? 'closed_pr_merged_me'
-            : 'closed_pr_closed_me';
-          for (const n of urlNotifs) {
-            try {
-              await window.jarvis.dismissNotification(n.id);
-              logEntries.push({
-                notification_id: n.id,
-                reason,
-                repo_full_name: n.repo_full_name,
-                subject_title: n.subject_title,
-                subject_type: n.subject_type,
-              });
-              dismissed++;
-            } catch { /* skip individual */ }
-          }
-        } catch { /* skip individual PR */ }
-      }
-    };
-    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, urlEntries.length) }, worker));
+    const BATCH_SIZE = 200;
+    for (let offset = 0; offset < urlEntries.length; offset += BATCH_SIZE) {
+      const batch = urlEntries.slice(offset, offset + BATCH_SIZE);
+      let nextIdx = 0;
+      const worker = async () => {
+        while (nextIdx < batch.length) {
+          const idx = nextIdx++;
+          const [url, urlNotifs] = batch[idx];
+          try {
+            const result = await window.jarvis.githubGetPrState(url);
+            if (!result || result.state === 'open') continue;
+            const { state, isDependabot, closedByMe } = result;
+            if (!isDependabot && !closedByMe) continue;
+            const reason: AutoDismissLogInput['reason'] =
+              isDependabot ? 'closed_pr_dependabot'
+              : state === 'merged' ? 'closed_pr_merged_me'
+              : 'closed_pr_closed_me';
+            for (const n of urlNotifs) {
+              try {
+                await window.jarvis.dismissNotification(n.id);
+                logEntries.push({
+                  notification_id: n.id,
+                  reason,
+                  repo_full_name: n.repo_full_name,
+                  subject_title: n.subject_title,
+                  subject_type: n.subject_type,
+                });
+                dismissed++;
+              } catch { /* skip individual */ }
+            }
+          } catch { /* skip individual PR */ }
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(CONCURRENCY, batch.length) }, worker));
+    }
   } catch { /* non-fatal */ }
   return { dismissed, logEntries };
 }
@@ -165,37 +169,41 @@ async function runClosedIssueStep(): Promise<{ dismissed: number; logEntries: Au
       if (!byUrl.has(n.subject_url)) byUrl.set(n.subject_url, []);
       byUrl.get(n.subject_url)!.push(n);
     }
-    const urlEntries = [...byUrl.entries()].slice(0, 50);
+    const urlEntries = [...byUrl.entries()];
     const CONCURRENCY = 8;
-    let nextIdx = 0;
-    const worker = async () => {
-      while (nextIdx < urlEntries.length) {
-        const idx = nextIdx++;
-        const [url, urlNotifs] = urlEntries[idx];
-        try {
-          const result = await window.jarvis.githubGetIssueState(url);
-          if (!result || result.state !== 'closed') continue;
-          const { closedByMe, closedViaMergedPr } = result;
-          if (!closedByMe && !closedViaMergedPr) continue;
-          const reason: AutoDismissLogInput['reason'] =
-            closedViaMergedPr ? 'closed_issue_via_pr' : 'closed_issue_me';
-          for (const n of urlNotifs) {
-            try {
-              await window.jarvis.dismissNotification(n.id);
-              logEntries.push({
-                notification_id: n.id,
-                reason,
-                repo_full_name: n.repo_full_name,
-                subject_title: n.subject_title,
-                subject_type: n.subject_type,
-              });
-              dismissed++;
-            } catch { /* skip individual */ }
-          }
-        } catch { /* skip individual issue */ }
-      }
-    };
-    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, Math.max(urlEntries.length, 1)) }, worker));
+    const BATCH_SIZE = 200;
+    for (let offset = 0; offset < urlEntries.length; offset += BATCH_SIZE) {
+      const batch = urlEntries.slice(offset, offset + BATCH_SIZE);
+      let nextIdx = 0;
+      const worker = async () => {
+        while (nextIdx < batch.length) {
+          const idx = nextIdx++;
+          const [url, urlNotifs] = batch[idx];
+          try {
+            const result = await window.jarvis.githubGetIssueState(url);
+            if (!result || result.state !== 'closed') continue;
+            const { closedByMe, closedViaMergedPr } = result;
+            if (!closedByMe && !closedViaMergedPr) continue;
+            const reason: AutoDismissLogInput['reason'] =
+              closedViaMergedPr ? 'closed_issue_via_pr' : 'closed_issue_me';
+            for (const n of urlNotifs) {
+              try {
+                await window.jarvis.dismissNotification(n.id);
+                logEntries.push({
+                  notification_id: n.id,
+                  reason,
+                  repo_full_name: n.repo_full_name,
+                  subject_title: n.subject_title,
+                  subject_type: n.subject_type,
+                });
+                dismissed++;
+              } catch { /* skip individual */ }
+            }
+          } catch { /* skip individual issue */ }
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(CONCURRENCY, batch.length) }, worker));
+    }
   } catch { /* non-fatal */ }
   return { dismissed, logEntries };
 }
