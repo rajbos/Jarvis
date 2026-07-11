@@ -23,16 +23,29 @@ button {
   border-radius: 6px;
   font-size: 1rem;
   cursor: pointer;
-  transition: background 0.2s;
+  transition: background 0.2s, transform 0.1s cubic-bezier(0.25, 1, 0.5, 1);
 }
 
 button:hover {
   background: #c23152;
 }
 
+button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
 button:disabled {
   background: #555;
   cursor: not-allowed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button {
+    transition: background 0.2s;
+  }
+  button:active:not(:disabled) {
+    transform: none;
+  }
 }
 
 .status-badge {
@@ -169,6 +182,18 @@ button:disabled {
 .dash-card-clickable:hover {
   background: #1a2a4e;
   transform: translateY(-1px);
+}
+
+.dash-card-clickable:active {
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dash-card-clickable,
+  .dash-card-clickable:hover,
+  .dash-card-clickable:active {
+    transform: none;
+  }
 }
 
 .dash-card-selected {
@@ -753,12 +778,33 @@ button:disabled {
   border-radius: 4px;
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid transparent;
-  transition: background 0.15s, border-color 0.15s;
+  opacity: 1;
+  transform: translateX(0) scale(1);
+  transition: background 0.15s, border-color 0.15s,
+    opacity 0.18s cubic-bezier(0.25, 1, 0.5, 1),
+    transform 0.18s cubic-bezier(0.25, 1, 0.5, 1);
 }
 
 .dash-notif-item:hover {
   background: rgba(255, 255, 255, 0.04);
   border-color: #0f3460;
+}
+
+/* Dismissed rows fade + settle out before they're removed from the list —
+   a quick, quiet confirmation that the action landed. */
+.dash-notif-item--dismissing {
+  opacity: 0;
+  transform: translateX(6px) scale(0.98);
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dash-notif-item {
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .dash-notif-item--dismissing {
+    transform: none;
+  }
 }
 
 .dash-notif-item + .dash-notif-item {
@@ -1208,6 +1254,25 @@ button:disabled {
   color: #6a6a7a;
   padding: 2rem 0;
   font-size: 1rem;
+}
+
+/* Genuine good news (queue cleared) earns a quiet acknowledgment: a touch of
+   color and a brief settle-in, not a full celebration. */
+.dash-empty--positive {
+  color: #6fbf8a;
+  font-weight: 500;
+  animation: dash-empty-in 0.32s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+@keyframes dash-empty-in {
+  from { opacity: 0; transform: translateY(4px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dash-empty--positive {
+    animation: none;
+  }
 }
 
 .dash-footer {
