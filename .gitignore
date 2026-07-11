@@ -42,3 +42,6 @@ test_output.txt
 
 # User-specific runtime config (may contain secrets)
 AppData/
+
+# Impeccable design skill local cache
+.impeccable/
