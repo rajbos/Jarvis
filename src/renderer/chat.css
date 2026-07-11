@@ -40,7 +40,7 @@ body {
 }
 
 .chat-model-badge {
-  font-size: 0.75rem;
+  font-size: 0.875rem;
   font-family: 'Consolas', 'Courier New', monospace;
   background: #0a3d1f;
   color: #51cf66;
@@ -65,7 +65,7 @@ body {
   border: 1px solid transparent;
   border-radius: 4px;
   color: #445;
-  font-size: 0.95rem;
+  font-size: 1rem;
   padding: 0.15rem 0.3rem;
   line-height: 1;
   cursor: pointer;
@@ -115,7 +115,7 @@ body {
   justify-content: center;
   gap: 0.5rem;
   color: #667;
-  font-size: 0.88rem;
+  font-size: 1rem;
   text-align: center;
   padding: 2rem;
 }
@@ -127,7 +127,7 @@ body {
 
 .chat-empty p {
   color: #778;
-  font-size: 0.85rem;
+  font-size: 0.9375rem;
   max-width: 280px;
 }
 
@@ -136,7 +136,7 @@ body {
   max-width: 85%;
   border-radius: 12px;
   padding: 0.65rem 0.95rem;
-  font-size: 0.88rem;
+  font-size: 1rem;
   line-height: 1.55;
   word-break: break-word;
 }
@@ -161,7 +161,7 @@ body {
   display: inline-block;
   color: #339af0;
   animation: blink 0.9s step-end infinite;
-  font-size: 0.9rem;
+  font-size: 1rem;
   line-height: 1;
   vertical-align: baseline;
   margin-left: 1px;
@@ -180,7 +180,7 @@ body {
   padding: 0.6rem 0.85rem;
   overflow-x: auto;
   font-family: 'Consolas', 'Courier New', monospace;
-  font-size: 0.82rem;
+  font-size: 0.9375rem;
   margin: 0.5rem 0;
   white-space: pre;
   line-height: 1.45;
@@ -204,7 +204,7 @@ body {
 .message-content h5 {
   color: #a8c8f0;
   margin: 0.4rem 0 0.2rem;
-  font-size: 0.9rem;
+  font-size: 1rem;
 }
 
 /* -- Error bubble ------------------------------------------------*/
@@ -215,7 +215,7 @@ body {
   border: 1px solid #7a0000;
   border-radius: 6px;
   padding: 0.45rem 0.85rem;
-  font-size: 0.83rem;
+  font-size: 0.9375rem;
   max-width: 90%;
   text-align: center;
 }
@@ -239,7 +239,7 @@ body {
   border-radius: 8px;
   padding: 0.55rem 0.75rem;
   font-family: inherit;
-  font-size: 0.88rem;
+  font-size: 1rem;
   resize: none;
   outline: none;
   line-height: 1.45;
@@ -267,7 +267,7 @@ body {
   border: none;
   border-radius: 8px;
   padding: 0.55rem 1rem;
-  font-size: 0.88rem;
+  font-size: 1rem;
   cursor: pointer;
   transition: background 0.15s;
   flex-shrink: 0;
@@ -287,7 +287,7 @@ body {
 
 /* -- Hint text below input ---------------------------------------*/
 .chat-input-hint {
-  font-size: 0.72rem;
+  font-size: 0.8125rem;
   color: #445;
   padding: 0 0.85rem 0.4rem;
   background: #16213e;
@@ -303,7 +303,7 @@ body {
   padding: 0.4rem 1rem;
   background: #0f3460;
   border-bottom: 1px solid #1a4a8a;
-  font-size: 0.8rem;
+  font-size: 0.9375rem;
   color: #a8c8ff;
   flex-shrink: 0;
 }

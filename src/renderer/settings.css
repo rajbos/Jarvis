@@ -13,7 +13,7 @@ body {
 }
 
 h1 {
-  font-size: 1.2rem;
+  font-size: 1.25rem;
   margin-bottom: 1rem;
   color: #e94560;
   font-weight: 700;
@@ -34,12 +34,12 @@ h1 {
   color: #b0b8c8;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  font-size: 0.72rem;
+  font-size: 0.8125rem;
 }
 
 label {
   display: block;
-  font-size: 0.85rem;
+  font-size: 0.9375rem;
   color: #c8c8c8;
   margin-bottom: 0.4rem;
 }
@@ -52,7 +52,7 @@ input[type="password"] {
   border: 1px solid #444;
   background: #1a1a2e;
   color: #e0e0e0;
-  font-size: 0.83rem;
+  font-size: 0.9375rem;
 }
 
 .btn-row {
@@ -69,7 +69,7 @@ button {
   border: none;
   padding: 0.35rem 0.8rem;
   border-radius: 6px;
-  font-size: 0.82rem;
+  font-size: 0.9375rem;
   cursor: pointer;
   transition: background 0.15s;
   white-space: nowrap;
@@ -117,21 +117,21 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  font-size: 0.85rem;
+  font-size: 0.9375rem;
   color: #6fbf73;
   margin-bottom: 0.5rem;
 }
 
 .pat-error {
   color: #e94560;
-  font-size: 0.8rem;
+  font-size: 0.9375rem;
   margin-top: 0.35rem;
   min-height: 1.1em;
 }
 
 .hint {
   color: #8899aa;
-  font-size: 0.76rem;
+  font-size: 0.875rem;
   margin-top: 0.5rem;
   line-height: 1.4;
 }
@@ -166,13 +166,13 @@ code {
 }
 
 .user-card-name {
-  font-size: 0.88rem;
+  font-size: 1rem;
   font-weight: 600;
   color: #e0e0e0;
 }
 
 .user-card-login {
-  font-size: 0.78rem;
+  font-size: 0.875rem;
   color: #b0b8c8;
 }
 
@@ -193,7 +193,7 @@ code {
   border: 1px solid #334;
   color: #b0b8c8;
   padding: 0.25rem 0.65rem;
-  font-size: 0.78rem;
+  font-size: 0.875rem;
   border-radius: 4px;
   cursor: pointer;
 }
@@ -216,7 +216,7 @@ code {
   border-radius: 6px;
   color: #c8d8e8;
   font-family: 'Consolas', 'Fira Mono', monospace;
-  font-size: 0.77rem;
+  font-size: 0.875rem;
   line-height: 1.5;
   padding: 0.6rem 0.75rem;
   resize: vertical;
