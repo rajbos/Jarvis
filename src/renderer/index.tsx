@@ -53,6 +53,7 @@ import type {
   SecretsScanProgress,
   Group,
   GitHubRateLimit,
+  BackgroundTaskStatus,
 } from '../plugins/types';
 import '../plugins/types'; // activate the global Window augmentation
 
@@ -1119,9 +1120,33 @@ function BackgroundStatusBar({
     };
   }, []);
 
+  // Background tasks — loaded directly so the status bar is self-contained
+  const [backgroundTasks, setBackgroundTasks] = useState<BackgroundTaskStatus[]>([]);
+
+  const loadTasks = useCallback(async () => {
+    try {
+      setBackgroundTasks(await window.jarvis.listBackgroundTasks());
+    } catch { /* renderer not ready */ }
+  }, []);
+
+  useEffect(() => {
+    void loadTasks();
+    return window.jarvis.onBackgroundTaskComplete(() => { void loadTasks(); });
+  }, [loadTasks]);
+
+  const runTaskNow = useCallback((taskId: string) => {
+    setBackgroundTasks((ts) => ts.map((t) => t.id === taskId ? { ...t, running: true } : t));
+    void window.jarvis.runBackgroundTaskNow(taskId).then(() => loadTasks());
+  }, [loadTasks]);
+
+  const runningCount = backgroundTasks.filter((t) => t.running).length;
+
   // Derive a message from App state — IPC message takes priority when active
   let derivedMessage: string | null = null;
-  if (localScanning) {
+  const runningTask = backgroundTasks.find((t) => t.running);
+  if (runningTask) {
+    derivedMessage = `Running: ${runningTask.label}…`;
+  } else if (localScanning) {
     if (localScanProgress?.currentFolder) {
       derivedMessage = `Scanning repos… ${localScanProgress.currentFolder}`;
     } else if (localScanProgress) {
@@ -1188,7 +1213,7 @@ function BackgroundStatusBar({
     };
   });
 
-  if (!message && !hasAnyBadge) return null;
+  if (!message && !hasAnyBadge && backgroundTasks.length === 0) return null;
 
   return (
     <div class="bg-status-bar" ref={barRef} aria-live="polite">
@@ -1198,36 +1223,65 @@ function BackgroundStatusBar({
           <span class="bg-status-text">{message}</span>
         </>
       )}
-      {hasAnyBadge && (
-        <div class={`bg-status-rate-limits${oauthBadge && patBadge ? ' bg-status-rate-limits--both' : ''}`}>
-          {oauthBadge && (
-            <span
-              class="bg-status-rate-limit"
-              title={oauthBadge.error
-                ? `OAuth rate limit error: ${oauthBadge.error}`
-                : `OAuth: ${formatNumber(oauthBadge.resource!.remaining)}/${formatNumber(oauthBadge.resource!.limit)} calls remaining (resets ${new Date(oauthBadge.resource!.reset * 1000).toLocaleTimeString()})`}
-              style={{ color: oauthBadge.error ? '#888' : (oauthBadge.resource ? rateLimitColor(oauthBadge.resource.remaining) : '#888') }}
-            >
-              {oauthBadge.error || !oauthBadge.resource
-                ? '⚡ OAuth –'
-                : `⚡ OAuth ${formatNumber(oauthBadge.resource.remaining)}/${formatNumber(oauthBadge.resource.limit)}${oauthBadge.resource.remaining < 500 ? ` · ${formatResetIn(oauthBadge.resource.reset)}` : ''}`}
-            </span>
+      {(backgroundTasks.length > 0 || hasAnyBadge) && (
+        <div class="bg-status-right">
+          {backgroundTasks.length > 0 && (
+            <div class="bg-status-tasks">
+              <span class="bg-status-tasks-btn" title="Background tasks">
+                ⚙ {runningCount > 0 ? `${runningCount}/${backgroundTasks.length}` : backgroundTasks.length}
+              </span>
+              <div class="bg-status-tasks-pop">
+                {backgroundTasks.map((task) => (
+                  <div class="bg-status-task-item">
+                    <span
+                      class={`bg-status-task-dot bg-status-task-dot--${task.running ? 'running' : task.lastStatus ?? 'waiting'}`}
+                    />
+                    <span class="bg-status-task-label">{task.label}</span>
+                    <button
+                      class="bg-status-task-run"
+                      disabled={task.running}
+                      onClick={() => runTaskNow(task.id)}
+                      title={task.lastError ? `Last error: ${task.lastError}` : `Run ${task.label} now`}
+                    >
+                      {task.running ? 'Running…' : 'Run'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
-          {oauthBadge && patBadge && (
-            <span class="bg-status-rate-sep" aria-hidden="true">|</span>
-          )}
-          {patBadge && (
-            <span
-              class="bg-status-rate-limit"
-              title={patBadge.error
-                ? `PAT rate limit error: ${patBadge.error}`
-                : `PAT: ${formatNumber(patBadge.resource!.remaining)}/${formatNumber(patBadge.resource!.limit)} calls remaining (resets ${new Date(patBadge.resource!.reset * 1000).toLocaleTimeString()})`}
-              style={{ color: patBadge.error ? '#888' : (patBadge.resource ? rateLimitColor(patBadge.resource.remaining) : '#888') }}
-            >
-              {patBadge.error || !patBadge.resource
-                ? '⚡ PAT –'
-                : `⚡ PAT ${formatNumber(patBadge.resource.remaining)}/${formatNumber(patBadge.resource.limit)}${patBadge.resource.remaining < 500 ? ` · ${formatResetIn(patBadge.resource.reset)}` : ''}`}
-            </span>
+          {hasAnyBadge && (
+            <div class={`bg-status-rate-limits${oauthBadge && patBadge ? ' bg-status-rate-limits--both' : ''}`}>
+              {oauthBadge && (
+                <span
+                  class="bg-status-rate-limit"
+                  title={oauthBadge.error
+                    ? `OAuth rate limit error: ${oauthBadge.error}`
+                    : `OAuth: ${formatNumber(oauthBadge.resource!.remaining)}/${formatNumber(oauthBadge.resource!.limit)} calls remaining (resets ${new Date(oauthBadge.resource!.reset * 1000).toLocaleTimeString()})`}
+                  style={{ color: oauthBadge.error ? '#888' : (oauthBadge.resource ? rateLimitColor(oauthBadge.resource.remaining) : '#888') }}
+                >
+                  {oauthBadge.error || !oauthBadge.resource
+                    ? '⚡ OAuth –'
+                    : `⚡ OAuth ${formatNumber(oauthBadge.resource.remaining)}/${formatNumber(oauthBadge.resource.limit)}${oauthBadge.resource.remaining < 500 ? ` · ${formatResetIn(oauthBadge.resource.reset)}` : ''}`}
+                </span>
+              )}
+              {oauthBadge && patBadge && (
+                <span class="bg-status-rate-sep" aria-hidden="true">|</span>
+              )}
+              {patBadge && (
+                <span
+                  class="bg-status-rate-limit"
+                  title={patBadge.error
+                    ? `PAT rate limit error: ${patBadge.error}`
+                    : `PAT: ${formatNumber(patBadge.resource!.remaining)}/${formatNumber(patBadge.resource!.limit)} calls remaining (resets ${new Date(patBadge.resource!.reset * 1000).toLocaleTimeString()})`}
+                  style={{ color: patBadge.error ? '#888' : (patBadge.resource ? rateLimitColor(patBadge.resource.remaining) : '#888') }}
+                >
+                  {patBadge.error || !patBadge.resource
+                    ? '⚡ PAT –'
+                    : `⚡ PAT ${formatNumber(patBadge.resource.remaining)}/${formatNumber(patBadge.resource.limit)}${patBadge.resource.remaining < 500 ? ` · ${formatResetIn(patBadge.resource.reset)}` : ''}`}
+                </span>
+              )}
+            </div>
           )}
         </div>
       )}
