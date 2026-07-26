@@ -1,5 +1,5 @@
 /// <reference path="../../src/types/sql.js.d.ts" />
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import initSqlJs, { Database as SqlJsDatabase } from 'sql.js';
 import { getSchema } from '../../src/storage/schema';
 import {
@@ -15,6 +15,7 @@ import {
   linkLocalRepo,
   listLocalRepos,
   listLocalReposForFolder,
+  runLocalDiscovery,
 } from '../../src/services/local-discovery';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -80,6 +81,89 @@ describe('parseGitRemotes', () => {
     const remotes = parseGitRemotes(tmpDir);
     expect(remotes).toEqual([]);
   });
+
+  it('returns empty array when readFileSync throws', () => {
+    // Create .git dir but make config unreadable by making it a directory
+    const gitDir = path.join(tmpDir, '.git');
+    fs.mkdirSync(gitDir, { recursive: true });
+    fs.mkdirSync(path.join(gitDir, 'config')); // config as directory causes readFileSync to throw
+    const remotes = parseGitRemotes(tmpDir);
+    expect(remotes).toEqual([]);
+  });
+
+  it('resets currentRemote when a non-remote section is encountered', () => {
+    const gitDir = path.join(tmpDir, '.git');
+    fs.mkdirSync(gitDir, { recursive: true });
+    // A config where a [branch] section appears after a remote without url line finishing first
+    const configContent = [
+      '[remote "origin"]',
+      '\turl = https://github.com/org/repo.git',
+      '[branch "main"]',
+      '\turl = should-not-be-captured',
+      '',
+    ].join('\n');
+    fs.writeFileSync(path.join(gitDir, 'config'), configContent, 'utf-8');
+
+    const remotes = parseGitRemotes(tmpDir);
+    expect(remotes).toHaveLength(1);
+    expect(remotes[0]).toEqual({ name: 'origin', url: 'https://github.com/org/repo.git' });
+  });
+
+  it('handles config with no remotes', () => {
+    const gitDir = path.join(tmpDir, '.git');
+    fs.mkdirSync(gitDir, { recursive: true });
+    fs.writeFileSync(path.join(gitDir, 'config'), '[core]\n\tbare = false\n', 'utf-8');
+    const remotes = parseGitRemotes(tmpDir);
+    expect(remotes).toEqual([]);
+  });
+});
+
+// ── normalizeGitHubUrl ────────────────────────────────────────────────────────
+
+describe('normalizeGitHubUrl', () => {
+  it('returns null for empty string', () => {
+    expect(normalizeGitHubUrl('')).toBeNull();
+  });
+
+  it('parses HTTPS URL with .git suffix', () => {
+    expect(normalizeGitHubUrl('https://github.com/owner/repo.git')).toBe('owner/repo');
+  });
+
+  it('parses HTTPS URL without .git suffix', () => {
+    expect(normalizeGitHubUrl('https://github.com/owner/repo')).toBe('owner/repo');
+  });
+
+  it('parses HTTPS URL with trailing slash', () => {
+    expect(normalizeGitHubUrl('https://github.com/owner/repo/')).toBe('owner/repo');
+  });
+
+  it('parses HTTPS URL with credentials', () => {
+    expect(normalizeGitHubUrl('https://user@github.com/owner/repo.git')).toBe('owner/repo');
+  });
+
+  it('parses SSH URL with .git suffix', () => {
+    expect(normalizeGitHubUrl('git@github.com:owner/repo.git')).toBe('owner/repo');
+  });
+
+  it('parses SSH URL without .git suffix', () => {
+    expect(normalizeGitHubUrl('git@github.com:owner/repo')).toBe('owner/repo');
+  });
+
+  it('parses SSH URL with trailing slash', () => {
+    expect(normalizeGitHubUrl('git@github.com:owner/repo/')).toBe('owner/repo');
+  });
+
+  it('returns null for non-GitHub HTTPS URLs', () => {
+    expect(normalizeGitHubUrl('https://gitlab.com/owner/repo.git')).toBeNull();
+  });
+
+  it('returns null for non-GitHub SSH URLs', () => {
+    expect(normalizeGitHubUrl('git@gitlab.com:owner/repo.git')).toBeNull();
+  });
+
+  it('returns null for arbitrary strings', () => {
+    expect(normalizeGitHubUrl('/local/path/to/repo')).toBeNull();
+  });
 });
 
 // ── isGitRepo ─────────────────────────────────────────────────────────────────
@@ -106,6 +190,11 @@ describe('isGitRepo', () => {
 
   it('returns false for a non-existent path', () => {
     expect(isGitRepo(path.join(tmpDir, 'nonexistent'))).toBe(false);
+  });
+
+  it('returns false when .git exists but is a file (not a directory)', () => {
+    fs.writeFileSync(path.join(tmpDir, '.git'), 'gitdir: ../other.git\n', 'utf-8');
+    expect(isGitRepo(tmpDir)).toBe(false);
   });
 });
 
@@ -171,6 +260,35 @@ describe('findGitRepos', () => {
     const found = findGitRepos(tmpDir);
     expect(found.map((r) => r.localPath)).not.toContain(nm);
   });
+
+  it('skips hidden directories', () => {
+    const hidden = path.join(tmpDir, '.hidden-dir', 'repo');
+    createFakeRepo(hidden);
+
+    const found = findGitRepos(tmpDir);
+    expect(found.map((r) => r.localPath)).not.toContain(hidden);
+  });
+
+  it('calls onProgress callback with current directory', () => {
+    const repoPath = path.join(tmpDir, 'my-repo');
+    createFakeRepo(repoPath);
+
+    const progressDirs: string[] = [];
+    findGitRepos(tmpDir, 3, (dir) => progressDirs.push(dir));
+
+    expect(progressDirs.length).toBeGreaterThan(0);
+    expect(progressDirs).toContain(tmpDir);
+  });
+
+  it('handles unreadable directories gracefully', () => {
+    // Create a directory structure but one subdir is unreadable
+    const readableRepo = path.join(tmpDir, 'readable');
+    createFakeRepo(readableRepo);
+
+    // findGitRepos should not throw even if a dir is unreadable
+    const found = findGitRepos(tmpDir);
+    expect(found.map((r) => r.localPath)).toContain(readableRepo);
+  });
 });
 
 // ── DB operations ─────────────────────────────────────────────────────────────
@@ -205,6 +323,15 @@ describe('Local discovery DB operations', () => {
     addScanFolder(db, '/home/user/repos');
     addScanFolder(db, '/home/user/repos');
     expect(getScanFolders(db)).toHaveLength(1);
+  });
+
+  it('getScanFolders returns repoCount for folders', () => {
+    const folderPath = path.normalize('/home/user/repos');
+    addScanFolder(db, folderPath);
+    upsertLocalRepo(db, folderPath + path.sep + 'myrepo', 'myrepo', []);
+
+    const folders = getScanFolders(db);
+    expect(folders[0].repoCount).toBe(1);
   });
 
   it('upsertLocalRepo creates a repo and its remotes', () => {
@@ -251,6 +378,17 @@ describe('Local discovery DB operations', () => {
     expect(repos[0].remotes[0].name).toBe('origin');
   });
 
+  it('upsertLocalRepo with empty remotes deletes all remotes', () => {
+    upsertLocalRepo(db, '/home/user/repos/myrepo', 'myrepo', [
+      { name: 'origin', url: 'https://github.com/org/myrepo.git' },
+    ]);
+
+    upsertLocalRepo(db, '/home/user/repos/myrepo', 'myrepo', []);
+
+    const repos = listLocalRepos(db);
+    expect(repos[0].remotes).toHaveLength(0);
+  });
+
   it('autoLinkLocalRepos matches remote URLs to github_repos', () => {
     db.run("INSERT INTO github_repos (full_name, name) VALUES (?, ?)", ['org/myrepo', 'myrepo']);
     const ghId = (db.exec("SELECT id FROM github_repos WHERE full_name='org/myrepo'")[0].values[0][0]) as number;
@@ -266,6 +404,45 @@ describe('Local discovery DB operations', () => {
     expect(repos[0].remotes[0].githubRepoId).toBe(ghId);
   });
 
+  it('autoLinkLocalRepos skips remotes already linked', () => {
+    db.run("INSERT INTO github_repos (full_name, name) VALUES (?, ?)", ['org/myrepo', 'myrepo']);
+    const ghId = (db.exec("SELECT id FROM github_repos WHERE full_name='org/myrepo'")[0].values[0][0]) as number;
+
+    upsertLocalRepo(db, '/home/user/repos/myrepo', 'myrepo', [
+      { name: 'origin', url: 'https://github.com/org/myrepo.git' },
+    ]);
+
+    // Link it first
+    autoLinkLocalRepos(db);
+    // Run again — should not error or change anything
+    autoLinkLocalRepos(db);
+
+    const repos = listLocalRepos(db);
+    expect(repos[0].linkedGithubRepoId).toBe(ghId);
+  });
+
+  it('autoLinkLocalRepos skips non-GitHub remotes', () => {
+    upsertLocalRepo(db, '/home/user/repos/myrepo', 'myrepo', [
+      { name: 'origin', url: 'https://gitlab.com/org/myrepo.git' },
+    ]);
+
+    autoLinkLocalRepos(db);
+
+    const repos = listLocalRepos(db);
+    expect(repos[0].linkedGithubRepoId).toBeNull();
+  });
+
+  it('autoLinkLocalRepos does nothing when github_repos has no match', () => {
+    upsertLocalRepo(db, '/home/user/repos/myrepo', 'myrepo', [
+      { name: 'origin', url: 'https://github.com/org/myrepo.git' },
+    ]);
+
+    autoLinkLocalRepos(db);
+
+    const repos = listLocalRepos(db);
+    expect(repos[0].linkedGithubRepoId).toBeNull();
+  });
+
   it('linkLocalRepo manually sets github_repo_id', () => {
     db.run("INSERT INTO github_repos (full_name, name) VALUES (?, ?)", ['org/other', 'other']);
     const ghId = (db.exec("SELECT id FROM github_repos WHERE full_name='org/other'")[0].values[0][0]) as number;
@@ -275,6 +452,26 @@ describe('Local discovery DB operations', () => {
 
     const repos = listLocalRepos(db);
     expect(repos[0].linkedGithubRepoId).toBe(ghId);
+  });
+
+  it('linkLocalRepo can unlink by setting null', () => {
+    db.run("INSERT INTO github_repos (full_name, name) VALUES (?, ?)", ['org/other', 'other']);
+    const ghId = (db.exec("SELECT id FROM github_repos WHERE full_name='org/other'")[0].values[0][0]) as number;
+
+    const localId = upsertLocalRepo(db, '/home/user/repos/myrepo', 'myrepo', []);
+    linkLocalRepo(db, localId, ghId);
+    linkLocalRepo(db, localId, null);
+
+    const repos = listLocalRepos(db);
+    expect(repos[0].linkedGithubRepoId).toBeNull();
+  });
+
+  it('listLocalRepos uses basename when name is null', () => {
+    // Directly insert a repo with null name to test fallback
+    db.run("INSERT INTO local_repos (local_path, name) VALUES (?, ?)", ['/home/user/repos/fallback-repo', null]);
+
+    const repos = listLocalRepos(db);
+    expect(repos[0].name).toBe('fallback-repo');
   });
 
   it('listLocalReposForFolder filters by folder path', () => {
@@ -287,5 +484,78 @@ describe('Local discovery DB operations', () => {
     expect(names).toContain('a');
     expect(names).toContain('b');
     expect(names).not.toContain('c');
+  });
+
+  it('listLocalReposForFolder matches exact folder path', () => {
+    upsertLocalRepo(db, '/home/user/repos', 'repos', []);
+
+    const repos = listLocalReposForFolder(db, '/home/user/repos');
+    expect(repos).toHaveLength(1);
+    expect(repos[0].name).toBe('repos');
+  });
+});
+
+// ── runLocalDiscovery ─────────────────────────────────────────────────────────
+
+describe('runLocalDiscovery', () => {
+  let db: SqlJsDatabase;
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    const SQL = await initSqlJs();
+    db = new SQL.Database();
+    db.run(getSchema());
+    tmpDir = makeTempDir();
+  });
+
+  afterEach(() => {
+    db.close();
+    removeDir(tmpDir);
+  });
+
+  it('scans configured folders and upserts discovered repos', async () => {
+    const repoPath = path.join(tmpDir, 'my-repo');
+    createFakeRepo(repoPath, [{ name: 'origin', url: 'https://github.com/org/my-repo.git' }]);
+    addScanFolder(db, tmpDir);
+
+    const result = await runLocalDiscovery(db);
+
+    expect(result.phase).toBe('done');
+    expect(result.foldersScanned).toBe(1);
+    expect(result.reposFound).toBe(1);
+
+    const repos = listLocalRepos(db);
+    expect(repos).toHaveLength(1);
+    expect(repos[0].name).toBe('my-repo');
+  });
+
+  it('calls onProgress during scanning', async () => {
+    const repoPath = path.join(tmpDir, 'repo');
+    createFakeRepo(repoPath);
+    addScanFolder(db, tmpDir);
+
+    const progressCalls: { phase: string }[] = [];
+    await runLocalDiscovery(db, (p) => progressCalls.push({ phase: p.phase }));
+
+    expect(progressCalls.length).toBeGreaterThan(0);
+    expect(progressCalls[progressCalls.length - 1].phase).toBe('done');
+  });
+
+  it('returns zero counts when no scan folders configured', async () => {
+    const result = await runLocalDiscovery(db);
+    expect(result).toEqual({ phase: 'done', foldersScanned: 0, reposFound: 0 });
+  });
+
+  it('auto-links repos to github_repos after scanning', async () => {
+    db.run("INSERT INTO github_repos (full_name, name) VALUES (?, ?)", ['org/my-repo', 'my-repo']);
+
+    const repoPath = path.join(tmpDir, 'my-repo');
+    createFakeRepo(repoPath, [{ name: 'origin', url: 'https://github.com/org/my-repo.git' }]);
+    addScanFolder(db, tmpDir);
+
+    await runLocalDiscovery(db);
+
+    const repos = listLocalRepos(db);
+    expect(repos[0].linkedGithubRepoId).not.toBeNull();
   });
 });
