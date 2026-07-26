@@ -43,6 +43,7 @@ import { registerHandlers as registerGroupsHandlers } from '../plugins/groups/ha
 import { registerHandlers as registerOnedriveHandlers } from '../plugins/onedrive/handler';
 
 import { registerHandlers as registerBrowserCompanionHandlers } from '../plugins/browser-companion/handler';
+import { registerTaskIpcHandlers } from './background-tasks';
 
 
 
@@ -50,17 +51,6 @@ import { registerHandlers as registerBrowserCompanionHandlers } from '../plugins
 
 export { startDiscoveryIfAuthed } from '../plugins/discovery/handler';
 
-// Re-export scheduleLocalDiscovery so src/main/index.ts can call it on startup
-
-export { scheduleLocalDiscovery } from '../plugins/local-repos/handler';
-
-// Re-export runBootWorkflowCheck so src/main/index.ts can call it on startup
-
-export { runBootWorkflowCheck } from '../plugins/notifications/handler';
-// Re-export prewarmRuddrCache so src/main/index.ts can call it on startup
-export { prewarmRuddrCache } from '../plugins/groups/handler';
-// Re-export scheduleRuddrProjectsRefresh so src/main/index.ts can call it on startup
-export { scheduleRuddrProjectsRefresh } from '../plugins/groups/handler';
 
 
 
@@ -101,6 +91,8 @@ export function registerIpcHandlers(
   registerOnedriveHandlers(db, getWindow);
 
   registerBrowserCompanionHandlers(db, getWindow);
+
+  registerTaskIpcHandlers();
 
 }
 

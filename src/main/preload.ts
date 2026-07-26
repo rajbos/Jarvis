@@ -310,4 +310,22 @@ contextBridge.exposeInMainWorld('jarvis', {
   logAutoDismiss: (entries: unknown[]) => ipcRenderer.invoke('github:log-auto-dismiss', entries),
   listAutoDismissLog: (limit?: number) => ipcRenderer.invoke('github:list-auto-dismiss-log', limit),
   getAutoDismissStats: () => ipcRenderer.invoke('github:auto-dismiss-stats'),
+  // Background tasks
+  listBackgroundTasks: () => ipcRenderer.invoke('tasks:list'),
+  runBackgroundTaskNow: (taskId: string) => ipcRenderer.invoke('tasks:run-now', taskId),
+  onBackgroundTaskComplete: (callback: (record: unknown) => void) => {
+    const listener = (_event: unknown, record: unknown) => callback(record);
+    ipcRenderer.on('tasks:run-complete', listener);
+    return () => { ipcRenderer.removeListener('tasks:run-complete', listener); };
+  },
+  onNotificationCountsUpdated: (callback: (counts: unknown) => void) => {
+    const listener = (_event: unknown, counts: unknown) => callback(counts);
+    ipcRenderer.on('github:notification-counts-updated', listener);
+    return () => { ipcRenderer.removeListener('github:notification-counts-updated', listener); };
+  },
+  onAutoDismissComplete: (callback: (payload: unknown) => void) => {
+    const listener = (_event: unknown, payload: unknown) => callback(payload);
+    ipcRenderer.on('github:auto-dismiss-complete', listener);
+    return () => { ipcRenderer.removeListener('github:auto-dismiss-complete', listener); };
+  },
 });

@@ -12,7 +12,8 @@ import { createOnboardingWindow, createSettingsWindow } from './windows';
 
 import { getOnboardingStatus, completeOnboardingStep } from '../agent/onboarding';
 
-import { registerIpcHandlers, startDiscoveryIfAuthed, scheduleLocalDiscovery, runBootWorkflowCheck, prewarmRuddrCache, scheduleRuddrProjectsRefresh } from './ipc-handlers';
+import { registerIpcHandlers, startDiscoveryIfAuthed } from './ipc-handlers';
+import { startBackgroundTasks, stopBackgroundTasks } from './background-tasks';
 
 import { checkOllama } from '../services/ollama';
 
@@ -170,32 +171,21 @@ async function initialize(): Promise<void> {
 
   // If GitHub auth is already set up, start background discovery
 
-  if (!needsOnboarding || onboarding.github_oauth === 'completed') {
+  const githubReady = !needsOnboarding || onboarding.github_oauth === 'completed';
+
+  if (githubReady) {
 
     startDiscoveryIfAuthed(db, () => mainWindow);
-
-    // Pre-warm workflow run cache so recovery status is ready when panels open
-
-    runBootWorkflowCheck(db, () => mainWindow).catch((err) => {
-
-      console.warn('[Boot] Workflow check failed:', err instanceof Error ? err.message : String(err));
-
-    });
 
   }
 
 
 
-  // Schedule periodic local-repo scanning
+  // Start centralized main-process background jobs. These continue to run even
 
-  scheduleLocalDiscovery(db, () => mainWindow);
+  // when renderer panels are not mounted.
 
-  // Pre-warm Ruddr projects cache after startup settles
-  prewarmRuddrCache(db).catch((err: unknown) => {
-    console.warn('[Boot] Ruddr cache pre-warm failed:', err instanceof Error ? err.message : String(err));
-  });
-  // Schedule hourly Ruddr project refresh and new-project notifications
-  scheduleRuddrProjectsRefresh(db, () => mainWindow);
+  startBackgroundTasks(db, () => mainWindow, { githubReady });
 
 
 
@@ -361,6 +351,8 @@ app.on('window-all-closed', () => {
 
 
 app.on('before-quit', () => {
+
+  stopBackgroundTasks();
 
   stopBridgeServer();
 
