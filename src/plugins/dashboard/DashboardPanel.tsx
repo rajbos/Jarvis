@@ -4,7 +4,6 @@ import type {
   RepoHealthStatus,
   HealthWarning,
   StoredNotification,
-  BackgroundTaskStatus,
 } from '../types';
 import { AgentSelector } from '../agents/AgentSelector';
 // ── Failure hint helpers ──────────────────────────────────────────────────────────
@@ -70,33 +69,6 @@ function AutoDismissSummaryBanner({
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
-
-function BackgroundTasksPanel({ tasks, onRunNow }: { tasks: BackgroundTaskStatus[]; onRunNow: (taskId: string) => void }) {
-  if (tasks.length === 0) return null;
-  return (
-    <div class="dash-auto-dismiss-mini">
-      <span class="dash-auto-dismiss-mini-label">
-        Background tasks: {tasks.map((task) => {
-          const status = task.running ? 'running' : task.lastStatus ?? 'waiting';
-          return `${task.label} (${status})`;
-        }).join(' · ')}
-      </span>
-      <div class="dash-sort-controls">
-        {tasks.map((task) => (
-          <button
-            key={task.id}
-            class="dash-auto-dismiss-mini-btn"
-            disabled={task.running}
-            onClick={() => onRunNow(task.id)}
-            title={task.lastError ? `Last error: ${task.lastError}` : `Run ${task.label} now`}
-          >
-            {task.running ? 'Running…' : `Run ${task.label}`}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 function WarningIcon({ kind }: { kind: HealthWarning['kind'] }) {
   switch (kind) {
@@ -973,7 +945,6 @@ export function DashboardPanel({ dismissedNotifIds, onOpenHistory }: { dismissed
   const [autoDismissAcknowledged, setAutoDismissAcknowledged] = useState(false);
   const [autoDismissDone, setAutoDismissDone] = useState(false);
   const [pipelineStatus, setPipelineStatus] = useState<'idle' | 'running' | 'done'>('idle');
-  const [backgroundTasks, setBackgroundTasks] = useState<BackgroundTaskStatus[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -992,24 +963,6 @@ export function DashboardPanel({ dismissedNotifIds, onOpenHistory }: { dismissed
   }, []);
 
   useEffect(() => { void load(); }, [load]);
-
-  const loadBackgroundTasks = useCallback(async () => {
-    try {
-      setBackgroundTasks(await window.jarvis.listBackgroundTasks());
-    } catch (err) {
-      console.warn('[Dashboard] Could not load background tasks:', err);
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadBackgroundTasks();
-    return window.jarvis.onBackgroundTaskComplete(() => { void loadBackgroundTasks(); });
-  }, [loadBackgroundTasks]);
-
-  const runBackgroundTaskNow = useCallback((taskId: string) => {
-    setBackgroundTasks((tasks) => tasks.map((task) => task.id === taskId ? { ...task, running: true } : task));
-    void window.jarvis.runBackgroundTaskNow(taskId).then(() => loadBackgroundTasks());
-  }, [loadBackgroundTasks]);
 
   // The main process owns the recurring auto-dismiss scheduler so it continues
   // while this dashboard panel is not mounted. The dashboard only reflects the
@@ -1227,8 +1180,6 @@ export function DashboardPanel({ dismissedNotifIds, onOpenHistory }: { dismissed
         active={cardFilter}
         onSelect={setCardFilter}
       />
-
-      <BackgroundTasksPanel tasks={backgroundTasks} onRunNow={runBackgroundTaskNow} />
 
       {/* Pipeline in-progress banner — shown while auto-dismiss is checking notifications */}
       {pipelineStatus === 'running' && (
