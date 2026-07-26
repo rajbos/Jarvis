@@ -315,8 +315,12 @@ async function refreshLinkedProjectDetails(db: SqlJsDatabase): Promise<void> {
   }
 }
 
-/** Schedules an hourly refresh of the Ruddr project list. Emits a renderer event when new projects are found. */
-export function scheduleRuddrProjectsRefresh(db: SqlJsDatabase, getWindow: () => BrowserWindow | null): void {
+/** Refreshes the Ruddr project list for the main-process task scheduler. */
+export async function refreshRuddrProjectsInBackground(
+  db: SqlJsDatabase,
+  getWindow: () => BrowserWindow | null,
+  forceFresh = false,
+): Promise<{ ok: boolean; skipped?: boolean; error?: string }> {
   _getWindowFn = getWindow;
   _notifyNewProjects = (projects: RuddrProjectEntry[]) => {
     const win = getWindow();
@@ -325,30 +329,17 @@ export function scheduleRuddrProjectsRefresh(db: SqlJsDatabase, getWindow: () =>
     }
   };
 
-  const HOUR_MS = 60 * 60 * 1000;
-  // First run after 30 seconds (let the app settle and browser extension connect).
-  setTimeout(async () => {
-    const err = await ensureRuddrCache(db).catch((e: unknown) => String(e));
-    if (err) {
-      logger.debug('[Groups] Hourly Ruddr refresh skipped:', err);
-    } else {
-      refreshLinkedProjectDetails(db).catch((e: unknown) =>
-        logger.warn('[Groups] Auto-refresh project details failed:', e instanceof Error ? e.message : String(e)),
-      );
-    }
-    setInterval(async () => {
-      // Force a fresh scrape by resetting the cache time so ensureRuddrCache re-fetches
-      ruddrProjectsCacheTime = 0;
-      const e = await ensureRuddrCache(db).catch((ex: unknown) => String(ex));
-      if (e) {
-        logger.debug('[Groups] Hourly Ruddr refresh skipped:', e);
-      } else {
-        refreshLinkedProjectDetails(db).catch((ex: unknown) =>
-          logger.warn('[Groups] Auto-refresh project details failed:', ex instanceof Error ? ex.message : String(ex)),
-        );
-      }
-    }, HOUR_MS);
-  }, 30_000);
+  if (forceFresh) ruddrProjectsCacheTime = 0;
+  const err = await ensureRuddrCache(db).catch((e: unknown) => String(e));
+  if (err) {
+    logger.debug('[Groups] Scheduled Ruddr refresh skipped:', err);
+    return { ok: true, skipped: true, error: err };
+  }
+
+  await refreshLinkedProjectDetails(db).catch((e: unknown) =>
+    logger.warn('[Groups] Auto-refresh project details failed:', e instanceof Error ? e.message : String(e)),
+  );
+  return { ok: true };
 }
 
 export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWindow | null): void {

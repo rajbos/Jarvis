@@ -1,10 +1,10 @@
-import { useState, useEffect, useCallback, useRef } from 'preact/hooks';
+import { useState, useEffect, useCallback } from 'preact/hooks';
 import type {
   DashboardSummary,
   RepoHealthStatus,
   HealthWarning,
   StoredNotification,
-  AutoDismissLogInput,
+  BackgroundTaskStatus,
 } from '../types';
 import { AgentSelector } from '../agents/AgentSelector';
 // ── Failure hint helpers ──────────────────────────────────────────────────────────
@@ -29,236 +29,12 @@ function extractErrorHint(logExcerpt: string | null): string | null {
   }
   return null;
 }
-// ── Auto-dismiss pipeline ─────────────────────────────────────────────────────
-// Replaces RecoverableBanner and ClosedPrBanner with fully-automatic dismissal.
-// Runs once after the dashboard summary loads.
-
-interface AutoDismissStepResult {
-  id: string;
-  label: string;
-  dismissed: number;
-}
+// ── Auto-dismiss summary banner ───────────────────────────────────────────────
 
 interface AutoDismissRunResult {
-  steps: AutoDismissStepResult[];
+  steps: Array<{ id: string; label: string; dismissed: number }>;
   total: number;
 }
-
-/**
- * Module-level cooldown so repeated tab switches (which remount DashboardPanel)
- * don't re-trigger the pipeline more often than this interval. Notifications for
- * already-closed issues/PRs can surface hours or days after the close (e.g. a new
- * mention on an old closed issue), so a single run-once-per-session sweep misses them.
- */
-const AUTO_DISMISS_INTERVAL_MS = 10 * 60 * 1000;
-let lastAutoDismissRunAt = 0;
-
-async function runRecoverableStep(repoFullNames: string[]): Promise<{ dismissed: number; logEntries: AutoDismissLogInput[] }> {
-  const logEntries: AutoDismissLogInput[] = [];
-  let dismissed = 0;
-  for (const repoFullName of repoFullNames) {
-    try {
-      const notifs = await window.jarvis.listNotificationsForRepo(repoFullName);
-      const ciNotifs = notifs.filter((n) => n.subject_type === 'CheckSuite' || n.subject_type === 'WorkflowRun');
-      if (ciNotifs.length === 0) continue;
-
-      let summary = await window.jarvis.githubGetWorkflowSummary(repoFullName);
-      if (summary.total_runs === 0) {
-        await window.jarvis.githubFetchWorkflowRuns(repoFullName);
-        summary = await window.jarvis.githubGetWorkflowSummary(repoFullName);
-      }
-
-      const byWorkflow = new Map<string, StoredNotification[]>();
-      for (const n of ciNotifs) {
-        const name = n.subject_title.match(/^(.+?)\s+workflow\s+run/i)?.[1]?.trim() ?? n.subject_title;
-        if (!byWorkflow.has(name)) byWorkflow.set(name, []);
-        byWorkflow.get(name)!.push(n);
-      }
-
-      for (const [workflowName, wNotifs] of byWorkflow) {
-        const branch = wNotifs[0].subject_title.match(/\bfor\s+(\S+)\s+branch\b/i)?.[1] ?? null;
-        const latestNotifTime = Math.max(...wNotifs.map((n) => new Date(n.updated_at).getTime()));
-        const recovered = summary.recent_runs.some(
-          (r) =>
-            r.workflow_name === workflowName &&
-            (branch === null || r.head_branch === branch) &&
-            r.conclusion === 'success' &&
-            new Date(r.run_started_at).getTime() > latestNotifTime,
-        );
-        if (recovered) {
-          for (const n of wNotifs) {
-            try {
-              await window.jarvis.dismissNotification(n.id);
-              logEntries.push({
-                notification_id: n.id,
-                reason: 'recovered_workflow',
-                repo_full_name: repoFullName,
-                subject_title: n.subject_title,
-                subject_type: n.subject_type,
-              });
-              dismissed++;
-            } catch { /* skip individual */ }
-          }
-        }
-      }
-    } catch { /* non-fatal per repo */ }
-  }
-  return { dismissed, logEntries };
-}
-
-async function runClosedPrStep(): Promise<{ dismissed: number; logEntries: AutoDismissLogInput[] }> {
-  const logEntries: AutoDismissLogInput[] = [];
-  let dismissed = 0;
-  try {
-    const allPrNotifs = await window.jarvis.listPrNotifications();
-    const byUrl = new Map<string, StoredNotification[]>();
-    for (const n of allPrNotifs) {
-      if (!n.subject_url) continue;
-      if (!byUrl.has(n.subject_url)) byUrl.set(n.subject_url, []);
-      byUrl.get(n.subject_url)!.push(n);
-    }
-    const urlEntries = [...byUrl.entries()];
-    const CONCURRENCY = 8;
-    const BATCH_SIZE = 200;
-    for (let offset = 0; offset < urlEntries.length; offset += BATCH_SIZE) {
-      const batch = urlEntries.slice(offset, offset + BATCH_SIZE);
-      let nextIdx = 0;
-      const worker = async () => {
-        while (nextIdx < batch.length) {
-          const idx = nextIdx++;
-          const [url, urlNotifs] = batch[idx];
-          try {
-            const result = await window.jarvis.githubGetPrState(url);
-            if (!result || result.state === 'open') continue;
-            const { state, isDependabot, closedByMe } = result;
-            if (!isDependabot && !closedByMe) continue;
-            const reason: AutoDismissLogInput['reason'] =
-              isDependabot ? 'closed_pr_dependabot'
-              : state === 'merged' ? 'closed_pr_merged_me'
-              : 'closed_pr_closed_me';
-            for (const n of urlNotifs) {
-              try {
-                await window.jarvis.dismissNotification(n.id);
-                logEntries.push({
-                  notification_id: n.id,
-                  reason,
-                  repo_full_name: n.repo_full_name,
-                  subject_title: n.subject_title,
-                  subject_type: n.subject_type,
-                });
-                dismissed++;
-              } catch { /* skip individual */ }
-            }
-          } catch { /* skip individual PR */ }
-        }
-      };
-      await Promise.all(Array.from({ length: Math.min(CONCURRENCY, batch.length) }, worker));
-    }
-  } catch { /* non-fatal */ }
-  return { dismissed, logEntries };
-}
-
-async function runClosedIssueStep(): Promise<{ dismissed: number; logEntries: AutoDismissLogInput[] }> {
-  const logEntries: AutoDismissLogInput[] = [];
-  let dismissed = 0;
-  try {
-    const allIssueNotifs = await window.jarvis.listIssueNotifications();
-    const byUrl = new Map<string, StoredNotification[]>();
-    for (const n of allIssueNotifs) {
-      if (!n.subject_url) continue;
-      if (!byUrl.has(n.subject_url)) byUrl.set(n.subject_url, []);
-      byUrl.get(n.subject_url)!.push(n);
-    }
-    const urlEntries = [...byUrl.entries()];
-    const CONCURRENCY = 8;
-    const BATCH_SIZE = 200;
-    for (let offset = 0; offset < urlEntries.length; offset += BATCH_SIZE) {
-      const batch = urlEntries.slice(offset, offset + BATCH_SIZE);
-      let nextIdx = 0;
-      const worker = async () => {
-        while (nextIdx < batch.length) {
-          const idx = nextIdx++;
-          const [url, urlNotifs] = batch[idx];
-          try {
-            const result = await window.jarvis.githubGetIssueState(url);
-            if (!result || result.state !== 'closed') continue;
-            const { closedByMe, closedViaMergedPr } = result;
-            if (!closedByMe && !closedViaMergedPr) continue;
-            const reason: AutoDismissLogInput['reason'] =
-              closedViaMergedPr ? 'closed_issue_via_pr' : 'closed_issue_me';
-            for (const n of urlNotifs) {
-              try {
-                await window.jarvis.dismissNotification(n.id);
-                logEntries.push({
-                  notification_id: n.id,
-                  reason,
-                  repo_full_name: n.repo_full_name,
-                  subject_title: n.subject_title,
-                  subject_type: n.subject_type,
-                });
-                dismissed++;
-              } catch { /* skip individual */ }
-            }
-          } catch { /* skip individual issue */ }
-        }
-      };
-      await Promise.all(Array.from({ length: Math.min(CONCURRENCY, batch.length) }, worker));
-    }
-  } catch { /* non-fatal */ }
-  return { dismissed, logEntries };
-}
-
-async function runDeletedBranchStep(): Promise<{ dismissed: number; logEntries: AutoDismissLogInput[] }> {
-  const logEntries: AutoDismissLogInput[] = [];
-  let dismissed = 0;
-  try {
-    const notifs = await window.jarvis.checkDeletedBranches();
-    for (const n of notifs) {
-      try {
-        await window.jarvis.dismissNotification(n.id);
-        logEntries.push({
-          notification_id: n.id,
-          reason: 'deleted_branch',
-          repo_full_name: n.repo_full_name,
-          subject_title: n.subject_title,
-          subject_type: n.subject_type,
-        });
-        dismissed++;
-      } catch { /* skip individual */ }
-    }
-  } catch { /* non-fatal */ }
-  return { dismissed, logEntries };
-}
-
-async function runAutoDismissPipeline(
-  repoFullNames: string[],
-): Promise<{ result: AutoDismissRunResult; logEntries: AutoDismissLogInput[] }> {
-  const steps: AutoDismissStepResult[] = [];
-  const allLog: AutoDismissLogInput[] = [];
-
-  const [rec, pr, issue, delBranch] = await Promise.all([
-    runRecoverableStep(repoFullNames),
-    runClosedPrStep(),
-    runClosedIssueStep(),
-    runDeletedBranchStep(),
-  ]);
-
-  steps.push({ id: 'recovered-workflows', label: 'Recovered workflows', dismissed: rec.dismissed });
-  allLog.push(...rec.logEntries);
-  steps.push({ id: 'closed-prs', label: 'Closed / merged PRs', dismissed: pr.dismissed });
-  allLog.push(...pr.logEntries);
-  steps.push({ id: 'closed-issues', label: 'Closed issues', dismissed: issue.dismissed });
-  allLog.push(...issue.logEntries);
-  steps.push({ id: 'deleted-branches', label: 'Deleted branches', dismissed: delBranch.dismissed });
-  allLog.push(...delBranch.logEntries);
-
-  return {
-    result: { steps, total: steps.reduce((s, r) => s + r.dismissed, 0) },
-    logEntries: allLog,
-  };
-}
-
-// ── Auto-dismiss summary banner ───────────────────────────────────────────────
 
 function AutoDismissSummaryBanner({
   result,
@@ -294,6 +70,33 @@ function AutoDismissSummaryBanner({
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
+
+function BackgroundTasksPanel({ tasks, onRunNow }: { tasks: BackgroundTaskStatus[]; onRunNow: (taskId: string) => void }) {
+  if (tasks.length === 0) return null;
+  return (
+    <div class="dash-auto-dismiss-mini">
+      <span class="dash-auto-dismiss-mini-label">
+        Background tasks: {tasks.map((task) => {
+          const status = task.running ? 'running' : task.lastStatus ?? 'waiting';
+          return `${task.label} (${status})`;
+        }).join(' · ')}
+      </span>
+      <div class="dash-sort-controls">
+        {tasks.map((task) => (
+          <button
+            key={task.id}
+            class="dash-auto-dismiss-mini-btn"
+            disabled={task.running}
+            onClick={() => onRunNow(task.id)}
+            title={task.lastError ? `Last error: ${task.lastError}` : `Run ${task.label} now`}
+          >
+            {task.running ? 'Running…' : `Run ${task.label}`}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function WarningIcon({ kind }: { kind: HealthWarning['kind'] }) {
   switch (kind) {
@@ -1170,6 +973,7 @@ export function DashboardPanel({ dismissedNotifIds, onOpenHistory }: { dismissed
   const [autoDismissAcknowledged, setAutoDismissAcknowledged] = useState(false);
   const [autoDismissDone, setAutoDismissDone] = useState(false);
   const [pipelineStatus, setPipelineStatus] = useState<'idle' | 'running' | 'done'>('idle');
+  const [backgroundTasks, setBackgroundTasks] = useState<BackgroundTaskStatus[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1189,40 +993,35 @@ export function DashboardPanel({ dismissedNotifIds, onOpenHistory }: { dismissed
 
   useEffect(() => { void load(); }, [load]);
 
-  // Keep a ref to the latest summary so the periodic timer below always reads
-  // fresh repo/notification data without needing to reset on every summary change.
-  const summaryRef = useRef<DashboardSummary | null>(null);
-  useEffect(() => { summaryRef.current = summary; }, [summary]);
+  const loadBackgroundTasks = useCallback(async () => {
+    try {
+      setBackgroundTasks(await window.jarvis.listBackgroundTasks());
+    } catch (err) {
+      console.warn('[Dashboard] Could not load background tasks:', err);
+    }
+  }, []);
 
-  const runAutoDismissIfDue = useCallback(() => {
-    const currentSummary = summaryRef.current;
-    if (!currentSummary || Date.now() - lastAutoDismissRunAt < AUTO_DISMISS_INTERVAL_MS) return;
-    lastAutoDismissRunAt = Date.now();
-    setPipelineStatus('running');
-    const repoFullNames = currentSummary.repos
-      .filter((r) => r.notificationCount > 0 && r.linkedGithubRepo !== null)
-      .map((r) => r.linkedGithubRepo!);
-    void runAutoDismissPipeline(repoFullNames).then(async ({ result, logEntries }) => {
-      if (logEntries.length > 0) {
-        try { await window.jarvis.logAutoDismiss(logEntries); } catch { /* non-fatal */ }
-        void load(); // refresh summary counts after dismissals
-      }
+  useEffect(() => {
+    void loadBackgroundTasks();
+    return window.jarvis.onBackgroundTaskComplete(() => { void loadBackgroundTasks(); });
+  }, [loadBackgroundTasks]);
+
+  const runBackgroundTaskNow = useCallback((taskId: string) => {
+    setBackgroundTasks((tasks) => tasks.map((task) => task.id === taskId ? { ...task, running: true } : task));
+    void window.jarvis.runBackgroundTaskNow(taskId).then(() => loadBackgroundTasks());
+  }, [loadBackgroundTasks]);
+
+  // The main process owns the recurring auto-dismiss scheduler so it continues
+  // while this dashboard panel is not mounted. The dashboard only reflects the
+  // most recent result and refreshes summary counts after dismissals.
+  useEffect(() => {
+    return window.jarvis.onAutoDismissComplete(({ result, logEntries }) => {
+      if (logEntries.length > 0) void load();
       if (result.total > 0) setAutoDismissResult(result);
       setAutoDismissDone(true);
       setPipelineStatus('done');
     });
   }, [load]);
-
-  // Run the auto-dismiss pipeline once summary is first available, then keep
-  // re-checking every AUTO_DISMISS_INTERVAL_MS so notifications for issues/PRs
-  // that get closed (or resurface as unread) mid-session are still swept up,
-  // not just at app start.
-  useEffect(() => {
-    if (!summary) return;
-    runAutoDismissIfDue();
-    const intervalId = setInterval(runAutoDismissIfDue, AUTO_DISMISS_INTERVAL_MS);
-    return () => clearInterval(intervalId);
-  }, [summary, runAutoDismissIfDue]);
 
   useEffect(() => {
     if (!summary || !currentUserLogin || !autoDismissDone) {
@@ -1428,6 +1227,8 @@ export function DashboardPanel({ dismissedNotifIds, onOpenHistory }: { dismissed
         active={cardFilter}
         onSelect={setCardFilter}
       />
+
+      <BackgroundTasksPanel tasks={backgroundTasks} onRunNow={runBackgroundTaskNow} />
 
       {/* Pipeline in-progress banner — shown while auto-dismiss is checking notifications */}
       {pipelineStatus === 'running' && (

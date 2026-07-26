@@ -81,7 +81,6 @@ function BarChart({ data, granularity }: {
   // Bars distributed evenly across the plot area
   const barUnit = plotW / n;
   const barW = Math.min(barUnit * 0.7, 100);
-  const plotTop = padT;
   const plotBottom = padT + plotH;
   const plotHeight = plotH;
 

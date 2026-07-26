@@ -390,12 +390,13 @@ function App() {
     }
   }, [oauthStatus?.authenticated]);
 
-  // 5-minute auto-refresh timer
+  // Main-process background task pushes updated counts even when panels are not mounted.
   useEffect(() => {
-    if (!oauthStatus?.authenticated) return;
-    const id = window.setInterval(() => { void doFetchNotifications(); }, 5 * 60 * 1000);
-    return () => window.clearInterval(id);
-  }, [oauthStatus?.authenticated, doFetchNotifications]);
+    return window.jarvis.onNotificationCountsUpdated((counts) => {
+      setNotifCounts(counts);
+      setNotifFetching(false);
+    });
+  }, []);
 
   // 2-minute rate limit refresh
   useEffect(() => {

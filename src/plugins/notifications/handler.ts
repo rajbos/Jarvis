@@ -22,7 +22,7 @@ import {
 } from '../../services/github-notifications';
 import { loadGitHubAuth } from '../../services/github-oauth';
 import { saveDatabase } from '../../storage/database';
-import { fetchAndStoreWorkflowData } from '../../services/github-workflows';
+import { fetchAndStoreWorkflowData, getWorkflowSummaryForRepo } from '../../services/github-workflows';
 import { isWorkflowDataFresh } from './workflow-cache';
 
 // ── Boot workflow check constants ─────────────────────────────────────────────
@@ -57,15 +57,301 @@ async function fetchTokenRateLimitRemaining(token: string): Promise<number | nul
   }
 }
 
+
+export interface AutoDismissStepResult {
+  id: string;
+  label: string;
+  dismissed: number;
+}
+
+export interface AutoDismissRunResult {
+  steps: AutoDismissStepResult[];
+  total: number;
+}
+
+export interface AutoDismissSweepResult {
+  ok: boolean;
+  skipped?: boolean;
+  reason?: string;
+  counts?: ReturnType<typeof getNotificationCounts>;
+  result?: AutoDismissRunResult;
+  logEntries?: AutoDismissLogInput[];
+}
+
+export async function syncGitHubNotifications(
+  db: SqlJsDatabase,
+  getWindow: () => BrowserWindow | null,
+): Promise<{ ok: boolean; skipped?: boolean; error?: string; counts?: ReturnType<typeof getNotificationCounts> }> {
+  const auth = loadGitHubAuth(db);
+  if (!auth) return { ok: true, skipped: true, error: 'Not authenticated' };
+  const notifications = await fetchNotifications(auth.accessToken);
+  storeNotifications(db, notifications);
+  saveDatabase();
+  const counts = getNotificationCounts(db);
+  const win = getWindow();
+  if (win && !win.isDestroyed()) {
+    win.webContents.send('github:notification-counts-updated', counts);
+  }
+  return { ok: true, counts };
+}
+
+async function fetchPrState(
+  accessToken: string,
+  currentLogin: string,
+  subjectUrl: string,
+): Promise<{ state: 'open' | 'closed' | 'merged'; isDependabot: boolean; closedByMe: boolean } | null> {
+  if (!/^https:\/\/api\.github\.com\/repos\/[^/]+\/[^/]+\/pulls\/\d+$/.test(subjectUrl)) return null;
+  try {
+    const res = await fetch(subjectUrl, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    });
+    if (!res.ok) return null;
+    const pr = (await res.json()) as {
+      state: string;
+      merged: boolean;
+      user: { login: string } | null;
+      merged_by: { login: string } | null;
+    };
+    const authorLogin = (pr.user?.login ?? '').toLowerCase();
+    const isDependabot = authorLogin.includes('dependabot');
+    const myLogin = currentLogin.toLowerCase();
+    if (pr.merged) {
+      return { state: 'merged', isDependabot, closedByMe: (pr.merged_by?.login ?? '').toLowerCase() === myLogin };
+    }
+    if (pr.state === 'closed') {
+      return { state: 'closed', isDependabot, closedByMe: authorLogin === myLogin };
+    }
+    return { state: 'open', isDependabot, closedByMe: false };
+  } catch {
+    return null;
+  }
+}
+
+async function fetchIssueState(
+  accessToken: string,
+  currentLogin: string,
+  subjectUrl: string,
+): Promise<{ state: 'open' | 'closed'; closedByMe: boolean; closedViaMergedPr: boolean } | null> {
+  if (!/^https:\/\/api\.github\.com\/repos\/[^/]+\/[^/]+\/issues\/\d+$/.test(subjectUrl)) return null;
+  const headers = {
+    Authorization: `Bearer ${accessToken}`,
+    Accept: 'application/vnd.github+json',
+    'X-GitHub-Api-Version': '2022-11-28',
+  };
+  try {
+    const issueRes = await fetch(subjectUrl, { headers });
+    if (!issueRes.ok) return null;
+    const issue = (await issueRes.json()) as { state: string };
+    if (issue.state !== 'closed') return { state: 'open', closedByMe: false, closedViaMergedPr: false };
+
+    const eventsRes = await fetch(`${subjectUrl}/events`, { headers });
+    let closedByMe = false;
+    let closedViaMergedPr = false;
+    if (eventsRes.ok) {
+      const events = (await eventsRes.json()) as Array<{
+        event: string;
+        actor: { login: string } | null;
+        commit_id: string | null;
+      }>;
+      const closedEvent = [...events].reverse().find((e) => e.event === 'closed');
+      if (closedEvent) {
+        closedByMe = (closedEvent.actor?.login ?? '').toLowerCase() === currentLogin.toLowerCase();
+        closedViaMergedPr = closedEvent.commit_id !== null && closedEvent.commit_id !== '';
+      }
+    }
+    return { state: 'closed', closedByMe, closedViaMergedPr };
+  } catch {
+    return null;
+  }
+}
+
+function logAutoDismissEntries(db: SqlJsDatabase, entries: AutoDismissLogInput[]): void {
+  if (entries.length === 0) return;
+  const sql =
+    `INSERT INTO auto_dismiss_log (notification_id, dismissed_at, reason, repo_full_name, subject_title, subject_type)
+     VALUES (?, datetime('now'), ?, ?, ?, ?)`;
+  for (const e of entries) {
+    if (typeof e.notification_id !== 'string' || typeof e.reason !== 'string') continue;
+    db.run(sql, [
+      e.notification_id,
+      e.reason,
+      typeof e.repo_full_name === 'string' ? e.repo_full_name : null,
+      typeof e.subject_title === 'string' ? e.subject_title : null,
+      typeof e.subject_type === 'string' ? e.subject_type : null,
+    ]);
+  }
+}
+
+async function dismissStoredNotification(
+  db: SqlJsDatabase,
+  accessToken: string,
+  n: { id: string },
+): Promise<boolean> {
+  try {
+    await markNotificationRead(accessToken, n.id);
+  } catch (err) {
+    console.warn('[AutoDismiss] Could not mark notification as read on GitHub:', err instanceof Error ? err.message : String(err));
+  }
+  deleteNotification(db, n.id);
+  return true;
+}
+
+async function runRecoverableStep(db: SqlJsDatabase, accessToken: string, repoFullNames: string[]): Promise<{ dismissed: number; logEntries: AutoDismissLogInput[] }> {
+  const logEntries: AutoDismissLogInput[] = [];
+  let dismissed = 0;
+  for (const repoFullName of repoFullNames) {
+    try {
+      const notifs = listNotificationsForRepo(db, repoFullName);
+      const ciNotifs = notifs.filter((n) => n.subject_type === 'CheckSuite' || n.subject_type === 'WorkflowRun');
+      if (ciNotifs.length === 0) continue;
+
+      let summary = getWorkflowSummaryForRepo(db, repoFullName);
+      if (summary.total_runs === 0) {
+        await fetchAndStoreWorkflowData(db, accessToken, repoFullName);
+        summary = getWorkflowSummaryForRepo(db, repoFullName);
+      }
+
+      const byWorkflow = new Map<string, typeof ciNotifs>();
+      for (const n of ciNotifs) {
+        const name = n.subject_title.match(/^(.+?)\s+workflow\s+run/i)?.[1]?.trim() ?? n.subject_title;
+        if (!byWorkflow.has(name)) byWorkflow.set(name, []);
+        byWorkflow.get(name)!.push(n);
+      }
+
+      for (const [workflowName, wNotifs] of byWorkflow) {
+        const branch = wNotifs[0].subject_title.match(/\bfor\s+(\S+)\s+branch\b/i)?.[1] ?? null;
+        const latestNotifTime = Math.max(...wNotifs.map((n) => new Date(n.updated_at).getTime()));
+        const recovered = summary.recent_runs.some(
+          (r) =>
+            r.workflow_name === workflowName &&
+            (branch === null || r.head_branch === branch) &&
+            r.conclusion === 'success' &&
+            new Date(r.run_started_at).getTime() > latestNotifTime,
+        );
+        if (!recovered) continue;
+        for (const n of wNotifs) {
+          if (await dismissStoredNotification(db, accessToken, n)) {
+            logEntries.push({ notification_id: n.id, reason: 'recovered_workflow', repo_full_name: repoFullName, subject_title: n.subject_title, subject_type: n.subject_type });
+            dismissed++;
+          }
+        }
+      }
+    } catch { /* non-fatal per repo */ }
+  }
+  return { dismissed, logEntries };
+}
+
+async function runClosedPrStep(db: SqlJsDatabase, accessToken: string, currentLogin: string): Promise<{ dismissed: number; logEntries: AutoDismissLogInput[] }> {
+  const logEntries: AutoDismissLogInput[] = [];
+  let dismissed = 0;
+  const byUrl = new Map<string, ReturnType<typeof listPrNotifications>>();
+  for (const n of listPrNotifications(db)) {
+    if (!n.subject_url) continue;
+    if (!byUrl.has(n.subject_url)) byUrl.set(n.subject_url, []);
+    byUrl.get(n.subject_url)!.push(n);
+  }
+  for (const [url, urlNotifs] of byUrl) {
+    const result = await fetchPrState(accessToken, currentLogin, url);
+    if (!result || result.state === 'open') continue;
+    const { state, isDependabot, closedByMe } = result;
+    if (!isDependabot && !closedByMe) continue;
+    const reason: AutoDismissLogInput['reason'] = isDependabot ? 'closed_pr_dependabot' : state === 'merged' ? 'closed_pr_merged_me' : 'closed_pr_closed_me';
+    for (const n of urlNotifs) {
+      if (await dismissStoredNotification(db, accessToken, n)) {
+        logEntries.push({ notification_id: n.id, reason, repo_full_name: n.repo_full_name, subject_title: n.subject_title, subject_type: n.subject_type });
+        dismissed++;
+      }
+    }
+  }
+  return { dismissed, logEntries };
+}
+
+async function runClosedIssueStep(db: SqlJsDatabase, accessToken: string, currentLogin: string): Promise<{ dismissed: number; logEntries: AutoDismissLogInput[] }> {
+  const logEntries: AutoDismissLogInput[] = [];
+  let dismissed = 0;
+  const byUrl = new Map<string, ReturnType<typeof listIssueNotifications>>();
+  for (const n of listIssueNotifications(db)) {
+    if (!n.subject_url) continue;
+    if (!byUrl.has(n.subject_url)) byUrl.set(n.subject_url, []);
+    byUrl.get(n.subject_url)!.push(n);
+  }
+  for (const [url, urlNotifs] of byUrl) {
+    const result = await fetchIssueState(accessToken, currentLogin, url);
+    if (!result || result.state !== 'closed') continue;
+    const { closedByMe, closedViaMergedPr } = result;
+    if (!closedByMe && !closedViaMergedPr) continue;
+    const reason: AutoDismissLogInput['reason'] = closedViaMergedPr ? 'closed_issue_via_pr' : 'closed_issue_me';
+    for (const n of urlNotifs) {
+      if (await dismissStoredNotification(db, accessToken, n)) {
+        logEntries.push({ notification_id: n.id, reason, repo_full_name: n.repo_full_name, subject_title: n.subject_title, subject_type: n.subject_type });
+        dismissed++;
+      }
+    }
+  }
+  return { dismissed, logEntries };
+}
+
+async function runDeletedBranchStep(db: SqlJsDatabase, accessToken: string): Promise<{ dismissed: number; logEntries: AutoDismissLogInput[] }> {
+  const logEntries: AutoDismissLogInput[] = [];
+  let dismissed = 0;
+  const notifs = await listDeletedBranchNotifications(db, accessToken);
+  for (const n of notifs) {
+    if (await dismissStoredNotification(db, accessToken, n)) {
+      logEntries.push({ notification_id: n.id, reason: 'deleted_branch', repo_full_name: n.repo_full_name, subject_title: n.subject_title, subject_type: n.subject_type });
+      dismissed++;
+    }
+  }
+  return { dismissed, logEntries };
+}
+
+export async function runAutoDismissSweep(
+  db: SqlJsDatabase,
+  getWindow: () => BrowserWindow | null,
+): Promise<AutoDismissSweepResult> {
+  const auth = loadGitHubAuth(db);
+  if (!auth) return { ok: true, skipped: true, reason: 'Not authenticated' };
+
+  const counts = getNotificationCounts(db);
+  const repoFullNames = Object.entries(counts.perRepo)
+    .filter(([, count]) => count > 0)
+    .map(([repo]) => repo);
+
+  const [rec, pr, issue, delBranch] = await Promise.all([
+    runRecoverableStep(db, auth.accessToken, repoFullNames),
+    runClosedPrStep(db, auth.accessToken, auth.login),
+    runClosedIssueStep(db, auth.accessToken, auth.login),
+    runDeletedBranchStep(db, auth.accessToken),
+  ]);
+
+  const steps: AutoDismissStepResult[] = [
+    { id: 'recovered-workflows', label: 'Recovered workflows', dismissed: rec.dismissed },
+    { id: 'closed-prs', label: 'Closed / merged PRs', dismissed: pr.dismissed },
+    { id: 'closed-issues', label: 'Closed issues', dismissed: issue.dismissed },
+    { id: 'deleted-branches', label: 'Deleted branches', dismissed: delBranch.dismissed },
+  ];
+  const logEntries = [...rec.logEntries, ...pr.logEntries, ...issue.logEntries, ...delBranch.logEntries];
+  logAutoDismissEntries(db, logEntries);
+  if (logEntries.length > 0) saveDatabase();
+
+  const result = { steps, total: steps.reduce((sum, step) => sum + step.dismissed, 0) };
+  const win = getWindow();
+  if (win && !win.isDestroyed()) {
+    win.webContents.send('github:auto-dismiss-complete', { result, logEntries });
+    if (logEntries.length > 0) win.webContents.send('github:notification-counts-updated', getNotificationCounts(db));
+  }
+  return { ok: true, counts, result, logEntries };
+}
+
 export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWindow | null): void {
   ipcMain.handle('github:fetch-notifications', async () => {
-    const auth = loadGitHubAuth(db);
-    if (!auth) return { ok: false, error: 'Not authenticated' };
     try {
-      const notifications = await fetchNotifications(auth.accessToken);
-      storeNotifications(db, notifications);
-      saveDatabase();
-      return getNotificationCounts(db);
+      const result = await syncGitHubNotifications(db, _getWindow);
+      if (result.skipped) return { ok: false, error: result.error ?? 'Skipped' };
+      return result.counts ?? getNotificationCounts(db);
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
@@ -165,19 +451,8 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
 
   ipcMain.handle('github:log-auto-dismiss', (_event, entries: AutoDismissLogInput[]) => {
     if (!Array.isArray(entries) || entries.length === 0) return;
-    const sql =
-      `INSERT INTO auto_dismiss_log (notification_id, dismissed_at, reason, repo_full_name, subject_title, subject_type)
-       VALUES (?, datetime('now'), ?, ?, ?, ?)`;
-    for (const e of entries) {
-      if (typeof e.notification_id !== 'string' || typeof e.reason !== 'string') continue;
-      db.run(sql, [
-        e.notification_id,
-        e.reason,
-        typeof e.repo_full_name === 'string' ? e.repo_full_name : null,
-        typeof e.subject_title === 'string' ? e.subject_title : null,
-        typeof e.subject_type === 'string' ? e.subject_type : null,
-      ]);
-    }
+    const valid = entries.filter((e) => typeof e.notification_id === 'string' && typeof e.reason === 'string');
+    logAutoDismissEntries(db, valid);
     saveDatabase();
   });
 

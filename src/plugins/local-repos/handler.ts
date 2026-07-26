@@ -153,16 +153,16 @@ export function startLocalScanIfNeeded(
   db: SqlJsDatabase,
   getWindow: () => BrowserWindow | null,
   force = false,
-): void {
+): boolean {
   if (localScanRunning && !force) {
     console.log('[LocalScan] Already running, skipping');
-    return;
+    return false;
   }
 
   const folders = getScanFolders(db);
   if (folders.length === 0) {
     console.log('[LocalScan] No scan folders configured, skipping');
-    return;
+    return false;
   }
 
   console.log('[LocalScan] Starting scan of', folders.length, 'folder(s)');
@@ -181,23 +181,5 @@ export function startLocalScanIfNeeded(
     localScanRunning = false;
     console.error('[LocalScan] Failed:', err);
   });
-}
-
-const LOCAL_SCAN_INITIAL_DELAY_MS = 30_000;       // 30 seconds after boot
-const LOCAL_SCAN_INTERVAL_MS = 60 * 60 * 1_000;  // 1 hour
-
-/**
- * Schedule the periodic local-repo scan.
- * First run is delayed to avoid blocking startup; subsequent runs are hourly.
- */
-export function scheduleLocalDiscovery(
-  db: SqlJsDatabase,
-  getWindow: () => BrowserWindow | null,
-): void {
-  setTimeout(() => {
-    startLocalScanIfNeeded(db, getWindow);
-    setInterval(() => {
-      startLocalScanIfNeeded(db, getWindow);
-    }, LOCAL_SCAN_INTERVAL_MS);
-  }, LOCAL_SCAN_INITIAL_DELAY_MS);
+  return true;
 }

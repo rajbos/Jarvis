@@ -180,6 +180,9 @@ const EXPECTED_CHANNELS = [
   'browser:list-tabs',
   'browser:get-page-content',
   'browser:focus-window',
+  // background tasks
+  'tasks:list',
+  'tasks:run-now',
 ] as const;
 
 describe('IPC handler registration', () => {

@@ -195,7 +195,7 @@ export function registerHandlers(
       let totalNotifications = 0;
       let totalFailedRuns = 0;
 
-      for (const [dedupKey, entries] of dedupKeyToEntries) {
+      for (const [_dedupKey, entries] of dedupKeyToEntries) {
         // Pick the entry with the most recent lastCommitAt as the representative
         const bestEntry = entries.reduce((best, current) => {
           // If current has a more recent commit, it becomes the best

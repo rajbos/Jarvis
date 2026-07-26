@@ -2015,6 +2015,44 @@ export type {
 
 
 
+
+export type BackgroundTaskRunStatus = 'success' | 'failed' | 'skipped';
+
+export interface BackgroundTaskRunRecord {
+  taskId: string;
+  status: BackgroundTaskRunStatus;
+  startedAt: string;
+  finishedAt: string;
+  durationMs: number;
+  result?: unknown;
+  error?: string;
+}
+
+export interface BackgroundTaskStatus {
+  id: string;
+  label: string;
+  running: boolean;
+  intervalMs?: number;
+  initialDelayMs?: number;
+  nextRunAt?: string;
+  lastStartedAt?: string;
+  lastFinishedAt?: string;
+  lastDurationMs?: number;
+  lastStatus?: BackgroundTaskRunStatus;
+  lastError?: string;
+  lastResult?: unknown;
+}
+
+export interface AutoDismissRunResult {
+  steps: Array<{ id: string; label: string; dismissed: number }>;
+  total: number;
+}
+
+export interface AutoDismissCompletePayload {
+  result: AutoDismissRunResult;
+  logEntries: AutoDismissLogInput[];
+}
+
 export interface JarvisApi {
 
 
@@ -2636,6 +2674,13 @@ export interface JarvisApi {
   logAutoDismiss(entries: AutoDismissLogInput[]): Promise<void>;
   listAutoDismissLog(limit?: number): Promise<AutoDismissLogEntry[]>;
   getAutoDismissStats(): Promise<AutoDismissStats>;
+
+  // Background tasks
+  listBackgroundTasks(): Promise<BackgroundTaskStatus[]>;
+  runBackgroundTaskNow(taskId: string): Promise<BackgroundTaskRunRecord | { ok: false; error: string }>;
+  onBackgroundTaskComplete(cb: (record: BackgroundTaskRunRecord) => void): () => void;
+  onNotificationCountsUpdated(cb: (counts: NotificationCounts) => void): () => void;
+  onAutoDismissComplete(cb: (payload: AutoDismissCompletePayload) => void): () => void;
 
 
 
