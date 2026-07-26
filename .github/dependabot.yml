@@ -3,8 +3,14 @@ updates:
   groups:
     dev-dependencies:
       dependency-type: development
+      applies-to: version-updates
     production-dependencies:
       dependency-type: production
+      applies-to: version-updates
+    npm-security-updates:
+      applies-to: security-updates
+      patterns:
+      - "*"
   package-ecosystem: npm
   schedule:
     interval: weekly
