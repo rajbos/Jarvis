@@ -88,6 +88,7 @@ function subjectTypeIcon(subjectType: string): string {
     case 'Commit': return '📝';
     case 'Discussion': return '💬';
     case 'CheckSuite': return '⚙️';
+    case 'RepositoryVulnerabilityAlert': return '🛡️';
     default: return '📌';
   }
 }
