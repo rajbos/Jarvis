@@ -67,6 +67,7 @@ import {
   markNotificationRead,
   deleteNotification,
   listNotificationsForRepo,
+  listIssueNotifications,
   listMergedDependabotPRNotifications,
   listDeletedBranchNotifications,
   getNotificationCounts,
@@ -103,6 +104,7 @@ describe('Notifications plugin — IPC handlers', () => {
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     db.close();
   });
 
@@ -405,6 +407,69 @@ describe('Notifications plugin — IPC handlers', () => {
       const weekly = result.weekly as { count: number }[];
       const total = weekly.reduce((sum, r) => sum + r.count, 0);
       expect(total).toBe(2);
+    });
+  });
+
+  // ── runAutoDismissSweep — issue closed via collaborated PR ────────────────
+  describe('runAutoDismissSweep — issue closed via collaborated PR', () => {
+    const issueUrl = 'https://api.github.com/repos/o/r/issues/1';
+    const prUrl = 'https://api.github.com/repos/o/r/pulls/9';
+    const issueNotif = {
+      id: 'n1',
+      repo_full_name: 'o/r',
+      subject_type: 'Issue',
+      subject_title: 'Some bug',
+      subject_url: issueUrl,
+    };
+
+    function stubFetch(opts: { commitAuthors: string[] }): void {
+      vi.stubGlobal('fetch', vi.fn(async (input: unknown) => {
+        const url = String(input);
+        const json = (body: unknown) => ({ ok: true, json: async () => body }) as Response;
+        if (url === issueUrl) return json({ state: 'closed' });
+        if (url === `${issueUrl}/events`) {
+          return json([{ event: 'closed', actor: { login: 'teammate' }, commit_id: null }]);
+        }
+        if (url.startsWith(`${issueUrl}/timeline`)) {
+          return json([{
+            event: 'cross-referenced',
+            source: { issue: { pull_request: { url: prUrl, merged_at: '2026-08-01T00:00:00Z' } } },
+          }]);
+        }
+        if (url === prUrl) {
+          return json({ merged: true, user: { login: 'teammate' }, merged_by: { login: 'teammate' } });
+        }
+        if (url.startsWith(`${prUrl}/commits`)) {
+          return json(opts.commitAuthors.map((login) => ({ author: { login }, committer: { login: 'web-flow' } })));
+        }
+        return { ok: false, status: 404, json: async () => ({}) } as Response;
+      }));
+    }
+
+    it('dismisses the notification when the user committed on the merged PR that closed the issue', async () => {
+      vi.mocked(loadGitHubAuth).mockReturnValue({ accessToken: 'token', login: 'rajbos' } as unknown as ReturnType<typeof loadGitHubAuth>);
+      vi.mocked(listIssueNotifications).mockReturnValue([issueNotif] as unknown as ReturnType<typeof listIssueNotifications>);
+      stubFetch({ commitAuthors: ['teammate', 'rajbos'] });
+
+      const { runAutoDismissSweep } = await import('../../src/plugins/notifications/handler');
+      const result = await runAutoDismissSweep(db, () => null);
+
+      expect(result.result?.total).toBe(1);
+      expect(vi.mocked(deleteNotification)).toHaveBeenCalledWith(db, 'n1');
+      const logged = db.exec(`SELECT reason FROM auto_dismiss_log WHERE notification_id = 'n1'`);
+      expect(logged[0]?.values[0]?.[0]).toBe('closed_issue_collab_pr');
+    });
+
+    it('keeps the notification when the user did not collaborate on the closing PR', async () => {
+      vi.mocked(loadGitHubAuth).mockReturnValue({ accessToken: 'token', login: 'rajbos' } as unknown as ReturnType<typeof loadGitHubAuth>);
+      vi.mocked(listIssueNotifications).mockReturnValue([issueNotif] as unknown as ReturnType<typeof listIssueNotifications>);
+      stubFetch({ commitAuthors: ['teammate', 'other-dev'] });
+
+      const { runAutoDismissSweep } = await import('../../src/plugins/notifications/handler');
+      const result = await runAutoDismissSweep(db, () => null);
+
+      expect(result.result?.total).toBe(0);
+      expect(vi.mocked(deleteNotification)).not.toHaveBeenCalled();
     });
   });
 });

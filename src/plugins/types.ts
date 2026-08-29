@@ -1790,6 +1790,7 @@ export type AutoDismissReason =
   | 'closed_pr_closed_me'
   | 'closed_issue_me'
   | 'closed_issue_via_pr'
+  | 'closed_issue_collab_pr'
   | 'deleted_branch';
 
 export interface AutoDismissLogInput {
