@@ -135,7 +135,7 @@ async function fetchIssueState(
   accessToken: string,
   currentLogin: string,
   subjectUrl: string,
-): Promise<{ state: 'open' | 'closed'; closedByMe: boolean; closedViaMergedPr: boolean } | null> {
+): Promise<{ state: 'open' | 'closed'; closedByMe: boolean; closedViaMergedPr: boolean; closedViaCollabPr: boolean } | null> {
   if (!/^https:\/\/api\.github\.com\/repos\/[^/]+\/[^/]+\/issues\/\d+$/.test(subjectUrl)) return null;
   const headers = {
     Authorization: `Bearer ${accessToken}`,
@@ -146,7 +146,7 @@ async function fetchIssueState(
     const issueRes = await fetch(subjectUrl, { headers });
     if (!issueRes.ok) return null;
     const issue = (await issueRes.json()) as { state: string };
-    if (issue.state !== 'closed') return { state: 'open', closedByMe: false, closedViaMergedPr: false };
+    if (issue.state !== 'closed') return { state: 'open', closedByMe: false, closedViaMergedPr: false, closedViaCollabPr: false };
 
     const eventsRes = await fetch(`${subjectUrl}/events`, { headers });
     let closedByMe = false;
@@ -163,9 +163,80 @@ async function fetchIssueState(
         closedViaMergedPr = closedEvent.commit_id !== null && closedEvent.commit_id !== '';
       }
     }
-    return { state: 'closed', closedByMe, closedViaMergedPr };
+    // Not closed by me and no direct merge-commit link: check whether the issue was
+    // closed by someone else's PR that I collaborated on (authored/merged/committed).
+    let closedViaCollabPr = false;
+    if (!closedByMe && !closedViaMergedPr) {
+      closedViaCollabPr = await issueClosedViaCollabPr(currentLogin, subjectUrl, headers);
+    }
+    return { state: 'closed', closedByMe, closedViaMergedPr, closedViaCollabPr };
   } catch {
     return null;
+  }
+}
+
+/** Max merged PRs to inspect per issue when checking for user collaboration. */
+const MAX_COLLAB_PRS_PER_ISSUE = 3;
+
+async function issueClosedViaCollabPr(
+  currentLogin: string,
+  subjectUrl: string,
+  headers: Record<string, string>,
+): Promise<boolean> {
+  try {
+    const timelineRes = await fetch(`${subjectUrl}/timeline?per_page=100`, {
+      headers: { ...headers, Accept: 'application/vnd.github.mockingbird-preview+json' },
+    });
+    if (!timelineRes.ok) return false;
+    const timeline = (await timelineRes.json()) as Array<{
+      event: string;
+      source?: { issue?: { pull_request?: { url?: string; merged_at?: string | null } } };
+    }>;
+    const mergedPrUrls: string[] = [];
+    for (const entry of timeline) {
+      if (entry.event !== 'cross-referenced') continue;
+      const pr = entry.source?.issue?.pull_request;
+      if (pr?.merged_at && pr.url && !mergedPrUrls.includes(pr.url)) mergedPrUrls.push(pr.url);
+      if (mergedPrUrls.length >= MAX_COLLAB_PRS_PER_ISSUE) break;
+    }
+    const myLogin = currentLogin.toLowerCase();
+    for (const prUrl of mergedPrUrls) {
+      if (await collaboratedOnPr(myLogin, prUrl, headers)) return true;
+    }
+  } catch { /* non-fatal */ }
+  return false;
+}
+
+async function collaboratedOnPr(
+  myLogin: string,
+  prUrl: string,
+  headers: Record<string, string>,
+): Promise<boolean> {
+  try {
+    const prRes = await fetch(prUrl, { headers });
+    if (!prRes.ok) return false;
+    const pr = (await prRes.json()) as {
+      merged: boolean;
+      user: { login: string } | null;
+      merged_by: { login: string } | null;
+    };
+    if (!pr.merged) return false;
+    if ((pr.user?.login ?? '').toLowerCase() === myLogin) return true;
+    if ((pr.merged_by?.login ?? '').toLowerCase() === myLogin) return true;
+
+    const commitsRes = await fetch(`${prUrl}/commits?per_page=100`, { headers });
+    if (!commitsRes.ok) return false;
+    const commits = (await commitsRes.json()) as Array<{
+      author: { login: string } | null;
+      committer: { login: string } | null;
+    }>;
+    return commits.some(
+      (c) =>
+        (c.author?.login ?? '').toLowerCase() === myLogin ||
+        (c.committer?.login ?? '').toLowerCase() === myLogin,
+    );
+  } catch {
+    return false;
   }
 }
 
@@ -282,9 +353,13 @@ async function runClosedIssueStep(db: SqlJsDatabase, accessToken: string, curren
   for (const [url, urlNotifs] of byUrl) {
     const result = await fetchIssueState(accessToken, currentLogin, url);
     if (!result || result.state !== 'closed') continue;
-    const { closedByMe, closedViaMergedPr } = result;
-    if (!closedByMe && !closedViaMergedPr) continue;
-    const reason: AutoDismissLogInput['reason'] = closedViaMergedPr ? 'closed_issue_via_pr' : 'closed_issue_me';
+    const { closedByMe, closedViaMergedPr, closedViaCollabPr } = result;
+    if (!closedByMe && !closedViaMergedPr && !closedViaCollabPr) continue;
+    const reason: AutoDismissLogInput['reason'] = closedViaMergedPr
+      ? 'closed_issue_via_pr'
+      : closedByMe
+        ? 'closed_issue_me'
+        : 'closed_issue_collab_pr';
     for (const n of urlNotifs) {
       if (await dismissStoredNotification(db, accessToken, n)) {
         logEntries.push({ notification_id: n.id, reason, repo_full_name: n.repo_full_name, subject_title: n.subject_title, subject_type: n.subject_type });

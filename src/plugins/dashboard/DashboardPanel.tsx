@@ -155,10 +155,15 @@ function isWorkflowNotification(n: StoredNotification): boolean {
   return WORKFLOW_TYPES_DASH.has(n.subject_type) || n.reason === 'ci_activity';
 }
 
+const BOT_SUBJECT_TYPES = new Set(['RepositoryDependabotAlertsThread', 'RepositoryVulnerabilityAlert']);
+
 function looksBotGenerated(n: StoredNotification): boolean {
-  return n.subject_actor_type === 'Bot' || /\b(dependabot|renovate|github-actions|codeql|copilot|bot)\b|\[bot\]/i.test(
-    `${n.subject_actor_login ?? ''} ${n.subject_title} ${n.subject_url ?? ''}`,
-  );
+  return n.subject_actor_type === 'Bot'
+    || BOT_SUBJECT_TYPES.has(n.subject_type)
+    || n.reason === 'security_alert'
+    || /\b(dependabot|renovate|github-actions|codeql|copilot|bot)\b|\[bot\]/i.test(
+      `${n.subject_actor_login ?? ''} ${n.subject_title} ${n.subject_url ?? ''}`,
+    );
 }
 
 function classifyDashboardNotification(
