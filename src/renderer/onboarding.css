@@ -1462,6 +1462,51 @@ button:disabled {
   color: #339af0;
 }
 
+.status-error {
+  background: #4d0a1a;
+  color: #ff6b81;
+}
+
+.pat-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: #112240;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  color: #a8b2d1;
+}
+
+.pat-expired-warning {
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  background: #4d0a1a;
+  border: 1px solid #ff6b81;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  color: #ffd6dd;
+  line-height: 1.45;
+}
+
+.pat-expired-warning button {
+  margin-top: 0.5rem;
+  padding: 0.35rem 0.75rem;
+  background: #ff6b81;
+  color: #1a0a0e;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pat-expired-warning button:hover {
+  background: #ff8fa0;
+}
+
 .user-info {
   display: flex;
   align-items: center;

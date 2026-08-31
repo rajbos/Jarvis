@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Tray, Menu, session } from 'electron';
+import { app, BrowserWindow, Tray, Menu, session, ipcMain, Notification } from 'electron';
 
 import { getDatabase, closeDatabase } from '../storage/database';
 
@@ -14,6 +14,7 @@ import { getOnboardingStatus, completeOnboardingStep } from '../agent/onboarding
 
 import { registerIpcHandlers, startDiscoveryIfAuthed } from './ipc-handlers';
 import { startBackgroundTasks, stopBackgroundTasks } from './background-tasks';
+import { checkPatForExpiry } from '../plugins/github-auth/handler';
 
 import { checkOllama } from '../services/ollama';
 
@@ -58,6 +59,25 @@ async function initialize(): Promise<void> {
   // Register IPC handlers for renderer ↔ main communication
 
   registerIpcHandlers(db, () => mainWindow);
+
+  // Let the renderer open the Settings window (e.g. from the "PAT expired" banner)
+  ipcMain.handle('app:open-settings', () => {
+    showSettingsWindow();
+  });
+
+  // Validate the stored GitHub PAT on startup; warn clearly when it has
+  // expired or been revoked instead of silently failing API calls later.
+  checkPatForExpiry(db, () => mainWindow).then((expired) => {
+    if (!expired) return;
+    const notification = new Notification({
+      title: 'Jarvis — GitHub token expired',
+      body: 'Your GitHub Personal Access Token has expired or been revoked. Open Settings → GitHub Access to enter a new one.',
+    });
+    notification.on('click', () => showSettingsWindow());
+    notification.show();
+  }).catch((err) => {
+    console.warn('[PAT] Startup validity check failed:', err);
+  });
 
 
 

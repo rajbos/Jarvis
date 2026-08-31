@@ -40,6 +40,7 @@ import { ClaudePanel } from '../plugins/claude/ClaudePanel';
 import type {
   OAuthResult,
   OAuthStatus,
+  PatStatus,
   OllamaStatus,
   OrgListResult,
   NotificationCounts,
@@ -67,6 +68,7 @@ type AppTab = 'dashboard' | 'groups-dashboard' | 'browser' | 'setup' | 'dismiss-
 
 function App() {
   const [oauthStatus, setOauthStatus] = useState<OAuthStatus | null>(null);
+  const [patStatus, setPatStatus] = useState<PatStatus | null>(null);
   const [deviceCode, setDeviceCode] = useState<{ userCode: string; verificationUri: string } | null>(null);
   const [loginDisabled, setLoginDisabled] = useState(false);
   const [discoveryProgress, setDiscoveryProgress] = useState<DiscoveryProgress | null>(null);
@@ -202,6 +204,21 @@ function App() {
         console.error('[Jarvis] Error checking OAuth status:', err);
       }
     })();
+  }, []);
+
+  // PAT status check on mount + live updates when it expires or is replaced
+  useEffect(() => {
+    const loadPatStatus = () => {
+      window.jarvis.getPatStatus()
+        .then(setPatStatus)
+        .catch((err: unknown) => console.error('[Jarvis] PAT status check failed:', err));
+    };
+    loadPatStatus();
+    const unsubExpired = window.jarvis.onPatExpired(() => {
+      setPatStatus((prev) => ({ ...(prev ?? { hasPat: false }), hasPat: true, expired: true }));
+    });
+    const unsubChanged = window.jarvis.onPatStatusChanged(loadPatStatus);
+    return () => { unsubExpired(); unsubChanged(); };
   }, []);
 
   // Claude status + rate limit check on mount (independent of GitHub auth)
@@ -881,11 +898,13 @@ function App() {
       <div class="github-layout">
         <GitHubStep
           oauthStatus={oauthStatus}
+          patStatus={patStatus}
           deviceCode={deviceCode}
           discoveryProgress={discoveryProgress}
           discoveryFinished={discoveryFinished}
           onLogin={handleLogin}
           onToggleOrgs={handleToggleOrgs}
+          onOpenSettings={() => void window.jarvis.openSettings()}
           loginDisabled={loginDisabled}
         />
 

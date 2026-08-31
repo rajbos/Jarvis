@@ -43,6 +43,14 @@ vi.mock('../../src/services/github-oauth', async (importOriginal) => {
       name: 'Test User',
       avatar_url: 'https://example.com/avatar.png',
     }),
+    validateGitHubPat: vi.fn().mockResolvedValue({
+      status: 'valid',
+      user: {
+        login: 'testuser',
+        name: 'Test User',
+        avatar_url: 'https://example.com/avatar.png',
+      },
+    }),
   };
 });
 
@@ -65,7 +73,7 @@ vi.mock('../../src/plugins/discovery/handler', () => ({
 }));
 
 import { registerHandlers } from '../../src/plugins/github-auth/handler';
-import { saveGitHubAuth, saveGitHubPat, fetchGitHubUser } from '../../src/services/github-oauth';
+import { saveGitHubAuth, saveGitHubPat, fetchGitHubUser, validateGitHubPat } from '../../src/services/github-oauth';
 
 // ── Helper ────────────────────────────────────────────────────────────────────
 
@@ -95,6 +103,15 @@ describe('GitHub Auth plugin — IPC handlers', () => {
       login: 'testuser',
       name: 'Test User',
       avatar_url: 'https://example.com/avatar.png',
+    });
+    // Reset validateGitHubPat default mock
+    vi.mocked(validateGitHubPat).mockResolvedValue({
+      status: 'valid',
+      user: {
+        login: 'testuser',
+        name: 'Test User',
+        avatar_url: 'https://example.com/avatar.png',
+      },
     });
 
     registerHandlers(db, () => null);
@@ -134,16 +151,29 @@ describe('GitHub Auth plugin — IPC handlers', () => {
 
       const result = (await callHandler('github:pat-status')) as Record<string, unknown>;
       expect(result.hasPat).toBe(true);
+      expect(result.expired).toBe(false);
       expect(result.login).toBe('testuser');
     });
 
-    it('returns { hasPat: true } without user info when fetchGitHubUser throws', async () => {
+    it('returns { hasPat: true, expired: false } without user info when validity is unknown', async () => {
       saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo', null);
-      saveGitHubPat(db, 'octocat', 'ghp_bad_token');
-      vi.mocked(fetchGitHubUser).mockRejectedValueOnce(new Error('Unauthorized'));
+      saveGitHubPat(db, 'octocat', 'ghp_test_token');
+      vi.mocked(validateGitHubPat).mockResolvedValueOnce({ status: 'unknown', error: 'Network error' });
 
       const result = (await callHandler('github:pat-status')) as Record<string, unknown>;
       expect(result.hasPat).toBe(true);
+      expect(result.expired).toBe(false);
+      expect(result.login).toBeUndefined();
+    });
+
+    it('returns { hasPat: true, expired: true } when GitHub rejects the stored PAT', async () => {
+      saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo', null);
+      saveGitHubPat(db, 'octocat', 'ghp_expired_token');
+      vi.mocked(validateGitHubPat).mockResolvedValueOnce({ status: 'expired' });
+
+      const result = (await callHandler('github:pat-status')) as Record<string, unknown>;
+      expect(result.hasPat).toBe(true);
+      expect(result.expired).toBe(true);
       expect(result.login).toBeUndefined();
     });
   });

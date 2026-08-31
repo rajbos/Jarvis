@@ -97,6 +97,40 @@ export interface OAuthStatus {
 
 
 
+export interface PatStatus {
+
+
+
+  hasPat: boolean;
+
+
+
+  /** true when GitHub rejected the stored token (401) — expired or revoked */
+
+
+
+  expired?: boolean;
+
+
+
+  login?: string;
+
+
+
+  name?: string;
+
+
+
+  avatarUrl?: string;
+
+
+
+}
+
+
+
+
+
 
 export interface OllamaModel {
 
@@ -2226,7 +2260,22 @@ export interface JarvisApi {
 
 
 
-  getPatStatus(): Promise<{ hasPat: boolean; login?: string; name?: string; avatarUrl?: string }>;
+  getPatStatus(): Promise<PatStatus>;
+
+
+
+
+  openSettings(): Promise<void>;
+
+
+
+
+  onPatExpired(cb: () => void): () => void;
+
+
+
+
+  onPatStatusChanged(cb: () => void): () => void;
 
 
 
