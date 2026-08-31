@@ -125,7 +125,7 @@ button:disabled {
   font-size: 0.9375rem;
   border-radius: 6px;
   cursor: pointer;
-  transition: background 0.2s;
+  transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
@@ -136,8 +136,10 @@ button:disabled {
 }
 
 .dash-refresh-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+  /* Highlight while refreshing instead of dimming: blue border + glow */
+  border-color: #4d9fff;
+  box-shadow: 0 0 0 1px #4d9fff, 0 0 8px rgba(77, 159, 255, 0.5);
+  cursor: default;
 }
 
 .dash-refresh-icon {
@@ -3093,6 +3095,11 @@ h5.ec-heading { font-size: 0.9375rem; }
   margin-right: 0.4rem;
 }
 
+.groups-dash-ruddr-note {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
 .groups-dash-note-text {
   font-size: 0.8125rem;
   color: #e0e0e0;
@@ -3178,6 +3185,11 @@ h5.ec-heading { font-size: 0.9375rem; }
   text-align: left;
   transition: background 0.15s, border-color 0.15s;
   width: 100%;
+  /* Pin to the bottom of the card so it stays visible while scrolling */
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  margin-top: auto;
 }
 .groups-dash-ruddr-btn:hover:not(:disabled) {
   background: #252850;
