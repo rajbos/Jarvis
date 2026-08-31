@@ -161,7 +161,7 @@ export function GroupsDashboardPanel() {
           onClick={() => setRuddrVisible((v) => !v)}
           title={ruddrVisible ? 'Hide Ruddr Projects panel' : 'Show Ruddr Projects panel'}
         >
-          {ruddrVisible ? '◀ Ruddr' : '▶ Ruddr'}
+          {ruddrVisible ? '▶ Ruddr' : '◀ Ruddr'}
         </button>
 
       </div>
