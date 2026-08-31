@@ -682,52 +682,54 @@ function SummaryCards({
   return (
     <div class="dashboard-summary-cards">
       <div
-        class={`dash-card dash-card-clickable ${summary.reposWithWarnings > 0 ? 'dash-card-warn' : ''} ${active === 'warnings' ? 'dash-card-selected' : ''}`}
+        class={`dash-card dash-card-primary dash-card-clickable ${summary.reposWithWarnings > 0 ? 'dash-card-warn' : ''} ${active === 'warnings' ? 'dash-card-selected' : ''}`}
         onClick={() => toggle('warnings')}
       >
         <div class="dash-card-value">{summary.reposWithWarnings}</div>
         <div class="dash-card-label">Need Attention</div>
         {active === 'warnings' && <span class="dash-card-selected-icon">▾</span>}
       </div>
-      <div
-        class={`dash-card dash-card-clickable ${summary.totalNotifications > 0 ? 'dash-card-info' : ''} ${active === 'notifications' ? 'dash-card-selected' : ''}`}
-        onClick={() => toggle('notifications')}
-      >
-        <div class="dash-card-value">{summary.totalNotifications}</div>
-        <div class="dash-card-label">Notifications</div>
-        {active === 'notifications' && <span class="dash-card-selected-icon">▾</span>}
-      </div>
-      <div
-        class={`dash-card dash-card-clickable ${(humanNotificationCount ?? 0) > 0 ? 'dash-card-people' : ''} ${active === 'human-notifications' ? 'dash-card-selected' : ''}`}
-        onClick={() => toggle('human-notifications')}
-      >
-        <div class="dash-card-value">{humanNotificationLoading && humanNotificationCount === null ? '...' : humanNotificationCount ?? 0}</div>
-        <div class="dash-card-label">People First</div>
-        {active === 'human-notifications' && <span class="dash-card-selected-icon">▾</span>}
-      </div>
-      <div
-        class={`dash-card dash-card-clickable ${summary.totalFailedRuns > 0 ? 'dash-card-danger' : ''} ${active === 'failed-runs' ? 'dash-card-selected' : ''}`}
-        onClick={() => toggle('failed-runs')}
-      >
-        <div class="dash-card-value">{summary.totalFailedRuns}</div>
-        <div class="dash-card-label">Failed Runs</div>
-        {active === 'failed-runs' && <span class="dash-card-selected-icon">▾</span>}
-      </div>
-      <div
-        class={`dash-card dash-card-clickable ${healthyCount > 0 ? 'dash-card-ok' : ''} ${active === 'healthy' ? 'dash-card-selected' : ''}`}
-        onClick={() => toggle('healthy')}
-      >
-        <div class="dash-card-value">{healthyCount}</div>
-        <div class="dash-card-label">All Good</div>
-        {active === 'healthy' && <span class="dash-card-selected-icon">▾</span>}
-      </div>
-      <div
-        class={`dash-card dash-card-clickable ${active === 'all' ? 'dash-card-selected' : ''}`}
-        onClick={() => onSelect('all')}
-      >
-        <div class="dash-card-value">{summary.totalRepos}</div>
-        <div class="dash-card-label">Local Repos</div>
-        {active === 'all' && <span class="dash-card-selected-icon">▾</span>}
+      <div class="dashboard-summary-metrics">
+        <div
+          class={`dash-card dash-card-clickable ${summary.totalNotifications > 0 ? 'dash-card-info' : ''} ${active === 'notifications' ? 'dash-card-selected' : ''}`}
+          onClick={() => toggle('notifications')}
+        >
+          <div class="dash-card-value">{summary.totalNotifications}</div>
+          <div class="dash-card-label">Notifications</div>
+          {active === 'notifications' && <span class="dash-card-selected-icon">▾</span>}
+        </div>
+        <div
+          class={`dash-card dash-card-clickable ${(humanNotificationCount ?? 0) > 0 ? 'dash-card-people' : ''} ${active === 'human-notifications' ? 'dash-card-selected' : ''}`}
+          onClick={() => toggle('human-notifications')}
+        >
+          <div class="dash-card-value">{humanNotificationLoading && humanNotificationCount === null ? '...' : humanNotificationCount ?? 0}</div>
+          <div class="dash-card-label">People First</div>
+          {active === 'human-notifications' && <span class="dash-card-selected-icon">▾</span>}
+        </div>
+        <div
+          class={`dash-card dash-card-clickable ${summary.totalFailedRuns > 0 ? 'dash-card-danger' : ''} ${active === 'failed-runs' ? 'dash-card-selected' : ''}`}
+          onClick={() => toggle('failed-runs')}
+        >
+          <div class="dash-card-value">{summary.totalFailedRuns}</div>
+          <div class="dash-card-label">Failed Runs</div>
+          {active === 'failed-runs' && <span class="dash-card-selected-icon">▾</span>}
+        </div>
+        <div
+          class={`dash-card dash-card-clickable ${healthyCount > 0 ? 'dash-card-ok' : ''} ${active === 'healthy' ? 'dash-card-selected' : ''}`}
+          onClick={() => toggle('healthy')}
+        >
+          <div class="dash-card-value">{healthyCount}</div>
+          <div class="dash-card-label">All Good</div>
+          {active === 'healthy' && <span class="dash-card-selected-icon">▾</span>}
+        </div>
+        <div
+          class={`dash-card dash-card-clickable ${active === 'all' ? 'dash-card-selected' : ''}`}
+          onClick={() => onSelect('all')}
+        >
+          <div class="dash-card-value">{summary.totalRepos}</div>
+          <div class="dash-card-label">Local Repos</div>
+          {active === 'all' && <span class="dash-card-selected-icon">▾</span>}
+        </div>
       </div>
     </div>
   );
