@@ -9,6 +9,7 @@ const TYPE_ICON: Record<string, string> = {
   Commit: '\uD83D\uDCBE',
   Discussion: '\uD83D\uDCAC',
   CheckSuite: '\u2705',
+  RepositoryVulnerabilityAlert: '\uD83D\uDEE1\uFE0F',
 };
 
 async function openNotifUrl(n: StoredNotification): Promise<void> {
