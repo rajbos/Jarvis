@@ -4060,6 +4060,62 @@ h5.ec-heading { font-size: 0.9375rem; }
   50% { opacity: 0.55; }
 }
 
+/* Claude badge hover popover (mirrors the setup panel info) */
+.bg-status-claude {
+  position: relative;
+  pointer-events: auto;
+  flex-shrink: 0;
+}
+
+.bg-status-claude-pop {
+  display: none;
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: 0;
+  min-width: 240px;
+  background: #0d1a2e;
+  border: 1px solid #1e3a5a;
+  border-radius: 6px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  padding: 0.4rem 0;
+  z-index: 1000;
+}
+
+.bg-status-claude-pop::before {
+  content: '';
+  position: absolute;
+  bottom: -10px;
+  left: 0;
+  right: 0;
+  height: 10px;
+}
+
+.bg-status-claude:hover .bg-status-claude-pop,
+.bg-status-claude:focus-within .bg-status-claude-pop {
+  display: block;
+}
+
+.bg-status-claude-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.3rem 0.75rem;
+  font-size: 0.8125rem;
+  color: #c8d0e0;
+  cursor: default;
+  white-space: nowrap;
+}
+
+.bg-status-claude-label {
+  flex: 1;
+  color: #99aabb;
+}
+
+.bg-status-claude-reset {
+  font-size: 0.72rem;
+  color: #667;
+}
+
 /* ── Right-side group (tasks + rate limits) ──────────────────────────────── */
 .bg-status-right {
   margin-left: auto;

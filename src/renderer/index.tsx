@@ -1349,20 +1349,47 @@ function BackgroundStatusBar({
             </div>
           )}
           {claudeBadge && (
-            <span
-              class={`bg-status-rate-limit${claudeBadge.limited ? ' bg-status-rate-limit--limited' : ''}`}
-              title={claudeBadge.error
-                ? `Claude rate limit check failed: ${claudeBadge.error}`
-                : claudeBadge.limited
-                  ? `Claude usage limit reached — ${claudeBadge.resetAt !== null ? `${formatDurationUntil(claudeBadge.resetAt)} (${new Date(claudeBadge.resetAt * 1000).toLocaleString()})` : 'reset time unknown'}`
-                  : `Claude${claudeBadge.fiveHour?.utilization != null ? `: 5h window ${Math.round(claudeBadge.fiveHour.utilization * 100)}% used` : ' not rate limited'}`}
-              style={{ color: claudeBadge.error ? '#888' : claudeBadge.limited ? '#f44336' : '#4caf50' }}
-            >
-              {claudeBadge.error
-                ? '✦ Claude –'
-                : claudeBadge.limited
-                  ? `⏳ Claude limited · ${claudeBadge.resetAt !== null ? formatDurationUntil(claudeBadge.resetAt) : 'resets soon'}`
-                  : `✦ Claude${claudeBadge.fiveHour?.utilization != null ? ` ${Math.round(claudeBadge.fiveHour.utilization * 100)}%` : ' ok'}`}
+            <span class="bg-status-claude">
+              <span
+                class={`bg-status-rate-limit${claudeBadge.limited ? ' bg-status-rate-limit--limited' : ''}`}
+                style={{ color: claudeBadge.error ? '#888' : claudeBadge.limited ? '#f44336' : '#4caf50' }}
+              >
+                {claudeBadge.error
+                  ? '✦ Claude –'
+                  : claudeBadge.limited
+                    ? `⏳ Claude limited · ${claudeBadge.resetAt !== null ? formatDurationUntil(claudeBadge.resetAt) : 'resets soon'}`
+                    : `✦ Claude${claudeBadge.fiveHour?.utilization != null ? ` ${Math.round(claudeBadge.fiveHour.utilization * 100)}%` : ' ok'}`}
+              </span>
+              <div class="bg-status-claude-pop">
+                {([
+                  ['5-hour window', claudeBadge.fiveHour],
+                  ['7-day window', claudeBadge.sevenDay],
+                ] as const).map(([label, win]) => (
+                  <div class="bg-status-claude-row" key={label}>
+                    <span class="bg-status-claude-label">{label}</span>
+                    {win ? (
+                      <>
+                        <span style={{ color: win.limited ? '#f44336' : win.utilization !== null && win.utilization >= 0.8 ? '#ff9800' : '#4caf50', fontWeight: 600 }}>
+                          {win.limited ? 'exhausted' : win.utilization !== null ? `${Math.round(win.utilization * 100)}% used` : 'ok'}
+                        </span>
+                        {win.reset !== null && (
+                          <span class="bg-status-claude-reset">
+                            {formatDurationUntil(win.reset)} · {new Date(win.reset * 1000).toLocaleTimeString()}
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      <span style={{ color: '#667' }}>no data</span>
+                    )}
+                  </div>
+                ))}
+                {claudeBadge.error && (
+                  <div class="bg-status-claude-row" style={{ color: '#ff9800' }}>Check failed: {claudeBadge.error}</div>
+                )}
+                <div class="bg-status-claude-row" style={{ color: '#556', fontSize: '0.72rem' }}>
+                  Last checked {new Date(claudeBadge.fetchedAt).toLocaleTimeString()}
+                </div>
+              </div>
             </span>
           )}
           {hasAnyBadge && (oauthBadge || patBadge) && (
