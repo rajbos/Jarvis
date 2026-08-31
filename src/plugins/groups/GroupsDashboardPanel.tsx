@@ -505,15 +505,6 @@ function GroupCard(props: {
           </div>
         )}
 
-        {/* Find / Add button — always visible */}
-        <button
-          class="groups-dash-ruddr-btn"
-          onClick={() => void handleFindRuddr()}
-          disabled={ruddrSearching}
-        >
-          {ruddrSearching ? '🔍 Searching…' : group.ruddrProjectNames.length > 0 ? '🔍 Add Ruddr project' : '🔍 Find Ruddr project'}
-        </button>
-
         {ruddrNeedsLogin && !ruddrSearching && (
           <div class="groups-dash-ruddr-login">
             <span class="groups-dash-ruddr-login-icon">🔒</span>
@@ -614,6 +605,15 @@ function GroupCard(props: {
           </div>
         )}
       </div>
+
+      {/* Find / Add button — pinned to the bottom of the card */}
+      <button
+        class="groups-dash-ruddr-btn"
+        onClick={() => void handleFindRuddr()}
+        disabled={ruddrSearching}
+      >
+        {ruddrSearching ? '🔍 Searching…' : group.ruddrProjectNames.length > 0 ? '🔍 Add Ruddr project' : '🔍 Find Ruddr project'}
+      </button>
     </div>
   );
 }

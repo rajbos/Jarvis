@@ -3180,6 +3180,11 @@ h5.ec-heading { font-size: 0.9375rem; }
   text-align: left;
   transition: background 0.15s, border-color 0.15s;
   width: 100%;
+  /* Pin to the bottom of the card so it stays visible while scrolling */
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  margin-top: auto;
 }
 .groups-dash-ruddr-btn:hover:not(:disabled) {
   background: #252850;
