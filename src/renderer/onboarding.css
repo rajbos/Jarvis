@@ -3095,6 +3095,11 @@ h5.ec-heading { font-size: 0.9375rem; }
   margin-right: 0.4rem;
 }
 
+.groups-dash-ruddr-note {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
 .groups-dash-note-text {
   font-size: 0.8125rem;
   color: #e0e0e0;
