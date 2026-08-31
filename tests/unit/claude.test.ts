@@ -121,10 +121,10 @@ describe('isTokenPotentiallyUsable', () => {
 // ── OAuth PKCE helpers ────────────────────────────────────────────────────────
 
 describe('generatePkce', () => {
-  it('produces a verifier, its S256 challenge, and a state', () => {
+  it('produces a verifier, its S256 challenge, and state equal to the verifier', () => {
     const pkce = generatePkce();
     expect(pkce.verifier.length).toBeGreaterThan(40);
-    expect(pkce.state.length).toBeGreaterThan(20);
+    expect(pkce.state).toBe(pkce.verifier);
     const expected = crypto.createHash('sha256').update(pkce.verifier).digest()
       .toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
     expect(pkce.challenge).toBe(expected);
@@ -134,7 +134,6 @@ describe('generatePkce', () => {
     const a = generatePkce();
     const b = generatePkce();
     expect(a.verifier).not.toBe(b.verifier);
-    expect(a.state).not.toBe(b.state);
   });
 });
 

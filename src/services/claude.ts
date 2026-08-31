@@ -104,7 +104,7 @@ export async function refreshClaudeToken(refreshToken: string): Promise<Refreshe
     try {
       const res = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'User-Agent': 'anthropic' },
         body: JSON.stringify({
           grant_type: 'refresh_token',
           refresh_token: refreshToken,
@@ -147,12 +147,12 @@ function base64UrlEncode(buf: Buffer): string {
   return buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-/** Generate a PKCE verifier/challenge pair plus a random state. */
+/** Generate a PKCE verifier/challenge pair. In this flow `state` equals the verifier. */
 export function generatePkce(): PkcePair {
   const verifier = base64UrlEncode(crypto.randomBytes(32));
   const challenge = base64UrlEncode(crypto.createHash('sha256').update(verifier).digest());
-  const state = base64UrlEncode(crypto.randomBytes(16));
-  return { verifier, challenge, state };
+  // The Anthropic authorization server expects state to be the verifier value.
+  return { verifier, challenge, state: verifier };
 }
 
 /** Build the authorize URL the user must visit in a browser. */
@@ -201,7 +201,7 @@ export async function exchangeCodeForToken(code: string, verifier: string, state
     try {
       const res = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'User-Agent': 'anthropic' },
         body: JSON.stringify(body),
       });
       if (!res.ok) continue;
@@ -328,7 +328,7 @@ export async function checkClaudeRateLimit(accessToken: string): Promise<ClaudeR
           Authorization: `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
           'anthropic-version': '2023-06-01',
-          'anthropic-beta': 'oauth-2025-04-20',
+          'anthropic-beta': 'oauth-2025-04-20,claude-code-20250219',
           'x-app': 'cli',
           'user-agent': 'claude-cli/2.0.0 (external, cli)',
         },
