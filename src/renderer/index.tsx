@@ -1108,7 +1108,7 @@ function App() {
         <div class="ollama-step-wrapper">
           <ClaudeStep status={claudeStatus} rateLimit={claudeRateLimit} onToggle={handleClaudeToggle} />
         </div>
-        {showClaudePanel && claudeStatus?.connected && (
+        {showClaudePanel && claudeStatus && (
           <ClaudePanel
             status={claudeStatus}
             rateLimit={claudeRateLimit}

@@ -310,6 +310,8 @@ contextBridge.exposeInMainWorld('jarvis', {
   getClaudeStatus: () => ipcRenderer.invoke('claude:status'),
   getClaudeRateLimit: () => ipcRenderer.invoke('claude:rate-limit'),
   disconnectClaude: () => ipcRenderer.invoke('claude:disconnect'),
+  beginClaudeOAuth: () => ipcRenderer.invoke('claude:begin-oauth'),
+  completeClaudeOAuth: (code: string) => ipcRenderer.invoke('claude:complete-oauth', code),
   // Auto-dismiss log
   logAutoDismiss: (entries: unknown[]) => ipcRenderer.invoke('github:log-auto-dismiss', entries),
   listAutoDismissLog: (limit?: number) => ipcRenderer.invoke('github:list-auto-dismiss-log', limit),

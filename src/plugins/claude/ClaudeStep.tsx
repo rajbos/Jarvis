@@ -26,22 +26,22 @@ export function ClaudeStep({ status, rateLimit, onToggle }: ClaudeStepProps) {
       }
     } else {
       badgeStatus = 'pending';
-      badgeLabel = 'Not found';
-      detail = status.error ?? 'Claude Code credentials not found.';
+      badgeLabel = 'Not connected';
+      detail = 'Click to sign in with your Claude account.';
     }
   }
 
   return (
     <div
-      class={`step${status?.connected ? ' ollama-step-clickable' : ''}`}
+      class="step ollama-step-clickable"
       id="claude-step"
-      onClick={status?.connected ? onToggle : undefined}
+      onClick={status !== null ? onToggle : undefined}
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
         <h2 style={{ marginBottom: 0 }}>
           Claude AI <StatusBadge status={badgeStatus} label={badgeLabel} />
         </h2>
-        {status?.connected && (
+        {status !== null && (
           <span style={{ color: '#99a', fontSize: '0.8rem' }}>{'›'}</span>
         )}
       </div>

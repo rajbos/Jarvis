@@ -1,3 +1,4 @@
+import { useState } from 'preact/hooks';
 import type { ClaudeStatus, ClaudeRateLimit, ClaudeRateLimitWindow } from '../types';
 import { formatDurationUntil } from '../shared/utils';
 
@@ -39,6 +40,91 @@ function WindowRow({ label, win }: { label: string; win: ClaudeRateLimitWindow |
 }
 
 export function ClaudePanel({ status, rateLimit, refreshing, onRefresh, onDisconnect, onClose }: ClaudePanelProps) {
+  const [oauthPending, setOauthPending] = useState(false);
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [oauthError, setOauthError] = useState<string | null>(null);
+
+  const handleConnect = async () => {
+    setBusy(true);
+    setOauthError(null);
+    try {
+      const result = await window.jarvis.beginClaudeOAuth();
+      if (result.ok) {
+        setOauthPending(true);
+      } else {
+        setOauthError(result.error ?? 'Could not start sign-in');
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleComplete = async () => {
+    setBusy(true);
+    setOauthError(null);
+    try {
+      const result = await window.jarvis.completeClaudeOAuth(code);
+      if (result.ok) {
+        setOauthPending(false);
+        setCode('');
+        onRefresh();
+      } else {
+        setOauthError(result.error ?? 'Sign-in failed');
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!status.connected) {
+    return (
+      <div class="org-panel ollama-panel">
+        <div class="org-panel-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span>Claude AI</span>
+          <button class="repo-panel-close" title="Close" onClick={onClose}>&times;</button>
+        </div>
+        {status.error && (
+          <div style={{ fontSize: '0.82rem', color: '#99aabb', marginBottom: '0.75rem' }}>{status.error}</div>
+        )}
+        {oauthError && (
+          <div style={{ fontSize: '0.8rem', color: '#ff8080', marginBottom: '0.6rem' }}>{oauthError}</div>
+        )}
+        {!oauthPending ? (
+          <button
+            style={{ fontSize: '0.82rem', padding: '0.4rem 1rem', background: '#0a3d1f', color: '#51cf66', border: '1px solid #2b8a3e', borderRadius: '5px', cursor: 'pointer' }}
+            disabled={busy}
+            onClick={() => void handleConnect()}
+          >
+            {busy ? 'Opening browser…' : 'Sign in with Claude'}
+          </button>
+        ) : (
+          <div>
+            <div style={{ fontSize: '0.82rem', color: '#99aabb', marginBottom: '0.5rem' }}>
+              A browser tab was opened. Authorize Jarvis, then paste the code shown on the confirmation page:
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <input
+                type="text"
+                value={code}
+                placeholder="Paste code here"
+                style={{ flex: 1, fontSize: '0.82rem', padding: '0.35rem 0.5rem', background: '#0f3460', color: '#dde', border: '1px solid #2b5c9e', borderRadius: '5px' }}
+                onInput={(e) => setCode((e.target as HTMLInputElement).value)}
+              />
+              <button
+                style={{ fontSize: '0.82rem', padding: '0.35rem 0.9rem', background: '#0a3d1f', color: '#51cf66', border: '1px solid #2b8a3e', borderRadius: '5px', cursor: 'pointer' }}
+                disabled={busy || !code.trim()}
+                onClick={() => void handleComplete()}
+              >
+                {busy ? 'Verifying…' : 'Connect'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   const plan = status.subscriptionType ?? 'unknown plan';
   return (
     <div class="org-panel ollama-panel">
@@ -48,7 +134,7 @@ export function ClaudePanel({ status, rateLimit, refreshing, onRefresh, onDiscon
       </div>
       <div style={{ fontSize: '0.82rem', color: '#99aabb', marginBottom: '0.75rem' }}>
         Subscription: <code style={{ background: '#0f3460', padding: '0.1rem 0.4rem', borderRadius: '3px' }}>{plan}</code>
-        {' '}via Claude Code credentials
+        {' '}{status.source === 'stored' ? 'via Jarvis sign-in' : 'via Claude Code credentials'}
       </div>
 
       {rateLimit?.error && (

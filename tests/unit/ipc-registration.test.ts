@@ -72,6 +72,8 @@ const EXPECTED_CHANNELS = [
   'claude:status',
   'claude:rate-limit',
   'claude:disconnect',
+  'claude:begin-oauth',
+  'claude:complete-oauth',
   // discovery plugin
   'github:discovery-status',
   'github:start-discovery',

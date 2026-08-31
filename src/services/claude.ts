@@ -9,6 +9,7 @@
 // headers on a minimal /v1/messages probe (max_tokens: 1). When the limit is
 // exhausted the API responds with HTTP 429 and a `retry-after` header; the
 // `*-reset` headers tell us when each window lifts.
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 
@@ -67,6 +68,16 @@ export function isTokenExpired(expiresAt: number | undefined, nowMs: number = Da
   return expiresAt <= nowMs + skewMs;
 }
 
+/**
+ * True when a token is worth trying. Tokens with a missing or zero expiry
+ * (Claude Code sometimes writes expiresAt: 0) are considered usable — a 401
+ * from the API is the authoritative signal, and callers retry with a refresh.
+ */
+export function isTokenPotentiallyUsable(expiresAt: number | undefined, nowMs: number = Date.now()): boolean {
+  if (typeof expiresAt !== 'number' || Number.isNaN(expiresAt) || expiresAt === 0) return true;
+  return !isTokenExpired(expiresAt, nowMs);
+}
+
 // ── Token refresh ─────────────────────────────────────────────────────────────
 
 // Public OAuth client id used by Claude Code (not a secret).
@@ -106,6 +117,99 @@ export async function refreshClaudeToken(refreshToken: string): Promise<Refreshe
       return {
         accessToken: data.access_token,
         refreshToken: data.refresh_token ?? refreshToken,
+        expiresAt: Date.now() + (data.expires_in ?? 3600) * 1000,
+      };
+    } catch {
+      // try the next endpoint
+    }
+  }
+  return null;
+}
+
+// ── OAuth (PKCE) sign-in ──────────────────────────────────────────────────────
+//
+// Uses the same public OAuth client as Claude Code, so the resulting token
+// carries the user's subscription rate limits. The flow is out-of-band: the
+// browser lands on a page that displays the authorization code, and the user
+// pastes it back into Jarvis.
+
+const OAUTH_AUTHORIZE_URL = 'https://claude.ai/oauth/authorize';
+const OAUTH_REDIRECT_URI = 'https://console.anthropic.com/oauth/code/callback';
+const OAUTH_SCOPES = 'org:create_api_key user:profile user:inference';
+
+export interface PkcePair {
+  verifier: string;
+  challenge: string;
+  state: string;
+}
+
+function base64UrlEncode(buf: Buffer): string {
+  return buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/** Generate a PKCE verifier/challenge pair plus a random state. */
+export function generatePkce(): PkcePair {
+  const verifier = base64UrlEncode(crypto.randomBytes(32));
+  const challenge = base64UrlEncode(crypto.createHash('sha256').update(verifier).digest());
+  const state = base64UrlEncode(crypto.randomBytes(16));
+  return { verifier, challenge, state };
+}
+
+/** Build the authorize URL the user must visit in a browser. */
+export function buildAuthorizeUrl(pkce: PkcePair): string {
+  const params = new URLSearchParams({
+    code: 'true',
+    client_id: CLAUDE_OAUTH_CLIENT_ID,
+    response_type: 'code',
+    redirect_uri: OAUTH_REDIRECT_URI,
+    scope: OAUTH_SCOPES,
+    code_challenge: pkce.challenge,
+    code_challenge_method: 'S256',
+    state: pkce.state,
+  });
+  return `${OAUTH_AUTHORIZE_URL}?${params.toString()}`;
+}
+
+/**
+ * Split a pasted authorization code into code + state. The callback page
+ * displays them joined as `code#state`; a bare code is also accepted.
+ */
+export function parseAuthorizationCode(pasted: string): { code: string; state?: string } | null {
+  const trimmed = pasted.trim();
+  if (!trimmed) return null;
+  const hashIdx = trimmed.indexOf('#');
+  if (hashIdx === -1) return { code: trimmed };
+  const code = trimmed.slice(0, hashIdx);
+  const state = trimmed.slice(hashIdx + 1);
+  return code ? { code, state: state || undefined } : null;
+}
+
+/**
+ * Exchange an authorization code for tokens. Returns null on failure.
+ */
+export async function exchangeCodeForToken(code: string, verifier: string, state?: string): Promise<RefreshedClaudeToken | null> {
+  const body: Record<string, string> = {
+    grant_type: 'authorization_code',
+    code,
+    client_id: CLAUDE_OAUTH_CLIENT_ID,
+    redirect_uri: OAUTH_REDIRECT_URI,
+    code_verifier: verifier,
+  };
+  if (state) body.state = state;
+
+  for (const endpoint of TOKEN_ENDPOINTS) {
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) continue;
+      const data = (await res.json()) as { access_token?: string; refresh_token?: string; expires_in?: number };
+      if (!data.access_token) continue;
+      return {
+        accessToken: data.access_token,
+        refreshToken: data.refresh_token ?? '',
         expiresAt: Date.now() + (data.expires_in ?? 3600) * 1000,
       };
     } catch {
