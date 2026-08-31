@@ -2819,6 +2819,8 @@ export interface JarvisApi {
   getClaudeStatus(): Promise<ClaudeStatus>;
   getClaudeRateLimit(): Promise<ClaudeRateLimit>;
   disconnectClaude(): Promise<{ ok: boolean }>;
+  beginClaudeOAuth(): Promise<{ ok: boolean; authorizeUrl?: string; error?: string }>;
+  completeClaudeOAuth(code: string): Promise<{ ok: boolean; error?: string }>;
 
   // Auto-dismiss log
   logAutoDismiss(entries: AutoDismissLogInput[]): Promise<void>;

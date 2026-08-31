@@ -1,13 +1,18 @@
 // ── Claude IPC handlers ───────────────────────────────────────────────────────
-import { ipcMain } from 'electron';
+import { ipcMain, shell } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import type { BrowserWindow } from 'electron';
 import {
   loadClaudeCodeCredentials,
   refreshClaudeToken,
   checkClaudeRateLimit,
-  isTokenExpired,
+  isTokenPotentiallyUsable,
+  generatePkce,
+  buildAuthorizeUrl,
+  parseAuthorizationCode,
+  exchangeCodeForToken,
   type ClaudeCredentials,
+  type PkcePair,
 } from '../../services/claude';
 import { getConfigValue, setConfigValue, saveDatabase } from '../../storage/database';
 import { encrypt, decrypt, getEncryptionKey } from '../../storage/encryption';
@@ -56,21 +61,24 @@ function clearStoredCredentials(db: SqlJsDatabase): void {
 
 /**
  * Resolve a usable access token. Order:
- *   1. cached refreshed token (still valid)
- *   2. Claude Code credentials file (still valid)
+ *   1. cached refreshed token (still valid, or expiry unknown)
+ *   2. Claude Code credentials file (still valid, or expiry unknown)
  *   3. refresh via cached refresh token
  *   4. refresh via the file's refresh token (persisted on success)
+ *
+ * Tokens with a missing/zero expiry are tried anyway — the probe's 401 is the
+ * authoritative expiry signal and triggers a refresh + retry.
  */
 async function resolveAccessToken(
   db: SqlJsDatabase,
 ): Promise<{ token: string; source: 'stored' | 'claude-code'; subscriptionType?: string; expiresAt?: number } | null> {
   const stored = loadStoredCredentials(db);
-  if (stored && !isTokenExpired(stored.expiresAt)) {
+  if (stored && isTokenPotentiallyUsable(stored.expiresAt)) {
     return { token: stored.accessToken, source: 'stored', subscriptionType: stored.subscriptionType, expiresAt: stored.expiresAt };
   }
 
   const fromFile = loadClaudeCodeCredentials();
-  if (fromFile && !isTokenExpired(fromFile.expiresAt)) {
+  if (fromFile && isTokenPotentiallyUsable(fromFile.expiresAt)) {
     return { token: fromFile.accessToken, source: 'claude-code', subscriptionType: fromFile.subscriptionType, expiresAt: fromFile.expiresAt };
   }
 
@@ -96,8 +104,8 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
         return {
           connected: false,
           error: fileExists
-            ? 'Claude Code credentials found but expired — open Claude Code once to refresh them.'
-            : 'No Claude Code credentials found (~/.claude/.credentials.json). Sign in with Claude Code first.',
+            ? 'Claude Code credentials found but unusable — open this panel to sign in with your Claude account.'
+            : 'Not connected — open this panel to sign in with your Claude account.',
         };
       }
       return {
@@ -166,6 +174,49 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
 
   ipcMain.handle('claude:disconnect', () => {
     clearStoredCredentials(db);
+    return { ok: true };
+  });
+
+  // ── OAuth sign-in (PKCE, out-of-band code paste) ──────────────────────────
+  let pendingPkce: PkcePair | null = null;
+
+  ipcMain.handle('claude:begin-oauth', () => {
+    try {
+      pendingPkce = generatePkce();
+      const url = buildAuthorizeUrl(pendingPkce);
+      void shell.openExternal(url);
+      return { ok: true, authorizeUrl: url };
+    } catch (err) {
+      pendingPkce = null;
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('claude:complete-oauth', async (_event, pastedCode: string) => {
+    if (!pendingPkce) {
+      return { ok: false, error: 'No sign-in in progress — click "Sign in with Claude" first.' };
+    }
+    if (typeof pastedCode !== 'string') {
+      return { ok: false, error: 'Invalid code' };
+    }
+    const parsed = parseAuthorizationCode(pastedCode);
+    if (!parsed) {
+      return { ok: false, error: 'Empty code — paste the code shown on the Claude page.' };
+    }
+    if (parsed.state && parsed.state !== pendingPkce.state) {
+      return { ok: false, error: 'State mismatch — restart the sign-in and paste the latest code.' };
+    }
+    const tokens = await exchangeCodeForToken(parsed.code, pendingPkce.verifier, parsed.state ?? pendingPkce.state);
+    if (!tokens) {
+      return { ok: false, error: 'Token exchange failed — the code may have expired. Try signing in again.' };
+    }
+    pendingPkce = null;
+    const creds: ClaudeCredentials = {
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken || undefined,
+      expiresAt: tokens.expiresAt,
+    };
+    storeCredentials(db, creds);
     return { ok: true };
   });
 }

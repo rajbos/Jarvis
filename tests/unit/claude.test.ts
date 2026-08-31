@@ -12,8 +12,13 @@ import path from 'path';
 import {
   loadClaudeCodeCredentials,
   isTokenExpired,
+  isTokenPotentiallyUsable,
   parseRateLimitHeaders,
+  generatePkce,
+  buildAuthorizeUrl,
+  parseAuthorizationCode,
 } from '../../src/services/claude';
+import crypto from 'crypto';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -93,6 +98,74 @@ describe('isTokenExpired', () => {
   it('applies the skew window', () => {
     expect(isTokenExpired(now + 30_000, now)).toBe(true);  // within 60s skew
     expect(isTokenExpired(now + 120_000, now)).toBe(false);
+  });
+});
+
+// ── isTokenPotentiallyUsable ─────────────────────────────────────────────────
+
+describe('isTokenPotentiallyUsable', () => {
+  const now = 1_000_000;
+
+  it('treats zero/missing expiry as usable (Claude Code sometimes writes 0)', () => {
+    expect(isTokenPotentiallyUsable(0, now)).toBe(true);
+    expect(isTokenPotentiallyUsable(undefined, now)).toBe(true);
+    expect(isTokenPotentiallyUsable(Number.NaN, now)).toBe(true);
+  });
+
+  it('respects real expiry', () => {
+    expect(isTokenPotentiallyUsable(now + 120_000, now)).toBe(true);
+    expect(isTokenPotentiallyUsable(now - 1, now)).toBe(false);
+  });
+});
+
+// ── OAuth PKCE helpers ────────────────────────────────────────────────────────
+
+describe('generatePkce', () => {
+  it('produces a verifier, its S256 challenge, and state equal to the verifier', () => {
+    const pkce = generatePkce();
+    expect(pkce.verifier.length).toBeGreaterThan(40);
+    expect(pkce.state).toBe(pkce.verifier);
+    const expected = crypto.createHash('sha256').update(pkce.verifier).digest()
+      .toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    expect(pkce.challenge).toBe(expected);
+  });
+
+  it('generates unique values per call', () => {
+    const a = generatePkce();
+    const b = generatePkce();
+    expect(a.verifier).not.toBe(b.verifier);
+  });
+});
+
+describe('buildAuthorizeUrl', () => {
+  it('includes the PKCE parameters and Claude Code client id', () => {
+    const url = buildAuthorizeUrl({ verifier: 'v', challenge: 'ch', state: 'st' });
+    expect(url.startsWith('https://claude.ai/oauth/authorize?')).toBe(true);
+    expect(url).toContain('code_challenge=ch');
+    expect(url).toContain('code_challenge_method=S256');
+    expect(url).toContain('state=st');
+    expect(url).toContain('client_id=9d1c250a-e61b-44d9-88ed-5944d1962f5e');
+    expect(url).toContain('response_type=code');
+  });
+});
+
+describe('parseAuthorizationCode', () => {
+  it('accepts a bare code', () => {
+    expect(parseAuthorizationCode('abc123')).toEqual({ code: 'abc123' });
+  });
+
+  it('splits code#state as shown on the callback page', () => {
+    expect(parseAuthorizationCode('abc123#state456')).toEqual({ code: 'abc123', state: 'state456' });
+  });
+
+  it('trims whitespace and rejects empty input', () => {
+    expect(parseAuthorizationCode('  abc  ')).toEqual({ code: 'abc' });
+    expect(parseAuthorizationCode('   ')).toBeNull();
+    expect(parseAuthorizationCode('')).toBeNull();
+  });
+
+  it('treats a trailing # as no state', () => {
+    expect(parseAuthorizationCode('abc#')).toEqual({ code: 'abc', state: undefined });
   });
 });
 

@@ -1400,7 +1400,10 @@ Jarvis can track the user's Claude **subscription** (Pro/Max) usage limits — n
 
 ### Credential Source
 
-The app reuses the OAuth credentials that Claude Code stores locally in `~/.claude/.credentials.json` (`claudeAiOauth.accessToken` / `refreshToken` / `expiresAt`). Refreshed tokens are cached encrypted in the Jarvis config store — Claude Code's own file is never modified.
+Two ways to connect:
+
+1. **Direct OAuth sign-in (PKCE)** — a "Sign in with Claude" button in the Claude panel opens `claude.ai/oauth/authorize` with the public Claude Code OAuth client; the user pastes the displayed code back into Jarvis. Tokens are stored encrypted in the Jarvis config store.
+2. **Claude Code credentials fallback** — reuses `~/.claude/.credentials.json` (`claudeAiOauth.*`) when present. Tokens with missing/zero expiry are tried anyway; a 401 from the probe triggers refresh + retry. Refreshed tokens are cached encrypted in Jarvis — Claude Code's file is never modified.
 
 ### Probing the Limit
 
