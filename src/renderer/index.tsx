@@ -1389,8 +1389,8 @@ function BackgroundStatusBar({
                     <span class="bg-status-claude-label">{label}</span>
                     {win ? (
                       <>
-                        <span style={{ color: win.limited ? '#f44336' : win.utilization !== null && win.utilization >= 0.8 ? '#ff9800' : '#4caf50', fontWeight: 600 }}>
-                          {win.limited ? 'exhausted' : win.utilization !== null ? `${Math.round(win.utilization * 100)}% used` : 'ok'}
+                        <span class={`bg-status-claude-state${win.limited ? ' bg-status-claude-state--limited' : win.utilization !== null && win.utilization >= 0.8 ? ' bg-status-claude-state--warning' : ' bg-status-claude-state--available'}`}>
+                          {win.limited ? 'Exhausted' : win.utilization !== null ? `${Math.round(win.utilization * 100)}% used` : 'OK'}
                         </span>
                         {win.reset !== null && (
                           <span class="bg-status-claude-reset">
@@ -1399,14 +1399,14 @@ function BackgroundStatusBar({
                         )}
                       </>
                     ) : (
-                      <span style={{ color: '#667' }}>no data</span>
+                      <span class="bg-status-claude-state bg-status-claude-state--unknown">No data</span>
                     )}
                   </div>
                 ))}
                 {claudeBadge.error && (
-                  <div class="bg-status-claude-row" style={{ color: '#ff9800' }}>Check failed: {claudeBadge.error}</div>
+                  <div class="bg-status-claude-error">Check failed: {claudeBadge.error}</div>
                 )}
-                <div class="bg-status-claude-row" style={{ color: '#556', fontSize: '0.72rem' }}>
+                <div class="bg-status-claude-checked">
                   Last checked {new Date(claudeBadge.fetchedAt).toLocaleTimeString()}
                 </div>
               </div>

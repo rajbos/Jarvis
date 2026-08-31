@@ -4191,8 +4191,9 @@ h5.ec-heading { font-size: 0.9375rem; }
 }
 
 .bg-status-rate-limit {
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
   font-weight: 600;
+  line-height: 1.35;
   letter-spacing: 0.02em;
   white-space: nowrap;
   flex-shrink: 0;
@@ -4222,12 +4223,14 @@ h5.ec-heading { font-size: 0.9375rem; }
   position: absolute;
   bottom: calc(100% + 6px);
   right: 0;
-  min-width: 240px;
+  width: max-content;
+  min-width: 360px;
+  max-width: calc(100vw - 2rem);
   background: #0d1a2e;
   border: 1px solid #1e3a5a;
   border-radius: 6px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
-  padding: 0.4rem 0;
+  padding: 0.35rem 0;
   z-index: 1000;
 }
 
@@ -4246,24 +4249,68 @@ h5.ec-heading { font-size: 0.9375rem; }
 }
 
 .bg-status-claude-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 6.25rem max-content minmax(8rem, 1fr);
   align-items: baseline;
-  gap: 0.5rem;
-  padding: 0.3rem 0.75rem;
-  font-size: 0.8125rem;
-  color: #c8d0e0;
+  gap: 0.75rem;
+  padding: 0.45rem 0.85rem;
+  font-size: 0.875rem;
+  line-height: 1.35;
+  color: var(--text-secondary);
   cursor: default;
   white-space: nowrap;
 }
 
+.bg-status-claude-row + .bg-status-claude-row {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
 .bg-status-claude-label {
-  flex: 1;
-  color: #99aabb;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.bg-status-claude-state {
+  font-weight: 700;
+}
+
+.bg-status-claude-state--limited {
+  color: #ff7187;
+}
+
+.bg-status-claude-state--warning {
+  color: #ffb74d;
+}
+
+.bg-status-claude-state--available {
+  color: #68d391;
+}
+
+.bg-status-claude-state--unknown {
+  color: var(--text-muted);
 }
 
 .bg-status-claude-reset {
-  font-size: 0.72rem;
-  color: #667;
+  color: var(--text-muted);
+  font-size: var(--type-meta);
+  text-align: right;
+}
+
+.bg-status-claude-error {
+  padding: 0.45rem 0.85rem;
+  color: #ffb74d;
+  font-size: var(--type-meta);
+  line-height: 1.4;
+  white-space: normal;
+}
+
+.bg-status-claude-checked {
+  margin-top: 0.15rem;
+  padding: 0.45rem 0.85rem 0.2rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-muted);
+  font-size: var(--type-meta);
+  line-height: 1.35;
 }
 
 /* ── Right-side group (tasks + rate limits) ──────────────────────────────── */
