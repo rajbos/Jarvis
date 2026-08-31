@@ -25,6 +25,25 @@ export function relativeAge(dateStr: string): string {
   return `${weeks}w ago`;
 }
 
+/**
+ * Human-readable time until a unix-seconds timestamp (e.g. "resets in 23m",
+ * "resets in 2h 5m", "resets in 3d 4h"). `nowMs` is injectable for tests.
+ */
+export function formatDurationUntil(resetUnixSec: number, nowMs: number = Date.now()): string {
+  const msLeft = resetUnixSec * 1000 - nowMs;
+  if (msLeft <= 0) return 'resets soon';
+  const totalMins = Math.ceil(msLeft / 60_000);
+  if (totalMins < 60) return `resets in ${totalMins}m`;
+  const totalHours = Math.floor(totalMins / 60);
+  if (totalHours < 24) {
+    const mins = totalMins % 60;
+    return mins > 0 ? `resets in ${totalHours}h ${mins}m` : `resets in ${totalHours}h`;
+  }
+  const days = Math.floor(totalHours / 24);
+  const hours = totalHours % 24;
+  return hours > 0 ? `resets in ${days}d ${hours}h` : `resets in ${days}d`;
+}
+
 /** Returns a short description of a notification reason/type combination. */
 export function notifDescription(type: string, reason: string): string {
   if (reason === 'assign') return type === 'PullRequest' ? 'PR assigned to you' : 'Issue assigned to you';

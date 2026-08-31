@@ -1200,6 +1200,150 @@ export interface GitHubRateLimit {
 
 
 
+// ── Claude (Claude Code OAuth) types ──────────────────────────────────────────
+
+
+
+
+
+/** Connection status of the Claude account link (via Claude Code credentials). */
+
+
+
+export interface ClaudeStatus {
+
+
+
+  connected: boolean;
+
+
+
+  /** e.g. "pro", "max" — as reported by the credentials file. */
+
+
+
+  subscriptionType?: string;
+
+
+
+  /** Access-token expiry in ms since epoch. */
+
+
+
+  expiresAt?: number;
+
+
+
+  /** Where the active token came from. */
+
+
+
+  source?: 'claude-code' | 'stored';
+
+
+
+  error?: string;
+
+
+
+}
+
+
+
+
+
+/** One unified rate-limit window (5-hour or 7-day). */
+
+
+
+export interface ClaudeRateLimitWindow {
+
+
+
+  /** Fraction of the window consumed, 0..1 (null when not reported). */
+
+
+
+  utilization: number | null;
+
+
+
+  /** Unix timestamp (seconds) when the window resets. */
+
+
+
+  reset: number | null;
+
+
+
+  /** True when this window is currently exhausted. */
+
+
+
+  limited: boolean;
+
+
+
+}
+
+
+
+
+
+export interface ClaudeRateLimit {
+
+
+
+  /** False when no Claude credentials are available at all. */
+
+
+
+  configured: boolean;
+
+
+
+  /** True when the account is currently rate limited (any window). */
+
+
+
+  limited: boolean;
+
+
+
+  /** Unix timestamp (seconds) when the binding limit lifts; null when not limited. */
+
+
+
+  resetAt: number | null;
+
+
+
+  retryAfterSec: number | null;
+
+
+
+  fiveHour: ClaudeRateLimitWindow | null;
+
+
+
+  sevenDay: ClaudeRateLimitWindow | null;
+
+
+
+  error?: string;
+
+
+
+  fetchedAt: string; // ISO timestamp
+
+
+
+}
+
+
+
+
+
 
 
 // ── Browser Companion types ───────────────────────────────────────────────────
@@ -2670,6 +2814,11 @@ export interface JarvisApi {
 
 
   getGitHubRateLimit(): Promise<GitHubRateLimit>;
+
+  // Claude (Claude Code OAuth) rate limit
+  getClaudeStatus(): Promise<ClaudeStatus>;
+  getClaudeRateLimit(): Promise<ClaudeRateLimit>;
+  disconnectClaude(): Promise<{ ok: boolean }>;
 
   // Auto-dismiss log
   logAutoDismiss(entries: AutoDismissLogInput[]): Promise<void>;

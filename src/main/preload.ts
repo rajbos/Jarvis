@@ -306,6 +306,10 @@ contextBridge.exposeInMainWorld('jarvis', {
   getSystemLocale: () => ipcRenderer.invoke('app:get-system-locale'),
   // GitHub rate limit
   getGitHubRateLimit: () => ipcRenderer.invoke('github:get-rate-limit'),
+  // Claude (Claude Code OAuth) rate limit
+  getClaudeStatus: () => ipcRenderer.invoke('claude:status'),
+  getClaudeRateLimit: () => ipcRenderer.invoke('claude:rate-limit'),
+  disconnectClaude: () => ipcRenderer.invoke('claude:disconnect'),
   // Auto-dismiss log
   logAutoDismiss: (entries: unknown[]) => ipcRenderer.invoke('github:log-auto-dismiss', entries),
   listAutoDismissLog: (limit?: number) => ipcRenderer.invoke('github:list-auto-dismiss-log', limit),
