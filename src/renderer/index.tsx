@@ -20,7 +20,7 @@ import { LocalFolderConfigPanel } from '../plugins/local-repos/LocalFolderConfig
 import { LocalFolderPanel } from '../plugins/local-repos/LocalFolderPanel';
 import { LocalSubfolderPanel } from '../plugins/local-repos/LocalSubfolderPanel';
 import { LocalRepoPanelView } from '../plugins/local-repos/LocalRepoPanelView';
-import { getReposUnder, hasDeepRepos, setSystemLocale, formatNumber } from '../plugins/shared/utils';
+import { getReposUnder, hasDeepRepos, setSystemLocale, formatNumber, formatDurationUntil } from '../plugins/shared/utils';
 import { SecretsStep } from '../plugins/secrets/SecretsStep';
 import { SecretsScanPanel } from '../plugins/secrets/SecretsScanPanel';
 import { DashboardPanel } from '../plugins/dashboard/DashboardPanel';
@@ -31,6 +31,8 @@ import { OneNoteSectionPanel } from '../plugins/groups/OneNoteSectionPanel';
 import { OneNoteCachePanel } from '../plugins/groups/OneNoteCachePanel';
 import { GroupsDashboardPanel } from '../plugins/groups/GroupsDashboardPanel';
 import { AutoDismissHistoryPanel } from '../plugins/notifications/AutoDismissHistoryPanel';
+import { ClaudeStep } from '../plugins/claude/ClaudeStep';
+import { ClaudePanel } from '../plugins/claude/ClaudePanel';
 
 // ── Types (imported from single source of truth in plugins/types.ts) ─────────
 // The global augmentation `Window.jarvis` is declared in plugins/types.ts and
@@ -53,6 +55,8 @@ import type {
   SecretsScanProgress,
   Group,
   GitHubRateLimit,
+  ClaudeStatus,
+  ClaudeRateLimit,
   BackgroundTaskStatus,
 } from '../plugins/types';
 import '../plugins/types'; // activate the global Window augmentation
@@ -132,6 +136,12 @@ function App() {
   // GitHub rate limit
   const [rateLimit, setRateLimit] = useState<GitHubRateLimit | null>(null);
 
+  // Claude rate limit
+  const [claudeStatus, setClaudeStatus] = useState<ClaudeStatus | null>(null);
+  const [claudeRateLimit, setClaudeRateLimit] = useState<ClaudeRateLimit | null>(null);
+  const [showClaudePanel, setShowClaudePanel] = useState(false);
+  const [claudeRefreshing, setClaudeRefreshing] = useState(false);
+
   const currentUserLogin = oauthStatus?.login ?? null;
 
   // Tab state
@@ -192,6 +202,16 @@ function App() {
         console.error('[Jarvis] Error checking OAuth status:', err);
       }
     })();
+  }, []);
+
+  // Claude status + rate limit check on mount (independent of GitHub auth)
+  useEffect(() => {
+    window.jarvis.getClaudeStatus()
+      .then(setClaudeStatus)
+      .catch((err: unknown) => console.error('[Jarvis] Claude status check failed:', err));
+    window.jarvis.getClaudeRateLimit()
+      .then(setClaudeRateLimit)
+      .catch((err: unknown) => console.error('[Jarvis] Claude rate limit check failed:', err));
   }, []);
 
   // Ollama status + selected model check on mount
@@ -413,6 +433,22 @@ function App() {
     return () => window.clearInterval(id);
   }, [oauthStatus?.authenticated]);
 
+  // Claude rate limit polling — every 2 minutes normally, every 30s while
+  // limited so the ticker reflects the lift promptly.
+  useEffect(() => {
+    if (!claudeStatus?.connected) return;
+    const intervalMs = claudeRateLimit?.limited ? 30 * 1000 : 2 * 60 * 1000;
+    const id = window.setInterval(async () => {
+      try {
+        const rl = await window.jarvis.getClaudeRateLimit();
+        setClaudeRateLimit(rl);
+      } catch (e) {
+        console.warn('[Jarvis] Claude rate limit refresh failed:', e);
+      }
+    }, intervalMs);
+    return () => window.clearInterval(id);
+  }, [claudeStatus?.connected, claudeRateLimit?.limited]);
+
   // Keep refs so the effect below can always read the latest panel state
   // without adding them to the dependency array (which would re-fire on every
   // panel interaction rather than only when the underlying data changes).
@@ -514,6 +550,8 @@ function App() {
     setShowOllamaPanel(false);
     setShowChatPanel(false);
     localStorage.setItem('chat-panel-open', 'false');
+    // Claude
+    setShowClaudePanel(false);
   };
 
   const handleToggleOrgs = () => {
@@ -669,7 +707,7 @@ function App() {
     requestAnimationFrame(() => {
       main.scrollTo({ left: main.scrollWidth, behavior: 'smooth' });
     });
-  }, [repoPanel, notifRepoPanel, notifDive, showLocalPanel, showLocalConfig, localNavStack, localLeafFolder, localNotifRepoPanel, showOllamaPanel]);
+  }, [repoPanel, notifRepoPanel, notifDive, showLocalPanel, showLocalConfig, localNavStack, localLeafFolder, localNotifRepoPanel, showOllamaPanel, showClaudePanel]);
 
   // ── Secrets handlers ────────────────────────────────────────────────────────
 
@@ -728,6 +766,37 @@ function App() {
     const wasOpen = showOllamaPanel;
     closeAllPanels();
     if (!wasOpen) setShowOllamaPanel(true);
+  };
+
+  const handleClaudeToggle = () => {
+    const wasOpen = showClaudePanel;
+    closeAllPanels();
+    if (!wasOpen) {
+      setShowClaudePanel(true);
+      // Fresh numbers whenever the panel is opened
+      void handleClaudeRefresh();
+    }
+  };
+
+  const handleClaudeRefresh = async () => {
+    setClaudeRefreshing(true);
+    try {
+      const [status, rl] = await Promise.all([
+        window.jarvis.getClaudeStatus(),
+        window.jarvis.getClaudeRateLimit(),
+      ]);
+      setClaudeStatus(status);
+      setClaudeRateLimit(rl);
+    } catch (err) {
+      console.error('[Jarvis] Claude refresh failed:', err);
+    } finally {
+      setClaudeRefreshing(false);
+    }
+  };
+
+  const handleClaudeDisconnect = async () => {
+    await window.jarvis.disconnectClaude();
+    await handleClaudeRefresh();
   };
 
   const handleToggleFavoriteOrg = async (orgLogin: string) => {
@@ -1035,6 +1104,22 @@ function App() {
         )}
       </div>
 
+      <div class="ollama-layout">
+        <div class="ollama-step-wrapper">
+          <ClaudeStep status={claudeStatus} rateLimit={claudeRateLimit} onToggle={handleClaudeToggle} />
+        </div>
+        {showClaudePanel && claudeStatus?.connected && (
+          <ClaudePanel
+            status={claudeStatus}
+            rateLimit={claudeRateLimit}
+            refreshing={claudeRefreshing}
+            onRefresh={() => void handleClaudeRefresh()}
+            onDisconnect={() => void handleClaudeDisconnect()}
+            onClose={() => setShowClaudePanel(false)}
+          />
+        )}
+      </div>
+
       </>)}
         </div>
       </div>
@@ -1080,6 +1165,7 @@ function App() {
         localScanning={localScanning}
         localScanProgress={localScanProgress}
         rateLimit={rateLimit}
+        claudeRateLimit={claudeRateLimit}
       />
     </div>
   );
@@ -1094,6 +1180,7 @@ interface BackgroundStatusBarProps {
   localScanning: boolean;
   localScanProgress: LocalScanProgress | null;
   rateLimit: GitHubRateLimit | null;
+  claudeRateLimit: ClaudeRateLimit | null;
 }
 
 function BackgroundStatusBar({
@@ -1103,6 +1190,7 @@ function BackgroundStatusBar({
   localScanning,
   localScanProgress,
   rateLimit,
+  claudeRateLimit,
 }: BackgroundStatusBarProps) {
   const [ipcMessage, setIpcMessage] = useState<string | null>(null);
   const fadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1191,7 +1279,17 @@ function BackgroundStatusBar({
   // Build badges for OAuth and PAT sources (only when configured)
   const oauthBadge = rateLimit?.oauth.configured ? rateLimit.oauth : null;
   const patBadge = rateLimit?.pat.configured ? rateLimit.pat : null;
-  const hasAnyBadge = oauthBadge !== null || patBadge !== null;
+  const claudeBadge = claudeRateLimit?.configured ? claudeRateLimit : null;
+  const hasAnyBadge = oauthBadge !== null || patBadge !== null || claudeBadge !== null;
+
+  // Ticker: re-render every second while Claude is rate limited so the
+  // countdown to the reset stays live.
+  const [, setNowTick] = useState(0);
+  useEffect(() => {
+    if (!claudeBadge?.limited) return;
+    const id = window.setInterval(() => setNowTick((n) => n + 1), 1000);
+    return () => window.clearInterval(id);
+  }, [claudeBadge?.limited]);
 
   // Keep --status-bar-height in sync so fixed panels (e.g. ec-panel) can avoid
   // being hidden behind the status bar.
@@ -1250,7 +1348,24 @@ function BackgroundStatusBar({
               </div>
             </div>
           )}
-          {hasAnyBadge && (
+          {claudeBadge && (
+            <span
+              class={`bg-status-rate-limit${claudeBadge.limited ? ' bg-status-rate-limit--limited' : ''}`}
+              title={claudeBadge.error
+                ? `Claude rate limit check failed: ${claudeBadge.error}`
+                : claudeBadge.limited
+                  ? `Claude usage limit reached — ${claudeBadge.resetAt !== null ? `${formatDurationUntil(claudeBadge.resetAt)} (${new Date(claudeBadge.resetAt * 1000).toLocaleString()})` : 'reset time unknown'}`
+                  : `Claude${claudeBadge.fiveHour?.utilization != null ? `: 5h window ${Math.round(claudeBadge.fiveHour.utilization * 100)}% used` : ' not rate limited'}`}
+              style={{ color: claudeBadge.error ? '#888' : claudeBadge.limited ? '#f44336' : '#4caf50' }}
+            >
+              {claudeBadge.error
+                ? '✦ Claude –'
+                : claudeBadge.limited
+                  ? `⏳ Claude limited · ${claudeBadge.resetAt !== null ? formatDurationUntil(claudeBadge.resetAt) : 'resets soon'}`
+                  : `✦ Claude${claudeBadge.fiveHour?.utilization != null ? ` ${Math.round(claudeBadge.fiveHour.utilization * 100)}%` : ' ok'}`}
+            </span>
+          )}
+          {hasAnyBadge && (oauthBadge || patBadge) && (
             <div class={`bg-status-rate-limits${oauthBadge && patBadge ? ' bg-status-rate-limits--both' : ''}`}>
               {oauthBadge && (
                 <span

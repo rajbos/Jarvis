@@ -4037,6 +4037,16 @@ h5.ec-heading { font-size: 0.9375rem; }
   cursor: default;
 }
 
+/* Pulsing countdown while an account is rate limited */
+.bg-status-rate-limit--limited {
+  animation: bg-status-limited-pulse 2s ease-in-out infinite;
+}
+
+@keyframes bg-status-limited-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
 /* ── Right-side group (tasks + rate limits) ──────────────────────────────── */
 .bg-status-right {
   margin-left: auto;

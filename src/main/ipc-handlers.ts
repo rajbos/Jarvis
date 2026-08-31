@@ -43,6 +43,9 @@ import { registerHandlers as registerGroupsHandlers } from '../plugins/groups/ha
 import { registerHandlers as registerOnedriveHandlers } from '../plugins/onedrive/handler';
 
 import { registerHandlers as registerBrowserCompanionHandlers } from '../plugins/browser-companion/handler';
+
+import { registerHandlers as registerClaudeHandlers } from '../plugins/claude/handler';
+
 import { registerTaskIpcHandlers } from './background-tasks';
 
 
@@ -91,6 +94,8 @@ export function registerIpcHandlers(
   registerOnedriveHandlers(db, getWindow);
 
   registerBrowserCompanionHandlers(db, getWindow);
+
+  registerClaudeHandlers(db, getWindow);
 
   registerTaskIpcHandlers();
 
