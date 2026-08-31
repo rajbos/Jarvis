@@ -899,6 +899,7 @@ function App() {
         <GitHubStep
           oauthStatus={oauthStatus}
           patStatus={patStatus}
+          patExpiresAt={rateLimit?.pat.configured ? rateLimit.pat.tokenExpiresAt : null}
           deviceCode={deviceCode}
           discoveryProgress={discoveryProgress}
           discoveryFinished={discoveryFinished}
@@ -1432,14 +1433,18 @@ function BackgroundStatusBar({
               {patBadge && (
                 <span
                   class="bg-status-rate-limit"
-                  title={patBadge.error
-                    ? `PAT rate limit error: ${patBadge.error}`
-                    : `PAT: ${formatNumber(patBadge.resource!.remaining)}/${formatNumber(patBadge.resource!.limit)} calls remaining (resets ${new Date(patBadge.resource!.reset * 1000).toLocaleTimeString()})`}
-                  style={{ color: patBadge.error ? '#888' : (patBadge.resource ? rateLimitColor(patBadge.resource.remaining) : '#888') }}
+                  title={patBadge.tokenExpired
+                    ? 'PAT expired or revoked — open Settings → GitHub Access to enter a new token'
+                    : patBadge.error
+                      ? `PAT rate limit error: ${patBadge.error}`
+                      : `PAT: ${formatNumber(patBadge.resource!.remaining)}/${formatNumber(patBadge.resource!.limit)} calls remaining (resets ${new Date(patBadge.resource!.reset * 1000).toLocaleTimeString()})${patBadge.tokenExpiresAt ? ` — token expires ${patBadge.tokenExpiresAt}` : ''}`}
+                  style={{ color: patBadge.tokenExpired ? '#ff6b81' : patBadge.error ? '#888' : (patBadge.resource ? rateLimitColor(patBadge.resource.remaining) : '#888') }}
                 >
-                  {patBadge.error || !patBadge.resource
-                    ? '⚡ PAT –'
-                    : `⚡ PAT ${formatNumber(patBadge.resource.remaining)}/${formatNumber(patBadge.resource.limit)}${patBadge.resource.remaining < 500 ? ` · ${formatResetIn(patBadge.resource.reset)}` : ''}`}
+                  {patBadge.tokenExpired
+                    ? '⚡ PAT expired'
+                    : patBadge.error || !patBadge.resource
+                      ? '⚡ PAT –'
+                      : `⚡ PAT ${formatNumber(patBadge.resource.remaining)}/${formatNumber(patBadge.resource.limit)}${patBadge.resource.remaining < 500 ? ` · ${formatResetIn(patBadge.resource.reset)}` : ''}`}
                 </span>
               )}
             </div>

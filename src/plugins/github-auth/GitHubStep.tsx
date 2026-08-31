@@ -5,6 +5,8 @@ import type { OAuthStatus, DiscoveryProgress, PatStatus } from '../types';
 interface GitHubStepProps {
   oauthStatus: OAuthStatus | null;
   patStatus: PatStatus | null;
+  /** Expiry date of the PAT from the github-authentication-token-expiration header (null when it does not expire) */
+  patExpiresAt?: string | null;
   deviceCode: { userCode: string; verificationUri: string } | null;
   discoveryProgress: DiscoveryProgress | null;
   discoveryFinished: boolean;
@@ -17,6 +19,7 @@ interface GitHubStepProps {
 export function GitHubStep({
   oauthStatus,
   patStatus,
+  patExpiresAt,
   deviceCode,
   discoveryProgress,
   discoveryFinished,
@@ -26,6 +29,15 @@ export function GitHubStep({
   loginDisabled,
 }: GitHubStepProps) {
   const authenticated = oauthStatus?.authenticated;
+
+  // The header value looks like "2026-09-30 12:34:56 UTC" — normalize to ISO-ish for Date parsing
+  const patExpiryDate = patExpiresAt ? new Date(patExpiresAt.replace(' UTC', 'Z')) : null;
+  const patExpiryValid = patExpiryDate !== null && !isNaN(patExpiryDate.getTime());
+  const patExpiredByDate = patExpiryValid && patExpiryDate!.getTime() <= Date.now();
+  const patExpiringSoon =
+    patExpiryValid && !patExpiredByDate &&
+    patExpiryDate!.getTime() - Date.now() < 7 * 24 * 60 * 60 * 1000;
+  const patExpired = Boolean(patStatus?.expired) || patExpiredByDate;
   let badgeStatus: 'pending' | 'completed' | 'in-progress' = 'pending';
   let badgeLabel = 'Pending';
   if (authenticated) {
@@ -76,14 +88,32 @@ export function GitHubStep({
 
       {authenticated && patStatus?.hasPat && (
         <div class="pat-row">
-          <span>Personal Access Token</span>
-          {patStatus.expired
+          <span>
+            Personal Access Token
+            {patExpiryValid && !patExpired && (
+              <span style={{ color: '#8892b0' }}>
+                {' '}— expires {patExpiryDate!.toLocaleDateString()}
+              </span>
+            )}
+          </span>
+          {patExpired
             ? <StatusBadge status="error" label="Expired" />
-            : <StatusBadge status="completed" label="PAT Connected" />}
+            : patExpiringSoon
+              ? <StatusBadge status="pending" label="Expiring soon" />
+              : <StatusBadge status="completed" label="PAT Connected" />}
         </div>
       )}
 
-      {authenticated && patStatus?.hasPat && patStatus.expired && (
+      {authenticated && patStatus?.hasPat && patExpiringSoon && (
+        <div class="pat-expired-warning" style={{ background: '#3d320a', borderColor: '#ffd43b', color: '#ffec99' }}>
+          ⚠️ Your GitHub Personal Access Token expires on {patExpiryDate!.toLocaleDateString()}.
+          Generate a new one before then to keep org repo discovery working.
+          <br />
+          <button onClick={onOpenSettings} style={{ background: '#ffd43b' }}>Open Settings to replace the token</button>
+        </div>
+      )}
+
+      {authenticated && patStatus?.hasPat && patExpired && (
         <div class="pat-expired-warning">
           ⚠️ Your GitHub Personal Access Token has expired or been revoked. Repository
           discovery and other features that rely on it will fail until you enter a new token.

@@ -269,7 +269,7 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
 
     type RateLimitResource = { limit: number; remaining: number; reset: number; used: number };
 
-    const fetchForToken = async (token: string): Promise<{ resource: RateLimitResource | null; error?: string }> => {
+    const fetchForToken = async (token: string): Promise<{ resource: RateLimitResource | null; error?: string; tokenExpiresAt?: string | null; tokenExpired?: boolean }> => {
       try {
         const res = await fetch('https://api.github.com/rate_limit', {
           headers: {
@@ -278,9 +278,15 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
             'X-GitHub-Api-Version': '2022-11-28',
           },
         });
-        if (!res.ok) return { resource: null, error: `HTTP ${res.status}` };
+        // GitHub returns the expiry date of expiring tokens (fine-grained PATs)
+        // on every authenticated response — surface it so the UI can warn early.
+        const tokenExpiresAt = res.headers.get('github-authentication-token-expiration');
+        if (res.status === 401) {
+          return { resource: null, error: 'HTTP 401 — token expired or revoked', tokenExpiresAt, tokenExpired: true };
+        }
+        if (!res.ok) return { resource: null, error: `HTTP ${res.status}`, tokenExpiresAt };
         const data = (await res.json()) as { resources: { core: RateLimitResource } };
-        return { resource: data.resources.core };
+        return { resource: data.resources.core, tokenExpiresAt };
       } catch (err) {
         return { resource: null, error: String(err) };
       }
@@ -291,12 +297,25 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
       pat ? fetchForToken(pat) : Promise.resolve(null),
     ]);
 
+    // The rate-limit call doubles as a liveness check for the PAT: a 401 here
+    // means the token is expired/revoked — let the renderer switch to the
+    // "PAT expired" state immediately.
+    if (patResult?.tokenExpired) {
+      getWindow()?.webContents.send('github:pat-expired');
+    }
+
     return {
       oauth: auth
         ? { configured: true, resource: oauthResult!.resource, error: oauthResult!.error }
         : { configured: false, resource: null },
       pat: pat
-        ? { configured: true, resource: patResult!.resource, error: patResult!.error }
+        ? {
+            configured: true,
+            resource: patResult!.resource,
+            error: patResult!.error,
+            tokenExpiresAt: patResult!.tokenExpiresAt ?? null,
+            tokenExpired: patResult!.tokenExpired ?? false,
+          }
         : { configured: false, resource: null },
       fetchedAt: new Date().toISOString(),
     };

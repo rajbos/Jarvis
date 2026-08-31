@@ -1204,6 +1204,22 @@ export interface GitHubRateLimitSource {
 
 
 
+  /** Expiry date of the token, from the github-authentication-token-expiration response header (PAT only; null when the token does not expire) */
+
+
+
+  tokenExpiresAt?: string | null;
+
+
+
+  /** true when GitHub answered 401 — the token is expired or revoked */
+
+
+
+  tokenExpired?: boolean;
+
+
+
 }
 
 

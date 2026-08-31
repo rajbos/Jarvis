@@ -312,8 +312,9 @@ describe('GitHub Auth plugin — IPC handlers', () => {
       };
       global.fetch = vi.fn().mockResolvedValueOnce({
         ok: true,
+        headers: { get: () => null },
         json: async () => mockRateLimit,
-      } as Response);
+      } as unknown as Response);
 
       const result = (await callHandler('github:get-rate-limit')) as Record<string, unknown>;
       const oauth = result.oauth as Record<string, unknown>;
@@ -337,8 +338,12 @@ describe('GitHub Auth plugin — IPC handlers', () => {
         resources: { core: { limit: 5000, remaining: 2000, reset: 1700000000, used: 3000 } },
       };
       global.fetch = vi.fn()
-        .mockResolvedValueOnce({ ok: true, json: async () => mockRateLimit } as Response)
-        .mockResolvedValueOnce({ ok: true, json: async () => mockPatLimit } as Response);
+        .mockResolvedValueOnce({ ok: true, headers: { get: () => null }, json: async () => mockRateLimit } as unknown as Response)
+        .mockResolvedValueOnce({
+          ok: true,
+          headers: { get: (name: string) => name === 'github-authentication-token-expiration' ? '2027-06-15 00:00:00 UTC' : null },
+          json: async () => mockPatLimit,
+        } as unknown as Response);
 
       const result = (await callHandler('github:get-rate-limit')) as Record<string, unknown>;
       const oauth = result.oauth as Record<string, unknown>;
@@ -347,6 +352,31 @@ describe('GitHub Auth plugin — IPC handlers', () => {
       expect((oauth.resource as Record<string, unknown>).remaining).toBe(4000);
       expect(pat.configured).toBe(true);
       expect((pat.resource as Record<string, unknown>).remaining).toBe(2000);
+      // Expiry date surfaced from the github-authentication-token-expiration header
+      expect(pat.tokenExpiresAt).toBe('2027-06-15 00:00:00 UTC');
+      expect(pat.tokenExpired).toBe(false);
+    });
+
+    it('marks the PAT as expired when the rate-limit call answers 401', async () => {
+      saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo', null);
+      saveGitHubPat(db, 'octocat', 'ghp_expired_token');
+      const mockRateLimit = {
+        resources: { core: { limit: 5000, remaining: 4000, reset: 1700000000, used: 1000 } },
+      };
+      global.fetch = vi.fn()
+        .mockResolvedValueOnce({ ok: true, headers: { get: () => null }, json: async () => mockRateLimit } as unknown as Response)
+        .mockResolvedValueOnce({
+          ok: false, status: 401,
+          headers: { get: () => null },
+          json: async () => ({}),
+        } as unknown as Response);
+
+      const result = (await callHandler('github:get-rate-limit')) as Record<string, unknown>;
+      const pat = result.pat as Record<string, unknown>;
+      expect(pat.configured).toBe(true);
+      expect(pat.resource).toBeNull();
+      expect(pat.tokenExpired).toBe(true);
+      expect(pat.error as string).toContain('401');
     });
 
     it('sets error on oauth source when fetch fails', async () => {
@@ -363,8 +393,10 @@ describe('GitHub Auth plugin — IPC handlers', () => {
     it('sets error on oauth source when API returns non-ok status', async () => {
       saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo', null);
       global.fetch = vi.fn().mockResolvedValueOnce({
-        ok: false, status: 401, json: async () => ({}),
-      } as Response);
+        ok: false, status: 401,
+        headers: { get: () => null },
+        json: async () => ({}),
+      } as unknown as Response);
 
       const result = (await callHandler('github:get-rate-limit')) as Record<string, unknown>;
       const oauth = result.oauth as Record<string, unknown>;
