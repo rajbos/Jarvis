@@ -1,6 +1,6 @@
 import type { ComponentChildren } from 'preact';
 
-type BadgeStatus = 'pending' | 'completed' | 'in-progress';
+type BadgeStatus = 'pending' | 'completed' | 'in-progress' | 'error';
 
 interface StatusBadgeProps {
   status: BadgeStatus;

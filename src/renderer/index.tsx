@@ -40,6 +40,7 @@ import { ClaudePanel } from '../plugins/claude/ClaudePanel';
 import type {
   OAuthResult,
   OAuthStatus,
+  PatStatus,
   OllamaStatus,
   OrgListResult,
   NotificationCounts,
@@ -67,6 +68,7 @@ type AppTab = 'dashboard' | 'groups-dashboard' | 'browser' | 'setup' | 'dismiss-
 
 function App() {
   const [oauthStatus, setOauthStatus] = useState<OAuthStatus | null>(null);
+  const [patStatus, setPatStatus] = useState<PatStatus | null>(null);
   const [deviceCode, setDeviceCode] = useState<{ userCode: string; verificationUri: string } | null>(null);
   const [loginDisabled, setLoginDisabled] = useState(false);
   const [discoveryProgress, setDiscoveryProgress] = useState<DiscoveryProgress | null>(null);
@@ -202,6 +204,21 @@ function App() {
         console.error('[Jarvis] Error checking OAuth status:', err);
       }
     })();
+  }, []);
+
+  // PAT status check on mount + live updates when it expires or is replaced
+  useEffect(() => {
+    const loadPatStatus = () => {
+      window.jarvis.getPatStatus()
+        .then(setPatStatus)
+        .catch((err: unknown) => console.error('[Jarvis] PAT status check failed:', err));
+    };
+    loadPatStatus();
+    const unsubExpired = window.jarvis.onPatExpired(() => {
+      setPatStatus((prev) => ({ ...(prev ?? { hasPat: false }), hasPat: true, expired: true }));
+    });
+    const unsubChanged = window.jarvis.onPatStatusChanged(loadPatStatus);
+    return () => { unsubExpired(); unsubChanged(); };
   }, []);
 
   // Claude status + rate limit check on mount (independent of GitHub auth)
@@ -881,11 +898,14 @@ function App() {
       <div class="github-layout">
         <GitHubStep
           oauthStatus={oauthStatus}
+          patStatus={patStatus}
+          patExpiresAt={rateLimit?.pat.configured ? rateLimit.pat.tokenExpiresAt : null}
           deviceCode={deviceCode}
           discoveryProgress={discoveryProgress}
           discoveryFinished={discoveryFinished}
           onLogin={handleLogin}
           onToggleOrgs={handleToggleOrgs}
+          onOpenSettings={() => void window.jarvis.openSettings()}
           loginDisabled={loginDisabled}
         />
 
@@ -1413,14 +1433,18 @@ function BackgroundStatusBar({
               {patBadge && (
                 <span
                   class="bg-status-rate-limit"
-                  title={patBadge.error
-                    ? `PAT rate limit error: ${patBadge.error}`
-                    : `PAT: ${formatNumber(patBadge.resource!.remaining)}/${formatNumber(patBadge.resource!.limit)} calls remaining (resets ${new Date(patBadge.resource!.reset * 1000).toLocaleTimeString()})`}
-                  style={{ color: patBadge.error ? '#888' : (patBadge.resource ? rateLimitColor(patBadge.resource.remaining) : '#888') }}
+                  title={patBadge.tokenExpired
+                    ? 'PAT expired or revoked — open Settings → GitHub Access to enter a new token'
+                    : patBadge.error
+                      ? `PAT rate limit error: ${patBadge.error}`
+                      : `PAT: ${formatNumber(patBadge.resource!.remaining)}/${formatNumber(patBadge.resource!.limit)} calls remaining (resets ${new Date(patBadge.resource!.reset * 1000).toLocaleTimeString()})${patBadge.tokenExpiresAt ? ` — token expires ${patBadge.tokenExpiresAt}` : ''}`}
+                  style={{ color: patBadge.tokenExpired ? '#ff6b81' : patBadge.error ? '#888' : (patBadge.resource ? rateLimitColor(patBadge.resource.remaining) : '#888') }}
                 >
-                  {patBadge.error || !patBadge.resource
-                    ? '⚡ PAT –'
-                    : `⚡ PAT ${formatNumber(patBadge.resource.remaining)}/${formatNumber(patBadge.resource.limit)}${patBadge.resource.remaining < 500 ? ` · ${formatResetIn(patBadge.resource.reset)}` : ''}`}
+                  {patBadge.tokenExpired
+                    ? '⚡ PAT expired'
+                    : patBadge.error || !patBadge.resource
+                      ? '⚡ PAT –'
+                      : `⚡ PAT ${formatNumber(patBadge.resource.remaining)}/${formatNumber(patBadge.resource.limit)}${patBadge.resource.remaining < 500 ? ` · ${formatResetIn(patBadge.resource.reset)}` : ''}`}
                 </span>
               )}
             </div>

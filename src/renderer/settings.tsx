@@ -12,10 +12,11 @@ interface OAuthStatus {
 
 interface PatStatus {
   hasPat: boolean;
-  name?: string;
-  login?: string;
-  avatarUrl?: string;
-}
+  expired?: boolean;
+  name?: string;
+  login?: string;
+  avatarUrl?: string;
+}
 
 interface OnedriveRoot {
   id: number;
@@ -180,25 +181,32 @@ function PatSection() {
     <div class="section">
       <h2>GitHub Access — Personal Access Token</h2>
 
-      {!status?.hasPat && (
-        <div>
-          <label for="pat-input">Enter token to add or replace PAT</label>
-          <div class="btn-row" style={{ marginTop: 0 }}>
-            <input
-              type="password"
-              id="pat-input"
-              placeholder="ghp_... or github_pat_..."
-              value={patInput}
-              onInput={(e: Event) => setPatInput((e.target as HTMLInputElement).value)}
-            />
-            <button class="btn-save" onClick={handleSave} disabled={saving}>
-              {saving ? 'Saving...' : 'Save'}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {status?.hasPat && (
+      {status?.hasPat && status.expired && (
+        <div class="pat-error" style={{ marginBottom: '0.5rem' }}>
+          ⚠️ Your saved Personal Access Token has expired or been revoked. GitHub features
+          that rely on it (like org repo discovery) will fail until you enter a new token below.
+        </div>
+      )}
+
+      {(!status?.hasPat || status.expired) && (
+        <div>
+          <label for="pat-input">Enter token to add or replace PAT</label>
+          <div class="btn-row" style={{ marginTop: 0 }}>
+            <input
+              type="password"
+              id="pat-input"
+              placeholder="ghp_... or github_pat_..."
+              value={patInput}
+              onInput={(e: Event) => setPatInput((e.target as HTMLInputElement).value)}
+            />
+            <button class="btn-save" onClick={handleSave} disabled={saving}>
+              {saving ? 'Saving...' : 'Save'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {status?.hasPat && !status.expired && (
         <>
           <UserCard
             name={status.name || status.login || 'PAT User'}

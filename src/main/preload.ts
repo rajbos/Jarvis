@@ -50,6 +50,7 @@ contextBridge.exposeInMainWorld('jarvis', {
   savePat: (pat: string) => ipcRenderer.invoke('github:save-pat', pat),
   deletePat: () => ipcRenderer.invoke('github:delete-pat'),
   getPatStatus: () => ipcRenderer.invoke('github:pat-status'),
+  openSettings: () => ipcRenderer.invoke('app:open-settings'),
   logout: () => ipcRenderer.invoke('github:logout'),
   startOAuthDiscovery: () => ipcRenderer.invoke('github:start-oauth-discovery'),
   searchRepos: (query: string) => ipcRenderer.invoke('github:search-repos', query),
@@ -117,6 +118,16 @@ contextBridge.exposeInMainWorld('jarvis', {
     const listener = (_event: unknown, result: OAuthResult) => callback(result);
     ipcRenderer.on('github:oauth-complete', listener);
     return () => { ipcRenderer.removeListener('github:oauth-complete', listener); };
+  },
+  onPatExpired: (callback: () => void) => {
+    const listener = () => callback();
+    ipcRenderer.on('github:pat-expired', listener);
+    return () => { ipcRenderer.removeListener('github:pat-expired', listener); };
+  },
+  onPatStatusChanged: (callback: () => void) => {
+    const listener = () => callback();
+    ipcRenderer.on('github:pat-status-changed', listener);
+    return () => { ipcRenderer.removeListener('github:pat-status-changed', listener); };
   },
   onDiscoveryProgress: (callback: (progress: DiscoveryProgress) => void) => {
     const listener = (_event: unknown, progress: DiscoveryProgress) => callback(progress);

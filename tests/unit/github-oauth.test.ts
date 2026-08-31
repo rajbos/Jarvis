@@ -86,6 +86,7 @@ import {
   requestDeviceCode,
   pollForToken,
   fetchGitHubUser,
+  validateGitHubPat,
   deleteGitHubAuth,
 } from '../../src/services/github-oauth';
 
@@ -171,6 +172,42 @@ describe('fetchGitHubUser', () => {
       new Response('Unauthorized', { status: 401 }),
     );
     await expect(fetchGitHubUser('bad-token')).rejects.toThrow('Failed to fetch user: 401');
+  });
+});
+
+describe('validateGitHubPat', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('returns valid with the user on a 200 response', async () => {
+    globalThis.fetch = vi.fn(async () =>
+      new Response(JSON.stringify({ login: 'octocat', name: 'Octocat', avatar_url: '' }), { status: 200 }),
+    );
+    const result = await validateGitHubPat('ghp_good');
+    expect(result.status).toBe('valid');
+    if (result.status === 'valid') expect(result.user.login).toBe('octocat');
+  });
+
+  it('returns expired on a 401 response', async () => {
+    globalThis.fetch = vi.fn(async () =>
+      new Response(JSON.stringify({ message: 'Bad credentials' }), { status: 401 }),
+    );
+    const result = await validateGitHubPat('ghp_expired');
+    expect(result.status).toBe('expired');
+  });
+
+  it('returns unknown on other non-OK statuses', async () => {
+    globalThis.fetch = vi.fn(async () =>
+      new Response('Server Error', { status: 500 }),
+    );
+    const result = await validateGitHubPat('ghp_maybe');
+    expect(result.status).toBe('unknown');
+  });
+
+  it('returns unknown on network failure', async () => {
+    globalThis.fetch = vi.fn(async () => { throw new Error('ECONNREFUSED'); });
+    const result = await validateGitHubPat('ghp_maybe');
+    expect(result.status).toBe('unknown');
+    if (result.status === 'unknown') expect(result.error).toContain('ECONNREFUSED');
   });
 });
 
