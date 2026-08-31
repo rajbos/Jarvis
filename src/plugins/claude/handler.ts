@@ -1,5 +1,5 @@
 // ── Claude IPC handlers ───────────────────────────────────────────────────────
-import { ipcMain, shell } from 'electron';
+import { ipcMain, shell, Notification } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import type { BrowserWindow } from 'electron';
 import {
@@ -96,6 +96,9 @@ async function resolveAccessToken(
 }
 
 export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWindow | null): void {
+  // Tracks the previous probe outcome so we can notify once when the limit lifts.
+  let wasLimited = false;
+
   ipcMain.handle('claude:status', async () => {
     try {
       const resolved = await resolveAccessToken(db);
@@ -145,6 +148,19 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
         if (retried && retried.token !== resolved.token) {
           probe = await checkClaudeRateLimit(retried.token);
         }
+      }
+
+      // Notify once when the rate limit lifts (limited → usable transition).
+      // Probes that failed outright (network error, status 0) don't change the
+      // tracked state, so the notification still fires on the next good probe.
+      if (!probe.error || probe.status !== 0) {
+        if (wasLimited && !probe.limited) {
+          new Notification({
+            title: 'Jarvis',
+            body: 'Claude rate limit lifted — your Claude account is usable again.',
+          }).show();
+        }
+        wasLimited = probe.limited;
       }
 
       return {
