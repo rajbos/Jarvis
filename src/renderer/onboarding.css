@@ -4049,9 +4049,10 @@ h5.ec-heading { font-size: 0.9375rem; }
   cursor: default;
 }
 
-/* Pulsing countdown while an account is rate limited */
+/* Pulsing countdown while an account is rate limited — blinks 5 times when
+   the badge appears, then stays static to avoid ongoing distraction. */
 .bg-status-rate-limit--limited {
-  animation: bg-status-limited-pulse 2s ease-in-out infinite;
+  animation: bg-status-limited-pulse 2s ease-in-out 5;
 }
 
 @keyframes bg-status-limited-pulse {
