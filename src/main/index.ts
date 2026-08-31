@@ -155,9 +155,9 @@ async function initialize(): Promise<void> {
 
 
 
-  const loginSettings = app.getLoginItemSettings();
-
-  const startedHidden = loginSettings.wasOpenedAsHidden || config.electron.startMinimized;
+  // Electron 44 removed wasOpenedAsHidden/openAsHidden; on Windows we detect a
+  // hidden login launch via the --hidden arg we register in setLoginItemSettings.
+  const startedHidden = process.argv.includes('--hidden') || config.electron.startMinimized;
 
 
 
@@ -201,7 +201,7 @@ async function initialize(): Promise<void> {
 
       openAtLogin: config.electron.openAtLogin,
 
-      openAsHidden: true,
+      args: ['--hidden'],
 
     });
 
