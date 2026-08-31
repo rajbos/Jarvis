@@ -840,7 +840,7 @@ function App() {
     <div class="app-shell">
       <div class="app-main-area">
         <div class="main-scroll" ref={mainScrollRef}>
-        <div class={`container${(activeTab === 'groups-dashboard' || activeTab === 'dismiss-history') ? ' container--fill' : ''}`}>
+        <div class={`container${(activeTab === 'dashboard' || activeTab === 'groups-dashboard' || activeTab === 'dismiss-history') ? ' container--fill' : ''}`}>
       <div class="search-row">
         <SearchBar />
         {!showChatPanel && selectedOllamaModel && (
