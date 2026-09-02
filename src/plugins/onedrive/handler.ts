@@ -20,6 +20,14 @@ import {
 import { readUrlShortcut } from '../../services/url-shortcut';
 import { getGroup } from '../../services/groups';
 
+function isPathWithinConfiguredRoot(db: SqlJsDatabase, filePath: string): boolean {
+  const resolvedFile = path.resolve(filePath);
+  return listOnedriveRoots(db).some((root) => {
+    const relative = path.relative(path.resolve(root.path), resolvedFile);
+    return relative === '' || (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
+  });
+}
+
 export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWindow | null): void {
   // Resolve PS1 script path relative to the compiled main JS, or resourcesPath when packaged.
   const scriptPath = app.isPackaged
@@ -139,6 +147,9 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
     if (!filePath.toLowerCase().endsWith('.one')) {
       return { ok: false, error: 'Only .one files are supported' };
     }
+    if (!isPathWithinConfiguredRoot(db, filePath)) {
+      return { ok: false, error: 'File must be inside a configured OneDrive root' };
+    }
     try {
       const section = readOneNoteSection(filePath);
       return { ok: true, section };
@@ -154,6 +165,9 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
     }
     if (!filePath.toLowerCase().endsWith('.url')) {
       return { ok: false, error: 'Only .url files are supported' };
+    }
+    if (!isPathWithinConfiguredRoot(db, filePath)) {
+      return { ok: false, error: 'File must be inside a configured OneDrive root' };
     }
     try {
       const info = readUrlShortcut(filePath);
