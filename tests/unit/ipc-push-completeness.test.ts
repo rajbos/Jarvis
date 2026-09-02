@@ -20,6 +20,7 @@ const root = resolve(__dirname, '../../src');
  */
 const SOURCE_FILES = [
   'main/index.ts',
+  'main/background-tasks.ts',
   'plugins/notifications/handler.ts',
   'plugins/discovery/handler.ts',
   'plugins/secrets/handler.ts',
