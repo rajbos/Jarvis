@@ -40,7 +40,7 @@ function openTerminal(folderPath: string): void {
   // Normalize the path and confirm it resolves to an existing directory
   // before handing it to a spawned shell process.
   const resolvedPath = path.resolve(folderPath);
-  let isDirectory = false;
+  let isDirectory: boolean;
   try {
     isDirectory = fs.statSync(resolvedPath).isDirectory();
   } catch (err) {
