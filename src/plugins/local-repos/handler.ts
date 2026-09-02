@@ -1,5 +1,7 @@
 // ── Local repos IPC handlers ──────────────────────────────────────────────────
 import { spawn } from 'node:child_process';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { ipcMain, shell, dialog, BrowserWindow } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import { saveDatabase } from '../../storage/database';
@@ -35,11 +37,26 @@ function launchDetached(command: string, args: string[], folderPath: string, onE
 }
 
 function openTerminal(folderPath: string): void {
+  // Normalize the path and confirm it resolves to an existing directory
+  // before handing it to a spawned shell process.
+  const resolvedPath = path.resolve(folderPath);
+  let isDirectory = false;
+  try {
+    isDirectory = fs.statSync(resolvedPath).isDirectory();
+  } catch (err) {
+    console.error('[IPC] local:open-terminal failed: invalid folder path', resolvedPath, err);
+    return;
+  }
+  if (!isDirectory) {
+    console.error('[IPC] local:open-terminal failed: not a directory', resolvedPath);
+    return;
+  }
+
   // Prefer Windows Terminal when available, but keep working on machines that
   // only have the classic command prompt.
-  launchDetached('wt.exe', ['-d', folderPath], folderPath, () => {
+  launchDetached('wt.exe', ['-d', resolvedPath], resolvedPath, () => {
     const commandShell = process.env.ComSpec ?? process.env.COMSPEC ?? 'cmd.exe';
-    launchDetached(commandShell, ['/k'], folderPath, (err) => {
+    launchDetached(commandShell, ['/k'], resolvedPath, (err) => {
       console.error('[IPC] local:open-terminal failed:', err);
     });
   });
