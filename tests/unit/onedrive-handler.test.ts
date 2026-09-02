@@ -40,7 +40,7 @@ vi.mock('../../src/storage/database', async (importOriginal) => {
 });
 
 vi.mock('../../src/services/onedrive', () => ({
-  listOnedriveRoots: vi.fn().mockReturnValue([]),
+  listOnedriveRoots: vi.fn().mockReturnValue([{ id: 1, path: '/path', label: 'Test root', addedAt: '' }]),
   addOnedriveRoot: vi.fn().mockImplementation((_db: unknown, path: string, label: string) => ({
     id: 1,
     path,
@@ -118,10 +118,10 @@ describe('OneDrive plugin — IPC handlers', () => {
   // ── onedrive:list-roots ───────────────────────────────────────────────────
 
   describe('onedrive:list-roots', () => {
-    it('returns empty array on a fresh DB', () => {
+    it('returns configured roots', () => {
       const result = callHandler('onedrive:list-roots');
       expect(listOnedriveRoots).toHaveBeenCalledWith(db);
-      expect(result).toEqual([]);
+      expect(result).toEqual([{ id: 1, path: '/path', label: 'Test root', addedAt: '' }]);
     });
   });
 
@@ -284,6 +284,11 @@ describe('OneDrive plugin — IPC handlers', () => {
       const result = callHandler('onedrive:read-onenote-file', '/path/to/notes.one') as Record<string, unknown>;
       expect(result.ok).toBe(true);
     });
+
+    it('rejects paths outside configured OneDrive roots', () => {
+      const result = callHandler('onedrive:read-onenote-file', '/path/../secret.one') as Record<string, unknown>;
+      expect(result).toEqual({ ok: false, error: 'File must be inside a configured OneDrive root' });
+    });
   });
 
   // ── onedrive:read-url-shortcut ────────────────────────────────────────────
@@ -304,6 +309,11 @@ describe('OneDrive plugin — IPC handlers', () => {
     it('returns ok:true for a valid .url file path', () => {
       const result = callHandler('onedrive:read-url-shortcut', '/path/link.url') as Record<string, unknown>;
       expect(result.ok).toBe(true);
+    });
+
+    it('rejects paths outside configured OneDrive roots', () => {
+      const result = callHandler('onedrive:read-url-shortcut', '/path/../secret.url') as Record<string, unknown>;
+      expect(result).toEqual({ ok: false, error: 'File must be inside a configured OneDrive root' });
     });
   });
 
