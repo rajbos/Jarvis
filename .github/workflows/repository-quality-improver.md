@@ -1,7 +1,7 @@
 ---
 name: Repository Quality Improver
 description: Daily analysis of repository quality focusing on a different software development lifecycle area each run
-model: copilot/claude-sonnet-5
+model: claude-sonnet-5
 on:
   schedule: daily on weekdays
   workflow_dispatch:
