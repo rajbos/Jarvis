@@ -873,7 +873,12 @@ jobs:
         if: always()
         id: detect-agent-errors
         continue-on-error: true
-        run: node "${RUNNER_TEMP}/gh-aw/actions/detect_agent_errors.cjs"
+        run: |
+          # gh-aw v0.79.8 does not recognize the firewall's "retired or unsupported" wording.
+          if grep -Eqi "model .* is retired or unsupported" /tmp/gh-aw/agent-stdio.log 2>/dev/null; then
+            printf '\nThe requested model is not supported.\n' >> /tmp/gh-aw/agent-stdio.log
+          fi
+          node "${RUNNER_TEMP}/gh-aw/actions/detect_agent_errors.cjs"
       - name: Configure Git credentials
         env:
           REPO_NAME: ${{ github.repository }}
