@@ -87,12 +87,28 @@ export function getRuddrProjectByName(db: SqlJsDatabase, name: string): RuddrPro
   }
 }
 
+function hasGroupColumn(db: SqlJsDatabase, columnName: string): boolean {
+  const stmt = db.prepare('PRAGMA table_info(groups)');
+  try {
+    while (stmt.step()) {
+      const row = stmt.getAsObject() as { name?: string };
+      if (row.name === columnName) return true;
+    }
+    return false;
+  } finally {
+    stmt.free();
+  }
+}
+
 /** Return all groups that have at least one Ruddr project association. */
 export function listGroupsWithRuddr(db: SqlJsDatabase): GroupWithRuddr[] {
+  const hasProjectPaths = hasGroupColumn(db, 'ruddr_project_paths');
+  const pathsColumn = hasProjectPaths ? 'ruddr_project_paths' : 'NULL AS ruddr_project_paths';
+  const pathsFilter = hasProjectPaths ? ' OR ruddr_project_paths IS NOT NULL' : '';
   const stmt = db.prepare(
-    `SELECT id, name, ruddr_project_name, ruddr_project_paths
+    `SELECT id, name, ruddr_project_name, ${pathsColumn}
      FROM groups
-     WHERE ruddr_project_name IS NOT NULL OR ruddr_project_paths IS NOT NULL
+     WHERE ruddr_project_name IS NOT NULL${pathsFilter}
      ORDER BY name COLLATE NOCASE`,
   );
   const results: GroupWithRuddr[] = [];

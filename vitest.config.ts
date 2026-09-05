@@ -10,9 +10,10 @@ export default defineConfig({
       reporter: ['text', 'lcov', 'html'],
       include: ['src/**/*.ts'],
       exclude: [
-        // Renderer and main entry points require Electron runtime
+        // Renderer and executable entry points require their host runtime
         'src/renderer/**',
         'src/main/**',
+        'src/mcp-server/index.ts',
         // IPC handler files require Electron's ipcMain — not unit-testable
         'src/plugins/*/handler.ts',
         // Pure type declarations — no executable code

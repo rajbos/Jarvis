@@ -50,6 +50,7 @@ contextBridge.exposeInMainWorld('jarvis', {
   savePat: (pat: string) => ipcRenderer.invoke('github:save-pat', pat),
   deletePat: () => ipcRenderer.invoke('github:delete-pat'),
   getPatStatus: () => ipcRenderer.invoke('github:pat-status'),
+  openSettings: () => ipcRenderer.invoke('app:open-settings'),
   logout: () => ipcRenderer.invoke('github:logout'),
   startOAuthDiscovery: () => ipcRenderer.invoke('github:start-oauth-discovery'),
   searchRepos: (query: string) => ipcRenderer.invoke('github:search-repos', query),
@@ -117,6 +118,16 @@ contextBridge.exposeInMainWorld('jarvis', {
     const listener = (_event: unknown, result: OAuthResult) => callback(result);
     ipcRenderer.on('github:oauth-complete', listener);
     return () => { ipcRenderer.removeListener('github:oauth-complete', listener); };
+  },
+  onPatExpired: (callback: () => void) => {
+    const listener = () => callback();
+    ipcRenderer.on('github:pat-expired', listener);
+    return () => { ipcRenderer.removeListener('github:pat-expired', listener); };
+  },
+  onPatStatusChanged: (callback: () => void) => {
+    const listener = () => callback();
+    ipcRenderer.on('github:pat-status-changed', listener);
+    return () => { ipcRenderer.removeListener('github:pat-status-changed', listener); };
   },
   onDiscoveryProgress: (callback: (progress: DiscoveryProgress) => void) => {
     const listener = (_event: unknown, progress: DiscoveryProgress) => callback(progress);
@@ -306,8 +317,32 @@ contextBridge.exposeInMainWorld('jarvis', {
   getSystemLocale: () => ipcRenderer.invoke('app:get-system-locale'),
   // GitHub rate limit
   getGitHubRateLimit: () => ipcRenderer.invoke('github:get-rate-limit'),
+  // Claude (Claude Code OAuth) rate limit
+  getClaudeStatus: () => ipcRenderer.invoke('claude:status'),
+  getClaudeRateLimit: () => ipcRenderer.invoke('claude:rate-limit'),
+  disconnectClaude: () => ipcRenderer.invoke('claude:disconnect'),
+  beginClaudeOAuth: () => ipcRenderer.invoke('claude:begin-oauth'),
+  completeClaudeOAuth: (code: string) => ipcRenderer.invoke('claude:complete-oauth', code),
   // Auto-dismiss log
   logAutoDismiss: (entries: unknown[]) => ipcRenderer.invoke('github:log-auto-dismiss', entries),
   listAutoDismissLog: (limit?: number) => ipcRenderer.invoke('github:list-auto-dismiss-log', limit),
   getAutoDismissStats: () => ipcRenderer.invoke('github:auto-dismiss-stats'),
+  // Background tasks
+  listBackgroundTasks: () => ipcRenderer.invoke('tasks:list'),
+  runBackgroundTaskNow: (taskId: string) => ipcRenderer.invoke('tasks:run-now', taskId),
+  onBackgroundTaskComplete: (callback: (record: unknown) => void) => {
+    const listener = (_event: unknown, record: unknown) => callback(record);
+    ipcRenderer.on('tasks:run-complete', listener);
+    return () => { ipcRenderer.removeListener('tasks:run-complete', listener); };
+  },
+  onNotificationCountsUpdated: (callback: (counts: unknown) => void) => {
+    const listener = (_event: unknown, counts: unknown) => callback(counts);
+    ipcRenderer.on('github:notification-counts-updated', listener);
+    return () => { ipcRenderer.removeListener('github:notification-counts-updated', listener); };
+  },
+  onAutoDismissComplete: (callback: (payload: unknown) => void) => {
+    const listener = (_event: unknown, payload: unknown) => callback(payload);
+    ipcRenderer.on('github:auto-dismiss-complete', listener);
+    return () => { ipcRenderer.removeListener('github:auto-dismiss-complete', listener); };
+  },
 });

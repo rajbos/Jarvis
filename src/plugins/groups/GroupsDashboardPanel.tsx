@@ -161,7 +161,7 @@ export function GroupsDashboardPanel() {
           onClick={() => setRuddrVisible((v) => !v)}
           title={ruddrVisible ? 'Hide Ruddr Projects panel' : 'Show Ruddr Projects panel'}
         >
-          {ruddrVisible ? '◀ Ruddr' : '▶ Ruddr'}
+          {ruddrVisible ? '▶ Ruddr' : '◀ Ruddr'}
         </button>
 
       </div>
@@ -446,21 +446,6 @@ function GroupCard(props: {
                   )}
                   <button class="groups-dash-ruddr-unlink" onClick={() => void handleUnlinkOne(name)} title="Remove Ruddr link">✕</button>
                 </div>
-                {/* Project note */}
-                <div class="groups-dash-ruddr-note">
-                  {projectInfo[name]
-                    ? (projectInfo[name].note
-                      ? <span class="groups-dash-note-text">{projectInfo[name].note}</span>
-                      : (detailsLoading
-                        ? <span class="groups-dash-note-empty" title="Fetching note from Ruddr…">🔄 Fetching note…</span>
-                        : <span class="groups-dash-note-empty" title="No note set for this project">❗ No note set</span>))
-                    : null}
-                  {projectInfo[name] && !projectInfo[name].cloudFolderUrl && (
-                    detailsLoading
-                      ? <span class="groups-dash-note-empty" title="Fetching cloud folder from Ruddr…">🔄 Fetching cloud folder…</span>
-                      : <span class="groups-dash-note-empty" title="No cloud folder linked in Ruddr">☁️ No cloud folder</span>
-                  )}
-                </div>
                 {budgetData[name] && (
                   <div class="groups-dash-budget-section">
                     {budgetData[name].ok ? (
@@ -500,19 +485,25 @@ function GroupCard(props: {
                     )}
                   </div>
                 )}
+                {/* Project note */}
+                <div class="groups-dash-ruddr-note">
+                  {projectInfo[name]
+                    ? (projectInfo[name].note
+                      ? <span class="groups-dash-note-text">{projectInfo[name].note}</span>
+                      : (detailsLoading
+                        ? <span class="groups-dash-note-empty" title="Fetching note from Ruddr…">🔄 Fetching note…</span>
+                        : <span class="groups-dash-note-empty" title="No note set for this project">❗ No note set</span>))
+                    : null}
+                  {projectInfo[name] && !projectInfo[name].cloudFolderUrl && (
+                    detailsLoading
+                      ? <span class="groups-dash-note-empty" title="Fetching cloud folder from Ruddr…">🔄 Fetching cloud folder…</span>
+                      : <span class="groups-dash-note-empty" title="No cloud folder linked in Ruddr">☁️ No cloud folder</span>
+                  )}
+                </div>
               </div>
             ))}
           </div>
         )}
-
-        {/* Find / Add button — always visible */}
-        <button
-          class="groups-dash-ruddr-btn"
-          onClick={() => void handleFindRuddr()}
-          disabled={ruddrSearching}
-        >
-          {ruddrSearching ? '🔍 Searching…' : group.ruddrProjectNames.length > 0 ? '🔍 Add Ruddr project' : '🔍 Find Ruddr project'}
-        </button>
 
         {ruddrNeedsLogin && !ruddrSearching && (
           <div class="groups-dash-ruddr-login">
@@ -614,6 +605,15 @@ function GroupCard(props: {
           </div>
         )}
       </div>
+
+      {/* Find / Add button — pinned to the bottom of the card */}
+      <button
+        class="groups-dash-ruddr-btn"
+        onClick={() => void handleFindRuddr()}
+        disabled={ruddrSearching}
+      >
+        {ruddrSearching ? '🔍 Searching…' : group.ruddrProjectNames.length > 0 ? '🔍 Add Ruddr project' : '🔍 Find Ruddr project'}
+      </button>
     </div>
   );
 }

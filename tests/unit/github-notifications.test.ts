@@ -358,7 +358,15 @@ describe('GitHub Notifications — listNotificationsForStarred', () => {
 });
 
 // ── fetchNotificationsForRepo ─────────────────────────────────────────────────
-import { fetchNotificationsForRepo, markNotificationRead, listMergedDependabotPRNotifications } from '../../src/services/github-notifications';
+import {
+  fetchNotificationsForRepo,
+  fetchNotifications,
+  markNotificationRead,
+  listMergedDependabotPRNotifications,
+  listDeletedBranchNotifications,
+  listPrNotifications,
+  listIssueNotifications,
+} from '../../src/services/github-notifications';
 
 describe('fetchNotificationsForRepo', () => {
   afterEach(() => vi.restoreAllMocks());
@@ -623,5 +631,346 @@ describe('listMergedDependabotPRNotifications', () => {
     const result = await listMergedDependabotPRNotifications(db, 'token');
     expect(result).toHaveLength(0);
     expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+});
+
+// ── fetchNotifications (top-level) ────────────────────────────────────────────
+
+describe('fetchNotifications', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('fetches all pages and calls onProgress', async () => {
+    const notif1 = makeNotif('1');
+    const notif2 = makeNotif('2');
+    let callCount = 0;
+    globalThis.fetch = vi.fn(async (url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.includes('/notifications')) {
+        callCount++;
+        if (callCount === 1) {
+          return new Response(JSON.stringify([notif1]), {
+            status: 200,
+            headers: { Link: '<https://api.github.com/notifications?page=2>; rel="next"' },
+          });
+        }
+        return new Response(JSON.stringify([notif2]), { status: 200 });
+      }
+      // subject actor fetch
+      return new Response(JSON.stringify({ user: { login: 'octocat', type: 'User' } }), { status: 200 });
+    });
+
+    const progress: number[] = [];
+    const result = await fetchNotifications('token', (count) => progress.push(count));
+    expect(result).toHaveLength(2);
+    expect(progress).toEqual([1, 2]);
+  });
+
+  it('works without onProgress callback', async () => {
+    globalThis.fetch = vi.fn(async (url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.includes('/notifications')) {
+        return new Response(JSON.stringify([makeNotif('1')]), { status: 200 });
+      }
+      return new Response(JSON.stringify({}), { status: 200 });
+    });
+
+    const result = await fetchNotifications('token');
+    expect(result).toHaveLength(1);
+  });
+
+  it('enriches notifications with actor data from subject URL', async () => {
+    const notif = makeNotif('1', { subjectUrl: 'https://api.github.com/repos/myorg/myrepo/issues/5' });
+    globalThis.fetch = vi.fn(async (url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.includes('/notifications')) {
+        return new Response(JSON.stringify([notif]), { status: 200 });
+      }
+      return new Response(JSON.stringify({ user: { login: 'someuser', type: 'User' } }), { status: 200 });
+    });
+
+    const result = await fetchNotifications('token');
+    expect(result[0].subject_actor_login).toBe('someuser');
+    expect(result[0].subject_actor_type).toBe('User');
+  });
+
+  it('handles subject URL that is null gracefully', async () => {
+    const notif = makeNotif('1', { subjectUrl: null });
+    globalThis.fetch = vi.fn(async () =>
+      new Response(JSON.stringify([notif]), { status: 200 }),
+    );
+
+    const result = await fetchNotifications('token');
+    expect(result[0].subject_actor_login).toBeNull();
+    expect(result[0].subject_actor_type).toBeNull();
+  });
+
+  it('handles non-GitHub subject URL gracefully', async () => {
+    const notif = { ...makeNotif('1'), subject: { type: 'Issue', title: 'test', url: 'https://other.example.com/foo' } };
+    globalThis.fetch = vi.fn(async () =>
+      new Response(JSON.stringify([notif]), { status: 200 }),
+    );
+
+    const result = await fetchNotifications('token');
+    expect(result[0].subject_actor_login).toBeNull();
+  });
+
+  it('handles subject fetch failure gracefully', async () => {
+    const notif = makeNotif('1', { subjectUrl: 'https://api.github.com/repos/myorg/myrepo/issues/5' });
+    globalThis.fetch = vi.fn(async (url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.includes('/notifications')) {
+        return new Response(JSON.stringify([notif]), { status: 200 });
+      }
+      throw new Error('Network error');
+    });
+
+    const result = await fetchNotifications('token');
+    expect(result[0].subject_actor_login).toBeNull();
+  });
+
+  it('handles subject fetch returning non-OK status', async () => {
+    const notif = makeNotif('1', { subjectUrl: 'https://api.github.com/repos/myorg/myrepo/issues/5' });
+    globalThis.fetch = vi.fn(async (url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.includes('/notifications')) {
+        return new Response(JSON.stringify([notif]), { status: 200 });
+      }
+      return new Response('Not Found', { status: 404 });
+    });
+
+    const result = await fetchNotifications('token');
+    expect(result[0].subject_actor_login).toBeNull();
+  });
+
+  it('extracts actor from app field as Bot type', async () => {
+    const notif = makeNotif('1', { subjectUrl: 'https://api.github.com/repos/myorg/myrepo/issues/5' });
+    globalThis.fetch = vi.fn(async (url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.includes('/notifications')) {
+        return new Response(JSON.stringify([notif]), { status: 200 });
+      }
+      // Return subject with app field (no user/actor/author/sender)
+      return new Response(JSON.stringify({ app: { slug: 'my-app' } }), { status: 200 });
+    });
+
+    const result = await fetchNotifications('token');
+    expect(result[0].subject_actor_login).toBe('my-app');
+    expect(result[0].subject_actor_type).toBe('Bot');
+  });
+});
+
+// ── listPrNotifications ───────────────────────────────────────────────────────
+
+describe('listPrNotifications', () => {
+  let db: SqlJsDatabase;
+
+  beforeEach(async () => {
+    const SQL = await initSqlJs();
+    db = new SQL.Database();
+    db.run(getSchema());
+  });
+
+  afterEach(() => db.close());
+
+  it('returns only unread PullRequest notifications with subject_url', () => {
+    storeNotifications(db, [
+      makePRNotif('1', { prNumber: 10 }),
+      makeNotif('2', { type: 'Issue' }),
+      makeNotif('3', { type: 'PullRequest', unread: false }),
+    ]);
+
+    const rows = listPrNotifications(db);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe('1');
+    expect(rows[0].subject_type).toBe('PullRequest');
+  });
+
+  it('excludes PR notifications with null subject_url', () => {
+    storeNotifications(db, [
+      { ...makePRNotif('1'), subject: { type: 'PullRequest', title: 'test', url: null } },
+    ]);
+    const rows = listPrNotifications(db);
+    expect(rows).toHaveLength(0);
+  });
+
+  it('returns empty array when no PR notifications exist', () => {
+    storeNotifications(db, [makeNotif('1', { type: 'Issue' })]);
+    expect(listPrNotifications(db)).toHaveLength(0);
+  });
+});
+
+// ── listIssueNotifications ────────────────────────────────────────────────────
+
+describe('listIssueNotifications', () => {
+  let db: SqlJsDatabase;
+
+  beforeEach(async () => {
+    const SQL = await initSqlJs();
+    db = new SQL.Database();
+    db.run(getSchema());
+  });
+
+  afterEach(() => db.close());
+
+  it('returns only unread Issue notifications with subject_url', () => {
+    storeNotifications(db, [
+      makeNotif('1', { type: 'Issue' }),
+      makePRNotif('2'),
+      makeNotif('3', { type: 'Issue', unread: false }),
+    ]);
+
+    const rows = listIssueNotifications(db);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe('1');
+    expect(rows[0].subject_type).toBe('Issue');
+  });
+
+  it('excludes Issue notifications with null subject_url', () => {
+    storeNotifications(db, [
+      makeNotif('1', { type: 'Issue', subjectUrl: null }),
+    ]);
+    const rows = listIssueNotifications(db);
+    expect(rows).toHaveLength(0);
+  });
+
+  it('returns empty array when no issue notifications exist', () => {
+    expect(listIssueNotifications(db)).toHaveLength(0);
+  });
+});
+
+// ── listDeletedBranchNotifications ────────────────────────────────────────────
+
+describe('listDeletedBranchNotifications', () => {
+  let db: SqlJsDatabase;
+
+  beforeEach(async () => {
+    const SQL = await initSqlJs();
+    db = new SQL.Database();
+    db.run(getSchema());
+  });
+
+  afterEach(() => {
+    db.close();
+    vi.restoreAllMocks();
+  });
+
+  function makeCheckSuiteNotif(id: string, opts: { owner?: string; repoName?: string; title?: string } = {}): GitHubNotification {
+    const owner = opts.owner ?? 'myorg';
+    const repoName = opts.repoName ?? 'myrepo';
+    return {
+      id,
+      unread: true,
+      reason: 'ci_activity',
+      updated_at: new Date().toISOString(),
+      subject: {
+        type: 'CheckSuite',
+        title: opts.title ?? 'CI failed for feature-branch branch',
+        url: null,
+      },
+      repository: {
+        full_name: `${owner}/${repoName}`,
+        name: repoName,
+        owner: { login: owner },
+        html_url: `https://github.com/${owner}/${repoName}`,
+      },
+    };
+  }
+
+  it('returns notifications whose branch no longer exists', async () => {
+    storeNotifications(db, [
+      makeCheckSuiteNotif('1', { title: 'CI failed for feature-gone branch' }),
+    ]);
+
+    // branches API returns no branches matching
+    globalThis.fetch = vi.fn(async () =>
+      new Response(JSON.stringify([{ name: 'main' }]), { status: 200, headers: {} }),
+    );
+
+    const result = await listDeletedBranchNotifications(db, 'token');
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('1');
+  });
+
+  it('excludes notifications whose branch still exists', async () => {
+    storeNotifications(db, [
+      makeCheckSuiteNotif('1', { title: 'CI failed for main branch' }),
+    ]);
+
+    globalThis.fetch = vi.fn(async () =>
+      new Response(JSON.stringify([{ name: 'main' }]), { status: 200, headers: {} }),
+    );
+
+    const result = await listDeletedBranchNotifications(db, 'token');
+    expect(result).toHaveLength(0);
+  });
+
+  it('returns empty when no CheckSuite/WorkflowRun notifications exist', async () => {
+    storeNotifications(db, [makeNotif('1', { type: 'Issue' })]);
+    globalThis.fetch = vi.fn();
+
+    const result = await listDeletedBranchNotifications(db, 'token');
+    expect(result).toHaveLength(0);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('skips notifications without branch in title', async () => {
+    storeNotifications(db, [
+      makeCheckSuiteNotif('1', { title: 'CI completed successfully' }),
+    ]);
+    globalThis.fetch = vi.fn();
+
+    const result = await listDeletedBranchNotifications(db, 'token');
+    expect(result).toHaveLength(0);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('handles branch API failure gracefully (non-fatal per repo)', async () => {
+    storeNotifications(db, [
+      makeCheckSuiteNotif('1', { title: 'CI failed for feature branch' }),
+    ]);
+
+    globalThis.fetch = vi.fn(async () => { throw new Error('Network error'); });
+
+    const result = await listDeletedBranchNotifications(db, 'token');
+    expect(result).toHaveLength(0);
+  });
+
+  it('handles branch API returning non-OK status', async () => {
+    storeNotifications(db, [
+      makeCheckSuiteNotif('1', { title: 'CI failed for feature branch' }),
+    ]);
+
+    globalThis.fetch = vi.fn(async () =>
+      new Response('Forbidden', { status: 403 }),
+    );
+
+    const result = await listDeletedBranchNotifications(db, 'token');
+    // non-OK returns empty names, so branch won't be found → deleted
+    // Actually fetchOneBranchPage returns { names: [], next: null } for non-OK
+    // So liveBranches is empty set, and branch not in it → reported as deleted
+    expect(result).toHaveLength(1);
+  });
+
+  it('follows pagination for branches API (max 3 pages)', async () => {
+    storeNotifications(db, [
+      makeCheckSuiteNotif('1', { title: 'CI failed for deep-branch branch' }),
+    ]);
+
+    let pageCount = 0;
+    globalThis.fetch = vi.fn(async () => {
+      pageCount++;
+      if (pageCount <= 2) {
+        return new Response(JSON.stringify([{ name: `branch-${pageCount}` }]), {
+          status: 200,
+          headers: { Link: '<https://api.github.com/repos/myorg/myrepo/branches?page=next>; rel="next"' },
+        });
+      }
+      // Page 3 has the branch we're looking for
+      return new Response(JSON.stringify([{ name: 'deep-branch' }]), { status: 200, headers: {} });
+    });
+
+    const result = await listDeletedBranchNotifications(db, 'token');
+    expect(result).toHaveLength(0); // branch found on page 3
+    expect(pageCount).toBe(3);
   });
 });

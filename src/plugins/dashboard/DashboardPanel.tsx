@@ -1,10 +1,9 @@
-import { useState, useEffect, useCallback, useRef } from 'preact/hooks';
+import { useState, useEffect, useCallback } from 'preact/hooks';
 import type {
   DashboardSummary,
   RepoHealthStatus,
   HealthWarning,
   StoredNotification,
-  AutoDismissLogInput,
 } from '../types';
 import { AgentSelector } from '../agents/AgentSelector';
 // ── Failure hint helpers ──────────────────────────────────────────────────────────
@@ -29,222 +28,12 @@ function extractErrorHint(logExcerpt: string | null): string | null {
   }
   return null;
 }
-// ── Auto-dismiss pipeline ─────────────────────────────────────────────────────
-// Replaces RecoverableBanner and ClosedPrBanner with fully-automatic dismissal.
-// Runs once after the dashboard summary loads.
-
-interface AutoDismissStepResult {
-  id: string;
-  label: string;
-  dismissed: number;
-}
+// ── Auto-dismiss summary banner ───────────────────────────────────────────────
 
 interface AutoDismissRunResult {
-  steps: AutoDismissStepResult[];
+  steps: Array<{ id: string; label: string; dismissed: number }>;
   total: number;
 }
-
-/** Module-level flag so the pipeline only runs once per app session (survives remounts). */
-let autoDismissRanGlobally = false;
-
-async function runRecoverableStep(repoFullNames: string[]): Promise<{ dismissed: number; logEntries: AutoDismissLogInput[] }> {
-  const logEntries: AutoDismissLogInput[] = [];
-  let dismissed = 0;
-  for (const repoFullName of repoFullNames) {
-    try {
-      const notifs = await window.jarvis.listNotificationsForRepo(repoFullName);
-      const ciNotifs = notifs.filter((n) => n.subject_type === 'CheckSuite' || n.subject_type === 'WorkflowRun');
-      if (ciNotifs.length === 0) continue;
-
-      let summary = await window.jarvis.githubGetWorkflowSummary(repoFullName);
-      if (summary.total_runs === 0) {
-        await window.jarvis.githubFetchWorkflowRuns(repoFullName);
-        summary = await window.jarvis.githubGetWorkflowSummary(repoFullName);
-      }
-
-      const byWorkflow = new Map<string, StoredNotification[]>();
-      for (const n of ciNotifs) {
-        const name = n.subject_title.match(/^(.+?)\s+workflow\s+run/i)?.[1]?.trim() ?? n.subject_title;
-        if (!byWorkflow.has(name)) byWorkflow.set(name, []);
-        byWorkflow.get(name)!.push(n);
-      }
-
-      for (const [workflowName, wNotifs] of byWorkflow) {
-        const branch = wNotifs[0].subject_title.match(/\bfor\s+(\S+)\s+branch\b/i)?.[1] ?? null;
-        const latestNotifTime = Math.max(...wNotifs.map((n) => new Date(n.updated_at).getTime()));
-        const recovered = summary.recent_runs.some(
-          (r) =>
-            r.workflow_name === workflowName &&
-            (branch === null || r.head_branch === branch) &&
-            r.conclusion === 'success' &&
-            new Date(r.run_started_at).getTime() > latestNotifTime,
-        );
-        if (recovered) {
-          for (const n of wNotifs) {
-            try {
-              await window.jarvis.dismissNotification(n.id);
-              logEntries.push({
-                notification_id: n.id,
-                reason: 'recovered_workflow',
-                repo_full_name: repoFullName,
-                subject_title: n.subject_title,
-                subject_type: n.subject_type,
-              });
-              dismissed++;
-            } catch { /* skip individual */ }
-          }
-        }
-      }
-    } catch { /* non-fatal per repo */ }
-  }
-  return { dismissed, logEntries };
-}
-
-async function runClosedPrStep(): Promise<{ dismissed: number; logEntries: AutoDismissLogInput[] }> {
-  const logEntries: AutoDismissLogInput[] = [];
-  let dismissed = 0;
-  try {
-    const allPrNotifs = await window.jarvis.listPrNotifications();
-    const byUrl = new Map<string, StoredNotification[]>();
-    for (const n of allPrNotifs) {
-      if (!n.subject_url) continue;
-      if (!byUrl.has(n.subject_url)) byUrl.set(n.subject_url, []);
-      byUrl.get(n.subject_url)!.push(n);
-    }
-    const urlEntries = [...byUrl.entries()].slice(0, 50);
-    const CONCURRENCY = 8;
-    let nextIdx = 0;
-    const worker = async () => {
-      while (nextIdx < urlEntries.length) {
-        const idx = nextIdx++;
-        const [url, urlNotifs] = urlEntries[idx];
-        try {
-          const result = await window.jarvis.githubGetPrState(url);
-          if (!result || result.state === 'open') continue;
-          const { state, isDependabot, closedByMe } = result;
-          if (!isDependabot && !closedByMe) continue;
-          const reason: AutoDismissLogInput['reason'] =
-            isDependabot ? 'closed_pr_dependabot'
-            : state === 'merged' ? 'closed_pr_merged_me'
-            : 'closed_pr_closed_me';
-          for (const n of urlNotifs) {
-            try {
-              await window.jarvis.dismissNotification(n.id);
-              logEntries.push({
-                notification_id: n.id,
-                reason,
-                repo_full_name: n.repo_full_name,
-                subject_title: n.subject_title,
-                subject_type: n.subject_type,
-              });
-              dismissed++;
-            } catch { /* skip individual */ }
-          }
-        } catch { /* skip individual PR */ }
-      }
-    };
-    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, urlEntries.length) }, worker));
-  } catch { /* non-fatal */ }
-  return { dismissed, logEntries };
-}
-
-async function runClosedIssueStep(): Promise<{ dismissed: number; logEntries: AutoDismissLogInput[] }> {
-  const logEntries: AutoDismissLogInput[] = [];
-  let dismissed = 0;
-  try {
-    const allIssueNotifs = await window.jarvis.listIssueNotifications();
-    const byUrl = new Map<string, StoredNotification[]>();
-    for (const n of allIssueNotifs) {
-      if (!n.subject_url) continue;
-      if (!byUrl.has(n.subject_url)) byUrl.set(n.subject_url, []);
-      byUrl.get(n.subject_url)!.push(n);
-    }
-    const urlEntries = [...byUrl.entries()].slice(0, 50);
-    const CONCURRENCY = 8;
-    let nextIdx = 0;
-    const worker = async () => {
-      while (nextIdx < urlEntries.length) {
-        const idx = nextIdx++;
-        const [url, urlNotifs] = urlEntries[idx];
-        try {
-          const result = await window.jarvis.githubGetIssueState(url);
-          if (!result || result.state !== 'closed') continue;
-          const { closedByMe, closedViaMergedPr } = result;
-          if (!closedByMe && !closedViaMergedPr) continue;
-          const reason: AutoDismissLogInput['reason'] =
-            closedViaMergedPr ? 'closed_issue_via_pr' : 'closed_issue_me';
-          for (const n of urlNotifs) {
-            try {
-              await window.jarvis.dismissNotification(n.id);
-              logEntries.push({
-                notification_id: n.id,
-                reason,
-                repo_full_name: n.repo_full_name,
-                subject_title: n.subject_title,
-                subject_type: n.subject_type,
-              });
-              dismissed++;
-            } catch { /* skip individual */ }
-          }
-        } catch { /* skip individual issue */ }
-      }
-    };
-    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, Math.max(urlEntries.length, 1)) }, worker));
-  } catch { /* non-fatal */ }
-  return { dismissed, logEntries };
-}
-
-async function runDeletedBranchStep(): Promise<{ dismissed: number; logEntries: AutoDismissLogInput[] }> {
-  const logEntries: AutoDismissLogInput[] = [];
-  let dismissed = 0;
-  try {
-    const notifs = await window.jarvis.checkDeletedBranches();
-    for (const n of notifs) {
-      try {
-        await window.jarvis.dismissNotification(n.id);
-        logEntries.push({
-          notification_id: n.id,
-          reason: 'deleted_branch',
-          repo_full_name: n.repo_full_name,
-          subject_title: n.subject_title,
-          subject_type: n.subject_type,
-        });
-        dismissed++;
-      } catch { /* skip individual */ }
-    }
-  } catch { /* non-fatal */ }
-  return { dismissed, logEntries };
-}
-
-async function runAutoDismissPipeline(
-  repoFullNames: string[],
-): Promise<{ result: AutoDismissRunResult; logEntries: AutoDismissLogInput[] }> {
-  const steps: AutoDismissStepResult[] = [];
-  const allLog: AutoDismissLogInput[] = [];
-
-  const [rec, pr, issue, delBranch] = await Promise.all([
-    runRecoverableStep(repoFullNames),
-    runClosedPrStep(),
-    runClosedIssueStep(),
-    runDeletedBranchStep(),
-  ]);
-
-  steps.push({ id: 'recovered-workflows', label: 'Recovered workflows', dismissed: rec.dismissed });
-  allLog.push(...rec.logEntries);
-  steps.push({ id: 'closed-prs', label: 'Closed / merged PRs', dismissed: pr.dismissed });
-  allLog.push(...pr.logEntries);
-  steps.push({ id: 'closed-issues', label: 'Closed issues', dismissed: issue.dismissed });
-  allLog.push(...issue.logEntries);
-  steps.push({ id: 'deleted-branches', label: 'Deleted branches', dismissed: delBranch.dismissed });
-  allLog.push(...delBranch.logEntries);
-
-  return {
-    result: { steps, total: steps.reduce((s, r) => s + r.dismissed, 0) },
-    logEntries: allLog,
-  };
-}
-
-// ── Auto-dismiss summary banner ───────────────────────────────────────────────
 
 function AutoDismissSummaryBanner({
   result,
@@ -299,6 +88,7 @@ function subjectTypeIcon(subjectType: string): string {
     case 'Commit': return '📝';
     case 'Discussion': return '💬';
     case 'CheckSuite': return '⚙️';
+    case 'RepositoryVulnerabilityAlert': return '🛡️';
     default: return '📌';
   }
 }
@@ -366,10 +156,15 @@ function isWorkflowNotification(n: StoredNotification): boolean {
   return WORKFLOW_TYPES_DASH.has(n.subject_type) || n.reason === 'ci_activity';
 }
 
+const BOT_SUBJECT_TYPES = new Set(['RepositoryDependabotAlertsThread', 'RepositoryVulnerabilityAlert']);
+
 function looksBotGenerated(n: StoredNotification): boolean {
-  return n.subject_actor_type === 'Bot' || /\b(dependabot|renovate|github-actions|codeql|copilot|bot)\b|\[bot\]/i.test(
-    `${n.subject_actor_login ?? ''} ${n.subject_title} ${n.subject_url ?? ''}`,
-  );
+  return n.subject_actor_type === 'Bot'
+    || BOT_SUBJECT_TYPES.has(n.subject_type)
+    || n.reason === 'security_alert'
+    || /\b(dependabot|renovate|github-actions|codeql|copilot|bot)\b|\[bot\]/i.test(
+      `${n.subject_actor_login ?? ''} ${n.subject_title} ${n.subject_url ?? ''}`,
+    );
 }
 
 function classifyDashboardNotification(
@@ -446,6 +241,9 @@ function NotificationList({ repoFullName, dismissedNotifIds }: { repoFullName: s
   const [workflowPathMap, setWorkflowPathMap] = useState<Map<string, string | null>>(new Map());
   const [dismissingGroup, setDismissingGroup] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  // Ids currently mid-dismiss-animation — kept in the list one beat longer so the
+  // row can fade/collapse out instead of vanishing instantly.
+  const [dismissingIds, setDismissingIds] = useState<ReadonlySet<string>>(new Set());
 
   useEffect(() => {
     if (!successMsg) return;
@@ -538,18 +336,26 @@ function NotificationList({ repoFullName, dismissedNotifIds }: { repoFullName: s
   }, [notifications]);
 
   const handleDismiss = async (id: string) => {
+    setDismissingIds((prev) => new Set(prev).add(id));
     try {
       await window.jarvis.dismissNotification(id);
-      setNotifications((prev) => prev?.filter((n) => n.id !== id) ?? null);
       setSuccessMsg('✓ Notification dismissed');
     } catch (err) {
       console.error('[Dashboard] Failed to dismiss notification:', err);
+      setDismissingIds((prev) => { const next = new Set(prev); next.delete(id); return next; });
+      return;
     }
+    // Let the exit transition play before actually removing the row.
+    setTimeout(() => {
+      setNotifications((prev) => prev?.filter((n) => n.id !== id) ?? null);
+      setDismissingIds((prev) => { const next = new Set(prev); next.delete(id); return next; });
+    }, 180);
   };
 
   const handleDismissGroup = async (workflowName: string | null, ids: string[]) => {
     const key = workflowName ?? '__other__';
     setDismissingGroup(key);
+    setDismissingIds((prev) => { const next = new Set(prev); for (const id of ids) next.add(id); return next; });
     let dismissed = 0;
     for (const id of ids) {
       try {
@@ -559,7 +365,10 @@ function NotificationList({ repoFullName, dismissedNotifIds }: { repoFullName: s
         console.error('[Dashboard] Failed to dismiss notification:', err);
       }
     }
-    setNotifications((prev) => prev?.filter((n) => !ids.includes(n.id)) ?? null);
+    setTimeout(() => {
+      setNotifications((prev) => prev?.filter((n) => !ids.includes(n.id)) ?? null);
+      setDismissingIds((prev) => { const next = new Set(prev); for (const id of ids) next.delete(id); return next; });
+    }, 180);
     setDismissingGroup(null);
     if (dismissed > 0) {
       setSuccessMsg(`✓ ${dismissed} notification${dismissed > 1 ? 's' : ''} dismissed`);
@@ -609,7 +418,7 @@ function NotificationList({ repoFullName, dismissedNotifIds }: { repoFullName: s
   const { groups, isGrouped } = groupDashNotifications(visible);
 
   const renderRow = (n: StoredNotification) => (
-    <div key={n.id} class="dash-notif-item">
+    <div key={n.id} class={`dash-notif-item${dismissingIds.has(n.id) ? ' dash-notif-item--dismissing' : ''}`}>
       <span class="dash-notif-icon" title={n.subject_type}>{subjectTypeIcon(n.subject_type)}</span>
       <div class="dash-notif-body">
         <span class="dash-notif-title">{n.subject_title}</span>
@@ -627,6 +436,7 @@ function NotificationList({ repoFullName, dismissedNotifIds }: { repoFullName: s
         <button
           class="dash-action-btn dash-notif-btn"
           onClick={(e) => { e.stopPropagation(); void handleDismiss(n.id); }}
+          disabled={dismissingIds.has(n.id)}
           title="Dismiss notification"
         >✕</button>
       </div>
@@ -872,52 +682,54 @@ function SummaryCards({
   return (
     <div class="dashboard-summary-cards">
       <div
-        class={`dash-card dash-card-clickable ${summary.reposWithWarnings > 0 ? 'dash-card-warn' : ''} ${active === 'warnings' ? 'dash-card-selected' : ''}`}
+        class={`dash-card dash-card-primary dash-card-clickable ${summary.reposWithWarnings > 0 ? 'dash-card-warn' : ''} ${active === 'warnings' ? 'dash-card-selected' : ''}`}
         onClick={() => toggle('warnings')}
       >
         <div class="dash-card-value">{summary.reposWithWarnings}</div>
         <div class="dash-card-label">Need Attention</div>
         {active === 'warnings' && <span class="dash-card-selected-icon">▾</span>}
       </div>
-      <div
-        class={`dash-card dash-card-clickable ${summary.totalNotifications > 0 ? 'dash-card-info' : ''} ${active === 'notifications' ? 'dash-card-selected' : ''}`}
-        onClick={() => toggle('notifications')}
-      >
-        <div class="dash-card-value">{summary.totalNotifications}</div>
-        <div class="dash-card-label">Notifications</div>
-        {active === 'notifications' && <span class="dash-card-selected-icon">▾</span>}
-      </div>
-      <div
-        class={`dash-card dash-card-clickable ${(humanNotificationCount ?? 0) > 0 ? 'dash-card-people' : ''} ${active === 'human-notifications' ? 'dash-card-selected' : ''}`}
-        onClick={() => toggle('human-notifications')}
-      >
-        <div class="dash-card-value">{humanNotificationLoading && humanNotificationCount === null ? '...' : humanNotificationCount ?? 0}</div>
-        <div class="dash-card-label">People First</div>
-        {active === 'human-notifications' && <span class="dash-card-selected-icon">▾</span>}
-      </div>
-      <div
-        class={`dash-card dash-card-clickable ${summary.totalFailedRuns > 0 ? 'dash-card-danger' : ''} ${active === 'failed-runs' ? 'dash-card-selected' : ''}`}
-        onClick={() => toggle('failed-runs')}
-      >
-        <div class="dash-card-value">{summary.totalFailedRuns}</div>
-        <div class="dash-card-label">Failed Runs</div>
-        {active === 'failed-runs' && <span class="dash-card-selected-icon">▾</span>}
-      </div>
-      <div
-        class={`dash-card dash-card-clickable ${healthyCount > 0 ? 'dash-card-ok' : ''} ${active === 'healthy' ? 'dash-card-selected' : ''}`}
-        onClick={() => toggle('healthy')}
-      >
-        <div class="dash-card-value">{healthyCount}</div>
-        <div class="dash-card-label">All Good</div>
-        {active === 'healthy' && <span class="dash-card-selected-icon">▾</span>}
-      </div>
-      <div
-        class={`dash-card dash-card-clickable ${active === 'all' ? 'dash-card-selected' : ''}`}
-        onClick={() => onSelect('all')}
-      >
-        <div class="dash-card-value">{summary.totalRepos}</div>
-        <div class="dash-card-label">Local Repos</div>
-        {active === 'all' && <span class="dash-card-selected-icon">▾</span>}
+      <div class="dashboard-summary-metrics">
+        <div
+          class={`dash-card dash-card-clickable ${summary.totalNotifications > 0 ? 'dash-card-info' : ''} ${active === 'notifications' ? 'dash-card-selected' : ''}`}
+          onClick={() => toggle('notifications')}
+        >
+          <div class="dash-card-value">{summary.totalNotifications}</div>
+          <div class="dash-card-label">Notifications</div>
+          {active === 'notifications' && <span class="dash-card-selected-icon">▾</span>}
+        </div>
+        <div
+          class={`dash-card dash-card-clickable ${(humanNotificationCount ?? 0) > 0 ? 'dash-card-people' : ''} ${active === 'human-notifications' ? 'dash-card-selected' : ''}`}
+          onClick={() => toggle('human-notifications')}
+        >
+          <div class="dash-card-value">{humanNotificationLoading && humanNotificationCount === null ? '...' : humanNotificationCount ?? 0}</div>
+          <div class="dash-card-label">People First</div>
+          {active === 'human-notifications' && <span class="dash-card-selected-icon">▾</span>}
+        </div>
+        <div
+          class={`dash-card dash-card-clickable ${summary.totalFailedRuns > 0 ? 'dash-card-danger' : ''} ${active === 'failed-runs' ? 'dash-card-selected' : ''}`}
+          onClick={() => toggle('failed-runs')}
+        >
+          <div class="dash-card-value">{summary.totalFailedRuns}</div>
+          <div class="dash-card-label">Failed Runs</div>
+          {active === 'failed-runs' && <span class="dash-card-selected-icon">▾</span>}
+        </div>
+        <div
+          class={`dash-card dash-card-clickable ${healthyCount > 0 ? 'dash-card-ok' : ''} ${active === 'healthy' ? 'dash-card-selected' : ''}`}
+          onClick={() => toggle('healthy')}
+        >
+          <div class="dash-card-value">{healthyCount}</div>
+          <div class="dash-card-label">All Good</div>
+          {active === 'healthy' && <span class="dash-card-selected-icon">▾</span>}
+        </div>
+        <div
+          class={`dash-card dash-card-clickable ${active === 'all' ? 'dash-card-selected' : ''}`}
+          onClick={() => onSelect('all')}
+        >
+          <div class="dash-card-value">{summary.totalRepos}</div>
+          <div class="dash-card-label">Local Repos</div>
+          {active === 'all' && <span class="dash-card-selected-icon">▾</span>}
+        </div>
       </div>
     </div>
   );
@@ -1118,6 +930,12 @@ function emptyMessage(card: CardFilter): string {
   }
 }
 
+// Whether the empty state for this filter is genuinely good news (queue cleared)
+// vs. just neutral/empty (e.g. "no healthy repos" is not something to celebrate).
+function isEmptyStatePositive(card: CardFilter): boolean {
+  return card === 'warnings' || card === 'notifications' || card === 'failed-runs' || card === 'all';
+}
+
 // ── Main Dashboard ────────────────────────────────────────────────────────────
 
 export function DashboardPanel({ dismissedNotifIds, onOpenHistory }: { dismissedNotifIds?: ReadonlySet<string>; onOpenHistory?: () => void }) {
@@ -1154,24 +972,17 @@ export function DashboardPanel({ dismissedNotifIds, onOpenHistory }: { dismissed
 
   useEffect(() => { void load(); }, [load]);
 
-  // Run the auto-dismiss pipeline once per session after summary is first available
+  // The main process owns the recurring auto-dismiss scheduler so it continues
+  // while this dashboard panel is not mounted. The dashboard only reflects the
+  // most recent result and refreshes summary counts after dismissals.
   useEffect(() => {
-    if (!summary || autoDismissRanGlobally) return;
-    autoDismissRanGlobally = true;
-    setPipelineStatus('running');
-    const repoFullNames = summary.repos
-      .filter((r) => r.notificationCount > 0 && r.linkedGithubRepo !== null)
-      .map((r) => r.linkedGithubRepo!);
-    void runAutoDismissPipeline(repoFullNames).then(async ({ result, logEntries }) => {
-      if (logEntries.length > 0) {
-        try { await window.jarvis.logAutoDismiss(logEntries); } catch { /* non-fatal */ }
-        void load(); // refresh summary counts after dismissals
-      }
+    return window.jarvis.onAutoDismissComplete(({ result, logEntries }) => {
+      if (logEntries.length > 0) void load();
       if (result.total > 0) setAutoDismissResult(result);
       setAutoDismissDone(true);
       setPipelineStatus('done');
     });
-  }, [summary, load]);
+  }, [load]);
 
   useEffect(() => {
     if (!summary || !currentUserLogin || !autoDismissDone) {
@@ -1447,7 +1258,7 @@ export function DashboardPanel({ dismissedNotifIds, onOpenHistory }: { dismissed
         ) : (
           <div class="dash-repo-list">
           {sorted.length === 0 && (
-            <div class="dash-empty">{emptyMessage(cardFilter)}</div>
+            <div class={`dash-empty${isEmptyStatePositive(cardFilter) ? ' dash-empty--positive' : ''}`}>{emptyMessage(cardFilter)}</div>
           )}
           {sorted.map((repo) => (
             <RepoHealthRow

@@ -13,6 +13,7 @@ import {
   runAgentSession,
 } from '../../src/plugins/agents/runner';
 import { streamChat } from '../../src/services/ollama';
+import { getWorkflowSummaryForRepo } from '../../src/services/github-workflows';
 
 vi.mock('../../src/services/ollama', () => ({
   streamChat: vi.fn(),
@@ -21,6 +22,8 @@ vi.mock('../../src/services/ollama', () => ({
 vi.mock('../../src/services/github-workflows', () => ({
   getWorkflowSummaryForRepo: vi.fn(() => ({ total_runs: 0, recent_runs: [], jobs_by_run: {} })),
 }));
+
+const mockGetWorkflowSummary = vi.mocked(getWorkflowSummaryForRepo);
 
 const mockStreamChat = vi.mocked(streamChat);
 
@@ -377,5 +380,168 @@ describe('runAgentSession', () => {
     expect(payload.systemPrompt).toBe('You are a test agent.');
     expect(payload.userMessage).toContain('Fix the bug');
     expect(payload.userMessage).toContain('org/repo');
+  });
+
+  it('workflowFilter: filters notifications by subject_title and includes filter in header', async () => {
+    // Seed two notifications — only one matches the filter
+    db.run(
+      `INSERT INTO github_notifications
+         (id, repo_full_name, repo_owner, subject_type, subject_title, reason, unread, updated_at)
+       VALUES ('notif-1', 'org/repo', 'org', 'CheckSuite', 'CI Build', 'ci_activity', 1, '2024-01-01T00:00:00Z')`,
+    );
+    db.run(
+      `INSERT INTO github_notifications
+         (id, repo_full_name, repo_owner, subject_type, subject_title, reason, unread, updated_at)
+       VALUES ('notif-2', 'org/repo', 'org', 'CheckSuite', 'Deploy', 'ci_activity', 1, '2024-01-02T00:00:00Z')`,
+    );
+
+    mockStreamChat
+      .mockImplementationOnce(async (_m, _msgs, onToken) => { onToken('analysis'); })
+      .mockImplementationOnce(async (_m, _msgs, onToken) => { onToken('no json'); });
+
+    const sessionId = createAgentSession(db, agentId, 'repo', 'org/repo');
+    const mockWin = makeMockWindow();
+
+    await runAgentSession(
+      db, sessionId, agentDef(), 'repo', 'org/repo', 'test-model',
+      () => mockWin as never, 'CI Build',
+    );
+
+    const debugContextCall = mockWin.webContents.send.mock.calls.find(
+      ([event]) => event === 'agent:debug-context',
+    );
+    const payload = debugContextCall![1] as { userMessage: string };
+    // The filtered notification should appear, the other should not
+    expect(payload.userMessage).toContain('CI Build');
+    expect(payload.userMessage).not.toContain('Deploy');
+    // Header should mention the workflow filter
+    expect(payload.userMessage).toContain('workflow: "CI Build"');
+  });
+
+  it('buildWorkflowContext: includes workflow runs, jobs, and log excerpts', async () => {
+    mockGetWorkflowSummary.mockReturnValueOnce({
+      total_runs: 3,
+      recent_runs: [
+        {
+          id: 101,
+          repo_full_name: 'org/repo',
+          workflow_id: 1,
+          workflow_name: 'CI',
+          run_number: 42,
+          head_branch: 'main',
+          event: 'push',
+          status: 'completed',
+          conclusion: 'failure',
+          run_started_at: '2024-01-01T10:00:00Z',
+          html_url: 'https://github.com/org/repo/actions/runs/101',
+          created_at: '2024-01-01T10:00:00Z',
+        },
+        {
+          id: 102,
+          repo_full_name: 'org/repo',
+          workflow_id: 1,
+          workflow_name: 'CI',
+          run_number: 43,
+          head_branch: 'feature',
+          event: 'push',
+          status: 'completed',
+          conclusion: 'success',
+          run_started_at: '2024-01-02T10:00:00Z',
+          html_url: 'https://github.com/org/repo/actions/runs/102',
+          created_at: '2024-01-02T10:00:00Z',
+        },
+      ],
+      jobs_by_run: {
+        101: [
+          {
+            id: 201,
+            run_id: 101,
+            name: 'build',
+            status: 'completed',
+            conclusion: 'failure',
+            started_at: '2024-01-01T10:01:00Z',
+            completed_at: '2024-01-01T10:05:00Z',
+            log_excerpt: 'Error: npm test failed with exit code 1',
+          },
+        ],
+        102: [
+          {
+            id: 202,
+            run_id: 102,
+            name: 'build',
+            status: 'completed',
+            conclusion: 'success',
+            started_at: '2024-01-02T10:01:00Z',
+            completed_at: '2024-01-02T10:03:00Z',
+            log_excerpt: null,
+          },
+        ],
+      },
+    } as never);
+
+    mockStreamChat
+      .mockImplementationOnce(async (_m, _msgs, onToken) => { onToken('analysis'); })
+      .mockImplementationOnce(async (_m, _msgs, onToken) => { onToken('no json'); });
+
+    const sessionId = createAgentSession(db, agentId, 'repo', 'org/repo');
+    const mockWin = makeMockWindow();
+
+    await runAgentSession(db, sessionId, agentDef(), 'repo', 'org/repo', 'test-model', () => mockWin as never);
+
+    const debugContextCall = mockWin.webContents.send.mock.calls.find(
+      ([event]) => event === 'agent:debug-context',
+    );
+    const payload = debugContextCall![1] as { userMessage: string };
+
+    // Workflow context should include run details
+    expect(payload.userMessage).toContain('WORKFLOW RUNS (last 7 days, 3 total)');
+    expect(payload.userMessage).toContain('Workflow: CI');
+    expect(payload.userMessage).toContain('Run #42');
+    expect(payload.userMessage).toContain('failure');
+    expect(payload.userMessage).toContain('Job "build": failure');
+    // Log excerpt for the failed job
+    expect(payload.userMessage).toContain('Log excerpt for "build"');
+    expect(payload.userMessage).toContain('npm test failed');
+    // Successful run without log_excerpt should not have log excerpt line
+    expect(payload.userMessage).toContain('Run #43');
+    expect(payload.userMessage).toContain('Job "build": success');
+  });
+
+  it('phase 2 non-timeout error: session completes, error message sent to renderer', async () => {
+    mockStreamChat
+      .mockImplementationOnce(async (_m, _msgs, onToken) => { onToken(VALID_JSON_RESPONSE); })
+      .mockImplementationOnce(async () => { throw new Error('Network error'); });
+
+    const sessionId = createAgentSession(db, agentId, 'repo', 'org/repo');
+    const mockWin = makeMockWindow();
+
+    await runAgentSession(db, sessionId, agentDef(), 'repo', 'org/repo', 'test-model', () => mockWin as never);
+
+    expect(mockWin.webContents.send).toHaveBeenCalledWith(
+      'agent:phase2-error',
+      expect.objectContaining({ sessionId, message: 'Network error' }),
+    );
+    // Still completes using phase-1 fallback
+    const session = getAgentSession(db, sessionId);
+    expect(session!.status).toBe('completed');
+    expect(session!.findings).toHaveLength(1);
+  });
+
+  it('phase 2 non-Error throw: handles non-Error objects gracefully', async () => {
+    mockStreamChat
+      .mockImplementationOnce(async (_m, _msgs, onToken) => { onToken(VALID_JSON_RESPONSE); })
+      .mockImplementationOnce(async () => { throw 'string error'; });
+
+    const sessionId = createAgentSession(db, agentId, 'repo', 'org/repo');
+    const mockWin = makeMockWindow();
+
+    await runAgentSession(db, sessionId, agentDef(), 'repo', 'org/repo', 'test-model', () => mockWin as never);
+
+    expect(mockWin.webContents.send).toHaveBeenCalledWith(
+      'agent:phase2-error',
+      expect.objectContaining({ sessionId, message: 'string error' }),
+    );
+    const session = getAgentSession(db, sessionId);
+    expect(session!.status).toBe('completed');
   });
 });

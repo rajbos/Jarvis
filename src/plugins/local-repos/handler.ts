@@ -1,5 +1,7 @@
 // ── Local repos IPC handlers ──────────────────────────────────────────────────
 import { spawn } from 'node:child_process';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { ipcMain, shell, dialog, BrowserWindow } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import { saveDatabase } from '../../storage/database';
@@ -35,11 +37,26 @@ function launchDetached(command: string, args: string[], folderPath: string, onE
 }
 
 function openTerminal(folderPath: string): void {
+  // Normalize the path and confirm it resolves to an existing directory
+  // before handing it to a spawned shell process.
+  const resolvedPath = path.resolve(folderPath);
+  let isDirectory: boolean;
+  try {
+    isDirectory = fs.statSync(resolvedPath).isDirectory();
+  } catch (err) {
+    console.error('[IPC] local:open-terminal failed: invalid folder path', resolvedPath, err);
+    return;
+  }
+  if (!isDirectory) {
+    console.error('[IPC] local:open-terminal failed: not a directory', resolvedPath);
+    return;
+  }
+
   // Prefer Windows Terminal when available, but keep working on machines that
   // only have the classic command prompt.
-  launchDetached('wt.exe', ['-d', folderPath], folderPath, () => {
+  launchDetached('wt.exe', ['-d', resolvedPath], resolvedPath, () => {
     const commandShell = process.env.ComSpec ?? process.env.COMSPEC ?? 'cmd.exe';
-    launchDetached(commandShell, ['/k'], folderPath, (err) => {
+    launchDetached(commandShell, ['/k'], resolvedPath, (err) => {
       console.error('[IPC] local:open-terminal failed:', err);
     });
   });
@@ -153,16 +170,16 @@ export function startLocalScanIfNeeded(
   db: SqlJsDatabase,
   getWindow: () => BrowserWindow | null,
   force = false,
-): void {
+): boolean {
   if (localScanRunning && !force) {
     console.log('[LocalScan] Already running, skipping');
-    return;
+    return false;
   }
 
   const folders = getScanFolders(db);
   if (folders.length === 0) {
     console.log('[LocalScan] No scan folders configured, skipping');
-    return;
+    return false;
   }
 
   console.log('[LocalScan] Starting scan of', folders.length, 'folder(s)');
@@ -181,23 +198,5 @@ export function startLocalScanIfNeeded(
     localScanRunning = false;
     console.error('[LocalScan] Failed:', err);
   });
-}
-
-const LOCAL_SCAN_INITIAL_DELAY_MS = 30_000;       // 30 seconds after boot
-const LOCAL_SCAN_INTERVAL_MS = 60 * 60 * 1_000;  // 1 hour
-
-/**
- * Schedule the periodic local-repo scan.
- * First run is delayed to avoid blocking startup; subsequent runs are hourly.
- */
-export function scheduleLocalDiscovery(
-  db: SqlJsDatabase,
-  getWindow: () => BrowserWindow | null,
-): void {
-  setTimeout(() => {
-    startLocalScanIfNeeded(db, getWindow);
-    setInterval(() => {
-      startLocalScanIfNeeded(db, getWindow);
-    }, LOCAL_SCAN_INTERVAL_MS);
-  }, LOCAL_SCAN_INITIAL_DELAY_MS);
+  return true;
 }

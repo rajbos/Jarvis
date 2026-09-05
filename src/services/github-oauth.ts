@@ -109,8 +109,7 @@ export async function pollForToken(
 /**
  * Step 3: Fetch the authenticated user's profile.
  */
-export async function fetchGitHubUser(accessToken: string): Promise<GitHubUser> {
-  const response = await fetch(GITHUB_USER_API_URL, {
+export async function fetchGitHubUser(accessToken: string): Promise<GitHubUser> {  const response = await fetch(GITHUB_USER_API_URL, {
     headers: {
       'Authorization': `Bearer ${accessToken}`,
       'Accept': 'application/json',
@@ -123,6 +122,50 @@ export async function fetchGitHubUser(accessToken: string): Promise<GitHubUser> 
   }
 
   return response.json() as Promise<GitHubUser>;
+}
+
+/**
+ * Result of validating a PAT against the GitHub API.
+ * - 'valid': the token works and the user profile was returned.
+ * - 'expired': GitHub answered 401 — the token has expired or been revoked.
+ * - 'unknown': we could not determine validity (network failure, 5xx, …), so
+ *   callers should not alarm the user about a token that may still be fine.
+ */
+export type PatValidation =
+  | { status: 'valid'; user: GitHubUser }
+  | { status: 'expired' }
+  | { status: 'unknown'; error: string };
+
+/**
+ * Validate a Personal Access Token against the GitHub API.
+ */
+export async function validateGitHubPat(pat: string): Promise<PatValidation> {
+  let response: Response;
+  try {
+    response = await fetch(GITHUB_USER_API_URL, {
+      headers: {
+        'Authorization': `Bearer ${pat}`,
+        'Accept': 'application/json',
+        'User-Agent': 'Jarvis-Agent/0.1.0',
+      },
+    });
+  } catch (err) {
+    return { status: 'unknown', error: err instanceof Error ? err.message : String(err) };
+  }
+
+  if (response.status === 401) {
+    return { status: 'expired' };
+  }
+  if (!response.ok) {
+    return { status: 'unknown', error: `HTTP ${response.status}` };
+  }
+
+  try {
+    const user = (await response.json()) as GitHubUser;
+    return { status: 'valid', user };
+  } catch (err) {
+    return { status: 'unknown', error: err instanceof Error ? err.message : String(err) };
+  }
 }
 
 /**

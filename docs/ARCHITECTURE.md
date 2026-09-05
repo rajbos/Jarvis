@@ -21,6 +21,7 @@
 12. [GitHub Maintenance Module](#12-github-maintenance-module)
 13. [Configuration](#13-configuration)
 14. [Recommended Approach](#14-recommended-approach)
+15. [Claude Rate Limit Awareness](#15-claude-rate-limit-awareness)
 
 ---
 
@@ -46,6 +47,7 @@
 | R16 | Cross-repo activity summaries | Find latest PRs/issues across orgs, generate weekly summaries |
 | R17 | Work journal / thought capture | Track things the user has been thinking about or working on |
 | R18 | Full SQLite encryption | Encrypt sensitive data at rest to prevent exfiltration |
+| R19 | Claude rate limit awareness | Reuse local Claude Code OAuth credentials to track Pro/Max subscription usage limits, with a status-bar countdown when limited |
 
 ---
 
@@ -1389,6 +1391,34 @@ jarvis/
 | **Phase 10** | Secrets scanning + fork analysis | Scan for exposed secrets, analyze fork upstream divergence |
 | **Phase 11** | Container isolation | Optional sandboxed execution for security-sensitive tasks |
 | **Phase 12** | Advanced maintenance tasks | Stale repo detection, dependency audits, branch cleanup |
+
+---
+
+## 15. Claude Rate Limit Awareness
+
+Jarvis can track the user's Claude **subscription** (Pro/Max) usage limits — not to be confused with Anthropic Console API keys, which have separate pay-as-you-go limits.
+
+### Credential Source
+
+Two ways to connect:
+
+1. **Direct OAuth sign-in (PKCE)** — a "Sign in with Claude" button in the Claude panel opens `claude.ai/oauth/authorize` with the public Claude Code OAuth client; the user pastes the displayed code back into Jarvis. Tokens are stored encrypted in the Jarvis config store.
+2. **Claude Code credentials fallback** — reuses `~/.claude/.credentials.json` (`claudeAiOauth.*`) when present. Tokens with missing/zero expiry are tried anyway; a 401 from the probe triggers refresh + retry. Refreshed tokens are cached encrypted in Jarvis — Claude Code's file is never modified.
+
+### Probing the Limit
+
+A minimal `POST /v1/messages` probe (`max_tokens: 1`, cheapest Haiku model, `anthropic-beta: oauth-2025-04-20`) returns the unified rate-limit headers:
+
+- `anthropic-ratelimit-unified-5h-utilization` / `-5h-reset` — rolling 5-hour window
+- `anthropic-ratelimit-unified-7d-utilization` / `-7d-reset` — rolling 7-day window
+- HTTP 429 + `retry-after` when a window is exhausted (rejected probes don't consume quota)
+
+When both windows are exhausted the binding reset is the *later* of the two — both must lift before the account is usable again.
+
+### UI
+
+- **Setup tab**: a "Claude AI" step tile (plugin: `src/plugins/claude/`) shows connection status and opens a detail panel with per-window utilization and reset times.
+- **Status bar**: a ticker badge next to the GitHub rate-limit badges. Green with 5h utilization when healthy; pulsing red countdown (`⏳ Claude limited · resets in …`) while limited. Polled every 2 minutes, tightening to 30s while limited.
 
 ---
 

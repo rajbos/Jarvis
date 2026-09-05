@@ -15,6 +15,7 @@ function reasonLabel(reason: string): string {
     case 'closed_pr_closed_me': return 'PR closed by me';
     case 'closed_issue_me': return 'Issue closed by me';
     case 'closed_issue_via_pr': return 'Issue closed via PR';
+    case 'closed_issue_collab_pr': return 'Issue closed via PR I collaborated on';
     default: return reason;
   }
 }
@@ -27,6 +28,7 @@ function reasonIcon(reason: string): string {
     case 'closed_pr_closed_me': return '✕';
     case 'closed_issue_me': return '✓';
     case 'closed_issue_via_pr': return '🔀';
+    case 'closed_issue_collab_pr': return '🤝';
     default: return '·';
   }
 }
@@ -81,7 +83,6 @@ function BarChart({ data, granularity }: {
   // Bars distributed evenly across the plot area
   const barUnit = plotW / n;
   const barW = Math.min(barUnit * 0.7, 100);
-  const plotTop = padT;
   const plotBottom = padT + plotH;
   const plotHeight = plotH;
 

@@ -97,6 +97,40 @@ export interface OAuthStatus {
 
 
 
+export interface PatStatus {
+
+
+
+  hasPat: boolean;
+
+
+
+  /** true when GitHub rejected the stored token (401) — expired or revoked */
+
+
+
+  expired?: boolean;
+
+
+
+  login?: string;
+
+
+
+  name?: string;
+
+
+
+  avatarUrl?: string;
+
+
+
+}
+
+
+
+
+
 
 export interface OllamaModel {
 
@@ -1170,6 +1204,22 @@ export interface GitHubRateLimitSource {
 
 
 
+  /** Expiry date of the token, from the github-authentication-token-expiration response header (PAT only; null when the token does not expire) */
+
+
+
+  tokenExpiresAt?: string | null;
+
+
+
+  /** true when GitHub answered 401 — the token is expired or revoked */
+
+
+
+  tokenExpired?: boolean;
+
+
+
 }
 
 
@@ -1187,6 +1237,150 @@ export interface GitHubRateLimit {
 
 
   pat: GitHubRateLimitSource;
+
+
+
+  fetchedAt: string; // ISO timestamp
+
+
+
+}
+
+
+
+
+
+// ── Claude (Claude Code OAuth) types ──────────────────────────────────────────
+
+
+
+
+
+/** Connection status of the Claude account link (via Claude Code credentials). */
+
+
+
+export interface ClaudeStatus {
+
+
+
+  connected: boolean;
+
+
+
+  /** e.g. "pro", "max" — as reported by the credentials file. */
+
+
+
+  subscriptionType?: string;
+
+
+
+  /** Access-token expiry in ms since epoch. */
+
+
+
+  expiresAt?: number;
+
+
+
+  /** Where the active token came from. */
+
+
+
+  source?: 'claude-code' | 'stored';
+
+
+
+  error?: string;
+
+
+
+}
+
+
+
+
+
+/** One unified rate-limit window (5-hour or 7-day). */
+
+
+
+export interface ClaudeRateLimitWindow {
+
+
+
+  /** Fraction of the window consumed, 0..1 (null when not reported). */
+
+
+
+  utilization: number | null;
+
+
+
+  /** Unix timestamp (seconds) when the window resets. */
+
+
+
+  reset: number | null;
+
+
+
+  /** True when this window is currently exhausted. */
+
+
+
+  limited: boolean;
+
+
+
+}
+
+
+
+
+
+export interface ClaudeRateLimit {
+
+
+
+  /** False when no Claude credentials are available at all. */
+
+
+
+  configured: boolean;
+
+
+
+  /** True when the account is currently rate limited (any window). */
+
+
+
+  limited: boolean;
+
+
+
+  /** Unix timestamp (seconds) when the binding limit lifts; null when not limited. */
+
+
+
+  resetAt: number | null;
+
+
+
+  retryAfterSec: number | null;
+
+
+
+  fiveHour: ClaudeRateLimitWindow | null;
+
+
+
+  sevenDay: ClaudeRateLimitWindow | null;
+
+
+
+  error?: string;
 
 
 
@@ -1790,6 +1984,7 @@ export type AutoDismissReason =
   | 'closed_pr_closed_me'
   | 'closed_issue_me'
   | 'closed_issue_via_pr'
+  | 'closed_issue_collab_pr'
   | 'deleted_branch';
 
 export interface AutoDismissLogInput {
@@ -2015,6 +2210,44 @@ export type {
 
 
 
+
+export type BackgroundTaskRunStatus = 'success' | 'failed' | 'skipped';
+
+export interface BackgroundTaskRunRecord {
+  taskId: string;
+  status: BackgroundTaskRunStatus;
+  startedAt: string;
+  finishedAt: string;
+  durationMs: number;
+  result?: unknown;
+  error?: string;
+}
+
+export interface BackgroundTaskStatus {
+  id: string;
+  label: string;
+  running: boolean;
+  intervalMs?: number;
+  initialDelayMs?: number;
+  nextRunAt?: string;
+  lastStartedAt?: string;
+  lastFinishedAt?: string;
+  lastDurationMs?: number;
+  lastStatus?: BackgroundTaskRunStatus;
+  lastError?: string;
+  lastResult?: unknown;
+}
+
+export interface AutoDismissRunResult {
+  steps: Array<{ id: string; label: string; dismissed: number }>;
+  total: number;
+}
+
+export interface AutoDismissCompletePayload {
+  result: AutoDismissRunResult;
+  logEntries: AutoDismissLogInput[];
+}
+
 export interface JarvisApi {
 
 
@@ -2043,7 +2276,22 @@ export interface JarvisApi {
 
 
 
-  getPatStatus(): Promise<{ hasPat: boolean; login?: string; name?: string; avatarUrl?: string }>;
+  getPatStatus(): Promise<PatStatus>;
+
+
+
+
+  openSettings(): Promise<void>;
+
+
+
+
+  onPatExpired(cb: () => void): () => void;
+
+
+
+
+  onPatStatusChanged(cb: () => void): () => void;
 
 
 
@@ -2632,10 +2880,24 @@ export interface JarvisApi {
 
   getGitHubRateLimit(): Promise<GitHubRateLimit>;
 
+  // Claude (Claude Code OAuth) rate limit
+  getClaudeStatus(): Promise<ClaudeStatus>;
+  getClaudeRateLimit(): Promise<ClaudeRateLimit>;
+  disconnectClaude(): Promise<{ ok: boolean }>;
+  beginClaudeOAuth(): Promise<{ ok: boolean; authorizeUrl?: string; error?: string }>;
+  completeClaudeOAuth(code: string): Promise<{ ok: boolean; error?: string }>;
+
   // Auto-dismiss log
   logAutoDismiss(entries: AutoDismissLogInput[]): Promise<void>;
   listAutoDismissLog(limit?: number): Promise<AutoDismissLogEntry[]>;
   getAutoDismissStats(): Promise<AutoDismissStats>;
+
+  // Background tasks
+  listBackgroundTasks(): Promise<BackgroundTaskStatus[]>;
+  runBackgroundTaskNow(taskId: string): Promise<BackgroundTaskRunRecord | { ok: false; error: string }>;
+  onBackgroundTaskComplete(cb: (record: BackgroundTaskRunRecord) => void): () => void;
+  onNotificationCountsUpdated(cb: (counts: NotificationCounts) => void): () => void;
+  onAutoDismissComplete(cb: (payload: AutoDismissCompletePayload) => void): () => void;
 
 
 

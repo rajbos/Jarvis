@@ -3,9 +3,19 @@ updates:
   groups:
     dev-dependencies:
       dependency-type: development
+      applies-to: version-updates
     production-dependencies:
       dependency-type: production
+      applies-to: version-updates
+    npm-security-updates:
+      applies-to: security-updates
+      patterns:
+      - "*"
   package-ecosystem: npm
+  ignore:
+  - dependency-name: "typescript"
+    versions:
+    - ">=7.0.0" # typescript-eslint requires typescript <6.1.0; revisit once TS 7.1 lands
   schedule:
     interval: weekly
 - directory: /

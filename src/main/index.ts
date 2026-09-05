@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Tray, Menu, session } from 'electron';
+import { app, BrowserWindow, Tray, Menu, session, ipcMain, Notification } from 'electron';
 
 import { getDatabase, closeDatabase } from '../storage/database';
 
@@ -12,13 +12,19 @@ import { createOnboardingWindow, createSettingsWindow } from './windows';
 
 import { getOnboardingStatus, completeOnboardingStep } from '../agent/onboarding';
 
-import { registerIpcHandlers, startDiscoveryIfAuthed, scheduleLocalDiscovery, runBootWorkflowCheck, prewarmRuddrCache, scheduleRuddrProjectsRefresh } from './ipc-handlers';
+import { registerIpcHandlers, startDiscoveryIfAuthed } from './ipc-handlers';
+import { startBackgroundTasks, stopBackgroundTasks } from './background-tasks';
+import { checkPatForExpiry } from '../plugins/github-auth/handler';
 
 import { checkOllama } from '../services/ollama';
 
 import { saveDatabase } from '../storage/database';
 
 import { stopBridgeServer } from '../plugins/browser-companion/server';
+
+import { setLogLevel } from '../services/logger';
+
+setLogLevel(app.isPackaged ? 'warn' : 'debug');
 
 
 
@@ -53,6 +59,25 @@ async function initialize(): Promise<void> {
   // Register IPC handlers for renderer ↔ main communication
 
   registerIpcHandlers(db, () => mainWindow);
+
+  // Let the renderer open the Settings window (e.g. from the "PAT expired" banner)
+  ipcMain.handle('app:open-settings', () => {
+    showSettingsWindow();
+  });
+
+  // Validate the stored GitHub PAT on startup; warn clearly when it has
+  // expired or been revoked instead of silently failing API calls later.
+  checkPatForExpiry(db, () => mainWindow).then((expired) => {
+    if (!expired) return;
+    const notification = new Notification({
+      title: 'Jarvis — GitHub token expired',
+      body: 'Your GitHub Personal Access Token has expired or been revoked. Open Settings → GitHub Access to enter a new one.',
+    });
+    notification.on('click', () => showSettingsWindow());
+    notification.show();
+  }).catch((err) => {
+    console.warn('[PAT] Startup validity check failed:', err);
+  });
 
 
 
@@ -150,9 +175,9 @@ async function initialize(): Promise<void> {
 
 
 
-  const loginSettings = app.getLoginItemSettings();
-
-  const startedHidden = loginSettings.wasOpenedAsHidden || config.electron.startMinimized;
+  // Electron 44 removed wasOpenedAsHidden/openAsHidden; on Windows we detect a
+  // hidden login launch via the --hidden arg we register in setLoginItemSettings.
+  const startedHidden = process.argv.includes('--hidden') || config.electron.startMinimized;
 
 
 
@@ -166,32 +191,21 @@ async function initialize(): Promise<void> {
 
   // If GitHub auth is already set up, start background discovery
 
-  if (!needsOnboarding || onboarding.github_oauth === 'completed') {
+  const githubReady = !needsOnboarding || onboarding.github_oauth === 'completed';
+
+  if (githubReady) {
 
     startDiscoveryIfAuthed(db, () => mainWindow);
-
-    // Pre-warm workflow run cache so recovery status is ready when panels open
-
-    runBootWorkflowCheck(db, () => mainWindow).catch((err) => {
-
-      console.warn('[Boot] Workflow check failed:', err instanceof Error ? err.message : String(err));
-
-    });
 
   }
 
 
 
-  // Schedule periodic local-repo scanning
+  // Start centralized main-process background jobs. These continue to run even
 
-  scheduleLocalDiscovery(db, () => mainWindow);
+  // when renderer panels are not mounted.
 
-  // Pre-warm Ruddr projects cache after startup settles
-  prewarmRuddrCache(db).catch((err: unknown) => {
-    console.warn('[Boot] Ruddr cache pre-warm failed:', err instanceof Error ? err.message : String(err));
-  });
-  // Schedule hourly Ruddr project refresh and new-project notifications
-  scheduleRuddrProjectsRefresh(db, () => mainWindow);
+  startBackgroundTasks(db, () => mainWindow, { githubReady });
 
 
 
@@ -207,7 +221,7 @@ async function initialize(): Promise<void> {
 
       openAtLogin: config.electron.openAtLogin,
 
-      openAsHidden: true,
+      args: ['--hidden'],
 
     });
 
@@ -357,6 +371,8 @@ app.on('window-all-closed', () => {
 
 
 app.on('before-quit', () => {
+
+  stopBackgroundTasks();
 
   stopBridgeServer();
 

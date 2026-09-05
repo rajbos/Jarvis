@@ -107,25 +107,25 @@ jobs:
             --label "maintenance" \
             --body "## gh-aw Lock File Version Drift Detected
 
-The following lock file(s) were compiled with an older version of \`gh-aw\` than the latest available release:
+          The following lock file(s) were compiled with an older version of \`gh-aw\` than the latest available release:
 
-${FILE_LIST}
-### Details
+          ${FILE_LIST}
+          ### Details
 
-| | Version |
-|---|---|
-| Compiler version in lock file(s) | \`${COMPILER_LABEL}\` |
-| Latest \`gh-aw-actions\` release | \`${LATEST_VERSION}\` |
+          | | Version |
+          |---|---|
+          | Compiler version in lock file(s) | \`${COMPILER_LABEL}\` |
+          | Latest \`gh-aw-actions\` release | \`${LATEST_VERSION}\` |
 
-### Fix
+          ### Fix
 
-Run the following commands to upgrade the compiler extension and regenerate the lock files:
+          Run the following commands to upgrade the compiler extension and regenerate the lock files:
 
-\`\`\`bash
-gh extension upgrade gh-aw
-gh aw compile
-\`\`\`
+          \`\`\`bash
+          gh extension upgrade gh-aw
+          gh aw compile
+          \`\`\`
 
-Then commit and push the regenerated lock files."
+          Then commit and push the regenerated lock files."
 
           echo "Issue created: $ISSUE_TITLE"

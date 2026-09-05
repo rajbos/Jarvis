@@ -31,6 +31,8 @@ const spawnMock = vi.hoisted(() => vi.fn(() => ({
   unref: vi.fn(),
 })));
 
+const statSyncMock = vi.hoisted(() => vi.fn(() => ({ isDirectory: () => true })));
+
 // ── Track registered handlers so we can invoke them directly ──────────────────
 const handlers = new Map<string, (...args: unknown[]) => unknown>();
 
@@ -56,6 +58,10 @@ vi.mock('node:child_process', () => ({
   spawn: spawnMock,
 }));
 
+vi.mock('node:fs', () => ({
+  statSync: statSyncMock,
+}));
+
 vi.mock('../../src/storage/database', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/storage/database')>();
   return { ...actual, saveDatabase: vi.fn() };
@@ -76,6 +82,7 @@ vi.mock('../../src/agent/config', () => ({
 
 import { registerIpcHandlers } from '../../src/main/ipc-handlers';
 import { shell } from 'electron';
+import * as path from 'node:path';
 
 // Helper to call a handler with a fake IPC event
 function callHandler(channel: string, ...args: unknown[]): unknown {
@@ -133,17 +140,32 @@ describe('IPC handler input validation', () => {
     });
 
     it('launches a terminal for a valid path', () => {
+      const resolvedPath = path.resolve('C:/Users/example/projects');
       callHandler('local:open-terminal', 'C:/Users/example/projects');
       expect(spawnMock).toHaveBeenCalledWith(
         'wt.exe',
-        ['-d', 'C:/Users/example/projects'],
+        ['-d', resolvedPath],
         expect.objectContaining({
-          cwd: 'C:/Users/example/projects',
+          cwd: resolvedPath,
           detached: true,
           stdio: 'ignore',
           windowsHide: false,
         }),
       );
+    });
+
+    it('does nothing when the resolved path is not a directory', () => {
+      statSyncMock.mockReturnValueOnce({ isDirectory: () => false } as ReturnType<typeof statSyncMock>);
+      callHandler('local:open-terminal', 'C:/Users/example/not-a-folder.txt');
+      expect(spawnMock).not.toHaveBeenCalled();
+    });
+
+    it('does nothing when the resolved path does not exist', () => {
+      statSyncMock.mockImplementationOnce(() => {
+        throw new Error('ENOENT: no such file or directory');
+      });
+      callHandler('local:open-terminal', '../../../etc/passwd');
+      expect(spawnMock).not.toHaveBeenCalled();
     });
   });
 

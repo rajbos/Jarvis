@@ -68,6 +68,12 @@ const EXPECTED_CHANNELS = [
   'github:start-oauth-discovery',
   'github:start-oauth',
   'github:get-rate-limit',
+  // claude plugin
+  'claude:status',
+  'claude:rate-limit',
+  'claude:disconnect',
+  'claude:begin-oauth',
+  'claude:complete-oauth',
   // discovery plugin
   'github:discovery-status',
   'github:start-discovery',
@@ -180,6 +186,9 @@ const EXPECTED_CHANNELS = [
   'browser:list-tabs',
   'browser:get-page-content',
   'browser:focus-window',
+  // background tasks
+  'tasks:list',
+  'tasks:run-now',
 ] as const;
 
 describe('IPC handler registration', () => {

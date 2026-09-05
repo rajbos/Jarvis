@@ -6,6 +6,7 @@ import {
   requestDeviceCode,
   pollForToken,
   fetchGitHubUser,
+  validateGitHubPat,
   saveGitHubAuth,
   loadGitHubAuth,
   saveGitHubPat,
@@ -187,6 +188,7 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
     const { setConfigValue } = await import('../../storage/database');
     setConfigValue(db, 'force_pat_discovery', '1');
     saveDatabase();
+    getWindow()?.webContents.send('github:pat-status-changed');
     return { ok: true };
   });
 
@@ -195,6 +197,7 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
     if (!auth) return { ok: false };
     deleteGitHubPat(db, auth.login);
     saveDatabase();
+    getWindow()?.webContents.send('github:pat-status-changed');
     return { ok: true };
   });
 
@@ -207,12 +210,15 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
   ipcMain.handle('github:pat-status', async () => {
     const pat = loadGitHubPat(db);
     if (!pat) return { hasPat: false };
-    try {
-      const user = await fetchGitHubUser(pat);
-      return { hasPat: true, login: user.login, name: user.name, avatarUrl: user.avatar_url };
-    } catch {
-      return { hasPat: true };
+    const result = await validateGitHubPat(pat);
+    if (result.status === 'valid') {
+      return { hasPat: true, expired: false, login: result.user.login, name: result.user.name, avatarUrl: result.user.avatar_url };
     }
+    if (result.status === 'expired') {
+      return { hasPat: true, expired: true };
+    }
+    // Couldn't determine validity (offline, GitHub 5xx, …) — don't claim the token is broken
+    return { hasPat: true, expired: false };
   });
 
   ipcMain.handle('github:start-oauth-discovery', () => {
@@ -263,7 +269,7 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
 
     type RateLimitResource = { limit: number; remaining: number; reset: number; used: number };
 
-    const fetchForToken = async (token: string): Promise<{ resource: RateLimitResource | null; error?: string }> => {
+    const fetchForToken = async (token: string): Promise<{ resource: RateLimitResource | null; error?: string; tokenExpiresAt?: string | null; tokenExpired?: boolean }> => {
       try {
         const res = await fetch('https://api.github.com/rate_limit', {
           headers: {
@@ -272,9 +278,15 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
             'X-GitHub-Api-Version': '2022-11-28',
           },
         });
-        if (!res.ok) return { resource: null, error: `HTTP ${res.status}` };
+        // GitHub returns the expiry date of expiring tokens (fine-grained PATs)
+        // on every authenticated response — surface it so the UI can warn early.
+        const tokenExpiresAt = res.headers.get('github-authentication-token-expiration');
+        if (res.status === 401) {
+          return { resource: null, error: 'HTTP 401 — token expired or revoked', tokenExpiresAt, tokenExpired: true };
+        }
+        if (!res.ok) return { resource: null, error: `HTTP ${res.status}`, tokenExpiresAt };
         const data = (await res.json()) as { resources: { core: RateLimitResource } };
-        return { resource: data.resources.core };
+        return { resource: data.resources.core, tokenExpiresAt };
       } catch (err) {
         return { resource: null, error: String(err) };
       }
@@ -285,12 +297,25 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
       pat ? fetchForToken(pat) : Promise.resolve(null),
     ]);
 
+    // The rate-limit call doubles as a liveness check for the PAT: a 401 here
+    // means the token is expired/revoked — let the renderer switch to the
+    // "PAT expired" state immediately.
+    if (patResult?.tokenExpired) {
+      getWindow()?.webContents.send('github:pat-expired');
+    }
+
     return {
       oauth: auth
         ? { configured: true, resource: oauthResult!.resource, error: oauthResult!.error }
         : { configured: false, resource: null },
       pat: pat
-        ? { configured: true, resource: patResult!.resource, error: patResult!.error }
+        ? {
+            configured: true,
+            resource: patResult!.resource,
+            error: patResult!.error,
+            tokenExpiresAt: patResult!.tokenExpiresAt ?? null,
+            tokenExpired: patResult!.tokenExpired ?? false,
+          }
         : { configured: false, resource: null },
       fetchedAt: new Date().toISOString(),
     };
@@ -350,4 +375,24 @@ async function startPollingLoop(
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Validate the stored PAT and, when GitHub rejects it (401 — expired or
+ * revoked), push a `github:pat-expired` event to the renderer so the UI can
+ * switch to the "PAT expired" state. Returns true when the PAT is expired.
+ * Used at app startup; the renderer event is skipped silently when no window
+ * exists yet — the renderer re-checks via `github:pat-status` on mount anyway.
+ */
+export async function checkPatForExpiry(
+  db: SqlJsDatabase,
+  getWindow: () => BrowserWindow | null,
+): Promise<boolean> {
+  const pat = loadGitHubPat(db);
+  if (!pat) return false;
+  const result = await validateGitHubPat(pat);
+  if (result.status !== 'expired') return false;
+  console.warn('[PAT] Stored Personal Access Token is expired or revoked');
+  getWindow()?.webContents.send('github:pat-expired');
+  return true;
 }
