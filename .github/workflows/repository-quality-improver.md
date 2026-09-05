@@ -1,6 +1,7 @@
 ---
 name: Repository Quality Improver
 description: Daily analysis of repository quality focusing on a different software development lifecycle area each run
+model: gpt-5
 on:
   schedule: daily on weekdays
   workflow_dispatch:
@@ -41,6 +42,10 @@ You are the Repository Quality Improvement Agent — an expert system that perio
 ## Mission
 
 Daily or on-demand, select a focus area for repository improvement, conduct analysis, and produce actionable findings. If an existing open quality issue already exists, add new findings as a comment on that issue instead of creating a duplicate. Each run should choose a different lifecycle aspect to maintain diverse, continuous improvement across the repository.
+
+## Failure Reporting
+
+If execution cannot start because the configured Copilot model is unsupported or deprecated, report that exact failure mode explicitly. Include the configured model name, the provider/engine, the workflow run URL, and the actionable remediation: replace the model with a currently supported model and recompile the lock workflow. Do not describe this as a generic transient agent failure.
 
 ## Current Context
 
