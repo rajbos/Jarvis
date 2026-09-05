@@ -1,5 +1,4 @@
 // ── Discovery IPC handlers + startDiscoveryIfAuthed ──────────────────────────
-import { ipcMain } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import type { BrowserWindow } from 'electron';
 import {
@@ -20,9 +19,10 @@ import {
   setActiveDiscovery,
   setLastDiscoveryProgress,
 } from './state';
+import { safeHandle } from '../ipc-utils';
 
 export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWindow | null): void {
-  ipcMain.handle('github:discovery-status', () => {
+  safeHandle('github:discovery-status', () => {
     if (lastDiscoveryProgress) {
       return {
         running: activeDiscovery !== null && !activeDiscovery.aborted,
@@ -42,12 +42,12 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
     };
   });
 
-  ipcMain.handle('github:start-discovery', () => {
+  safeHandle('github:start-discovery', () => {
     startDiscoveryIfAuthed(db, getWindow, true);
     return { started: true };
   });
 
-  ipcMain.handle('github:start-pat-discovery', () => {
+  safeHandle('github:start-pat-discovery', () => {
     const pat = loadGitHubPat(db);
     if (!pat) return { error: 'No PAT configured' };
 
