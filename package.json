@@ -8,7 +8,7 @@
     "copy-static": "node -e \"const fs=require('fs');const p=require('path');fs.mkdirSync('dist/renderer',{recursive:true});for(const f of fs.readdirSync('src/renderer')){if(f.endsWith('.html'))fs.cpSync(p.join('src/renderer',f),p.join('dist/renderer',f));}\"",
     "start": "npm run build && electron dist/main/index.js",
     "pack:win": "npm run build && electron-builder --win --dir",
-    "dist:win": "npm run build && electron-builder --win nsis",
+    "dist:win": "npm run build && electron-builder --win nsis --publish never",
     "publish:win": "npm run build && electron-builder --win nsis --publish always",
     "dev:tsc": "tsc --watch --preserveWatchOutput",
     "dev:esbuild": "node scripts/build-renderer.mjs --watch",
