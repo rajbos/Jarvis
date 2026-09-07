@@ -2462,6 +2462,17 @@ export interface JarvisApi {
     dashboardNotifSort?: 'count' | 'name';
   }): Promise<{ ok: boolean }>;
 
+  getStartupSettings(): Promise<{
+    openAtLogin: boolean;
+    startMinimized: boolean;
+    canRegisterAtLogin: boolean;
+  }>;
+
+  setStartupSettings(settings: {
+    openAtLogin: boolean;
+    startMinimized: boolean;
+  }): Promise<{ ok: boolean; canRegisterAtLogin?: boolean; error?: string }>;
+
 
 
   onOpenChat(cb: () => void): () => void;

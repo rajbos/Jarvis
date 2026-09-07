@@ -6,7 +6,10 @@ import { randomBytes } from 'crypto';
 import type { BrowserWindow } from 'electron';
 import { loadConfig, saveConfig } from '../../agent/config';
 
-export const BRIDGE_PORT = 35789;
+const configuredBridgePort = Number.parseInt(process.env.JARVIS_BRIDGE_PORT ?? '', 10);
+export const BRIDGE_PORT = Number.isInteger(configuredBridgePort) && configuredBridgePort > 0
+  ? configuredBridgePort
+  : 35789;
 export const BRIDGE_ORIGIN = `ws://localhost:${BRIDGE_PORT}`;
 
 // ── Message types shared with the browser extension ──────────────────────────

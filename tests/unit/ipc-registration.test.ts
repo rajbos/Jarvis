@@ -46,6 +46,8 @@ const EXPECTED_CHANNELS = [
   'app:get-system-locale',
   'app:get-preferences',
   'app:set-preferences',
+  'app:get-startup-settings',
+  'app:set-startup-settings',
   // ollama plugin
   'ollama:status',
   'ollama:list-models',

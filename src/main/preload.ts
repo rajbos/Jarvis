@@ -16,6 +16,9 @@ contextBridge.exposeInMainWorld('jarvis', {
   getOnboardingStatus: () => ipcRenderer.invoke('onboarding:status'),
   getPreferences: () => ipcRenderer.invoke('app:get-preferences'),
   setPreferences: (prefs: Record<string, unknown>) => ipcRenderer.invoke('app:set-preferences', prefs),
+  getStartupSettings: () => ipcRenderer.invoke('app:get-startup-settings'),
+  setStartupSettings: (settings: { openAtLogin: boolean; startMinimized: boolean }) =>
+    ipcRenderer.invoke('app:set-startup-settings', settings),
   checkOllama: () => ipcRenderer.invoke('ollama:status'),
   listOllamaModels: () => ipcRenderer.invoke('ollama:list-models'),
   getSelectedOllamaModel: () => ipcRenderer.invoke('ollama:get-selected-model'),

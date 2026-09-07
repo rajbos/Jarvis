@@ -14,7 +14,10 @@ const electronPath = String(require('electron'));
 const ROOT = path.join(__dirname, '..');
 const DIST_RENDERER = path.join(ROOT, 'dist', 'renderer');
 const TSC_BUILD_INFO = path.join(ROOT, 'tsconfig.tsbuildinfo');
-const BROWSER_BRIDGE_PORT = 35789;
+const configuredBridgePort = Number.parseInt(process.env.JARVIS_BRIDGE_PORT ?? '', 10);
+const BROWSER_BRIDGE_PORT = Number.isInteger(configuredBridgePort) && configuredBridgePort > 0
+  ? configuredBridgePort
+  : 35789;
 
 let electronProcess = null;
 let intentionalRestart = false;
