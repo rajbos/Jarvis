@@ -1,0 +1,22 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Jarvis: Debug Electron",
+      "type": "pwa-node",
+      "request": "launch",
+      "runtimeExecutable": "${workspaceFolder}\\node_modules\\electron\\dist\\electron.exe",
+      "args": [
+        "--remote-debugging-port=9223",
+        "${workspaceFolder}\\dist\\main\\index.js"
+      ],
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "Jarvis: Build",
+      "env": {
+        "JARVIS_CONFIG_DIR": "${workspaceFolder}\\.dev-data",
+        "JARVIS_BRIDGE_PORT": "35790"
+      },
+      "outputCapture": "std"
+    }
+  ]
+}

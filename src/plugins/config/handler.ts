@@ -24,6 +24,45 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
     }
   });
 
+  ipcMain.handle('app:get-startup-settings', () => {
+    try {
+      return { ...loadConfig().electron, canRegisterAtLogin: app.isPackaged };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('app:set-startup-settings', (_event, settings: unknown) => {
+    if (typeof settings !== 'object' || settings === null || Array.isArray(settings)) {
+      return { ok: false, error: 'Invalid startup settings' };
+    }
+
+    const candidate = settings as Record<string, unknown>;
+    if (typeof candidate.openAtLogin !== 'boolean' || typeof candidate.startMinimized !== 'boolean') {
+      return { ok: false, error: 'Invalid startup settings' };
+    }
+
+    try {
+      const config = loadConfig();
+      config.electron = {
+        openAtLogin: candidate.openAtLogin,
+        startMinimized: candidate.startMinimized,
+      };
+      saveConfig(config);
+
+      if (app.isPackaged) {
+        app.setLoginItemSettings({
+          openAtLogin: config.electron.openAtLogin,
+          args: ['--hidden'],
+        });
+      }
+
+      return { ok: true, canRegisterAtLogin: app.isPackaged };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
   ipcMain.handle('app:set-preferences', (_event, prefs: Partial<{
     sortByNotifications: boolean;
     localSortByNotifs: boolean;

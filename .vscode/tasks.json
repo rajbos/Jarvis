@@ -1,0 +1,34 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Jarvis: Build",
+      "type": "npm",
+      "script": "build",
+      "group": "build",
+      "problemMatcher": ["$tsc"],
+      "presentation": {
+        "reveal": "silent"
+      }
+    },
+    {
+      "label": "Jarvis: Development",
+      "type": "npm",
+      "script": "dev",
+      "isBackground": true,
+      "problemMatcher": [],
+      "options": {
+        "env": {
+          "JARVIS_CONFIG_DIR": "${workspaceFolder}\\.dev-data",
+          "JARVIS_BRIDGE_PORT": "35790"
+        }
+      }
+    },
+    {
+      "label": "Jarvis: Create Windows installer",
+      "type": "npm",
+      "script": "dist:win",
+      "problemMatcher": []
+    }
+  ]
+}

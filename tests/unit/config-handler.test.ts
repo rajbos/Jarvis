@@ -26,6 +26,7 @@ vi.mock('electron', () => ({
   app: {
     isPackaged: false,
     getSystemLocale: vi.fn().mockReturnValue('en-US'),
+    setLoginItemSettings: vi.fn(),
   },
 }));
 
@@ -39,6 +40,7 @@ vi.mock('../../src/agent/onboarding', () => ({
 
 vi.mock('../../src/agent/config', () => ({
   loadConfig: vi.fn().mockReturnValue({
+    electron: { openAtLogin: true, startMinimized: false },
     preferences: { sortByNotifications: true },
   }),
   saveConfig: vi.fn(),
@@ -67,6 +69,11 @@ describe('Config plugin — IPC handlers', () => {
     process.env.JARVIS_ENCRYPTION_KEY = 'test-encryption-key-config-handler';
     vi.clearAllMocks();
     handlers.clear();
+    Object.defineProperty(app, 'isPackaged', { value: false, configurable: true });
+    vi.mocked(loadConfig).mockReturnValue({
+      electron: { openAtLogin: true, startMinimized: false },
+      preferences: { sortByNotifications: true },
+    } as ReturnType<typeof loadConfig>);
 
     const SQL = await initSqlJs();
     db = new SQL.Database();
@@ -128,6 +135,53 @@ describe('Config plugin — IPC handlers', () => {
       const result = callHandler('app:get-preferences') as Record<string, unknown>;
       expect(result.ok).toBe(false);
       expect(typeof result.error).toBe('string');
+    });
+  });
+
+  // ── app startup settings ──────────────────────────────────────────────────
+
+  describe('app startup settings', () => {
+    it('returns startup settings and reports that development cannot register at login', () => {
+      expect(callHandler('app:get-startup-settings')).toEqual({
+        openAtLogin: true,
+        startMinimized: false,
+        canRegisterAtLogin: false,
+      });
+    });
+
+    it('rejects invalid startup settings', () => {
+      expect(callHandler('app:set-startup-settings', { openAtLogin: true })).toEqual({
+        ok: false,
+        error: 'Invalid startup settings',
+      });
+    });
+
+    it('saves startup settings without registering development Electron', () => {
+      const result = callHandler('app:set-startup-settings', {
+        openAtLogin: false,
+        startMinimized: true,
+      });
+
+      expect(result).toEqual({ ok: true, canRegisterAtLogin: false });
+      expect(saveConfig).toHaveBeenCalledWith(expect.objectContaining({
+        electron: { openAtLogin: false, startMinimized: true },
+      }));
+      expect(app.setLoginItemSettings).not.toHaveBeenCalled();
+    });
+
+    it('updates Windows login registration for the packaged app', () => {
+      Object.defineProperty(app, 'isPackaged', { value: true, configurable: true });
+
+      const result = callHandler('app:set-startup-settings', {
+        openAtLogin: true,
+        startMinimized: true,
+      });
+
+      expect(result).toEqual({ ok: true, canRegisterAtLogin: true });
+      expect(app.setLoginItemSettings).toHaveBeenCalledWith({
+        openAtLogin: true,
+        args: ['--hidden'],
+      });
     });
   });
 

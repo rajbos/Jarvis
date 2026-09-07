@@ -1,4 +1,5 @@
 import { app, BrowserWindow, Tray, Menu, session, ipcMain, Notification } from 'electron';
+import path from 'path';
 
 import { getDatabase, closeDatabase } from '../storage/database';
 
@@ -23,6 +24,11 @@ import { saveDatabase } from '../storage/database';
 import { stopBridgeServer } from '../plugins/browser-companion/server';
 
 import { setLogLevel } from '../services/logger';
+import { checkForUpdates, startUpdateChecks, stopUpdateChecks } from './update-checker';
+
+if (process.env.JARVIS_CONFIG_DIR) {
+  app.setPath('userData', path.join(process.env.JARVIS_CONFIG_DIR, 'electron'));
+}
 
 setLogLevel(app.isPackaged ? 'warn' : 'debug');
 
@@ -135,6 +141,8 @@ async function initialize(): Promise<void> {
 
         { label: 'Settings', click: () => showSettingsWindow() },
 
+        { label: 'Check for Updates…', click: () => { void checkForUpdates(true); } },
+
         { type: 'separator' },
 
         {
@@ -226,6 +234,8 @@ async function initialize(): Promise<void> {
     });
 
   }
+
+  startUpdateChecks();
 
 }
 
@@ -371,6 +381,8 @@ app.on('window-all-closed', () => {
 
 
 app.on('before-quit', () => {
+
+  stopUpdateChecks();
 
   stopBackgroundTasks();
 

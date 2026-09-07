@@ -44,6 +44,22 @@ label {
   margin-bottom: 0.4rem;
 }
 
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  cursor: pointer;
+}
+
+.checkbox-row input {
+  accent-color: #e94560;
+}
+
+.checkbox-row:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 input[type="password"] {
   width: 100%;
   max-width: 280px;

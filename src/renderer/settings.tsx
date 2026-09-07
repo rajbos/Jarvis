@@ -557,22 +557,92 @@ function RuddrSection() {
   );
 }
 
-// ── App ──────────────────────────────────────────────────────────────────────
-
-function App() {
-  return (
-    <>
-      <h1>Settings</h1>
-      <OAuthSection />
-      <PatSection />
-      <OneDriveSection />
+// ── Startup Section ──────────────────────────────────────────────────────────
+
+interface StartupSettings {
+  openAtLogin: boolean;
+  startMinimized: boolean;
+  canRegisterAtLogin: boolean;
+}
+
+function StartupSection() {
+  const [settings, setSettings] = useState<StartupSettings | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    window.jarvis.getStartupSettings()
+      .then(setSettings)
+      .catch((err: unknown) => console.error('[Settings] Failed to load startup settings:', err));
+  }, []);
+
+  const handleSave = async () => {
+    if (!settings) return;
+    setSaving(true);
+    setSaved(false);
+    try {
+      const result = await window.jarvis.setStartupSettings({
+        openAtLogin: settings.openAtLogin,
+        startMinimized: settings.startMinimized,
+      });
+      if (!result.ok) throw new Error(result.error ?? 'Failed to save startup settings');
+      setSaved(true);
+    } catch (err) {
+      console.error('[Settings] Failed to save startup settings:', err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div class="section">
+      <h2>Windows Startup</h2>
+      <label class="checkbox-row">
+        <input
+          type="checkbox"
+          checked={settings?.openAtLogin ?? false}
+          disabled={!settings?.canRegisterAtLogin}
+          onChange={(e) => setSettings((current) => current && ({ ...current, openAtLogin: e.currentTarget.checked }))}
+        />
+        <span>Start Jarvis when I sign in to Windows</span>
+      </label>
+      <label class="checkbox-row">
+        <input
+          type="checkbox"
+          checked={settings?.startMinimized ?? false}
+          onChange={(e) => setSettings((current) => current && ({ ...current, startMinimized: e.currentTarget.checked }))}
+        />
+        <span>Start minimized to the system tray</span>
+      </label>
+      {!settings?.canRegisterAtLogin && (
+        <p class="hint">Windows login registration is available in the installed app. Development runs use the isolated repository profile.</p>
+      )}
+      <div class="btn-row">
+        <button class="btn-save" onClick={() => void handleSave()} disabled={!settings || saving}>
+          {saving ? 'Saving…' : saved ? '✓ Saved' : 'Save Startup Settings'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── App ──────────────────────────────────────────────────────────────────────
+
+function App() {
+  return (
+    <>
+      <h1>Settings</h1>
+      <StartupSection />
+      <OAuthSection />
+      <PatSection />
+      <OneDriveSection />
       <RuddrSection />
-      <DashboardSettingsSection />
-      <AgentPromptsSection />
-    </>
-  );
-}
-
+      <DashboardSettingsSection />
+      <AgentPromptsSection />
+    </>
+  );
+}
+
 // ── Dashboard Settings Section ───────────────────────────────────────────────
 
 type DashboardCardFilter = 'all' | 'healthy' | 'warnings' | 'notifications' | 'human-notifications' | 'failed-runs';
