@@ -42,14 +42,30 @@ Run the installer generated under `release`. In the installed app, open **Settin
 
 Installed builds check the latest public GitHub Release 15 seconds after startup and every six hours. When a newer semantic version is available, Jarvis shows a Windows notification that opens the release page. You can also use **Jarvis → Check for Updates…** from the application menu.
 
-To publish an update:
+To publish an update, note that `main` requires pull requests, so releasing is a two-step flow. First raise the version bump as a pull request:
 
 ```powershell
-npm version patch   # or minor / major
-git push origin main --follow-tags
+git switch -c chore/release-v0.1.2        # use the version you are releasing
+npm version patch --no-git-tag-version    # or minor / major
+git commit -am "chore: release v0.1.2"
+git push --set-upstream origin chore/release-v0.1.2
+gh pr create --base main --fill
 ```
 
-Pushing a tag such as `v0.1.1` runs `.github/workflows/release.yml` on a `windows-latest` runner. The workflow verifies that the tag matches `package.json`, runs the test suite, builds the NSIS installer, and publishes `Jarvis-Setup-<version>.exe`, its block map, and `latest.yml` to the GitHub Release for that tag (creating the release with generated notes if it does not exist yet). The same three files are also uploaded as a `windows-installer` workflow artifact. For a local authenticated publish, use `npm run publish:win` with `GH_TOKEN` set.
+Once that pull request is merged, tag the merged commit on `main`:
+
+```powershell
+git switch main
+git pull --ff-only origin main
+git tag -a v0.1.2 -m "Release v0.1.2"
+git push origin v0.1.2
+```
+
+Always tag a commit that is already on `main`. The tag is what the release is built from, so tagging anything else ships source that was never merged.
+
+Pushing a tag such as `v0.1.2` runs `.github/workflows/release.yml` on a `windows-latest` runner. The workflow verifies that the tag matches `package.json`, runs the test suite, builds the NSIS installer, and publishes `Jarvis-Setup-<version>.exe`, its block map, and `latest.yml` to the GitHub Release for that tag (creating the release with generated notes if it does not exist yet). The same three files are also uploaded as a `windows-installer` workflow artifact. For a local authenticated publish, use `npm run publish:win` with `GH_TOKEN` set.
+
+The workflow builds with `electron-builder --publish never` and uploads assets in a separate step using the built-in `github.token`. No personal access token is required. Removing `--publish never` makes electron-builder try to publish during the build, which fails with a misleading "GitHub Personal Access Token is not set" error.
 
 The installer is currently unsigned, so Windows SmartScreen may warn until a code-signing certificate is configured.
 
