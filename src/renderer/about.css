@@ -1,0 +1,114 @@
+/* ── About styles ───────────────────────────────────────────────────────────── */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #1a1a2e;
+  color: #e0e0e0;
+  padding: 1.25rem 1.5rem;
+}
+
+.about-dialog {
+  background: #16213e;
+  border: 1px solid #1a4a8a;
+  border-radius: 10px;
+  padding: 1.25rem 1.4rem;
+  max-width: 400px;
+  margin: 0 auto;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+}
+
+.about-dialog h3 {
+  font-size: 1rem;
+  color: #e94560;
+  margin-bottom: 0.75rem;
+}
+
+.about-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.35rem 0.75rem;
+  align-items: baseline;
+  font-size: 0.9375rem;
+}
+
+.about-facts dt {
+  color: #8899aa;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.75rem;
+}
+
+.about-facts dd {
+  color: #e0e0e0;
+}
+
+.about-version {
+  font-family: 'Consolas', 'Fira Mono', monospace;
+  color: #e0e0e0;
+  font-size: 0.875rem;
+  word-break: break-all;
+}
+
+.about-links {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+  margin-top: 0.6rem;
+}
+
+.btn-link {
+  background: transparent;
+  border: none;
+  color: #6fa8ff;
+  padding: 0.1rem 0;
+  font-size: 0.9375rem;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.btn-link:hover {
+  background: transparent;
+  color: #9cc4ff;
+}
+
+.hint {
+  color: #8899aa;
+  font-size: 0.875rem;
+  margin-top: 0.5rem;
+  line-height: 1.4;
+}
+
+.btn-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 0.75rem;
+}
+
+button {
+  background: #2d6a4f;
+  color: white;
+  border: none;
+  padding: 0.35rem 0.8rem;
+  border-radius: 6px;
+  font-size: 0.9375rem;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+
+button:hover {
+  background: #1e4d38;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
