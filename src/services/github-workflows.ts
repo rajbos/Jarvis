@@ -294,7 +294,9 @@ export function getWorkflowSummaryForRepo(
 
 /**
  * Create a GitHub issue in the given repo.
- * Returns the created issue URL on success.
+ * Returns the created issue's URL, number, and GraphQL node ID on success —
+ * the node ID is needed by callers that go on to assign the Copilot coding
+ * agent to the issue via the GraphQL API.
  */
 export async function createGitHubIssue(
   accessToken: string,
@@ -302,7 +304,7 @@ export async function createGitHubIssue(
   title: string,
   body: string,
   labels: string[],
-): Promise<{ url: string }> {
+): Promise<{ url: string; number: number; node_id: string }> {
   const response = await fetch(`${GITHUB_API_BASE}/repos/${repoFullName}/issues`, {
     method: 'POST',
     headers: {
@@ -317,6 +319,6 @@ export async function createGitHubIssue(
     const text = await response.text();
     throw new Error(`Failed to create issue: HTTP ${response.status} — ${text.slice(0, 200)}`);
   }
-  const data = (await response.json()) as { html_url: string };
-  return { url: data.html_url };
+  const data = (await response.json()) as { html_url: string; number: number; node_id: string };
+  return { url: data.html_url, number: data.number, node_id: data.node_id };
 }
