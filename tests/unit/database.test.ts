@@ -2,7 +2,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import initSqlJs, { Database as SqlJsDatabase } from 'sql.js';
 import { getSchema } from '../../src/storage/schema';
-import { getConfigValue, setConfigValue } from '../../src/storage/database';
+import { getConfigValue, setConfigValue, initializeSchema } from '../../src/storage/database';
 
 describe('Database Schema', () => {
   let db: SqlJsDatabase;
@@ -108,5 +108,53 @@ describe('Database Schema', () => {
 
     setConfigValue(db, 'force_pat_discovery', '1');
     expect(getConfigValue(db, 'force_pat_discovery')).toBe('1');
+  });
+});
+
+describe('Migration v25 -> v26', () => {
+  it('adds failing_step_name and error_highlights to github_workflow_jobs and bumps user_version', async () => {
+    const SQL = await initSqlJs();
+    const oldDb = new SQL.Database();
+    oldDb.run(`
+      CREATE TABLE github_workflow_jobs (
+        id              TEXT PRIMARY KEY,
+        run_id          TEXT NOT NULL,
+        repo_full_name  TEXT NOT NULL,
+        name            TEXT,
+        status          TEXT,
+        conclusion      TEXT,
+        started_at      DATETIME,
+        completed_at    DATETIME,
+        log_excerpt     TEXT,
+        fetched_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    oldDb.run('PRAGMA user_version = 25');
+
+    initializeSchema(oldDb);
+
+    const version = oldDb.exec('PRAGMA user_version');
+    expect(version[0].values[0][0]).toBe(26);
+
+    const columns = oldDb
+      .exec('PRAGMA table_info(github_workflow_jobs)')[0]
+      .values.map((row: unknown[]) => row[1] as string);
+    expect(columns).toContain('failing_step_name');
+    expect(columns).toContain('error_highlights');
+
+    oldDb.close();
+  });
+
+  it('is a no-op when called again after reaching the latest version', async () => {
+    const SQL = await initSqlJs();
+    const db2 = new SQL.Database();
+    db2.run(getSchema());
+    db2.run('PRAGMA user_version = 26');
+
+    expect(() => initializeSchema(db2)).not.toThrow();
+    const version = db2.exec('PRAGMA user_version');
+    expect(version[0].values[0][0]).toBe(26);
+
+    db2.close();
   });
 });

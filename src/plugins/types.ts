@@ -788,6 +788,14 @@ export interface WorkflowJob {
 
 
 
+  failing_step_name: string | null;
+
+
+
+  error_highlights: string | null;
+
+
+
   fetched_at: string;
 
 

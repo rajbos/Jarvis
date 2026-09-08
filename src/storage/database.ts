@@ -80,14 +80,14 @@ export async function createMemoryDatabase(): Promise<SqlJsDatabase> {
   return memDb;
 }
 
-function initializeSchema(database: SqlJsDatabase): void {
+export function initializeSchema(database: SqlJsDatabase): void {
   const result = database.exec("PRAGMA user_version");
   const userVersion = result.length > 0 ? (result[0].values[0][0] as number) : 0;
 
   if (userVersion === 0) {
     database.run(getSchema());
     seedBuiltInAgents(database);
-    database.run('PRAGMA user_version = 25');
+    database.run('PRAGMA user_version = 26');
   }
 
   if (userVersion === 1) {
@@ -519,6 +519,15 @@ function initializeSchema(database: SqlJsDatabase): void {
     `);
 
     database.run('PRAGMA user_version = 25');
+  }
+
+  if (userVersion === 25) {
+    // Migration v25 → v26: add failing_step_name + error_highlights to
+    // github_workflow_jobs so agent context can name the failing step and
+    // lead with GitHub's own ##[error] annotations.
+    database.run('ALTER TABLE github_workflow_jobs ADD COLUMN failing_step_name TEXT');
+    database.run('ALTER TABLE github_workflow_jobs ADD COLUMN error_highlights TEXT');
+    database.run('PRAGMA user_version = 26');
   }
 }
 
