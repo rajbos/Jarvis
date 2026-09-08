@@ -44,6 +44,7 @@ const EXPECTED_CHANNELS = [
   // config plugin
   'onboarding:status',
   'app:get-system-locale',
+  'app:get-about-info',
   'app:get-preferences',
   'app:set-preferences',
   'app:get-startup-settings',

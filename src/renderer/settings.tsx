@@ -18,6 +18,16 @@ interface PatStatus {
   avatarUrl?: string;
 }
 
+interface AboutInfo {
+  displayVersion: string;
+  appVersion: string;
+  isDev: boolean;
+  branch: string | null;
+  releasedAt: string | null;
+  releaseUrl: string | null;
+  repoUrl: string;
+}
+
 interface OnedriveRoot {
   id: number;
   path: string;
@@ -41,6 +51,8 @@ declare const window: Window & {
     onedriveRemoveRoot(rootId: number): Promise<{ ok: boolean; error?: string }>;
     groupsGetRuddrWorkspace(): Promise<{ ok: boolean; workspace: string }>;
     groupsSetRuddrWorkspace(workspace: string): Promise<{ ok: boolean; error?: string }>;
+    getAboutInfo(): Promise<AboutInfo>;
+    shellOpenUrl(url: string): Promise<{ ok: boolean; error?: string }>;
   };
 };
 
@@ -639,6 +651,7 @@ function App() {
       <RuddrSection />
       <DashboardSettingsSection />
       <AgentPromptsSection />
+      <AboutSection />
     </>
   );
 }
@@ -775,6 +788,86 @@ function DashboardSettingsSection() {
   );
 }
 
+// ── About section ────────────────────────────────────────────────────────────
+
+function formatReleaseDate(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  return date.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+}
+
+function AboutDialog({ info, onClose }: { info: AboutInfo; onClose: () => void }) {
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKeyDown);
+    return () => { window.removeEventListener('keydown', onKeyDown); };
+  }, [onClose]);
+
+  const openUrl = (url: string) => { void window.jarvis.shellOpenUrl(url); };
+
+  return (
+    <div class="about-overlay" onClick={onClose}>
+      <div class="about-dialog" role="dialog" aria-modal="true" aria-label="About Jarvis" onClick={(e) => e.stopPropagation()}>
+        <h3>About Jarvis</h3>
+
+        <dl class="about-facts">
+          <dt>{info.isDev ? 'Branch' : 'Version'}</dt>
+          <dd class="about-version">{info.displayVersion}</dd>
+
+          <dt>Released</dt>
+          <dd>
+            {info.isDev
+              ? 'Development build — not a released version'
+              : info.releasedAt
+                ? formatReleaseDate(info.releasedAt)
+                : 'Release date unavailable — could not reach GitHub'}
+          </dd>
+        </dl>
+
+        <p class="hint">Jarvis is open source — issues and contributions are welcome.</p>
+
+        <div class="about-links">
+          <button class="btn-link" onClick={() => openUrl(info.repoUrl)}>Open the GitHub repository</button>
+          {info.releaseUrl && (
+            <button class="btn-link" onClick={() => openUrl(info.releaseUrl!)}>View the release notes</button>
+          )}
+        </div>
+
+        <div class="btn-row">
+          <button class="btn-save" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AboutSection() {
+  const [info, setInfo] = useState<AboutInfo | null>(null);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        setInfo(await window.jarvis.getAboutInfo());
+      } catch (err) {
+        console.error('[Settings] Failed to load about info:', err);
+      }
+    })();
+  }, []);
+
+  return (
+    <div class="section">
+      <h2>About</h2>
+      <div class="about-row">
+        <span class="about-label">{info?.isDev ? 'Branch' : 'Version'}</span>
+        <span class="about-version">{info ? info.displayVersion : '\u2026'}</span>
+        <button class="btn-about" onClick={() => setOpen(true)} disabled={!info}>About</button>
+      </div>
+      {open && info && <AboutDialog info={info} onClose={() => setOpen(false)} />}
+    </div>
+  );
+}
+
 // ── Mount ────────────────────────────────────────────────────────────────────
 
 const root = document.getElementById('app')!;
