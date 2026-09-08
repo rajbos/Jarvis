@@ -1,6 +1,6 @@
 {
   "name": "jarvis",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Jarvis — a locally-hosted personal assistant agent for GitHub repository maintenance",
   "main": "dist/main/index.js",
   "scripts": {
