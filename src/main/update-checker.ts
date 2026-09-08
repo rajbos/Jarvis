@@ -1,35 +1,13 @@
-import { app, net, Notification, shell } from 'electron';
+import { app, Notification } from 'electron';
+import { autoUpdater } from 'electron-updater';
 
-const RELEASE_API_URL = 'https://api.github.com/repos/rajbos/Jarvis/releases/latest';
 const INITIAL_CHECK_DELAY_MS = 15_000;
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
-interface GitHubRelease {
-  tag_name: string;
-  html_url: string;
-  name?: string | null;
-}
-
 let initialCheckTimer: NodeJS.Timeout | null = null;
 let periodicCheckTimer: NodeJS.Timeout | null = null;
-
-function parseVersion(version: string): number[] | null {
-  const match = version.trim().replace(/^v/i, '').match(/^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/);
-  return match ? match.slice(1).map(Number) : null;
-}
-
-export function isNewerVersion(candidate: string, current: string): boolean {
-  const candidateParts = parseVersion(candidate);
-  const currentParts = parseVersion(current);
-  if (!candidateParts || !currentParts) return false;
-
-  for (let index = 0; index < 3; index += 1) {
-    if (candidateParts[index] !== currentParts[index]) {
-      return candidateParts[index] > currentParts[index];
-    }
-  }
-  return false;
-}
+let manualCheckInFlight = false;
+let listenersRegistered = false;
 
 function showNotification(title: string, body: string, onClick?: () => void): void {
   if (!Notification.isSupported()) {
@@ -42,6 +20,38 @@ function showNotification(title: string, body: string, onClick?: () => void): vo
   notification.show();
 }
 
+function registerListeners(): void {
+  if (listenersRegistered) return;
+  listenersRegistered = true;
+
+  autoUpdater.on('update-available', (info) => {
+    showNotification(`Jarvis ${info.version} is available`, 'Downloading the update in the background…');
+  });
+
+  autoUpdater.on('update-not-available', () => {
+    if (manualCheckInFlight) {
+      showNotification('Jarvis is up to date', `Version ${app.getVersion()} is the latest release.`);
+    }
+    manualCheckInFlight = false;
+  });
+
+  autoUpdater.on('update-downloaded', (info) => {
+    showNotification(
+      `Jarvis ${info.version} is ready to install`,
+      'Click to restart Jarvis and finish installing.',
+      () => { autoUpdater.quitAndInstall(); },
+    );
+  });
+
+  autoUpdater.on('error', (error) => {
+    console.warn('[Updates] Update check failed:', error);
+    if (manualCheckInFlight) {
+      showNotification('Update check failed', 'Jarvis could not reach GitHub Releases. Try again later.');
+    }
+    manualCheckInFlight = false;
+  });
+}
+
 export async function checkForUpdates(manual = false): Promise<void> {
   if (!app.isPackaged) {
     if (manual) {
@@ -50,45 +60,17 @@ export async function checkForUpdates(manual = false): Promise<void> {
     return;
   }
 
+  registerListeners();
+  if (manual) manualCheckInFlight = true;
+
   try {
-    const response = await net.fetch(RELEASE_API_URL, {
-      headers: {
-        Accept: 'application/vnd.github+json',
-        'User-Agent': `Jarvis/${app.getVersion()}`,
-        'X-GitHub-Api-Version': '2022-11-28',
-      },
-    });
-
-    if (response.status === 404) {
-      if (manual) {
-        showNotification('No Jarvis releases found', 'No published installer updates are available yet.');
-      }
-      return;
-    }
-
-    if (!response.ok) {
-      throw new Error(`GitHub returned HTTP ${response.status}`);
-    }
-
-    const release = await response.json() as GitHubRelease;
-    if (!isNewerVersion(release.tag_name, app.getVersion())) {
-      if (manual) {
-        showNotification('Jarvis is up to date', `Version ${app.getVersion()} is the latest release.`);
-      }
-      return;
-    }
-
-    const version = release.tag_name.replace(/^v/i, '');
-    showNotification(
-      `Jarvis ${version} is available`,
-      'Click to open the release page and download the new installer.',
-      () => { void shell.openExternal(release.html_url); },
-    );
+    await autoUpdater.checkForUpdates();
   } catch (error) {
     console.warn('[Updates] Update check failed:', error);
     if (manual) {
       showNotification('Update check failed', 'Jarvis could not reach GitHub Releases. Try again later.');
     }
+    manualCheckInFlight = false;
   }
 }
 

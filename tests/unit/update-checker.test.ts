@@ -1,16 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => {
+  const { EventEmitter } = require('node:events') as typeof import('node:events');
   const notifications: Array<{
     options: { title: string; body: string };
     click?: () => void;
     show: ReturnType<typeof vi.fn>;
   }> = [];
 
+  class MockAutoUpdater extends EventEmitter {
+    checkForUpdates = vi.fn(async () => undefined);
+    quitAndInstall = vi.fn();
+  }
+
   return {
     app: { isPackaged: true, getVersion: vi.fn(() => '1.2.3') },
-    fetch: vi.fn(),
-    openExternal: vi.fn(),
+    autoUpdater: new MockAutoUpdater(),
     notifications,
   };
 });
@@ -34,69 +39,28 @@ vi.mock('electron', () => {
 
   return {
     app: mocks.app,
-    net: { fetch: mocks.fetch },
-    shell: { openExternal: mocks.openExternal },
     Notification: MockNotification,
   };
 });
 
-import { checkForUpdates, isNewerVersion, stopUpdateChecks } from '../../src/main/update-checker';
+vi.mock('electron-updater', () => ({ autoUpdater: mocks.autoUpdater }));
+
+const { autoUpdater } = mocks;
+
+let checkForUpdates: typeof import('../../src/main/update-checker')['checkForUpdates'];
 
 describe('update checker', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
     mocks.notifications.length = 0;
     mocks.app.isPackaged = true;
     mocks.app.getVersion.mockReturnValue('1.2.3');
-    stopUpdateChecks();
-  });
+    autoUpdater.removeAllListeners();
 
-  it('compares semantic versions and accepts a leading v', () => {
-    expect(isNewerVersion('v1.3.0', '1.2.3')).toBe(true);
-    expect(isNewerVersion('1.2.3', '1.2.3')).toBe(false);
-    expect(isNewerVersion('1.2.2', '1.2.3')).toBe(false);
-    expect(isNewerVersion('not-a-version', '1.2.3')).toBe(false);
-  });
-
-  it('notifies when a newer GitHub release is available', async () => {
-    mocks.fetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        tag_name: 'v1.3.0',
-        html_url: 'https://github.com/rajbos/Jarvis/releases/tag/v1.3.0',
-      }),
-    });
-
-    await checkForUpdates();
-
-    expect(mocks.fetch).toHaveBeenCalledOnce();
-    expect(mocks.notifications[0]?.options.title).toBe('Jarvis 1.3.0 is available');
-    mocks.notifications[0]?.click?.();
-    expect(mocks.openExternal).toHaveBeenCalledWith(
-      'https://github.com/rajbos/Jarvis/releases/tag/v1.3.0',
-    );
-  });
-
-  it('reports an up-to-date version for a manual check', async () => {
-    mocks.fetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ tag_name: 'v1.2.3', html_url: 'https://example.test' }),
-    });
-
-    await checkForUpdates(true);
-
-    expect(mocks.notifications[0]?.options).toEqual({
-      title: 'Jarvis is up to date',
-      body: 'Version 1.2.3 is the latest release.',
-    });
-  });
-
-  it('reports when no releases have been published yet', async () => {
-    mocks.fetch.mockResolvedValue({ ok: false, status: 404 });
-
-    await checkForUpdates(true);
-
-    expect(mocks.notifications[0]?.options.title).toBe('No Jarvis releases found');
+    // The module registers its autoUpdater listeners once per import, so reset
+    // modules between tests to get a fresh registration against the mock.
+    vi.resetModules();
+    ({ checkForUpdates } = await import('../../src/main/update-checker'));
   });
 
   it('does not contact GitHub from an unpackaged development run', async () => {
@@ -104,7 +68,51 @@ describe('update checker', () => {
 
     await checkForUpdates();
 
-    expect(mocks.fetch).not.toHaveBeenCalled();
+    expect(autoUpdater.checkForUpdates).not.toHaveBeenCalled();
     expect(mocks.notifications).toHaveLength(0);
+  });
+
+  it('notifies and starts a background download when a newer release is available', async () => {
+    await checkForUpdates();
+    autoUpdater.emit('update-available', { version: '1.3.0' });
+
+    expect(autoUpdater.checkForUpdates).toHaveBeenCalledOnce();
+    expect(mocks.notifications[0]?.options).toEqual({
+      title: 'Jarvis 1.3.0 is available',
+      body: 'Downloading the update in the background…',
+    });
+  });
+
+  it('prompts to restart and install once the download finishes, and installs on click', async () => {
+    await checkForUpdates();
+    autoUpdater.emit('update-downloaded', { version: '1.3.0' });
+
+    expect(mocks.notifications[0]?.options.title).toBe('Jarvis 1.3.0 is ready to install');
+    mocks.notifications[0]?.click?.();
+    expect(autoUpdater.quitAndInstall).toHaveBeenCalledOnce();
+  });
+
+  it('reports an up-to-date version only for a manual check', async () => {
+    await checkForUpdates(true);
+    autoUpdater.emit('update-not-available');
+
+    expect(mocks.notifications[0]?.options).toEqual({
+      title: 'Jarvis is up to date',
+      body: 'Version 1.2.3 is the latest release.',
+    });
+  });
+
+  it('stays quiet on an automatic up-to-date result', async () => {
+    await checkForUpdates();
+    autoUpdater.emit('update-not-available');
+
+    expect(mocks.notifications).toHaveLength(0);
+  });
+
+  it('reports a failure only for a manual check', async () => {
+    await checkForUpdates(true);
+    autoUpdater.emit('error', new Error('network down'));
+
+    expect(mocks.notifications[0]?.options.title).toBe('Update check failed');
   });
 });
