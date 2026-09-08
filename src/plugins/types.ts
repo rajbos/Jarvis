@@ -2468,6 +2468,16 @@ export interface JarvisApi {
     canRegisterAtLogin: boolean;
   }>;
 
+  getAboutInfo(): Promise<{
+    displayVersion: string;
+    appVersion: string;
+    isDev: boolean;
+    branch: string | null;
+    releasedAt: string | null;
+    releaseUrl: string | null;
+    repoUrl: string;
+  }>;
+
   setStartupSettings(settings: {
     openAtLogin: boolean;
     startMinimized: boolean;

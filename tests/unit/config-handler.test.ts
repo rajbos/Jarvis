@@ -38,6 +38,18 @@ vi.mock('../../src/agent/onboarding', () => ({
   }),
 }));
 
+vi.mock('../../src/services/about', () => ({
+  getAboutInfo: vi.fn().mockResolvedValue({
+    displayVersion: '9.9.9',
+    appVersion: '9.9.9',
+    isDev: false,
+    branch: null,
+    releasedAt: '2026-02-01T12:00:00Z',
+    releaseUrl: 'https://github.com/rajbos/Jarvis/releases/tag/v9.9.9',
+    repoUrl: 'https://github.com/rajbos/Jarvis',
+  }),
+}));
+
 vi.mock('../../src/agent/config', () => ({
   loadConfig: vi.fn().mockReturnValue({
     electron: { openAtLogin: true, startMinimized: false },
@@ -50,6 +62,7 @@ import { registerHandlers } from '../../src/plugins/config/handler';
 import { getOnboardingStatus } from '../../src/agent/onboarding';
 import { loadConfig, saveConfig } from '../../src/agent/config';
 import { app } from 'electron';
+import { getAboutInfo } from '../../src/services/about';
 
 // ── Helper ────────────────────────────────────────────────────────────────────
 
@@ -116,6 +129,27 @@ describe('Config plugin — IPC handlers', () => {
       const result = callHandler('app:get-system-locale');
       expect(app.getSystemLocale).toHaveBeenCalled();
       expect(result).toBe('en-US');
+    });
+  });
+
+  // ── app:get-about-info ────────────────────────────────────────────────────
+
+  describe('app:get-about-info', () => {
+    it('returns the about info from the service', async () => {
+      const result = await callHandler('app:get-about-info');
+      expect(getAboutInfo).toHaveBeenCalled();
+      expect(result).toMatchObject({
+        displayVersion: '9.9.9',
+        releasedAt: '2026-02-01T12:00:00Z',
+        repoUrl: 'https://github.com/rajbos/Jarvis',
+      });
+    });
+
+    it('returns an error object when the service throws', async () => {
+      vi.mocked(getAboutInfo).mockRejectedValueOnce(new Error('boom'));
+      const result = await callHandler('app:get-about-info') as Record<string, unknown>;
+      expect(result.ok).toBe(false);
+      expect(typeof result.error).toBe('string');
     });
   });
 
