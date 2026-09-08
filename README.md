@@ -40,7 +40,7 @@ Run the installer generated under `release`. In the installed app, open **Settin
 
 ### Publish updates
 
-Installed builds check the latest public GitHub Release 15 seconds after startup and every six hours. When a newer semantic version is available, Jarvis shows a Windows notification that opens the release page. You can also use **Jarvis → Check for Updates…** from the application menu.
+Installed builds check the latest public GitHub Release 15 seconds after startup and every six hours, using [`electron-updater`](https://www.electron.build/auto-update). When a newer version is found, Jarvis downloads it in the background and shows a Windows notification once it's ready — click it to restart Jarvis and finish installing. You can also trigger a check any time via **Jarvis → Check for Updates…** from the application menu.
 
 To publish an update, note that `main` requires pull requests, so releasing is a two-step flow. First raise the version bump as a pull request:
 
