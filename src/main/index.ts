@@ -9,7 +9,7 @@ import pkg from '../../package.json';
 
 import { createTray } from './tray';
 
-import { createOnboardingWindow, createSettingsWindow } from './windows';
+import { createOnboardingWindow, createSettingsWindow, createAboutWindow } from './windows';
 
 import { getOnboardingStatus, completeOnboardingStep } from '../agent/onboarding';
 
@@ -37,6 +37,8 @@ setLogLevel(app.isPackaged ? 'warn' : 'debug');
 let mainWindow: BrowserWindow | null = null;
 
 let settingsWindow: BrowserWindow | null = null;
+
+let aboutWindow: BrowserWindow | null = null;
 
  
 
@@ -140,6 +142,8 @@ async function initialize(): Promise<void> {
         { label: 'Open Chat', click: openChat },
 
         { label: 'Settings', click: () => showSettingsWindow() },
+
+        { label: 'About', click: () => showAboutWindow() },
 
         { label: 'Check for Updates…', click: () => { void checkForUpdates(true); } },
 
@@ -290,6 +294,28 @@ function showSettingsWindow(): void {
   settingsWindow.on('closed', () => {
 
     settingsWindow = null;
+
+  });
+
+}
+
+function showAboutWindow(): void {
+
+  if (aboutWindow && !aboutWindow.isDestroyed()) {
+
+    aboutWindow.show();
+
+    aboutWindow.focus();
+
+    return;
+
+  }
+
+  aboutWindow = createAboutWindow();
+
+  aboutWindow.on('closed', () => {
+
+    aboutWindow = null;
 
   });
 
