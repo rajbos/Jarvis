@@ -529,6 +529,17 @@ export function initializeSchema(database: SqlJsDatabase): void {
     database.run('ALTER TABLE github_workflow_jobs ADD COLUMN error_highlights TEXT');
     database.run('PRAGMA user_version = 26');
   }
+
+  if (userVersion === 27) {
+    // Migration v27 → v28: refresh the seeded Workflow Failure Analyst system
+    // prompt so it knows about the assign_copilot action (Copilot coding agent
+    // handoff) — a data-only update, no schema change.
+    database.run(
+      `UPDATE agent_definitions SET system_prompt = ?, updated_at = datetime('now') WHERE name = 'Workflow Failure Analyst'`,
+      [WORKFLOW_FAILURE_ANALYST_PROMPT],
+    );
+    database.run('PRAGMA user_version = 28');
+  }
 }
 
 const WORKFLOW_FAILURE_ANALYST_PROMPT = `You are Jarvis's Workflow Failure Analyst. You have been given raw GitHub Actions log excerpts and workflow run history for a repository. Your job is to perform deep root-cause analysis — not simply re-summarise the data provided.
@@ -562,12 +573,15 @@ Write your full analysis as plain text first. Use a heading per workflow. Be spe
       "finding_type": "ignore | investigate | action_required",
       "reason": "Evidence-based explanation quoting specific log lines or run numbers",
       "pattern": "Exact recurring error string, or null if no pattern found",
-      "action_type": "close_notifications | create_issue | none",
+      "action_type": "close_notifications | create_issue | assign_copilot | none",
       "action_data": {
         "notification_ids": ["..."],
         "issue_title": "Concise, actionable title",
         "issue_body": "Markdown body: what fails, when it started, log evidence quoted, suggested investigation steps",
-        "issue_labels": ["bug", "ci"]
+        "issue_labels": ["bug", "ci"],
+        "workflow_name": "Name of the failing workflow (assign_copilot only)",
+        "failing_step": "Name of the failing step/job (assign_copilot only)",
+        "run_urls": ["https://github.com/owner/repo/actions/runs/... (assign_copilot only, links to the failing runs)"]
       }
     }
   ]
@@ -579,6 +593,7 @@ RULES:
 - NEVER fabricate log lines or run data not present in the context. Write "no log available" when absent.
 - Self-healed (later run passed on same branch) → finding_type = "ignore", action_type = "close_notifications".
 - Same step fails across 2+ runs with a consistent error → finding_type = "action_required", action_type = "create_issue". Include a detailed draft issue body quoting the failing log lines.
+- Same step fails across 2+ runs AND the root cause is well-understood and mechanical (e.g. a missing/misnamed dependency, a stale pinned version, a wrong path or config value) → finding_type = "action_required", action_type = "assign_copilot" instead of "create_issue". This hands the fix to the GitHub Copilot coding agent, which will open a pull request — reserve it for fixes a coding agent could plausibly make unattended, not failures needing human judgment, secrets, or infrastructure changes. Fill workflow_name, failing_step, and run_urls from the WORKFLOW_RUNS context so the agent has links to the evidence.
 - Single failure or insufficient log data → finding_type = "investigate", action_type = "none".
 - The "reason" field must reference specific evidence, not generic statements.`;
 
