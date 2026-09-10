@@ -12,6 +12,7 @@ import {
   extractJsonResult,
   runAgentSession,
 } from '../../src/plugins/agents/runner';
+import type { AgentProvider } from '../../src/plugins/agents/providers/types';
 import { streamChat } from '../../src/services/ollama';
 import { getWorkflowSummaryForRepo } from '../../src/services/github-workflows';
 
@@ -548,6 +549,117 @@ describe('runAgentSession', () => {
       'agent:phase2-error',
       expect.objectContaining({ sessionId, message: 'string error' }),
     );
+    const session = getAgentSession(db, sessionId);
+    expect(session!.status).toBe('completed');
+  });
+});
+
+// ── Provider seam ─────────────────────────────────────────────────────────────
+// runAgentSession delegates the actual analysis to an AgentProvider (Ollama
+// by default). These tests verify it works with any conforming provider —
+// not just Ollama — and that provider callbacks map onto the right IPC
+// events, and that cwd/signal options reach the provider unchanged.
+
+describe('runAgentSession — provider seam', () => {
+  it('delegates to a custom provider instead of calling Ollama directly', async () => {
+    const fakeProvider: AgentProvider = {
+      id: 'fake-provider',
+      run: vi.fn().mockImplementation(async (_model, _sys, _user, callbacks) => {
+        callbacks.onToken('hello ');
+        callbacks.onToken('world');
+        callbacks.onAnalysisComplete();
+        return {
+          analysisText: 'hello world',
+          summary: 'A fake summary',
+          findings: [{ finding_type: 'investigate', subject: 'org/repo', reason: 'fake reason' }],
+        };
+      }),
+    };
+
+    const sessionId = createAgentSession(db, agentId, 'repo', 'org/repo');
+    const mockWin = makeMockWindow();
+
+    await runAgentSession(
+      db, sessionId, agentDef(), 'repo', 'org/repo', 'claude-opus-5', () => mockWin as never,
+      undefined, fakeProvider, { cwd: '/home/user/repo' },
+    );
+
+    expect(mockStreamChat).not.toHaveBeenCalled();
+    expect(fakeProvider.run).toHaveBeenCalledTimes(1);
+    const [model, systemPrompt, , , options] = (fakeProvider.run as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(model).toBe('claude-opus-5');
+    expect(systemPrompt).toBe('You are a test agent.');
+    expect(options).toEqual({ cwd: '/home/user/repo' });
+
+    expect(mockWin.webContents.send).toHaveBeenCalledWith('agent:token', 'hello ');
+    expect(mockWin.webContents.send).toHaveBeenCalledWith('agent:token', 'world');
+    expect(mockWin.webContents.send).toHaveBeenCalledWith('agent:analysis-complete', { sessionId });
+    expect(mockWin.webContents.send).toHaveBeenCalledWith('agent:session-complete', { sessionId });
+
+    const session = getAgentSession(db, sessionId);
+    expect(session!.status).toBe('completed');
+    expect(session!.summary).toBe('A fake summary');
+    expect(session!.findings).toHaveLength(1);
+    expect(session!.findings[0].subject).toBe('org/repo');
+  });
+
+  it('maps a provider-reported findings error onto the agent:phase2-error channel', async () => {
+    const fakeProvider: AgentProvider = {
+      id: 'fake-provider',
+      run: vi.fn().mockImplementation(async (_model, _sys, _user, callbacks) => {
+        callbacks.onAnalysisComplete();
+        callbacks.onFindingsError?.('no structured findings');
+        return { analysisText: 'text', summary: 'summary', findings: [] };
+      }),
+    };
+
+    const sessionId = createAgentSession(db, agentId, 'repo', 'org/repo');
+    const mockWin = makeMockWindow();
+
+    await runAgentSession(
+      db, sessionId, agentDef(), 'repo', 'org/repo', 'claude-opus-5', () => mockWin as never,
+      undefined, fakeProvider,
+    );
+
+    expect(mockWin.webContents.send).toHaveBeenCalledWith(
+      'agent:phase2-error',
+      { sessionId, message: 'no structured findings' },
+    );
+  });
+
+  it('marks the session failed when the provider throws', async () => {
+    const fakeProvider: AgentProvider = {
+      id: 'fake-provider',
+      run: vi.fn().mockRejectedValue(new Error('CLI not found')),
+    };
+
+    const sessionId = createAgentSession(db, agentId, 'repo', 'org/repo');
+    const mockWin = makeMockWindow();
+
+    await runAgentSession(
+      db, sessionId, agentDef(), 'repo', 'org/repo', 'claude-opus-5', () => mockWin as never,
+      undefined, fakeProvider,
+    );
+
+    const session = getAgentSession(db, sessionId);
+    expect(session!.status).toBe('failed');
+    expect(mockWin.webContents.send).toHaveBeenCalledWith(
+      'agent:session-error',
+      { sessionId, message: 'CLI not found' },
+    );
+  });
+
+  it('defaults to the Ollama provider when none is passed (backwards compatible)', async () => {
+    mockStreamChat
+      .mockImplementationOnce(async (_m, _msgs, onToken) => { onToken('```json\n{"summary":"ok","findings":[]}\n```'); })
+      .mockImplementationOnce(async (_m, _msgs, onToken) => { onToken('```json\n{"summary":"ok","findings":[]}\n```'); });
+
+    const sessionId = createAgentSession(db, agentId, 'repo', 'org/repo');
+    const mockWin = makeMockWindow();
+
+    await runAgentSession(db, sessionId, agentDef(), 'repo', 'org/repo', 'test-model', () => mockWin as never);
+
+    expect(mockStreamChat).toHaveBeenCalledTimes(2);
     const session = getAgentSession(db, sessionId);
     expect(session!.status).toBe('completed');
   });

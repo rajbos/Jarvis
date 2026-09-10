@@ -188,9 +188,13 @@ export function getSchema(): string {
         started_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
         completed_at  DATETIME,
         summary       TEXT,
-        raw_result    TEXT
+        raw_result    TEXT,
+        provider          TEXT NOT NULL DEFAULT 'ollama',
+        model             TEXT,
+        parent_session_id INTEGER REFERENCES agent_sessions(id)
     );
     CREATE INDEX IF NOT EXISTS idx_agent_sessions_agent ON agent_sessions(agent_id);
+    CREATE INDEX IF NOT EXISTS idx_agent_sessions_parent ON agent_sessions(parent_session_id);
 
     -- Structured findings emitted by an agent session
     CREATE TABLE IF NOT EXISTS agent_findings (

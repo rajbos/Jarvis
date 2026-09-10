@@ -946,6 +946,28 @@ export interface AgentSession {
 
 
 
+  provider: string;
+
+  model: string | null;
+
+  parent_session_id: number | null;
+
+}
+
+// Raw finding shape as emitted by an analysis provider (Ollama JSON block or
+// the Claude Agent SDK's structured output) before it is persisted.
+export interface RawFinding {
+  subject?: string;
+  finding_type?: string;
+  reason?: string;
+  pattern?: string | null;
+  action_type?: string;
+  action_data?: Record<string, unknown>;
+}
+
+export interface AgentJsonResult {
+  summary?: string;
+  findings?: RawFinding[];
 }
 
 
@@ -2630,6 +2652,14 @@ export interface JarvisApi {
   agentsExecuteFinding(findingId: number): Promise<{ ok: boolean; error?: string; dismissedIds?: string[] }>;
 
   agentsCheckCopilotAvailability(repoFullName: string): Promise<CopilotAvailabilityResult>;
+
+
+
+  agentsEscalationReadiness(repoFullName: string): Promise<{ ok: boolean; reason?: string; resetAt?: number | null }>;
+
+
+
+  agentsEscalate(sourceSessionId: number): Promise<{ ok: boolean; sessionId?: number; error?: string }>;
 
 
 

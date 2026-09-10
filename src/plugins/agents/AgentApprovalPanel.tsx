@@ -156,6 +156,63 @@ function FindingRow({ finding, onApprove, onReject, copilotAvailability }: Findi
   );
 }
 
+// ── Escalate to Claude ────────────────────────────────────────────────────────
+// Deeper analysis tier: hands the session's repo (as a local clone) to a
+// read-only Claude Agent SDK session that can read workflow YAML, walk git
+// history, and pull logs on demand — instead of reasoning over the fixed
+// text blob the local Ollama tier gets. Gated on clone presence, the
+// `claude` CLI being installed, and the account not being rate limited.
+interface EscalateButtonProps {
+  session: AgentSession;
+}
+
+function EscalateButton({ session }: EscalateButtonProps) {
+  const [readiness, setReadiness] = useState<{ ok: boolean; reason?: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setReadiness(null);
+    window.jarvis.agentsEscalationReadiness(session.scope_value)
+      .then((result) => { if (!cancelled) setReadiness(result); })
+      .catch((err: unknown) => {
+        if (!cancelled) setReadiness({ ok: false, reason: err instanceof Error ? err.message : String(err) });
+      });
+    return () => { cancelled = true; };
+  }, [session.scope_value]);
+
+  const handleEscalate = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await window.jarvis.agentsEscalate(session.id);
+      if (!result.ok) setError(result.error ?? 'Escalation failed');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const disabled = busy || !readiness || !readiness.ok;
+  const title = !readiness
+    ? 'Checking readiness…'
+    : readiness.ok
+      ? 'Run a deeper investigation with Claude, using this repo’s local clone'
+      : readiness.reason;
+
+  return (
+    <div class="agent-escalate">
+      <button class="agent-escalate-btn" onClick={() => void handleEscalate()} disabled={disabled} title={title}>
+        {busy ? '…' : '🧠 Escalate to Claude'}
+      </button>
+      {readiness && !readiness.ok && <span class="agent-escalate-reason">{readiness.reason}</span>}
+      {error && <span class="agent-escalate-reason agent-escalate-error">{error}</span>}
+    </div>
+  );
+}
+
 interface AgentApprovalPanelProps {
   session: AgentSession;
   onFindingUpdate: (sessionId: number) => void;
@@ -165,6 +222,7 @@ interface AgentApprovalPanelProps {
 export function AgentApprovalPanel({ session, onFindingUpdate, onNotificationsDismissed }: AgentApprovalPanelProps) {
   const actionableFindings = session.findings.filter((f) => f.action_type !== 'none');
   const infoFindings = session.findings.filter((f) => f.action_type === 'none');
+  const canEscalate = session.scope_type === 'repo' && session.provider !== 'claude-agent-sdk';
 
   const hasAssignCopilotFinding = session.findings.some((f) => f.action_type === 'assign_copilot');
   const [copilotAvailability, setCopilotAvailability] = useState<CopilotAvailabilityResult | undefined>(undefined);
@@ -220,6 +278,7 @@ export function AgentApprovalPanel({ session, onFindingUpdate, onNotificationsDi
     return (
       <div class="agent-approval-panel">
         <p class="agent-no-findings">No structured findings were produced by the agent.</p>
+        {canEscalate && <EscalateButton session={session} />}
       </div>
     );
   }
@@ -232,6 +291,8 @@ export function AgentApprovalPanel({ session, onFindingUpdate, onNotificationsDi
           {session.agent_name} · {session.scope_value}
         </span>
       </div>
+
+      {canEscalate && <EscalateButton session={session} />}
 
       {actionableFindings.length > 0 && (
         <div class="agent-findings-section">

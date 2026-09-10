@@ -87,7 +87,7 @@ export function initializeSchema(database: SqlJsDatabase): void {
   if (userVersion === 0) {
     database.run(getSchema());
     seedBuiltInAgents(database);
-    database.run('PRAGMA user_version = 26');
+    database.run('PRAGMA user_version = 28');
   }
 
   if (userVersion === 1) {
@@ -528,6 +528,17 @@ export function initializeSchema(database: SqlJsDatabase): void {
     database.run('ALTER TABLE github_workflow_jobs ADD COLUMN failing_step_name TEXT');
     database.run('ALTER TABLE github_workflow_jobs ADD COLUMN error_highlights TEXT');
     database.run('PRAGMA user_version = 26');
+  }
+
+  if (userVersion === 26) {
+    // Migration v26 → v27: track which analysis tier produced an agent
+    // session (local Ollama vs. Claude Agent SDK escalation) and link an
+    // escalation back to the local triage session that prompted it.
+    database.run(`ALTER TABLE agent_sessions ADD COLUMN provider TEXT NOT NULL DEFAULT 'ollama'`);
+    database.run(`ALTER TABLE agent_sessions ADD COLUMN model TEXT`);
+    database.run(`ALTER TABLE agent_sessions ADD COLUMN parent_session_id INTEGER REFERENCES agent_sessions(id)`);
+    database.run('CREATE INDEX IF NOT EXISTS idx_agent_sessions_parent ON agent_sessions(parent_session_id)');
+    database.run('PRAGMA user_version = 27');
   }
 
   if (userVersion === 27) {

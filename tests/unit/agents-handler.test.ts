@@ -61,10 +61,35 @@ vi.mock('../../src/plugins/agents/runner', async (importOriginal) => {
   };
 });
 
+vi.mock('../../src/services/claude', () => ({
+  checkClaudeRateLimit: vi.fn(),
+}));
+
+vi.mock('../../src/plugins/claude/handler', () => ({
+  resolveAccessToken: vi.fn(),
+}));
+
+vi.mock('../../src/services/claude-agent', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/services/claude-agent')>();
+  return {
+    ...actual,
+    detectClaudeCli: vi.fn(),
+  };
+});
+
 import { registerHandlers } from '../../src/plugins/agents/handler';
+import { runAgentSession } from '../../src/plugins/agents/runner';
+import { checkClaudeRateLimit } from '../../src/services/claude';
+import { resolveAccessToken } from '../../src/plugins/claude/handler';
+import { detectClaudeCli } from '../../src/services/claude-agent';
 import { createGitHubIssue } from '../../src/services/github-workflows';
 import { loadGitHubAuth } from '../../src/services/github-oauth';
 import { checkCopilotAssignable, assignCopilotToIssue } from '../../src/services/github-copilot';
+
+const mockRunAgentSession = vi.mocked(runAgentSession);
+const mockCheckClaudeRateLimit = vi.mocked(checkClaudeRateLimit);
+const mockResolveAccessToken = vi.mocked(resolveAccessToken);
+const mockDetectClaudeCli = vi.mocked(detectClaudeCli);
 
 // ── Helper ────────────────────────────────────────────────────────────────────
 
@@ -73,6 +98,18 @@ function callHandler(channel: string, ...args: unknown[]): unknown {
   if (!handler) throw new Error(`No handler registered for channel "${channel}"`);
   const fakeEvent = { sender: { id: 1, send: vi.fn(), isDestroyed: () => false } };
   return handler(fakeEvent, ...args);
+}
+
+/** Link org/repo to a local clone at the given path so resolveLocalRepoPath finds it. */
+function linkLocalRepo(db: SqlJsDatabase, repoFullName: string, localPath: string): void {
+  db.run(`INSERT INTO github_repos (full_name, name) VALUES (?, ?)`, [repoFullName, repoFullName.split('/')[1]]);
+  const repoId = db.exec('SELECT last_insert_rowid()')[0].values[0][0] as number;
+  db.run(`INSERT INTO local_repos (local_path, github_repo_id) VALUES (?, ?)`, [localPath, repoId]);
+  const localRepoId = db.exec('SELECT last_insert_rowid()')[0].values[0][0] as number;
+  db.run(
+    `INSERT INTO local_repo_remotes (local_repo_id, name, url, github_repo_id) VALUES (?, 'origin', ?, ?)`,
+    [localRepoId, `https://github.com/${repoFullName}.git`, repoId],
+  );
 }
 
 /** Insert an already-approved agent_findings row (with its parent session) and return its id. */
@@ -117,6 +154,14 @@ describe('Agents plugin — IPC handlers', () => {
     const SQL = await initSqlJs();
     db = new SQL.Database();
     db.run(getSchema());
+
+    // Escalation preflight defaults to "everything ready" — individual tests
+    // override one dimension at a time to exercise each gate.
+    mockDetectClaudeCli.mockResolvedValue({ available: true, version: '2.1.263' });
+    mockResolveAccessToken.mockResolvedValue({ token: 'test-token', source: 'stored' });
+    mockCheckClaudeRateLimit.mockResolvedValue({
+      status: 200, limited: false, resetAt: null, retryAfterSec: null, fiveHour: null, sevenDay: null,
+    });
 
     registerHandlers(db, () => null);
   });
@@ -461,6 +506,128 @@ describe('Agents plugin — IPC handlers', () => {
         'owner/repo',
       ) as Record<string, unknown>;
       expect(result.runCount).toBe(0);
+    });
+  });
+
+  // ── agents:escalation-readiness ─────────────────────────────────────────────
+
+  describe('agents:escalation-readiness', () => {
+    it('returns not-ready for an invalid repo name', async () => {
+      const result = await callHandler('agents:escalation-readiness', '');
+      expect(result).toEqual({ ok: false, reason: 'Invalid repository' });
+    });
+
+    it('returns not-ready when the repo has no local clone', async () => {
+      const result = await callHandler('agents:escalation-readiness', 'org/repo') as { ok: boolean; reason: string };
+      expect(result.ok).toBe(false);
+      expect(result.reason).toContain('not cloned locally');
+    });
+
+    it('returns not-ready when the Claude CLI is unavailable', async () => {
+      linkLocalRepo(db, 'org/repo', '/home/user/repo');
+      mockDetectClaudeCli.mockResolvedValue({ available: false, error: 'ENOENT' });
+
+      const result = await callHandler('agents:escalation-readiness', 'org/repo') as { ok: boolean; reason: string };
+      expect(result.ok).toBe(false);
+      expect(result.reason).toContain('Claude CLI not found');
+    });
+
+    it('returns not-ready when not connected to Claude', async () => {
+      linkLocalRepo(db, 'org/repo', '/home/user/repo');
+      mockResolveAccessToken.mockResolvedValue(null);
+
+      const result = await callHandler('agents:escalation-readiness', 'org/repo') as { ok: boolean; reason: string };
+      expect(result.ok).toBe(false);
+      expect(result.reason).toContain('Not connected to Claude');
+    });
+
+    it('returns not-ready with a reset time when rate limited', async () => {
+      linkLocalRepo(db, 'org/repo', '/home/user/repo');
+      mockCheckClaudeRateLimit.mockResolvedValue({
+        status: 429, limited: true, resetAt: 1234567890, retryAfterSec: 60, fiveHour: null, sevenDay: null,
+      });
+
+      const result = await callHandler('agents:escalation-readiness', 'org/repo') as { ok: boolean; reason: string; resetAt: number };
+      expect(result.ok).toBe(false);
+      expect(result.reason).toContain('rate limit');
+      expect(result.resetAt).toBe(1234567890);
+    });
+
+    it('returns ready when the clone exists, the CLI is installed, and the account is usable', async () => {
+      linkLocalRepo(db, 'org/repo', '/home/user/repo');
+      const result = await callHandler('agents:escalation-readiness', 'org/repo');
+      expect(result).toEqual({ ok: true });
+    });
+  });
+
+  // ── agents:escalate ──────────────────────────────────────────────────────────
+
+  describe('agents:escalate', () => {
+    function seedParentSession(): number {
+      db.run(
+        `INSERT INTO agent_definitions (name, description, system_prompt, tools_allowed)
+         VALUES ('Test Agent', 'Desc', 'You are a test agent.', '[]')`,
+      );
+      const agentId = db.exec('SELECT last_insert_rowid()')[0].values[0][0] as number;
+      db.run(
+        `INSERT INTO agent_sessions (agent_id, scope_type, scope_value, status, provider)
+         VALUES (?, 'repo', 'org/repo', 'completed', 'ollama')`,
+        [agentId],
+      );
+      return db.exec('SELECT last_insert_rowid()')[0].values[0][0] as number;
+    }
+
+    it('returns error for a non-number sessionId', async () => {
+      const result = await callHandler('agents:escalate', 'bad');
+      expect(result).toEqual({ ok: false, error: 'Invalid sessionId' });
+    });
+
+    it('returns error when the source session does not exist', async () => {
+      const result = await callHandler('agents:escalate', 9999);
+      expect(result).toEqual({ ok: false, error: 'Source session not found' });
+    });
+
+    it('returns error for a non-repo-scoped source session', async () => {
+      db.run(
+        `INSERT INTO agent_definitions (name, description, system_prompt, tools_allowed)
+         VALUES ('Test Agent', 'Desc', 'You are a test agent.', '[]')`,
+      );
+      const agentId = db.exec('SELECT last_insert_rowid()')[0].values[0][0] as number;
+      db.run(`INSERT INTO agent_sessions (agent_id, scope_type, scope_value) VALUES (?, 'org', 'my-org')`, [agentId]);
+      const sessionId = db.exec('SELECT last_insert_rowid()')[0].values[0][0] as number;
+
+      const result = await callHandler('agents:escalate', sessionId);
+      expect(result).toEqual({ ok: false, error: 'Escalation is only available for repo-scoped sessions' });
+    });
+
+    it('returns the readiness reason when escalation is not ready (no local clone)', async () => {
+      const sessionId = seedParentSession();
+      const result = await callHandler('agents:escalate', sessionId) as { ok: boolean; error: string };
+      expect(result.ok).toBe(false);
+      expect(result.error).toContain('not cloned locally');
+    });
+
+    it('creates a linked claude-agent-sdk session and starts the runner on success', async () => {
+      linkLocalRepo(db, 'org/repo', '/home/user/repo');
+      const sourceSessionId = seedParentSession();
+
+      const result = await callHandler('agents:escalate', sourceSessionId) as { ok: boolean; sessionId: number };
+      expect(result.ok).toBe(true);
+      expect(typeof result.sessionId).toBe('number');
+      expect(result.sessionId).not.toBe(sourceSessionId);
+
+      const row = db.exec(
+        'SELECT provider, model, parent_session_id, scope_value FROM agent_sessions WHERE id = ?',
+        [result.sessionId],
+      )[0].values[0];
+      expect(row).toEqual(['claude-agent-sdk', 'claude-opus-5', sourceSessionId, 'org/repo']);
+
+      expect(mockRunAgentSession).toHaveBeenCalledTimes(1);
+      const call = mockRunAgentSession.mock.calls[0];
+      expect(call[3]).toBe('repo'); // scopeType
+      expect(call[4]).toBe('org/repo'); // scopeValue
+      expect(call[8]).toMatchObject({ id: 'claude-agent-sdk' }); // provider
+      expect(call[9]).toEqual({ cwd: '/home/user/repo' }); // providerOptions
     });
   });
 });
