@@ -125,6 +125,7 @@ const EXPECTED_CHANNELS = [
   'agents:execute-finding',
   'agents:escalation-readiness',
   'agents:escalate',
+  'agents:check-copilot-availability',
   // workflow data (agents plugin)
   'github:fetch-workflow-runs',
   'github:get-workflow-summary',

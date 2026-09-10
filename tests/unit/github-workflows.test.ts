@@ -527,13 +527,20 @@ describe('fetchAndStoreWorkflowData', () => {
 describe('createGitHubIssue', () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it('returns the created issue URL on success', async () => {
+  it('returns the created issue URL, number, and node_id on success', async () => {
     globalThis.fetch = vi.fn(async () =>
-      new Response(JSON.stringify({ html_url: 'https://github.com/owner/repo/issues/42' }), { status: 201 }),
+      new Response(
+        JSON.stringify({ html_url: 'https://github.com/owner/repo/issues/42', number: 42, node_id: 'I_kwDOabc' }),
+        { status: 201 },
+      ),
     );
 
     const result = await createGitHubIssue('token', 'owner/repo', 'Bug report', 'desc', ['bug']);
-    expect(result.url).toBe('https://github.com/owner/repo/issues/42');
+    expect(result).toEqual({
+      url: 'https://github.com/owner/repo/issues/42',
+      number: 42,
+      node_id: 'I_kwDOabc',
+    });
   });
 
   it('throws when the API returns a non-OK status', async () => {

@@ -4042,6 +4042,26 @@ h5.ec-heading { font-size: 0.9375rem; }
   overflow-y: auto;
 }
 
+.agent-finding-copilot-warning {
+  font-size: 0.8125rem;
+  color: #ffd43b;
+  background: #3d3000;
+  border: 1px solid #ffd43b;
+  border-radius: 4px;
+  padding: 0.4rem 0.6rem;
+  margin: 0.2rem 0 0;
+}
+
+.agent-finding-copilot-blocked {
+  font-size: 0.8125rem;
+  color: #e94560;
+  background: #3d0a14;
+  border: 1px solid #e94560;
+  border-radius: 4px;
+  padding: 0.4rem 0.6rem;
+  margin: 0.2rem 0 0;
+}
+
 .agent-finding-actions {
   display: flex;
   align-items: center;

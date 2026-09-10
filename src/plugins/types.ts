@@ -864,7 +864,7 @@ export interface AgentFinding {
 
 
 
-  action_type: 'close_notifications' | 'create_issue' | 'clone_repo' | 'none';
+  action_type: 'close_notifications' | 'create_issue' | 'clone_repo' | 'assign_copilot' | 'none';
 
 
 
@@ -895,6 +895,12 @@ export interface AgentFinding {
 
 
 
+
+export interface CopilotAvailabilityResult {
+  available: boolean;
+  reason?: 'repo_not_found_or_no_access' | 'not_enabled_or_no_seat' | 'api_error' | 'not_authenticated';
+  detail?: string;
+}
 
 export interface AgentSession {
 
@@ -2644,6 +2650,8 @@ export interface JarvisApi {
 
 
   agentsExecuteFinding(findingId: number): Promise<{ ok: boolean; error?: string; dismissedIds?: string[] }>;
+
+  agentsCheckCopilotAvailability(repoFullName: string): Promise<CopilotAvailabilityResult>;
 
 
 

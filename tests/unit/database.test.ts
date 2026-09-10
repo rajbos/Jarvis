@@ -153,8 +153,9 @@ describe('Migration v26 → v27 (agent_sessions escalation columns)', () => {
     const SQL = await initSqlJs();
     const freshDb = new SQL.Database();
     initializeSchema(freshDb);
+    const latestVersion = freshDb.exec('PRAGMA user_version')[0].values[0][0];
     expect(() => initializeSchema(freshDb)).not.toThrow();
-    expect(freshDb.exec('PRAGMA user_version')[0].values[0][0]).toBe(27);
+    expect(freshDb.exec('PRAGMA user_version')[0].values[0][0]).toBe(latestVersion);
     freshDb.close();
   });
 });
@@ -195,13 +196,18 @@ describe('Migration v25 -> v26', () => {
 
   it('is a no-op when called again after reaching the latest version', async () => {
     const SQL = await initSqlJs();
+    const referenceDb = new SQL.Database();
+    initializeSchema(referenceDb);
+    const latestVersion = referenceDb.exec('PRAGMA user_version')[0].values[0][0];
+    referenceDb.close();
+
     const db2 = new SQL.Database();
     db2.run(getSchema());
-    db2.run('PRAGMA user_version = 27');
+    db2.run(`PRAGMA user_version = ${latestVersion}`);
 
     expect(() => initializeSchema(db2)).not.toThrow();
     const version = db2.exec('PRAGMA user_version');
-    expect(version[0].values[0][0]).toBe(27);
+    expect(version[0].values[0][0]).toBe(latestVersion);
 
     db2.close();
   });
