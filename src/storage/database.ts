@@ -521,9 +521,15 @@ export function initializeSchema(database: SqlJsDatabase): void {
     database.run('PRAGMA user_version = 25');
   }
 
-  // Note: v25 → v26 belongs to a sibling in-flight branch (workflow log
-  // evidence fix). This block is keyed off v26 → v27 so it chains correctly
-  // once the branches are rebased together.
+  if (userVersion === 25) {
+    // Migration v25 → v26: add failing_step_name + error_highlights to
+    // github_workflow_jobs so agent context can name the failing step and
+    // lead with GitHub's own ##[error] annotations.
+    database.run('ALTER TABLE github_workflow_jobs ADD COLUMN failing_step_name TEXT');
+    database.run('ALTER TABLE github_workflow_jobs ADD COLUMN error_highlights TEXT');
+    database.run('PRAGMA user_version = 26');
+  }
+
   if (userVersion === 26) {
     // Migration v26 → v27: track which analysis tier produced an agent
     // session (local Ollama vs. Claude Agent SDK escalation) and link an

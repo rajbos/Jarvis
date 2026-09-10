@@ -161,6 +161,8 @@ export function getSchema(): string {
         started_at      DATETIME,
         completed_at    DATETIME,
         log_excerpt     TEXT,
+        failing_step_name TEXT,
+        error_highlights  TEXT,
         fetched_at      DATETIME DEFAULT CURRENT_TIMESTAMP
     );
     CREATE INDEX IF NOT EXISTS idx_wf_jobs_run ON github_workflow_jobs(run_id);

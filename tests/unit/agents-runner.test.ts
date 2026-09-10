@@ -463,6 +463,8 @@ describe('runAgentSession', () => {
             started_at: '2024-01-01T10:01:00Z',
             completed_at: '2024-01-01T10:05:00Z',
             log_excerpt: 'Error: npm test failed with exit code 1',
+            failing_step_name: 'Run tests',
+            error_highlights: '##[error]Process completed with exit code 1',
           },
         ],
         102: [
@@ -475,6 +477,8 @@ describe('runAgentSession', () => {
             started_at: '2024-01-02T10:01:00Z',
             completed_at: '2024-01-02T10:03:00Z',
             log_excerpt: null,
+            failing_step_name: null,
+            error_highlights: null,
           },
         ],
       },
@@ -500,9 +504,12 @@ describe('runAgentSession', () => {
     expect(payload.userMessage).toContain('Run #42');
     expect(payload.userMessage).toContain('failure');
     expect(payload.userMessage).toContain('Job "build": failure');
-    // Log excerpt for the failed job
-    expect(payload.userMessage).toContain('Log excerpt for "build"');
+    // Log excerpt for the failed job, naming the failing step
+    expect(payload.userMessage).toContain('Log excerpt for "build" (failing step: "Run tests")');
     expect(payload.userMessage).toContain('npm test failed');
+    // Error highlights surfaced ahead of the full excerpt
+    expect(payload.userMessage).toContain('Error highlights for "build"');
+    expect(payload.userMessage).toContain('##[error]Process completed with exit code 1');
     // Successful run without log_excerpt should not have log excerpt line
     expect(payload.userMessage).toContain('Run #43');
     expect(payload.userMessage).toContain('Job "build": success');
