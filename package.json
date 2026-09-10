@@ -25,19 +25,19 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@joplin/onenote-converter": "^3.6.3",
-    "@types/node": "^26.4.0",
+    "@types/node": "^26.4.1",
     "@types/ws": "^8.18.1",
-    "@vitest/coverage-v8": "^4.1.11",
+    "@vitest/coverage-v8": "^5.0.0",
     "concurrently": "^10.0.5",
-    "electron": "^44.0.0",
+    "electron": "^44.2.0",
     "electron-builder": "^26.15.3",
     "electron-reloader": "^1.2.3",
     "esbuild": "^0.28.2",
-    "eslint": "^10.9.1",
+    "eslint": "^10.10.0",
     "nodemon": "^3.1.14",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.68.0",
-    "vitest": "^4.1.4"
+    "typescript-eslint": "^8.69.0",
+    "vitest": "^5.0.0"
   },
   "dependencies": {
     "electron-squirrel-startup": "^1.0.1",
