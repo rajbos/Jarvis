@@ -8,6 +8,8 @@ import {
   getWorkflowSummaryForRepo,
   fetchWorkflowRuns,
   fetchWorkflowRunJobs,
+  extractLogExcerpt,
+  type LogExtractionResult,
 } from '../../src/services/github-workflows';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -53,6 +55,91 @@ function makeJob(id: number, runId: number, opts: {
     steps: [],
   };
 }
+
+// ── extractLogExcerpt ─────────────────────────────────────────────────────────
+
+describe('extractLogExcerpt', () => {
+  it('slices the log to the failing step timestamp window and returns its name', () => {
+    const text = [
+      '2024-01-01T10:00:00.0000000Z Current runner version: 1.2.3',
+      '2024-01-01T10:00:01.0000000Z Set up job',
+      '2024-01-01T10:00:05.0000000Z Run actions/checkout@v4',
+      '2024-01-01T10:00:10.0000000Z Run tests started',
+      '2024-01-01T10:00:11.0000000Z FAIL: expected 1 to equal 2',
+      '2024-01-01T10:00:12.0000000Z ##[error]Process completed with exit code 1',
+      '2024-01-01T10:00:13.0000000Z Post job cleanup',
+    ].join('\n');
+
+    const steps = [
+      { name: 'Set up job', status: 'completed', conclusion: 'success', number: 1, started_at: '2024-01-01T10:00:00Z', completed_at: '2024-01-01T10:00:05Z' },
+      { name: 'Checkout', status: 'completed', conclusion: 'success', number: 2, started_at: '2024-01-01T10:00:05Z', completed_at: '2024-01-01T10:00:10Z' },
+      { name: 'Run tests', status: 'completed', conclusion: 'failure', number: 3, started_at: '2024-01-01T10:00:10Z', completed_at: '2024-01-01T10:00:12Z' },
+    ];
+
+    const result = extractLogExcerpt(text, steps);
+    expect(result.failingStepName).toBe('Run tests');
+    expect(result.excerpt).toContain('Run tests started');
+    expect(result.excerpt).toContain('FAIL: expected 1 to equal 2');
+    expect(result.excerpt).toContain('Process completed with exit code 1');
+    expect(result.excerpt).not.toContain('Current runner version');
+    expect(result.excerpt).not.toContain('Post job cleanup');
+  });
+
+  it('extracts ##[error] annotation lines into errorHighlights regardless of windowing', () => {
+    const text = [
+      '2024-01-01T10:00:00.0000000Z Current runner version: 1.2.3',
+      '2024-01-01T10:00:12.0000000Z ##[error]Process completed with exit code 1',
+      '2024-01-01T10:00:13.0000000Z ##[error]Another error annotation',
+    ].join('\n');
+
+    const result = extractLogExcerpt(text, []);
+    expect(result.errorHighlights).toContain('##[error]Process completed with exit code 1');
+    expect(result.errorHighlights).toContain('##[error]Another error annotation');
+  });
+
+  it('returns null errorHighlights when no ##[error] lines are present', () => {
+    const result = extractLogExcerpt('just a plain log\nwith no annotations', []);
+    expect(result.errorHighlights).toBeNull();
+  });
+
+  it('falls back to head+tail when there is no failing step', () => {
+    const head = 'A'.repeat(2000);
+    const tail = 'Z'.repeat(2000);
+    const text = `${head}${'-'.repeat(20000)}${tail}`;
+
+    const result = extractLogExcerpt(text, []);
+    expect(result.failingStepName).toBeNull();
+    expect(result.excerpt).toContain('AAAA');
+    expect(result.excerpt).toContain('ZZZZ');
+    expect(result.excerpt.length).toBeLessThan(text.length);
+  });
+
+  it('falls back to head+tail when step timestamps are missing', () => {
+    const head = 'A'.repeat(2000);
+    const tail = 'Z'.repeat(2000);
+    const text = `${head}${'-'.repeat(20000)}${tail}`;
+    const steps = [{ name: 'Run tests', status: 'completed', conclusion: 'failure', number: 1 }];
+
+    const result = extractLogExcerpt(text, steps);
+    expect(result.failingStepName).toBeNull();
+    expect(result.excerpt).toContain('ZZZZ');
+  });
+
+  it('falls back to head+tail when the failing step window matches no timestamped lines', () => {
+    const text = 'no timestamps in this log at all, just plain text';
+    const steps = [{ name: 'Run tests', status: 'completed', conclusion: 'failure', number: 1, started_at: '2024-01-01T10:00:00Z', completed_at: '2024-01-01T10:00:05Z' }];
+
+    const result = extractLogExcerpt(text, steps);
+    expect(result.failingStepName).toBeNull();
+    expect(result.excerpt).toBe(text);
+  });
+
+  it('returns the full text unmodified when under the byte cap and no failing step', () => {
+    const text = 'short log\nwith a couple lines';
+    const result = extractLogExcerpt(text, []);
+    expect(result.excerpt).toBe(text);
+  });
+});
 
 // ── storeWorkflowRuns ─────────────────────────────────────────────────────────
 
@@ -122,10 +209,21 @@ describe('storeWorkflowJobs', () => {
   });
 
   it('stores log excerpts for jobs that have them', () => {
-    const logExcerpts = new Map([['10', 'Error: test failed\nExpected foo but got bar']]);
+    const logExcerpts = new Map<string, LogExtractionResult>([
+      ['10', { excerpt: 'Error: test failed\nExpected foo but got bar', failingStepName: null, errorHighlights: null }],
+    ]);
     storeWorkflowJobs(db, 'owner/repo', '1', [makeJob(10, 1)], logExcerpts);
     const res = db.exec(`SELECT log_excerpt FROM github_workflow_jobs WHERE id = '10'`);
     expect(res[0].values[0][0]).toContain('Error: test failed');
+  });
+
+  it('stores failing_step_name and error_highlights alongside the excerpt', () => {
+    const logExcerpts = new Map<string, LogExtractionResult>([
+      ['10', { excerpt: 'log body', failingStepName: 'Run tests', errorHighlights: '##[error]Test failed' }],
+    ]);
+    storeWorkflowJobs(db, 'owner/repo', '1', [makeJob(10, 1)], logExcerpts);
+    const res = db.exec(`SELECT failing_step_name, error_highlights FROM github_workflow_jobs WHERE id = '10'`);
+    expect(res[0].values[0]).toEqual(['Run tests', '##[error]Test failed']);
   });
 
   it('stores null log_excerpt when no excerpt is provided', () => {

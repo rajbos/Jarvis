@@ -6,8 +6,19 @@ const GITHUB_API_BASE = 'https://api.github.com';
 
 // Max log bytes to store per job — keeps the DB size manageable
 const MAX_LOG_BYTES = 10000;
+// Fallback split when the failing step's timestamp window can't be used:
+// a short head for setup context, and a much larger tail since GitHub job
+// logs put the actual error near the end, right before the job exits.
+const HEAD_CONTEXT_BYTES = 1500;
+const TAIL_CONTEXT_BYTES = MAX_LOG_BYTES - HEAD_CONTEXT_BYTES;
+// ##[error] annotation lines are the highest-signal content in a log — stored
+// separately so the agent context can lead with them.
+const MAX_ERROR_HIGHLIGHT_BYTES = 3000;
 // Only fetch logs for the most recent N failing runs per workflow
 const MAX_FAILING_RUNS_FOR_LOGS = 5;
+
+// GitHub job logs are timestamp-prefixed, e.g. "2026-09-08T10:14:10.1234567Z <text>".
+const LOG_LINE_TIMESTAMP = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\s/;
 
 // ── GitHub API response shapes ────────────────────────────────────────────────
 
@@ -27,6 +38,15 @@ interface GitHubWorkflowRun {
   html_url: string;
 }
 
+interface GitHubWorkflowJobStep {
+  name: string;
+  status: string;
+  conclusion: string | null;
+  number: number;
+  started_at?: string | null;
+  completed_at?: string | null;
+}
+
 interface GitHubWorkflowJob {
   id: number;
   run_id: number;
@@ -35,7 +55,13 @@ interface GitHubWorkflowJob {
   conclusion: string | null;
   started_at: string;
   completed_at: string | null;
-  steps: Array<{ name: string; status: string; conclusion: string | null; number: number }>;
+  steps: GitHubWorkflowJobStep[];
+}
+
+export interface LogExtractionResult {
+  excerpt: string;
+  failingStepName: string | null;
+  errorHighlights: string | null;
 }
 
 // ── Low-level GitHub API helpers ──────────────────────────────────────────────
@@ -55,15 +81,84 @@ async function githubGet<T>(url: string, accessToken: string): Promise<T> {
 }
 
 /**
- * Fetch the first MAX_LOG_BYTES characters of a job's log file.
+ * Collect every GitHub `##[error]` annotation line — the highest-signal
+ * lines available in a job log — into a short highlights block.
+ */
+function extractErrorHighlights(text: string): string | null {
+  const lines = text.split('\n').filter((line) => line.includes('##[error]'));
+  if (lines.length === 0) return null;
+  const joined = lines.join('\n');
+  return joined.length > MAX_ERROR_HIGHLIGHT_BYTES ? joined.slice(0, MAX_ERROR_HIGHLIGHT_BYTES) : joined;
+}
+
+/**
+ * Slice the log down to just the lines that fall within the failing step's
+ * timestamp window. Returns null when there is no failing step, or its
+ * timestamps are missing/unusable/match nothing — callers should fall back
+ * to a head+tail slice in that case.
+ */
+function extractFailingStepWindow(
+  text: string,
+  steps: GitHubWorkflowJobStep[],
+): { excerpt: string; failingStepName: string } | null {
+  const failingStep = steps.find((s) => s.conclusion === 'failure');
+  if (!failingStep?.started_at || !failingStep?.completed_at) return null;
+
+  const start = Date.parse(failingStep.started_at);
+  const end = Date.parse(failingStep.completed_at);
+  if (Number.isNaN(start) || Number.isNaN(end)) return null;
+
+  const matched: string[] = [];
+  for (const line of text.split('\n')) {
+    const m = LOG_LINE_TIMESTAMP.exec(line);
+    if (!m) continue;
+    const ts = Date.parse(m[1]);
+    if (Number.isNaN(ts) || ts < start || ts > end) continue;
+    matched.push(line);
+  }
+  if (matched.length === 0) return null;
+
+  const windowed = matched.join('\n');
+  return {
+    excerpt: windowed.length > MAX_LOG_BYTES ? windowed.slice(0, MAX_LOG_BYTES) : windowed,
+    failingStepName: failingStep.name,
+  };
+}
+
+/**
+ * Extract the region of a job log that actually contains the failure.
+ * Prefers slicing to the failing step's timestamp window; falls back to a
+ * head slice (setup context) plus a much larger tail slice (where the error
+ * usually is) when step timestamps are missing or match no log lines.
+ */
+export function extractLogExcerpt(text: string, steps: GitHubWorkflowJobStep[]): LogExtractionResult {
+  const errorHighlights = extractErrorHighlights(text);
+  const windowed = extractFailingStepWindow(text, steps);
+  if (windowed) {
+    return { excerpt: windowed.excerpt, failingStepName: windowed.failingStepName, errorHighlights };
+  }
+
+  let excerpt: string;
+  if (text.length <= MAX_LOG_BYTES) {
+    excerpt = text;
+  } else {
+    const head = text.slice(0, HEAD_CONTEXT_BYTES);
+    const tail = text.slice(-TAIL_CONTEXT_BYTES);
+    excerpt = `${head}\n...[truncated]...\n${tail}`;
+  }
+  return { excerpt, failingStepName: null, errorHighlights };
+}
+
+/**
+ * Fetch a job's log file and extract the region that contains the failure.
  * GitHub redirects to a pre-signed URL; we follow it and read the stream.
  */
 async function fetchJobLogExcerpt(
   accessToken: string,
   repoFullName: string,
-  jobId: string,
-): Promise<string> {
-  const logUrl = `${GITHUB_API_BASE}/repos/${repoFullName}/actions/jobs/${jobId}/logs`;
+  job: GitHubWorkflowJob,
+): Promise<LogExtractionResult | null> {
+  const logUrl = `${GITHUB_API_BASE}/repos/${repoFullName}/actions/jobs/${job.id}/logs`;
   const response = await fetch(logUrl, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -72,9 +167,10 @@ async function fetchJobLogExcerpt(
     },
     redirect: 'follow',
   });
-  if (!response.ok) return '';
+  if (!response.ok) return null;
   const text = await response.text();
-  return text.slice(0, MAX_LOG_BYTES);
+  if (!text) return null;
+  return extractLogExcerpt(text, job.steps ?? []);
 }
 
 // ── Public fetch functions ────────────────────────────────────────────────────
@@ -169,14 +265,15 @@ export function storeWorkflowJobs(
   repoFullName: string,
   runId: string,
   jobs: GitHubWorkflowJob[],
-  logExcerpts: Map<string, string>,
+  logExcerpts: Map<string, LogExtractionResult>,
 ): void {
   for (const j of jobs) {
+    const extracted = logExcerpts.get(String(j.id));
     db.run(
       `INSERT OR REPLACE INTO github_workflow_jobs
         (id, run_id, repo_full_name, name, status, conclusion,
-         started_at, completed_at, log_excerpt, fetched_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+         started_at, completed_at, log_excerpt, failing_step_name, error_highlights, fetched_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
       [
         String(j.id),
         runId,
@@ -186,7 +283,9 @@ export function storeWorkflowJobs(
         j.conclusion ?? null,
         j.started_at ?? null,
         j.completed_at ?? null,
-        logExcerpts.get(String(j.id)) ?? null,
+        extracted?.excerpt ?? null,
+        extracted?.failingStepName ?? null,
+        extracted?.errorHighlights ?? null,
       ],
     );
   }
@@ -224,12 +323,12 @@ export async function fetchAndStoreWorkflowData(
     for (const run of toFetch) {
       const runId = String(run.id);
       const jobs = await fetchWorkflowRunJobs(accessToken, repoFullName, runId);
-      const logExcerpts = new Map<string, string>();
+      const logExcerpts = new Map<string, LogExtractionResult>();
 
       for (const job of jobs) {
         if (job.conclusion === 'failure') {
-          const excerpt = await fetchJobLogExcerpt(accessToken, repoFullName, String(job.id));
-          if (excerpt) logExcerpts.set(String(job.id), excerpt);
+          const result = await fetchJobLogExcerpt(accessToken, repoFullName, job);
+          if (result) logExcerpts.set(String(job.id), result);
         }
       }
 
@@ -268,7 +367,7 @@ export function getWorkflowSummaryForRepo(
 
   const jobStmt = db.prepare(`
     SELECT id, run_id, repo_full_name, name, status, conclusion,
-           started_at, completed_at, log_excerpt, fetched_at
+           started_at, completed_at, log_excerpt, failing_step_name, error_highlights, fetched_at
     FROM github_workflow_jobs
     WHERE repo_full_name = ?
     ORDER BY started_at ASC

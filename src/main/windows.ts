@@ -189,3 +189,33 @@ export function createSettingsWindow(): BrowserWindow {
 
   return win;
 }
+
+export function createAboutWindow(): BrowserWindow {
+  const win = new BrowserWindow({
+    width: 420,
+    height: 360,
+    minWidth: 360,
+    minHeight: 300,
+    title: 'Jarvis — About',
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+
+  win.loadFile(path.join(__dirname, '..', 'renderer', 'about.html'));
+
+  // Prevent the window from navigating to external URLs
+  win.webContents.on('will-navigate', (event, url) => {
+    if (!url.startsWith('file://')) {
+      event.preventDefault();
+    }
+  });
+
+  return win;
+}
