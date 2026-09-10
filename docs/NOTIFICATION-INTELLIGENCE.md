@@ -109,7 +109,11 @@ CREATE TABLE IF NOT EXISTS github_workflow_jobs (
     conclusion      TEXT,
     started_at      DATETIME,
     completed_at    DATETIME,
-    log_excerpt     TEXT,               -- first ~3000 chars of combined failed-step logs
+    log_excerpt     TEXT,               -- log lines from the failing step's timestamp window
+                                          -- (falls back to a head+tail slice when step
+                                          -- timestamps are missing/unusable), capped at 10 KB
+    failing_step_name TEXT,             -- name of the step that failed, when identifiable
+    error_highlights  TEXT,             -- every ##[error] annotation line, capped at 3 KB
     fetched_at      DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_wf_jobs_run ON github_workflow_jobs(run_id);
@@ -193,7 +197,9 @@ GET /repos/{owner}/{repo}/actions/runs/{run_id}/jobs
 ```
 
 Response fields: `id`, `run_id`, `name`, `status`, `conclusion`, `started_at`,
-`completed_at`, `steps[].name`, `steps[].conclusion`, `steps[].number`.
+`completed_at`, `steps[].name`, `steps[].conclusion`, `steps[].number`,
+`steps[].started_at`, `steps[].completed_at`. The per-step timestamps are used to
+slice the job log down to just the failing step (see 4.3).
 
 ### 4.3 Job log download (streaming)
 
@@ -201,9 +207,18 @@ Response fields: `id`, `run_id`, `name`, `status`, `conclusion`, `started_at`,
 GET /repos/{owner}/{repo}/actions/jobs/{job_id}/logs
 ```
 
-Returns a redirect to a pre-signed URL for a plain-text log file. We download only the first
-`3 000` characters of the log to keep DB size manageable. Only requested for jobs with
-conclusion = `failure`.
+Returns a redirect to a pre-signed URL for a plain-text log file. Only requested for jobs with
+conclusion = `failure`. The full log is downloaded, then sliced down to the region that actually
+contains the failure before storage (kept under 10 KB to keep DB size manageable):
+
+- **Preferred**: lines whose timestamp falls within the failing step's `started_at`/`completed_at`
+  window (job logs are timestamp-prefixed per line). The failing step's name is stored alongside
+  the excerpt.
+- **Fallback** (step timestamps missing, unusable, or match no lines): a short head slice for
+  setup context plus a much larger tail slice, since the error is almost always near the end of
+  the log, right before `Process completed with exit code 1`.
+- Every `##[error]` annotation line (GitHub's own error markers) is additionally collected into a
+  separate `error_highlights` column, regardless of which slicing path was used.
 
 **Rate-limit consideration**: log downloads consume rate-limit budget. Only fetch logs for the
 most recent 3 failed runs per workflow.
@@ -357,7 +372,9 @@ IMPORTANT RULES:
 {per workflow name:
   Run #{number} | {branch} | {conclusion} | {started_at}
   Jobs: {job_name} → {conclusion}
-  Log excerpt: {first 2000 chars of combined failed step logs, if any}
+  Error highlights: {##[error] annotation lines, if any}
+  Log excerpt (failing step: "{step name}"): {up to 4000 chars of the failing-step
+    log window, or head+tail fallback, if any}
 }
 
 === LOCAL REPO ===

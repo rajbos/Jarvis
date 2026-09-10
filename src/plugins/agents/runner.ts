@@ -157,6 +157,12 @@ export function getAgentSession(db: SqlJsDatabase, sessionId: number): AgentSess
 
 // ── Context assembly ──────────────────────────────────────────────────────────
 
+// Per-job budget for log excerpt text in the assembled agent context. The
+// stored excerpt is already sliced to the failing step (or a head+tail
+// fallback) by fetchAndStoreWorkflowData, so this just bounds how much of
+// that relevant text goes into any single job's context entry.
+const MAX_LOG_EXCERPT_CONTEXT_CHARS = 4000;
+
 function buildNotificationContext(db: SqlJsDatabase, repoFullName: string, workflowFilter?: string): string {
   let sql = `
     SELECT id, subject_type, subject_title, subject_url, reason, updated_at
@@ -214,8 +220,15 @@ function buildWorkflowContext(db: SqlJsDatabase, repoFullName: string): string {
       );
       lines.push(jobSummary);
       for (const job of jobs) {
+        if (job.error_highlights) {
+          lines.push(`  Error highlights for "${job.name}":\n${job.error_highlights}`);
+        }
         if (job.log_excerpt) {
-          lines.push(`  Log excerpt for "${job.name}":\n${job.log_excerpt.slice(0, 500)}`);
+          const stepLabel = job.failing_step_name ? ` (failing step: "${job.failing_step_name}")` : '';
+          const excerpt = job.log_excerpt.length > MAX_LOG_EXCERPT_CONTEXT_CHARS
+            ? job.log_excerpt.slice(0, MAX_LOG_EXCERPT_CONTEXT_CHARS)
+            : job.log_excerpt;
+          lines.push(`  Log excerpt for "${job.name}"${stepLabel}:\n${excerpt}`);
         }
       }
     }
