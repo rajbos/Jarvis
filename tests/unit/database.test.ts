@@ -2,7 +2,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import initSqlJs, { Database as SqlJsDatabase } from 'sql.js';
 import { getSchema } from '../../src/storage/schema';
-import { getConfigValue, setConfigValue } from '../../src/storage/database';
+import { getConfigValue, setConfigValue, initializeSchema } from '../../src/storage/database';
 
 describe('Database Schema', () => {
   let db: SqlJsDatabase;
@@ -108,5 +108,53 @@ describe('Database Schema', () => {
 
     setConfigValue(db, 'force_pat_discovery', '1');
     expect(getConfigValue(db, 'force_pat_discovery')).toBe('1');
+  });
+
+  it('fresh schema gives agent_sessions provider/model/parent_session_id columns', () => {
+    db.run(`INSERT INTO agent_definitions (name, system_prompt) VALUES ('a', 'p')`);
+    db.run(`INSERT INTO agent_sessions (agent_id, scope_type, scope_value) VALUES (1, 'repo', 'org/repo')`);
+    const row = db.exec('SELECT provider, model, parent_session_id FROM agent_sessions')[0].values[0];
+    expect(row).toEqual(['ollama', null, null]);
+  });
+});
+
+describe('Migration v26 → v27 (agent_sessions escalation columns)', () => {
+  it('adds provider, model, and parent_session_id to an existing v26 database', async () => {
+    const SQL = await initSqlJs();
+    const oldDb = new SQL.Database();
+    // Minimal v26-shape agent_sessions — no provider/model/parent_session_id yet.
+    oldDb.run(`
+      CREATE TABLE agent_definitions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, description TEXT,
+        system_prompt TEXT NOT NULL, tools_allowed TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE agent_sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, agent_id INTEGER NOT NULL REFERENCES agent_definitions(id),
+        scope_type TEXT NOT NULL, scope_value TEXT, status TEXT DEFAULT 'pending',
+        started_at DATETIME DEFAULT CURRENT_TIMESTAMP, completed_at DATETIME, summary TEXT, raw_result TEXT
+      );
+    `);
+    oldDb.run('PRAGMA user_version = 26');
+
+    initializeSchema(oldDb);
+
+    expect(oldDb.exec('PRAGMA user_version')[0].values[0][0]).toBe(27);
+
+    oldDb.run(`INSERT INTO agent_definitions (name, system_prompt) VALUES ('a', 'p')`);
+    oldDb.run(`INSERT INTO agent_sessions (agent_id, scope_type, scope_value) VALUES (1, 'repo', 'org/repo')`);
+    const row = oldDb.exec('SELECT provider, model, parent_session_id FROM agent_sessions')[0].values[0];
+    expect(row).toEqual(['ollama', null, null]);
+
+    oldDb.close();
+  });
+
+  it('is a no-op when called again on an already-migrated database (idempotent init)', async () => {
+    const SQL = await initSqlJs();
+    const freshDb = new SQL.Database();
+    initializeSchema(freshDb);
+    expect(() => initializeSchema(freshDb)).not.toThrow();
+    expect(freshDb.exec('PRAGMA user_version')[0].values[0][0]).toBe(27);
+    freshDb.close();
   });
 });

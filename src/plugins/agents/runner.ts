@@ -1,27 +1,18 @@
 // ── Agent session runner ──────────────────────────────────────────────────────
-// Assembles context, calls Ollama via streamChat, parses structured findings,
-// and persists them to the database.
+// Assembles context, runs it through an analysis provider (Ollama by default,
+// or the Claude Agent SDK escalation tier), parses structured findings, and
+// persists them to the database.
 import type { BrowserWindow } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
-import { streamChat } from '../../services/ollama';
 import { getWorkflowSummaryForRepo } from '../../services/github-workflows';
+import { resolveLocalRepoPath, resolveEscalationRunInfo } from '../../services/claude-agent';
+import { ollamaProvider } from './providers/ollama-provider';
+import type { AgentProvider, AgentRunOptions } from './providers/types';
 import type { AgentDefinition, AgentFinding, AgentSession, WorkflowRun, WorkflowJob } from '../types';
+import type { RawFinding } from './json-extract';
 
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-interface RawFinding {
-  subject?: string;
-  finding_type?: string;
-  reason?: string;
-  pattern?: string | null;
-  action_type?: string;
-  action_data?: Record<string, unknown>;
-}
-
-interface AgentJsonResult {
-  summary?: string;
-  findings?: RawFinding[];
-}
+export { extractJsonResult } from './json-extract';
+export type { RawFinding, AgentJsonResult } from './json-extract';
 
 // ── DB helpers ────────────────────────────────────────────────────────────────
 
@@ -46,16 +37,24 @@ export function getAgentDefinition(db: SqlJsDatabase, agentId: number): AgentDef
   return row;
 }
 
+export interface CreateAgentSessionOptions {
+  provider?: string;
+  model?: string | null;
+  parentSessionId?: number | null;
+}
+
 export function createAgentSession(
   db: SqlJsDatabase,
   agentId: number,
   scopeType: string,
   scopeValue: string,
+  options: CreateAgentSessionOptions = {},
 ): number {
+  const { provider = 'ollama', model = null, parentSessionId = null } = options;
   db.run(
-    `INSERT INTO agent_sessions (agent_id, scope_type, scope_value, status, started_at)
-     VALUES (?, ?, ?, 'running', datetime('now'))`,
-    [agentId, scopeType, scopeValue],
+    `INSERT INTO agent_sessions (agent_id, scope_type, scope_value, status, started_at, provider, model, parent_session_id)
+     VALUES (?, ?, ?, 'running', datetime('now'), ?, ?, ?)`,
+    [agentId, scopeType, scopeValue, provider, model, parentSessionId],
   );
   const result = db.exec('SELECT last_insert_rowid() AS id');
   return result[0].values[0][0] as number;
@@ -105,7 +104,8 @@ export function storeAgentFinding(
 export function getAgentSession(db: SqlJsDatabase, sessionId: number): AgentSession | null {
   const sessionStmt = db.prepare(`
     SELECT s.id, s.agent_id, d.name AS agent_name, s.scope_type, s.scope_value,
-           s.status, s.started_at, s.completed_at, s.summary
+           s.status, s.started_at, s.completed_at, s.summary,
+           s.provider, s.model, s.parent_session_id
     FROM agent_sessions s
     JOIN agent_definitions d ON d.id = s.agent_id
     WHERE s.id = ?
@@ -152,6 +152,9 @@ export function getAgentSession(db: SqlJsDatabase, sessionId: number): AgentSess
     completed_at: sessionRow.completed_at as string | null,
     summary: sessionRow.summary as string | null,
     findings,
+    provider: (sessionRow.provider as string | null) ?? 'ollama',
+    model: sessionRow.model as string | null,
+    parent_session_id: sessionRow.parent_session_id as number | null,
   };
 }
 
@@ -224,43 +227,37 @@ function buildWorkflowContext(db: SqlJsDatabase, repoFullName: string): string {
 }
 
 function buildLocalRepoContext(db: SqlJsDatabase, repoFullName: string): string {
-  const stmt = db.prepare(`
-    SELECT lr.local_path
-    FROM local_repos lr
-    JOIN local_repo_remotes lrr ON lrr.local_repo_id = lr.id
-    JOIN github_repos gr ON gr.id = lrr.github_repo_id
-    WHERE gr.full_name = ?
-    LIMIT 1
-  `);
-  stmt.bind([repoFullName]);
-  const exists = stmt.step();
-  const row = exists ? (stmt.getAsObject() as { local_path: string }) : null;
-  stmt.free();
-
-  return `=== LOCAL REPO ===\n${row ? `Cloned at: ${row.local_path}` : 'Not cloned locally'}`;
+  const localPath = resolveLocalRepoPath(db, repoFullName);
+  return `=== LOCAL REPO ===\n${localPath ? `Cloned at: ${localPath}` : 'Not cloned locally'}`;
 }
 
-// ── JSON extraction ───────────────────────────────────────────────────────────
-
-/**
- * Extract the first ```json ... ``` block from the agent response.
- * Returns null if none found or JSON is invalid.
- */
-export function extractJsonResult(text: string): AgentJsonResult | null {
-  const match = text.match(/```json\s*([\s\S]*?)```/);
-  if (!match) return null;
-  try {
-    return JSON.parse(match[1]) as AgentJsonResult;
-  } catch {
-    return null;
+// The commit range worth diffing: the last known-good run and the first run
+// in the currently failing streak. Deliberately not pre-fetching diffs or
+// logs here — a provider with repo access (the Claude Agent SDK escalation
+// tier) can read them itself; a text-only provider just gets the SHAs.
+function buildFailureRangeContext(db: SqlJsDatabase, repoFullName: string, workflowFilter?: string): string {
+  const info = resolveEscalationRunInfo(db, repoFullName, workflowFilter);
+  if (!info.firstFailureHeadSha) {
+    return '=== FAILURE COMMIT RANGE ===\n(no active failing streak found in cached workflow run history)';
   }
+  const lines = ['=== FAILURE COMMIT RANGE ==='];
+  if (info.workflowName) lines.push(`Workflow: ${info.workflowName}`);
+  lines.push(`First failing run: #${info.firstFailureRunNumber ?? '?'} @ ${info.firstFailureHeadSha}`);
+  lines.push(
+    info.lastSuccessHeadSha
+      ? `Last known-good commit: ${info.lastSuccessHeadSha}`
+      : 'Last known-good commit: unknown (no successful run found before the failing streak in cached history)',
+  );
+  if (info.htmlUrl) lines.push(`Latest run URL: ${info.htmlUrl}`);
+  return lines.join('\n');
 }
 
 // ── Main agent session runner ─────────────────────────────────────────────────
 
 /**
- * Run an agent session: assemble context, stream to Ollama, parse findings,
- * persist results, and push progress events to the renderer window.
+ * Run an agent session: assemble context, run it through an analysis
+ * provider (Ollama by default), parse findings, persist results, and push
+ * progress events to the renderer window.
  */
 export async function runAgentSession(
   db: SqlJsDatabase,
@@ -271,6 +268,8 @@ export async function runAgentSession(
   model: string,
   getWindow: () => BrowserWindow | null,
   workflowFilter?: string,
+  provider: AgentProvider = ollamaProvider,
+  providerOptions?: AgentRunOptions,
 ): Promise<void> {
   const win = getWindow();
 
@@ -285,8 +284,11 @@ export async function runAgentSession(
     const localRepoContext = scopeType === 'repo'
       ? buildLocalRepoContext(db, scopeValue)
       : '(N/A for non-repo scope)';
+    const failureRangeContext = scopeType === 'repo'
+      ? buildFailureRangeContext(db, scopeValue, workflowFilter)
+      : '(N/A for non-repo scope)';
 
-    const userMessage = [notifContext, workflowContext, localRepoContext].join('\n\n');
+    const userMessage = [notifContext, workflowContext, localRepoContext, failureRangeContext].join('\n\n');
 
     // Emit debug context so the renderer can show it in the chat debug viewer
     getWindow()?.webContents.send('agent:debug-context', {
@@ -295,73 +297,23 @@ export async function runAgentSession(
       userMessage,
     });
 
-    // ── Phase 1: stream the analysis / reasoning to the renderer ────────────
-    let analysisResponse = '';
-    await streamChat(
+    const outcome = await provider.run(
       model,
-      [
-        { role: 'system', content: agentDef.system_prompt },
-        { role: 'user', content: userMessage },
-      ],
-      (token) => {
-        analysisResponse += token;
-        getWindow()?.webContents.send('agent:token', token);
+      agentDef.system_prompt,
+      userMessage,
+      {
+        onToken: (token) => getWindow()?.webContents.send('agent:token', token),
+        onAnalysisComplete: () => getWindow()?.webContents.send('agent:analysis-complete', { sessionId }),
+        onFindingsError: (message) => getWindow()?.webContents.send('agent:phase2-error', { sessionId, message }),
       },
+      providerOptions,
     );
 
-    // Signal the renderer that phase 1 is done so it can show a separator
-    getWindow()?.webContents.send('agent:analysis-complete', { sessionId });
-
-    // ── Phase 2: second call — emit ONLY the structured JSON ─────────────────
-    // Pass the phase-1 response back as the assistant turn so the model has
-    // full context, then ask it to output nothing but the JSON block.
-    // A 60-second timeout guards against the model hanging indefinitely.
-    const PHASE2_TIMEOUT_MS = 60_000;
-    let jsonResponse = '';
-    const phase2Controller = new AbortController();
-    const phase2Timer = setTimeout(() => phase2Controller.abort(), PHASE2_TIMEOUT_MS);
-    try {
-      await streamChat(
-        model,
-        [
-          { role: 'system', content: agentDef.system_prompt },
-          { role: 'user', content: userMessage },
-          { role: 'assistant', content: analysisResponse },
-          {
-            role: 'user',
-            content:
-              'Based on your analysis above, output ONLY the JSON findings code block — no prose, no explanation. ' +
-              'Start with ```json and end with ```. Nothing else.',
-          },
-        ],
-        (token) => { jsonResponse += token; },
-        phase2Controller.signal,
-      );
-    } catch (phase2Err) {
-      const isTimeout = phase2Controller.signal.aborted;
-      const phase2Msg = isTimeout
-        ? 'Phase 2 timed out after 60 s — could not extract structured findings'
-        : (phase2Err instanceof Error ? phase2Err.message : String(phase2Err));
-      console.warn('[Agents] Phase 2 failed:', phase2Msg);
-      getWindow()?.webContents.send('agent:phase2-error', { sessionId, message: phase2Msg });
-      // Fall through — extractJsonResult will be tried on whatever partial response was received,
-      // then fall back to phase-1 text before giving up.
-    } finally {
-      clearTimeout(phase2Timer);
+    for (const finding of outcome.findings) {
+      storeAgentFinding(db, sessionId, finding);
     }
 
-    // Parse findings from the dedicated JSON response; fall back to phase-1
-    // in case the model puts it there anyway (backwards-compat).
-    const parsed = extractJsonResult(jsonResponse) ?? extractJsonResult(analysisResponse);
-    const summary = parsed?.summary ?? analysisResponse.slice(0, 300);
-
-    if (parsed?.findings && Array.isArray(parsed.findings)) {
-      for (const finding of parsed.findings) {
-        storeAgentFinding(db, sessionId, finding);
-      }
-    }
-
-    updateAgentSession(db, sessionId, 'completed', summary, analysisResponse);
+    updateAgentSession(db, sessionId, 'completed', outcome.summary, outcome.analysisText);
 
     getWindow()?.webContents.send('agent:session-complete', { sessionId });
   } catch (err) {

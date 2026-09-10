@@ -69,7 +69,7 @@ function clearStoredCredentials(db: SqlJsDatabase): void {
  * Tokens with a missing/zero expiry are tried anyway — the probe's 401 is the
  * authoritative expiry signal and triggers a refresh + retry.
  */
-async function resolveAccessToken(
+export async function resolveAccessToken(
   db: SqlJsDatabase,
 ): Promise<{ token: string; source: 'stored' | 'claude-code'; subscriptionType?: string; expiresAt?: number } | null> {
   const stored = loadStoredCredentials(db);

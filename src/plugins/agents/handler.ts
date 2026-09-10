@@ -11,6 +11,10 @@ import {
   getWorkflowSummaryForRepo,
   createGitHubIssue,
 } from '../../services/github-workflows';
+import { checkClaudeRateLimit } from '../../services/claude';
+import { resolveAccessToken } from '../claude/handler';
+import { detectClaudeCli, resolveLocalRepoPath, DEFAULT_CLAUDE_AGENT_MODEL } from '../../services/claude-agent';
+import { claudeAgentProvider } from './providers/claude-agent-provider';
 import {
   listAgentDefinitions,
   getAgentDefinition,
@@ -18,6 +22,40 @@ import {
   getAgentSession,
   runAgentSession,
 } from './runner';
+
+/**
+ * Shared escalation preflight: local clone present, Claude CLI installed,
+ * account not currently rate limited. Used by both the readiness probe (so
+ * the UI can disable the affordance up front) and the escalate handler
+ * itself (so a race between the two still fails closed with a clear reason).
+ */
+async function checkEscalationReadiness(
+  db: SqlJsDatabase,
+  repoFullName: string,
+): Promise<{ ok: true; localPath: string } | { ok: false; reason: string; resetAt?: number | null }> {
+  const localPath = resolveLocalRepoPath(db, repoFullName);
+  if (!localPath) {
+    return { ok: false, reason: 'This repository is not cloned locally — clone it first to use the Claude escalation tier.' };
+  }
+
+  const cli = await detectClaudeCli();
+  if (!cli.available) {
+    return { ok: false, reason: `Claude CLI not found on PATH — install Claude Code to use this tier${cli.error ? ` (${cli.error})` : ''}.` };
+  }
+
+  const resolved = await resolveAccessToken(db);
+  if (!resolved) {
+    return { ok: false, reason: 'Not connected to Claude — open the Claude panel and sign in first.' };
+  }
+
+  const probe = await checkClaudeRateLimit(resolved.token);
+  if (probe.limited) {
+    const resetNote = probe.resetAt ? ` Resets ${new Date(probe.resetAt * 1000).toLocaleString()}.` : '';
+    return { ok: false, reason: `Claude rate limit reached.${resetNote}`, resetAt: probe.resetAt };
+  }
+
+  return { ok: true, localPath };
+}
 
 export function registerHandlers(
   db: SqlJsDatabase,
@@ -62,7 +100,7 @@ export function registerHandlers(
       const agentDef = getAgentDefinition(db, agentId);
       if (!agentDef) return { ok: false, error: `Agent definition ${agentId} not found` };
 
-      const sessionId = createAgentSession(db, agentId, scopeType, scopeValue);
+      const sessionId = createAgentSession(db, agentId, scopeType, scopeValue, { provider: 'ollama', model });
       saveDatabase();
 
       // Query cached workflow run count so the renderer can show it immediately
@@ -86,6 +124,7 @@ export function registerHandlers(
         scopeValue,
         workflowRunCount,
         workflowFilter: workflowFilter ?? null,
+        provider: 'ollama',
       });
 
       // Fire and forget — results come back via agent:session-complete event
@@ -105,6 +144,64 @@ export function registerHandlers(
   ipcMain.handle('agents:get-session', (_event, sessionId: number) => {
     if (typeof sessionId !== 'number') return null;
     return getAgentSession(db, sessionId);
+  });
+
+  // ── Claude Agent SDK escalation ───────────────────────────────────────────
+
+  ipcMain.handle('agents:escalation-readiness', async (_event, repoFullName: string) => {
+    if (typeof repoFullName !== 'string' || repoFullName.length === 0) {
+      return { ok: false, reason: 'Invalid repository' };
+    }
+    const readiness = await checkEscalationReadiness(db, repoFullName);
+    if (!readiness.ok) return { ok: false, reason: readiness.reason, resetAt: readiness.resetAt ?? null };
+    return { ok: true };
+  });
+
+  ipcMain.handle('agents:escalate', async (_event, sourceSessionId: number) => {
+    if (typeof sourceSessionId !== 'number') return { ok: false, error: 'Invalid sessionId' };
+
+    const sourceSession = getAgentSession(db, sourceSessionId);
+    if (!sourceSession) return { ok: false, error: 'Source session not found' };
+    if (sourceSession.scope_type !== 'repo') {
+      return { ok: false, error: 'Escalation is only available for repo-scoped sessions' };
+    }
+
+    const repoFullName = sourceSession.scope_value;
+    const readiness = await checkEscalationReadiness(db, repoFullName);
+    if (!readiness.ok) return { ok: false, error: readiness.reason };
+
+    const agentDef = getAgentDefinition(db, sourceSession.agent_id);
+    if (!agentDef) return { ok: false, error: `Agent definition ${sourceSession.agent_id} not found` };
+
+    const model = DEFAULT_CLAUDE_AGENT_MODEL;
+    const sessionId = createAgentSession(db, sourceSession.agent_id, 'repo', repoFullName, {
+      provider: 'claude-agent-sdk',
+      model,
+      parentSessionId: sourceSessionId,
+    });
+    saveDatabase();
+
+    getWindow()?.webContents.send('agent:session-starting', {
+      sessionId,
+      agentName: agentDef.name,
+      scopeType: 'repo',
+      scopeValue: repoFullName,
+      workflowRunCount: 0,
+      provider: 'claude-agent-sdk',
+    });
+
+    // Fire and forget — results come back via agent:session-complete event
+    void runAgentSession(
+      db, sessionId, agentDef, 'repo', repoFullName, model, getWindow, undefined,
+      claudeAgentProvider, { cwd: readiness.localPath },
+    ).then(() => {
+      saveDatabase();
+    }).catch((err: unknown) => {
+      console.error('[Agents] Escalated session runner error:', err);
+      saveDatabase();
+    });
+
+    return { ok: true, sessionId };
   });
 
   // ── Finding approval lifecycle ────────────────────────────────────────────

@@ -163,6 +163,8 @@ contextBridge.exposeInMainWorld('jarvis', {
   agentsApproveFinding: (findingId: number) => ipcRenderer.invoke('agents:approve-finding', findingId),
   agentsRejectFinding: (findingId: number) => ipcRenderer.invoke('agents:reject-finding', findingId),
   agentsExecuteFinding: (findingId: number) => ipcRenderer.invoke('agents:execute-finding', findingId),
+  agentsEscalationReadiness: (repoFullName: string) => ipcRenderer.invoke('agents:escalation-readiness', repoFullName),
+  agentsEscalate: (sourceSessionId: number) => ipcRenderer.invoke('agents:escalate', sourceSessionId),
   onAgentSessionStarting: (callback: (data: AgentSessionStartingPayload) => void) => {
     const listener = (_event: unknown, data: AgentSessionStartingPayload) => callback(data);
     ipcRenderer.on('agent:session-starting', listener);
