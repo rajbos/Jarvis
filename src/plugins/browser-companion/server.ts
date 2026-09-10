@@ -28,7 +28,8 @@ export interface BridgeCommand {
     | 'screenshot'
     | 'list-tabs'
     | 'get-page-content'
-    | 'focus-window';
+    | 'focus-window'
+    | 'close-tab';
   tabId?: number;   // omit to use current active tab
   payload: Record<string, unknown>;
 }
