@@ -2042,8 +2042,11 @@ export interface AutoDismissLogEntry {
 }
 
 export interface AutoDismissStats {
+  daily: { period: string; count: number }[];
   weekly: { period: string; count: number }[];
   monthly: { period: string; count: number }[];
+  today: number;
+  thisWeek: number;
 }
 
 
