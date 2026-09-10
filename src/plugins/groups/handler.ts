@@ -19,6 +19,9 @@ import {
   updateRuddrProjectNote,
   updateRuddrProjectCloudFolderUrl,
   lookupRuddrProject,
+  loadRuddrBudgetsFromDb,
+  saveRuddrBudgetToDb,
+  parseSqliteUtc,
 } from '../../services/groups';
 import type { RuddrProjectEntry } from '../../services/groups';
 import { sendCommand, getBridgeStatus } from '../browser-companion/server';
@@ -31,8 +34,79 @@ let ruddrProjectsCacheTime = 0;
 /** Re-fetch after 8 hours so a long-running session stays reasonably fresh. */
 const RUDDR_CACHE_TTL_MS = 8 * 60 * 60 * 1000;
 
-// ── Ruddr budget cache (in-memory, per app session) ──────────────────────────
-const ruddrBudgetCache = new Map<string, Record<string, unknown>>();
+// ── Ruddr budget cache (in-memory, backed by DB for persistence) ─────────────
+interface CachedBudget {
+  /** The budget payload as returned to the renderer (without cache metadata). */
+  result: Record<string, unknown>;
+  /** Epoch ms of the last successful scrape. */
+  fetchedAtMs: number;
+}
+const ruddrBudgetCache = new Map<string, CachedBudget>();
+/**
+ * Budgets are re-scraped at most once every 4 hours. Every scrape navigates the
+ * user's browser to Ruddr, so opening the Groups dashboard must reuse whatever
+ * is cached instead of refreshing on each visit.
+ */
+export const RUDDR_BUDGET_TTL_MS = 4 * 60 * 60 * 1000;
+let budgetCacheSeeded = false;
+
+/** Convert a persisted budget row into the payload shape the renderer expects. */
+function budgetRowToResult(entry: {
+  actualBillableHours: string | null; actualNonBillableHours: string | null;
+  actualTotalHours: string | null; budget: string | null; budgetLeft: string | null;
+  projectUrl: string | null; note: string | null; cloudFolderUrl: string | null;
+}): Record<string, unknown> {
+  return {
+    ok: true,
+    actualBillableHours: entry.actualBillableHours,
+    actualNonBillableHours: entry.actualNonBillableHours,
+    actualTotalHours: entry.actualTotalHours,
+    budget: entry.budget,
+    budgetLeft: entry.budgetLeft,
+    projectUrl: entry.projectUrl ?? undefined,
+    note: entry.note,
+    cloudFolderUrl: entry.cloudFolderUrl,
+  };
+}
+
+/**
+ * Seeds the in-memory budget cache from the DB once per app session so the
+ * dashboard can render known figures right after a restart.
+ */
+function seedBudgetCacheFromDb(db: SqlJsDatabase): void {
+  if (budgetCacheSeeded) return;
+  budgetCacheSeeded = true;
+  try {
+    const rows = loadRuddrBudgetsFromDb(db);
+    for (const row of rows) {
+      if (ruddrBudgetCache.has(row.projectName)) continue;
+      ruddrBudgetCache.set(row.projectName, {
+        result: budgetRowToResult(row),
+        fetchedAtMs: parseSqliteUtc(row.fetchedAt),
+      });
+    }
+    if (rows.length > 0) logger.debug(`[Groups] Ruddr budget cache seeded from DB: ${rows.length} entries`);
+  } catch (err) {
+    // Table may not exist yet on a database that has not been migrated.
+    logger.debug('[Groups] Ruddr budget cache seed skipped:', err instanceof Error ? err.message : String(err));
+  }
+}
+
+/** True when a cached budget is still within the TTL window. */
+function isBudgetFresh(cached: CachedBudget | undefined): cached is CachedBudget {
+  return cached !== undefined && Date.now() - cached.fetchedAtMs < RUDDR_BUDGET_TTL_MS;
+}
+
+/** Adds cache metadata (age + staleness) to a budget payload for the renderer. */
+function withCacheMeta(cached: CachedBudget, extra: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    ...cached.result,
+    cached: true,
+    fetchedAt: cached.fetchedAtMs > 0 ? new Date(cached.fetchedAtMs).toISOString() : null,
+    stale: !isBudgetFresh(cached),
+    ...extra,
+  };
+}
 
 const RUDDR_BASE = 'https://www.ruddr.io/app';
 /** Config key for the Ruddr workspace slug (e.g. "xebia-xms-benelux"). */
@@ -187,6 +261,9 @@ async function ensureRuddrCache(db: SqlJsDatabase): Promise<string | null> {
 
 /** Pre-warms the Ruddr projects cache in the background at app startup. */
 export async function prewarmRuddrCache(db: SqlJsDatabase): Promise<void> {
+  // Seed the persisted budget cache first so the Groups dashboard has data to
+  // render the moment it is opened, even before any scrape runs.
+  seedBudgetCacheFromDb(db);
   // Seed the in-memory cache from DB immediately — no browser extension needed.
   if (ruddrProjectsCache === null || ruddrProjectsCache.length === 0) {
     const persisted = loadRuddrProjectsFromDb(db);
@@ -343,6 +420,9 @@ export async function refreshRuddrProjectsInBackground(
 }
 
 export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWindow | null): void {
+  // Make persisted budgets available to the very first dashboard query.
+  seedBudgetCacheFromDb(db);
+
   ipcMain.handle('groups:list', () => {
     return listGroups(db);
   });
@@ -538,21 +618,36 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
     return { ok: true, workspace: getRuddrWorkspace(db) };
   });
 
-  ipcMain.handle('groups:get-ruddr-budget', async (_event, projectName: string) => {
+  ipcMain.handle('groups:get-ruddr-budget', async (_event, projectName: string, options?: { force?: boolean }) => {
     if (typeof projectName !== 'string' || !projectName.trim())
       return { ok: false, error: 'Invalid projectName' };
 
+    const trimmed = projectName.trim();
+    const force = options?.force === true;
+
+    // Serve the persisted cache while it is still inside the TTL window — a
+    // scrape hijacks the user's browser, so only do it when the data is stale
+    // or the user explicitly asked for a refresh.
+    seedBudgetCacheFromDb(db);
+    const cachedBudget = ruddrBudgetCache.get(trimmed);
+    if (!force && isBudgetFresh(cachedBudget)) return withCacheMeta(cachedBudget);
+
+    /** Falls back to stale cached data when a background refresh cannot run. */
+    const cachedOr = (error: string) => {
+      if (!force && cachedBudget) return withCacheMeta(cachedBudget, { refreshError: error });
+      return { ok: false, error };
+    };
+
     const status = getBridgeStatus();
     if (!status.running || status.connectedClients === 0)
-      return { ok: false, error: 'No browser extension connected.' };
+      return cachedOr('No browser extension connected.');
 
     const workspace = getRuddrWorkspace(db);
-    if (!workspace) return { ok: false, error: 'ruddr_workspace_not_configured' };
+    if (!workspace) return cachedOr('ruddr_workspace_not_configured');
 
     // Look up the project path from the in-memory cache or DB.
     // Do NOT trigger a full scroll-extract scrape just for a path lookup —
     // that causes the browser to loop over all projects every time a budget is loaded.
-    const trimmed = projectName.trim();
     const findEntry = () =>
       ruddrProjectsCache?.find((e) => e.name === trimmed)
       ?? ruddrProjectsCache?.find((e) => e.name.toLowerCase() === trimmed.toLowerCase())
@@ -578,21 +673,18 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
     if (!entry?.path) {
       const cacheSize = ruddrProjectsCache?.length ?? 0;
       logger.warn(`[Groups] Budget: no cache entry for "${trimmed}". Cache has ${cacheSize} entries.`);
-      return {
-        ok: false,
-        error: cacheSize > 0 ? 'project_not_in_ruddr' : 'project_url_unknown',
-      };
+      return cachedOr(cacheSize > 0 ? 'project_not_in_ruddr' : 'project_url_unknown');
     }
 
     const overviewUrl = `https://www.ruddr.io${entry.path}/overview`;
     try {
       const navResp = await sendCommand({ type: 'navigate', payload: { url: overviewUrl } });
-      if (!navResp.ok) return { ok: false, error: `Navigation failed: ${navResp.error ?? 'unknown'}` };
+      if (!navResp.ok) return cachedOr(`Navigation failed: ${navResp.error ?? 'unknown'}`);
 
       const navData = navResp.data as { url?: string; tabId?: number } | null;
       if ((navData?.url ?? '').includes('/login')) {
         sendCommand({ type: 'focus-window', tabId: navData?.tabId, payload: {} }).catch(() => { /* non-fatal */ });
-        return { ok: false, error: 'login_required' };
+        return cachedOr('login_required');
       }
 
       const statsResp = await sendCommand({
@@ -600,7 +692,7 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
         tabId: navData?.tabId,
         payload: { waitMs: 3000 },
       });
-      if (!statsResp.ok) return { ok: false, error: `Scrape failed: ${statsResp.error ?? 'unknown'}` };
+      if (!statsResp.ok) return cachedOr(`Scrape failed: ${statsResp.error ?? 'unknown'}`);
 
       const raw = statsResp.data as Record<string, string> | null;
       const note = raw?.['Notes'] ?? raw?.['Note'] ?? raw?.['Description'] ?? null;
@@ -616,7 +708,26 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
         note: note,
         cloudFolderUrl: cloudFolderUrl,
       };
-      ruddrBudgetCache.set(trimmed, budgetResult);
+      const fetchedAtMs = Date.now();
+      ruddrBudgetCache.set(trimmed, { result: budgetResult, fetchedAtMs });
+      // Persist the budget itself so the dashboard can render it instantly after
+      // an app restart instead of re-scraping every project on open.
+      try {
+        saveRuddrBudgetToDb(db, {
+          projectName: trimmed,
+          actualBillableHours: budgetResult.actualBillableHours,
+          actualNonBillableHours: budgetResult.actualNonBillableHours,
+          actualTotalHours: budgetResult.actualTotalHours,
+          budget: budgetResult.budget,
+          budgetLeft: budgetResult.budgetLeft,
+          projectUrl: budgetResult.projectUrl,
+          note,
+          cloudFolderUrl,
+        });
+        saveDatabase();
+      } catch (err) {
+        logger.warn('[Groups] Failed to persist Ruddr budget:', err instanceof Error ? err.message : String(err));
+      }
       // Persist the note and cloud folder URL to the DB cache for display in group cards.
       if ((note !== null || cloudFolderUrl !== null) && entry.path) {
         try {
@@ -637,15 +748,16 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
           saveDatabase();
         } catch { /* non-fatal */ }
       }
-      return budgetResult;
+      return { ...budgetResult, fetchedAt: new Date(fetchedAtMs).toISOString(), stale: false };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return cachedOr(err instanceof Error ? err.message : String(err));
     }
   });
 
   ipcMain.handle('groups:get-ruddr-budget-cache', () => {
+    seedBudgetCacheFromDb(db);
     const budgets: Record<string, Record<string, unknown>> = {};
-    ruddrBudgetCache.forEach((value, key) => { budgets[key] = value; });
+    ruddrBudgetCache.forEach((value, key) => { budgets[key] = withCacheMeta(value); });
     return { ok: true, budgets };
   });
 

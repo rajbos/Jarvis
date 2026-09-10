@@ -160,6 +160,32 @@ describe('Migration v26 → v27 (agent_sessions escalation columns)', () => {
   });
 });
 
+describe('Migration v28 -> v29', () => {
+  it('creates the ruddr_budgets table and bumps user_version', async () => {
+    const SQL = await initSqlJs();
+    const oldDb = new SQL.Database();
+    oldDb.run('PRAGMA user_version = 28');
+
+    initializeSchema(oldDb);
+
+    expect(oldDb.exec('PRAGMA user_version')[0].values[0][0]).toBe(29);
+
+    const tables = oldDb
+      .exec("SELECT name FROM sqlite_master WHERE type='table'")[0]
+      .values.map((row: unknown[]) => row[0] as string);
+    expect(tables).toContain('ruddr_budgets');
+
+    const columns = oldDb
+      .exec('PRAGMA table_info(ruddr_budgets)')[0]
+      .values.map((row: unknown[]) => row[1] as string);
+    expect(columns).toContain('project_name');
+    expect(columns).toContain('budget_left');
+    expect(columns).toContain('fetched_at');
+
+    oldDb.close();
+  });
+});
+
 describe('Migration v25 -> v26', () => {
   it('adds failing_step_name and error_highlights to github_workflow_jobs and bumps user_version', async () => {
     const SQL = await initSqlJs();

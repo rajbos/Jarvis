@@ -303,6 +303,22 @@ export function getSchema(): string {
         PRIMARY KEY (path)
     );
 
+    -- Ruddr project budget cache (persisted across restarts so the Groups
+    -- dashboard can render immediately without re-scraping on every open)
+    CREATE TABLE IF NOT EXISTS ruddr_budgets (
+        project_name              TEXT NOT NULL,
+        project_url               TEXT,
+        actual_billable_hours     TEXT,
+        actual_non_billable_hours TEXT,
+        actual_total_hours        TEXT,
+        budget                    TEXT,
+        budget_left               TEXT,
+        note                      TEXT,
+        cloud_folder_url          TEXT,
+        fetched_at                DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (project_name)
+    );
+
     -- Browser companion: reusable automation skills
     CREATE TABLE IF NOT EXISTS browser_skills (
         id                INTEGER PRIMARY KEY AUTOINCREMENT,

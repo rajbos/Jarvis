@@ -248,8 +248,8 @@ contextBridge.exposeInMainWorld('jarvis', {
     ipcRenderer.invoke('groups:get-ruddr-workspace'),
   groupsSetRuddrWorkspace: (workspace: string) =>
     ipcRenderer.invoke('groups:set-ruddr-workspace', workspace),
-  groupsGetRuddrBudget: (projectName: string) =>
-    ipcRenderer.invoke('groups:get-ruddr-budget', projectName),
+  groupsGetRuddrBudget: (projectName: string, options?: { force?: boolean }) =>
+    ipcRenderer.invoke('groups:get-ruddr-budget', projectName, options),
   groupsGetRuddrBudgetCache: () =>
     ipcRenderer.invoke('groups:get-ruddr-budget-cache'),
 

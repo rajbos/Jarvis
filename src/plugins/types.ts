@@ -1974,7 +1974,47 @@ export interface RuddrBudget {
 
 
 
+  note?: string | null;
+
+
+
+  cloudFolderUrl?: string | null;
+
+
+
   error?: string;
+
+
+
+  /** ISO timestamp of the scrape this data came from (null when unknown). */
+
+
+
+  fetchedAt?: string | null;
+
+
+
+  /** True when the payload was served from the cache rather than a fresh scrape. */
+
+
+
+  cached?: boolean;
+
+
+
+  /** True when the cached data is older than the refresh window. */
+
+
+
+  stale?: boolean;
+
+
+
+  /** Set when cached data was returned because a refresh attempt failed. */
+
+
+
+  refreshError?: string;
 
 
 
@@ -2798,7 +2838,7 @@ export interface JarvisApi {
 
 
 
-  groupsGetRuddrBudget(projectName: string): Promise<RuddrBudget>;
+  groupsGetRuddrBudget(projectName: string, options?: { force?: boolean }): Promise<RuddrBudget>;
 
 
 

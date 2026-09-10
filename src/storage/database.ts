@@ -87,7 +87,7 @@ export function initializeSchema(database: SqlJsDatabase): void {
   if (userVersion === 0) {
     database.run(getSchema());
     seedBuiltInAgents(database);
-    database.run('PRAGMA user_version = 28');
+    database.run('PRAGMA user_version = 29');
   }
 
   if (userVersion === 1) {
@@ -550,6 +550,28 @@ export function initializeSchema(database: SqlJsDatabase): void {
       [WORKFLOW_FAILURE_ANALYST_PROMPT],
     );
     database.run('PRAGMA user_version = 28');
+  }
+
+  if (userVersion === 28) {
+    // Migration v28 → v29: persist the Ruddr budget cache so the Groups
+    // dashboard can render known figures instantly on open and only re-scrape
+    // once the cache TTL has expired.
+    database.run(`
+      CREATE TABLE IF NOT EXISTS ruddr_budgets (
+        project_name              TEXT NOT NULL,
+        project_url               TEXT,
+        actual_billable_hours     TEXT,
+        actual_non_billable_hours TEXT,
+        actual_total_hours        TEXT,
+        budget                    TEXT,
+        budget_left               TEXT,
+        note                      TEXT,
+        cloud_folder_url          TEXT,
+        fetched_at                DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (project_name)
+      )
+    `);
+    database.run('PRAGMA user_version = 29');
   }
 }
 
