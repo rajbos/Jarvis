@@ -88,6 +88,100 @@ export function lookupRuddrProject(db: SqlJsDatabase, name: string): RuddrProjec
   }
 }
 
+// ── Ruddr budget cache (DB-persisted) ─────────────────────────────────────────
+
+export interface RuddrBudgetEntry {
+  projectName: string;
+  actualBillableHours: string | null;
+  actualNonBillableHours: string | null;
+  actualTotalHours: string | null;
+  budget: string | null;
+  budgetLeft: string | null;
+  projectUrl: string | null;
+  note: string | null;
+  cloudFolderUrl: string | null;
+  /** SQLite UTC timestamp ("YYYY-MM-DD HH:MM:SS") of the last successful scrape. */
+  fetchedAt: string | null;
+}
+
+/**
+ * Parse a SQLite `datetime('now')` timestamp (UTC, no timezone suffix) into
+ * epoch milliseconds. Returns 0 for null/unparsable values so callers treat
+ * them as "infinitely old" and refresh.
+ */
+export function parseSqliteUtc(timestamp: string | null | undefined): number {
+  if (!timestamp) return 0;
+  const normalized = timestamp.includes('T') ? timestamp : timestamp.replace(' ', 'T');
+  const ms = Date.parse(normalized.endsWith('Z') ? normalized : `${normalized}Z`);
+  return Number.isNaN(ms) ? 0 : ms;
+}
+
+/** Load every cached Ruddr budget from the database. */
+export function loadRuddrBudgetsFromDb(db: SqlJsDatabase): RuddrBudgetEntry[] {
+  const stmt = db.prepare(`
+    SELECT project_name, project_url, actual_billable_hours, actual_non_billable_hours,
+           actual_total_hours, budget, budget_left, note, cloud_folder_url, fetched_at
+    FROM ruddr_budgets
+  `);
+  const results: RuddrBudgetEntry[] = [];
+  try {
+    while (stmt.step()) {
+      const r = stmt.getAsObject() as {
+        project_name: string; project_url: string | null;
+        actual_billable_hours: string | null; actual_non_billable_hours: string | null;
+        actual_total_hours: string | null; budget: string | null; budget_left: string | null;
+        note: string | null; cloud_folder_url: string | null; fetched_at: string | null;
+      };
+      results.push({
+        projectName: r.project_name,
+        actualBillableHours: r.actual_billable_hours,
+        actualNonBillableHours: r.actual_non_billable_hours,
+        actualTotalHours: r.actual_total_hours,
+        budget: r.budget,
+        budgetLeft: r.budget_left,
+        projectUrl: r.project_url,
+        note: r.note,
+        cloudFolderUrl: r.cloud_folder_url,
+        fetchedAt: r.fetched_at,
+      });
+    }
+  } finally {
+    stmt.free();
+  }
+  return results;
+}
+
+/** Upsert a single project budget, stamping it with the current time. */
+export function saveRuddrBudgetToDb(db: SqlJsDatabase, entry: Omit<RuddrBudgetEntry, 'fetchedAt'>): void {
+  db.run(
+    `INSERT INTO ruddr_budgets (
+       project_name, project_url, actual_billable_hours, actual_non_billable_hours,
+       actual_total_hours, budget, budget_left, note, cloud_folder_url, fetched_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+     ON CONFLICT(project_name) DO UPDATE SET
+       project_url               = excluded.project_url,
+       actual_billable_hours     = excluded.actual_billable_hours,
+       actual_non_billable_hours = excluded.actual_non_billable_hours,
+       actual_total_hours        = excluded.actual_total_hours,
+       budget                    = excluded.budget,
+       budget_left               = excluded.budget_left,
+       note                      = COALESCE(excluded.note, ruddr_budgets.note),
+       cloud_folder_url          = COALESCE(excluded.cloud_folder_url, ruddr_budgets.cloud_folder_url),
+       fetched_at                = excluded.fetched_at`,
+    [
+      entry.projectName,
+      entry.projectUrl ?? null,
+      entry.actualBillableHours ?? null,
+      entry.actualNonBillableHours ?? null,
+      entry.actualTotalHours ?? null,
+      entry.budget ?? null,
+      entry.budgetLeft ?? null,
+      entry.note ?? null,
+      entry.cloudFolderUrl ?? null,
+    ],
+  );
+}
+
 // ── List ──────────────────────────────────────────────────────────────────────
 
 /** Return all groups with member counts. */
