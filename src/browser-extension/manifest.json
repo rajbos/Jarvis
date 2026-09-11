@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Jarvis Browser Companion",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Connects your local Jarvis assistant to the browser so it can navigate tabs, fill forms, and extract data using your existing authenticated sessions.",
   "permissions": [
     "tabs",
