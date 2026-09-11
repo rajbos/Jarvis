@@ -25,6 +25,14 @@ import {
 } from '../../services/groups';
 import type { RuddrProjectEntry } from '../../services/groups';
 import { sendCommand, getBridgeStatus } from '../browser-companion/server';
+import {
+  createTabSession,
+  navigatePayload,
+  recordNavigationTab,
+  keepSessionTabOpen,
+  closeSessionTab,
+} from '../browser-companion/tab-session';
+import type { BrowserTabSession } from '../browser-companion/tab-session';
 import type { RuddrProjectMatch } from '../types';
 import { logger } from '../../services/logger';
 
@@ -153,8 +161,14 @@ function scoreMatch(query: string, candidate: string): number {
 /**
  * Ensures ruddrProjectsCache is populated. Returns an error string on
  * failure, or null on success (cache is guaranteed non-null after null return).
+ *
+ * Pass a `session` to run the scrape in its own browser tab; the caller closes
+ * that tab with closeSessionTab() once the whole run is finished.
  */
-async function ensureRuddrCache(db: SqlJsDatabase): Promise<string | null> {
+async function ensureRuddrCache(
+  db: SqlJsDatabase,
+  session?: BrowserTabSession,
+): Promise<string | null> {
   const cacheExpired = Date.now() - ruddrProjectsCacheTime > RUDDR_CACHE_TTL_MS;
   if (ruddrProjectsCache !== null && ruddrProjectsCache.length > 0 && !cacheExpired) return null;
 
@@ -165,28 +179,41 @@ async function ensureRuddrCache(db: SqlJsDatabase): Promise<string | null> {
   const ruddrProjectsUrl = getRuddrProjectsUrl(db);
   if (!ruddrProjectsUrl) return 'ruddr_workspace_not_configured';
 
-  const navResp = await sendCommand({ type: 'navigate', payload: { url: ruddrProjectsUrl } });
+  const navResp = await sendCommand({
+    type: 'navigate',
+    tabId: session?.tabId,
+    payload: { url: ruddrProjectsUrl, ...navigatePayload(session) },
+  });
   if (!navResp.ok) return `Navigation failed: ${navResp.error ?? 'unknown'}`;
+  recordNavigationTab(session, navResp.data);
 
   const navData = navResp.data as { url?: string; tabId?: number } | null;
   let finalUrl = navData?.url ?? '';
   if (finalUrl.includes('/login')) {
+    // The user has to log in here — leave the tab open for them.
+    keepSessionTabOpen(session);
     sendCommand({ type: 'focus-window', tabId: navData?.tabId, payload: {} }).catch(() => { /* non-fatal */ });
     return 'login_required';
   }
 
-  let scrapeTabId: number | undefined = navData?.tabId;
+  let scrapeTabId: number | undefined = session?.tabId ?? navData?.tabId;
   if (!finalUrl.includes('portfolio/projects')) {
     logger.debug(`[Groups] Portfolio URL redirected to ${finalUrl} — trying my-projects fallback`);
-    const fallbackNav = await sendCommand({ type: 'navigate', payload: { url: getRuddrMyProjectsUrl(db) } });
+    const fallbackNav = await sendCommand({
+      type: 'navigate',
+      tabId: session?.tabId,
+      payload: { url: getRuddrMyProjectsUrl(db), ...navigatePayload(session) },
+    });
     if (!fallbackNav.ok) return `Fallback navigation failed: ${fallbackNav.error ?? 'unknown'}`;
+    recordNavigationTab(session, fallbackNav.data);
     const fallbackData = fallbackNav.data as { url?: string; tabId?: number } | null;
     finalUrl = fallbackData?.url ?? '';
     if (finalUrl.includes('/login')) {
+      keepSessionTabOpen(session);
       sendCommand({ type: 'focus-window', tabId: fallbackData?.tabId, payload: {} }).catch(() => { /* non-fatal */ });
       return 'login_required';
     }
-    scrapeTabId = fallbackData?.tabId ?? scrapeTabId;
+    scrapeTabId = session?.tabId ?? fallbackData?.tabId ?? scrapeTabId;
   }
 
   // Focus the tab before scraping — Chrome aggressively throttles background tabs
@@ -274,8 +301,13 @@ export async function prewarmRuddrCache(db: SqlJsDatabase): Promise<void> {
     }
   }
   // Then try to refresh from browser if connected.
-  const err = await ensureRuddrCache(db);
-  if (err) logger.debug(`[Groups] Ruddr pre-warm skipped: ${err}`);
+  const session = createTabSession();
+  try {
+    const err = await ensureRuddrCache(db, session);
+    if (err) logger.debug(`[Groups] Ruddr pre-warm skipped: ${err}`);
+  } finally {
+    await closeSessionTab(session);
+  }
 }
 
 // ── Hourly Ruddr project refresh ─────────────────────────────────────────────
@@ -287,8 +319,14 @@ let _getWindowFn: () => BrowserWindow | null = () => null;
  * After a successful project-list refresh, silently scrape the overview page
  * for each group-linked project that is still missing a note or cloud folder URL.
  * Emits 'groups:project-details-refreshed' when at least one project was updated.
+ *
+ * Shares the caller's browser tab session so every group is scraped in the same
+ * tab; the caller closes it once all groups are done.
  */
-async function refreshLinkedProjectDetails(db: SqlJsDatabase): Promise<void> {
+async function refreshLinkedProjectDetails(
+  db: SqlJsDatabase,
+  session?: BrowserTabSession,
+): Promise<void> {
   const status = getBridgeStatus();
   if (!status.running || status.connectedClients === 0) return;
 
@@ -321,23 +359,31 @@ async function refreshLinkedProjectDetails(db: SqlJsDatabase): Promise<void> {
       const editUrl = `https://www.ruddr.io${editPath}`;
       logger.debug(`[Groups] Refreshing "${entry.name}" → ${editUrl}`);
 
-      const navResp = await sendCommand({ type: 'navigate', payload: { url: editUrl } });
+      const navResp = await sendCommand({
+        type: 'navigate',
+        tabId: session?.tabId,
+        payload: { url: editUrl, ...navigatePayload(session) },
+      });
       logger.debug(`[Groups]   nav ok=${navResp.ok} data=${JSON.stringify(navResp.data)}`);
       if (!navResp.ok) {
         logger.warn(`[Groups]   nav failed for "${entry.name}", skipping`);
         continue;
       }
+      recordNavigationTab(session, navResp.data);
 
       const navData = navResp.data as { url?: string; tabId?: number } | null;
       if ((navData?.url ?? '').includes('/login')) {
         logger.debug('[Groups] Auto-refresh: Ruddr login required — stopping detail refresh');
+        // The user has to log in here — leave the tab open for them.
+        keepSessionTabOpen(session);
         break;
       }
 
-      logger.debug(`[Groups]   Sending read-form-fields (tabId=${navData?.tabId})`);
+      const scrapeTabId = session?.tabId ?? navData?.tabId;
+      logger.debug(`[Groups]   Sending read-form-fields (tabId=${scrapeTabId})`);
       const fieldsResp = await sendCommand({
         type: 'read-form-fields',
-        tabId: navData?.tabId,
+        tabId: scrapeTabId,
         payload: {
           selectors: ['textarea[name="description"]', 'input[name="cloudFolderUrl"]'],
           waitMs: 4000,
@@ -407,16 +453,24 @@ export async function refreshRuddrProjectsInBackground(
   };
 
   if (forceFresh) ruddrProjectsCacheTime = 0;
-  const err = await ensureRuddrCache(db).catch((e: unknown) => String(e));
-  if (err) {
-    logger.debug('[Groups] Scheduled Ruddr refresh skipped:', err);
-    return { ok: true, skipped: true, error: err };
-  }
 
-  await refreshLinkedProjectDetails(db).catch((e: unknown) =>
-    logger.warn('[Groups] Auto-refresh project details failed:', e instanceof Error ? e.message : String(e)),
-  );
-  return { ok: true };
+  // One tab for the whole run: the project list plus every linked group. It is
+  // closed below once all groups are done — but only if we opened it ourselves.
+  const session = createTabSession();
+  try {
+    const err = await ensureRuddrCache(db, session).catch((e: unknown) => String(e));
+    if (err) {
+      logger.debug('[Groups] Scheduled Ruddr refresh skipped:', err);
+      return { ok: true, skipped: true, error: err };
+    }
+
+    await refreshLinkedProjectDetails(db, session).catch((e: unknown) =>
+      logger.warn('[Groups] Auto-refresh project details failed:', e instanceof Error ? e.message : String(e)),
+    );
+    return { ok: true };
+  } finally {
+    await closeSessionTab(session);
+  }
 }
 
 export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWindow | null): void {
@@ -531,11 +585,14 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
     if (typeof groupName !== 'string' || !groupName.trim())
       return { ok: false, error: 'Invalid groupName' };
 
+    const session = createTabSession();
     try {
-      const err = await ensureRuddrCache(db);
+      const err = await ensureRuddrCache(db, session);
       if (err) return { ok: false, error: err };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    } finally {
+      await closeSessionTab(session);
     }
 
     const cache = ruddrProjectsCache;
@@ -782,12 +839,26 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
   ipcMain.handle('groups:sync-ruddr-cache-now', async () => {
     // Force re-fetch regardless of TTL
     ruddrProjectsCacheTime = 0;
-    const err = await ensureRuddrCache(db);
-    if (err) return { ok: false, error: err };
-    // Fire-and-forget: refresh note/cloud folder from the edit page for linked projects.
-    refreshLinkedProjectDetails(db).catch((e: unknown) =>
-      logger.warn('[Groups] Manual sync: project details refresh failed:', e instanceof Error ? e.message : String(e)),
-    );
+    const session = createTabSession();
+    let err: string | null;
+    try {
+      err = await ensureRuddrCache(db, session);
+    } catch (e) {
+      // Don't leave our tab behind when the scrape blows up.
+      await closeSessionTab(session);
+      throw e;
+    }
+    if (err) {
+      await closeSessionTab(session);
+      return { ok: false, error: err };
+    }
+    // Fire-and-forget: refresh note/cloud folder from the edit page for linked
+    // projects, then close the tab once every group has been visited.
+    void refreshLinkedProjectDetails(db, session)
+      .catch((e: unknown) =>
+        logger.warn('[Groups] Manual sync: project details refresh failed:', e instanceof Error ? e.message : String(e)),
+      )
+      .finally(() => closeSessionTab(session));
     return { ok: true, count: ruddrProjectsCache?.length ?? 0 };
   });
 

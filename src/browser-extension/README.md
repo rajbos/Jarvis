@@ -6,6 +6,7 @@ This browser extension connects your local **Jarvis** desktop app to Edge or Chr
 - Interact with forms: fill inputs, click buttons, select options
 - Scrape data from pages using CSS selectors
 - List open tabs and capture screenshots
+- Open a dedicated tab for a task and close it again when the task is done
 
 ## Architecture
 
@@ -24,6 +25,37 @@ This browser extension connects your local **Jarvis** desktop app to Edge or Chr
 ```
 
 The Jarvis app runs a local WebSocket bridge server on `ws://127.0.0.1:35789`. The extension's service worker connects to this server and relays commands from Jarvis into the browser using the Chrome Extensions API.
+
+## Commands (Jarvis → Extension)
+
+Each command is a JSON message `{ id, type, tabId?, payload }`; the extension answers with `{ id, ok, data?, error? }`. Omitting `tabId` targets the active tab.
+
+| Type | Payload | Returns |
+|---|---|---|
+| `navigate` | `{ url, newTab? }` | `{ url, title, tabId, createdTab }` |
+| `evaluate` | `{ instructions, testMode? }` | Step results |
+| `extract` | `{ selector }` | Matching elements |
+| `scroll-extract` | `{ selector, maxScrolls?, waitMs?, includeHref?, debug? }` | `{ items, debugLog? }` |
+| `scrape-stats` | `{ waitMs? }` | Label → value map |
+| `read-form-fields` | `{ selectors, waitMs? }` | Selector → value map |
+| `click` / `fill` | `{ selector }` / `{ selector, value }` | `{ ok }` |
+| `screenshot` | — | Data URL |
+| `list-tabs` | — | Open tabs |
+| `get-page-content` | — | `{ title, url, text, html }` |
+| `focus-window` | — | `{ ok, windowId }` |
+| `close-tab` | `{ tabId? }` (or the command's `tabId`) | `{ closed, alreadyClosed? }` |
+
+### Owned tabs
+
+Long-running scrapes (the Ruddr project + group refresh, for example) shouldn't take over
+whatever the user is reading. Passing `newTab: true` on the first `navigate` of a run opens a
+dedicated tab; the response carries `createdTab: true` and its `tabId`. Jarvis reuses that
+`tabId` for the rest of the run and sends `close-tab` for it when the run finishes.
+
+Jarvis only closes a tab it was told it created, so a run that reused an existing tab —
+including one against an older extension build that ignores `newTab` — leaves the user's tab
+open. A tab that is already gone when `close-tab` arrives answers `{ closed: false,
+alreadyClosed: true }` rather than an error.
 
 ## Installation (Developer Mode)
 
