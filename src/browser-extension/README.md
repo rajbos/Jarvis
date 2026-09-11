@@ -65,7 +65,7 @@ alreadyClosed: true }` rather than an error.
 2. Enable **Developer mode** (toggle in the top-right corner)
 3. Click **Load unpacked**
 4. Select the `src/browser-extension` folder from the Jarvis source directory
-5. The 🌐 extension icon will appear in your toolbar
+5. The Jarvis icon will appear in your toolbar (the same arc-reactor mark as the desktop app)
 
 Once the Jarvis desktop app is running, the badge on the extension icon will turn **green** to indicate an active connection.
 
