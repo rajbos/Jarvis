@@ -27,7 +27,11 @@ To point at a different database file:
 JARVIS_DB="C:\path\to\custom.db" node dist/mcp-server/index.js
 ```
 
-## Claude Desktop configuration
+## Getting the client configuration from the app
+
+Open **Settings → MCP server** in Jarvis. It shows ready-to-copy snippets for Claude Desktop, VS Code and Claude Code with the correct script path, database path and index path for this machine, plus the state of the local file index and an **Index now** button. In an installed build the snippets use Jarvis's own bundled runtime (`ELECTRON_RUN_AS_NODE=1`), so no separate Node.js install is needed.
+
+## Claude Desktop configuration (manual)
 
 Add this to your `claude_desktop_config.json` (usually at `%APPDATA%\Claude\claude_desktop_config.json`):
 

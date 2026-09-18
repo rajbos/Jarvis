@@ -610,6 +610,19 @@ export interface LocalIndexProgress {
   currentRepo?: string;
 }
 
+/** Ready-to-paste MCP client configuration for connecting to this Jarvis instance. */
+export interface McpClientConfig {
+  claudeDesktop: string;
+  vscode: string;
+  claudeCode: string;
+  generic: { command: string; serverScriptPath: string; env: Record<string, string> };
+  packaged: boolean;
+  serverScriptExists: boolean;
+  dbPath: string | null;
+  indexPath: string | null;
+  indexExists: boolean;
+}
+
 export interface LocalIndexStatus {
   running: boolean;
   progress: LocalIndexProgress | null;
@@ -2623,6 +2636,7 @@ export interface JarvisApi {
 
   localGetScanStatus(): Promise<{ running: boolean; progress: LocalScanProgress | null }>;
   localGetIndexStatus(): Promise<LocalIndexStatus>;
+  mcpGetClientConfig(): Promise<McpClientConfig>;
   localStartIndex(): Promise<{ started: boolean }>;
 
 

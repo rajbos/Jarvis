@@ -3,6 +3,7 @@ import { render } from 'preact';
 import { useState, useEffect } from 'preact/hooks';
 
 import './settings.css';
+import { McpServerSection, type McpSectionApi } from './mcp-settings-section';
 
 
 
@@ -1179,6 +1180,7 @@ function App() {
       <PatSection />
       <OneDriveSection />
       <RuddrSection />
+      <McpServerSection api={window.jarvis as unknown as McpSectionApi} />
       <DashboardSettingsSection />
       <AgentPromptsSection />
     </>

@@ -96,6 +96,7 @@ contextBridge.exposeInMainWorld('jarvis', {
   localGetScanStatus: () => ipcRenderer.invoke('local:get-scan-status'),
   localStartScan: () => ipcRenderer.invoke('local:start-scan'),
   localGetIndexStatus: () => ipcRenderer.invoke('local:get-index-status'),
+  mcpGetClientConfig: () => ipcRenderer.invoke('mcp:get-client-config'),
   localStartIndex: () => ipcRenderer.invoke('local:start-index'),
   localListRepos: () => ipcRenderer.invoke('local:list-repos'),
   localListReposForFolder: (folderPath: string) => ipcRenderer.invoke('local:list-repos-for-folder', folderPath),

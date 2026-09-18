@@ -117,6 +117,8 @@ const EXPECTED_CHANNELS = [
   'local:link-repo',
   'local:open-folder',
   'local:open-terminal',
+  // mcp-server plugin
+  'mcp:get-client-config',
   // agents plugin
   'agents:list',
   'agents:update',
