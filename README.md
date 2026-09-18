@@ -140,7 +140,9 @@ After connecting, the following tools are available:
 
 | Tool | Description |
 |---|---|
-| `github_find` | Search across remote repos, local clones and notifications at once |
+| `github_find` | Search across remote repos, local clones, notifications and file contents at once |
+| `github_search_files` | Full-text search inside files of local clones ("where is the script that does X") |
+| `github_index_status` | Coverage of the local file index |
 | `github_search_repos` | Search discovered GitHub repos (with local clone paths) |
 | `github_local_repos` | List git clones on this machine with remotes |
 | `github_notifications` | Cached GitHub notifications with filters |

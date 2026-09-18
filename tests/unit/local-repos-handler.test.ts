@@ -23,7 +23,7 @@ const spawnMock = vi.hoisted(() =>
   })),
 );
 
-vi.mock('node:child_process', () => ({ spawn: spawnMock }));
+vi.mock('node:child_process', () => ({ spawn: spawnMock, execFile: vi.fn() }));
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -193,6 +193,24 @@ describe('Local-repos plugin — IPC handlers', () => {
     it('returns started:true', () => {
       const result = callHandler('local:start-scan') as Record<string, unknown>;
       expect(result.started).toBe(true);
+    });
+  });
+
+  // ── local:get-index-status / local:start-index ────────────────────────────
+
+  describe('local:get-index-status', () => {
+    it('reports an idle index with no path before the main DB is opened', async () => {
+      const result = (await callHandler('local:get-index-status')) as Record<string, unknown>;
+      expect(result.running).toBe(false);
+      expect(result.indexPath).toBeNull();
+      expect(result.status).toBeNull();
+    });
+  });
+
+  describe('local:start-index', () => {
+    it('does not start when there is nothing to index', () => {
+      const result = callHandler('local:start-index') as Record<string, unknown>;
+      expect(result.started).toBe(false);
     });
   });
 

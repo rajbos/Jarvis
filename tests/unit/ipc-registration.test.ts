@@ -110,6 +110,8 @@ const EXPECTED_CHANNELS = [
   'local:remove-folder',
   'local:get-scan-status',
   'local:start-scan',
+  'local:get-index-status',
+  'local:start-index',
   'local:list-repos',
   'local:list-repos-for-folder',
   'local:link-repo',

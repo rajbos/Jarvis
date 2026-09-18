@@ -56,6 +56,7 @@ vi.mock('electron', () => ({
 
 vi.mock('node:child_process', () => ({
   spawn: spawnMock,
+  execFile: vi.fn(),
 }));
 
 vi.mock('node:fs', () => ({

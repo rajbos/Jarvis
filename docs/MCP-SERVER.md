@@ -52,13 +52,26 @@ Tools are grouped into families by prefix. `github_*` answers "where is / what h
 
 | Tool | Description |
 |---|---|
-| `github_find` | One-shot search across remote repos, local clones and notifications. Start here when you do not know where something lives (e.g. "azure devops pipeline") |
+| `github_find` | One-shot search across remote repos, local clones, notifications **and file contents**. Start here when you do not know where something lives (e.g. "azure devops pipeline minutes") |
+| `github_search_files` | Full-text search over file paths and contents inside local clones. Best for "where is the script that does X". Options: `repoPath`, `kind` (script/doc/config/source/other), `limit` |
+| `github_index_status` | What the file index covers: repos, files, last build time, per-repo counts and skip reasons |
 | `github_search_repos` | Search discovered GitHub repos by words in name, description or language; returns metadata plus known local clone paths. Options: `owner`, `includeArchived`, `limit` |
 | `github_local_repos` | List git clones found on this machine with paths, remotes and linked GitHub repo; optional `query` filter |
 | `github_notifications` | Cached GitHub notifications, newest first. Filters: `query`, `repo` (`owner/repo` or `owner`), `unreadOnly`, `since`, `limit` |
 | `github_workflow_runs` | Cached GitHub Actions runs. Filters: `repo`, `conclusion`, `limit` |
 
-Search terms are ANDed and matched case-insensitively with `LIKE`. Only repo-level metadata is indexed today, not file contents inside repos.
+Repo-level search terms are ANDed and matched case-insensitively with `LIKE`. File search uses an FTS4 full-text index with prefix matching (all words required).
+
+#### The local file index
+
+`github_search_files` (and the `files` array of `github_find`) read a **separate** database, `jarvis-index.db`, that sits next to `jarvis.db` (override with `JARVIS_INDEX_DB`). The Jarvis app builds it right after every local repo scan (hourly, and on demand via the `local:start-index` IPC channel):
+
+- Files are enumerated with `git ls-files` (tracked + untracked, honouring `.gitignore`), so `node_modules`, `dist` and similar never enter the index. A bounded directory walk is the fallback when git is unavailable.
+- Every file is indexed by path. Text is stored for scripts and docs (first 16 KB), config (8 KB) and source files (2 KB); lock files, minified files and binaries are path-only.
+- Each repo gets at most 1 MB of text. Files are processed scripts-first and shallow-paths-first so the cap keeps the most useful content; the rest stays searchable by path.
+- Re-runs are incremental (size + mtime), and the file is written atomically so the MCP server never reads a half-written index.
+
+The index is kept out of `jarvis.db` on purpose: sql.js persists a database by rewriting the whole file, and the index is tens of megabytes.
 
 ### Ruddr tools (projects and budgets)
 

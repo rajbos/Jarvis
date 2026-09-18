@@ -34,6 +34,8 @@ import {
   searchGitHubRepos,
   searchLocalRepos,
 } from './tools/github.js';
+import { openIndexSnapshot, INDEX_DB_PATH } from './index-db.js';
+import { describeIndex, searchLocalFiles } from './tools/files.js';
 
 const server = new McpServer(
   { name: 'jarvis', version: '0.1.0' },
@@ -46,7 +48,9 @@ and never calls those services itself.
 
 Tool families:
 - github_*  : cached GitHub data: discovered remote repos, local git clones on disk, notifications,
-              workflow runs. Start with github_find to locate something when you do not know where it lives.
+              workflow runs, plus a full-text index of file paths and contents inside the local clones
+              (built by the app into ${INDEX_DB_PATH}). Start with github_find to locate something when
+              you do not know where it lives; use github_search_files to search inside files.
 - ruddr_*   : Ruddr project registry and cached budget/actuals. Use ruddr_customer_budget for
               "what is the budget utilization for customer X".
 - groups_*  : customer/client groups that tie repos and Ruddr projects together.
@@ -298,11 +302,12 @@ server.registerTool(
   {
     title: 'Find across all cached GitHub data',
     description:
-      'One-shot search across cached remote GitHub repos, local git clones on disk and GitHub ' +
-      'notifications. Use this first when you do not know where something lives (e.g. "azure devops ' +
-      'pipeline minutes script"). All words must match; matching is over repo names, descriptions, ' +
-      'languages, local paths, remote URLs and notification titles. Remote hits include any known ' +
-      'local clone paths. Note: file contents inside repos are not indexed, only repo-level metadata.',
+      'One-shot search across cached remote GitHub repos, local git clones on disk, GitHub ' +
+      'notifications AND the contents of files inside local clones. Use this first when you do not ' +
+      'know where something lives (e.g. "azure devops pipeline minutes script"). All words must match. ' +
+      'Repo-level matching is over names, descriptions, languages, local paths, remote URLs and ' +
+      'notification titles; file-level matching (the `files` array) is a full-text search over paths ' +
+      'and file text, best for finding a script by what it does. Remote hits include known local clone paths.',
     inputSchema: {
       query: z.string().min(1).describe('Search words (all must match)'),
       limitPerSource: z.number().int().min(1).max(50).optional().default(10).describe('Max hits per source (default 10)'),
@@ -311,15 +316,69 @@ server.registerTool(
   async ({ query, limitPerSource }: { query: string; limitPerSource?: number }) => {
     const db = await openSnapshot();
     try {
-      const result = findAnywhere(db, query, limitPerSource ?? 10);
-      const total = result.repos.length + result.localRepos.length + result.notifications.length;
+      const base = findAnywhere(db, query, limitPerSource ?? 10);
+      const files = searchLocalFiles(await openIndexSnapshot(), query, { limit: limitPerSource ?? 10 });
+      const result = { ...base, fileIndexAvailable: files.indexAvailable, files: files.hits };
+      const total = result.repos.length + result.localRepos.length + result.notifications.length + result.files.length;
       if (total === 0) {
-        return { content: [{ type: 'text' as const, text: `Nothing cached matches "${query}". Try fewer or different words.` }] };
+        const hint = files.indexAvailable ? '' : ' (file contents are not indexed yet: start Jarvis and let the local repo scan finish)';
+        return { content: [{ type: 'text' as const, text: `Nothing cached matches "${query}". Try fewer or different words.${hint}` }] };
       }
       return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
     } finally {
       db.close();
     }
+  },
+);
+
+// ── Tool: github_search_files ─────────────────────────────────────────────────
+
+server.registerTool(
+  'github_search_files',
+  {
+    title: 'Search inside local repo files',
+    description:
+      'Full-text search over file paths and file contents of every local git clone Jarvis has indexed. ' +
+      'Best for "where is the script that does X". All words must match (prefix matching, so "minute" ' +
+      'finds "minutes"). Scripts and docs rank first. Each hit has the absolute path, repo, kind ' +
+      '(script/doc/config/source/other) and a snippet with [brackets] around matches. ' +
+      'Optionally restrict to one `repoPath` (absolute local path) or one `kind`. ' +
+      'Only the first part of large files is indexed; vendored folders and lock files are skipped.',
+    inputSchema: {
+      query: z.string().min(1).describe('Search words (all must match, prefix-matched)'),
+      repoPath: z.string().optional().describe('Absolute local repo path to search within'),
+      kind: z.enum(['script', 'doc', 'config', 'source', 'other']).optional().describe('Restrict to a file kind'),
+      limit: z.number().int().min(1).max(200).optional().default(20),
+    },
+  },
+  async ({ query, repoPath, kind, limit }: { query: string; repoPath?: string; kind?: 'script' | 'doc' | 'config' | 'source' | 'other'; limit?: number }) => {
+    const result = searchLocalFiles(await openIndexSnapshot(), query, { repoPath, kind, limit: limit ?? 20 });
+    if (!result.indexAvailable) {
+      return { content: [{ type: 'text' as const, text: `No file index found at ${INDEX_DB_PATH}. Start Jarvis and let the local repo scan finish; the index is built right after it.` }] };
+    }
+    if (result.hits.length === 0) {
+      return { content: [{ type: 'text' as const, text: `No indexed files match "${query}" (index last built ${result.lastIndexedAt ?? 'unknown'}).` }] };
+    }
+    return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+  },
+);
+
+// ── Tool: github_index_status ─────────────────────────────────────────────────
+
+server.registerTool(
+  'github_index_status',
+  {
+    title: 'Local file index status',
+    description:
+      'Reports what the local file index covers: number of repos and files, when it was last built, ' +
+      'and per-repo counts or skip reasons. Use it to understand why github_search_files found nothing.',
+  },
+  async () => {
+    const status = describeIndex(await openIndexSnapshot());
+    if (!status) {
+      return { content: [{ type: 'text' as const, text: `No file index found at ${INDEX_DB_PATH}.` }] };
+    }
+    return { content: [{ type: 'text' as const, text: JSON.stringify({ indexPath: INDEX_DB_PATH, ...status }, null, 2) }] };
   },
 );
 

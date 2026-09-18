@@ -600,6 +600,31 @@ export interface SecretsScanResult {
 
 
 
+/** Progress of the local file content index (jarvis-index.db) build. */
+export interface LocalIndexProgress {
+  phase: 'indexing' | 'done';
+  reposDone: number;
+  reposTotal: number;
+  filesIndexed: number;
+  filesSkipped: number;
+  currentRepo?: string;
+}
+
+export interface LocalIndexStatus {
+  running: boolean;
+  progress: LocalIndexProgress | null;
+  error: string | null;
+  indexPath: string | null;
+  status: {
+    schemaVersion: number;
+    repoCount: number;
+    fileCount: number;
+    contentCount: number;
+    lastRunAt: string | null;
+    repos: Array<{ localPath: string; name: string | null; fileCount: number; indexedAt: string | null; skippedReason: string | null }>;
+  } | null;
+}
+
 export interface LocalScanProgress {
 
 
@@ -2597,6 +2622,8 @@ export interface JarvisApi {
 
 
   localGetScanStatus(): Promise<{ running: boolean; progress: LocalScanProgress | null }>;
+  localGetIndexStatus(): Promise<LocalIndexStatus>;
+  localStartIndex(): Promise<{ started: boolean }>;
 
 
 
@@ -2661,6 +2688,8 @@ export interface JarvisApi {
 
 
   onLocalScanComplete(cb: (progress: LocalScanProgress) => void): () => void;
+  onLocalIndexProgress(cb: (progress: LocalIndexProgress) => void): () => void;
+  onLocalIndexComplete(cb: (progress: LocalIndexProgress) => void): () => void;
 
 
 
