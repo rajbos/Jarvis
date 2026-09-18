@@ -2,10 +2,20 @@
   "version": "2.0.0",
   "tasks": [
     {
+      "label": "Jarvis: Ensure Electron",
+      "type": "shell",
+      "command": "node scripts/ensure-electron.mjs",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "silent"
+      }
+    },
+    {
       "label": "Jarvis: Build",
       "type": "npm",
       "script": "build",
       "group": "build",
+      "dependsOn": ["Jarvis: Ensure Electron"],
       "problemMatcher": ["$tsc"],
       "presentation": {
         "reveal": "silent"
