@@ -36,13 +36,24 @@ export function buildServerEnv(opts: { dbPath: string; indexPath: string; packag
   return env;
 }
 
-function quoteForShell(value: string): string {
-  // Double quotes work in cmd, PowerShell and POSIX shells for paths without embedded quotes.
-  return `"${value.replace(/"/g, '\\"')}"`;
+/**
+ * Quote one argument for the shell the snippet will be pasted into.
+ * - POSIX: single quotes, with embedded single quotes closed/escaped/reopened.
+ *   Nothing else is special inside single quotes, so backslashes need no escaping.
+ * - Windows (cmd / PowerShell): double quotes. Backslashes are ordinary path
+ *   characters there and must stay as-is; a double quote inside a path cannot
+ *   occur on Windows, so it is rejected rather than escaped.
+ */
+export function quoteForShell(value: string, platform: NodeJS.Platform = process.platform): string {
+  if (platform === 'win32') {
+    if (value.includes('"')) throw new Error(`Cannot quote a value containing a double quote for Windows shells: ${value}`);
+    return `"${value}"`;
+  }
+  return `'${value.split("'").join(`'\\''`)}'`;
 }
 
 /** Build all client snippets from one launch description. */
-export function buildMcpClientSnippets(launch: McpServerLaunch): McpClientSnippets {
+export function buildMcpClientSnippets(launch: McpServerLaunch, platform: NodeJS.Platform = process.platform): McpClientSnippets {
   const server = {
     command: launch.command,
     args: [launch.serverScriptPath],
@@ -50,7 +61,8 @@ export function buildMcpClientSnippets(launch: McpServerLaunch): McpClientSnippe
   };
   const claudeDesktop = JSON.stringify({ mcpServers: { [MCP_SERVER_NAME]: server } }, null, 2);
   const vscode = JSON.stringify({ servers: { [MCP_SERVER_NAME]: { type: 'stdio', ...server } } }, null, 2);
-  const envFlags = Object.entries(launch.env).map(([k, v]) => `--env ${k}=${quoteForShell(v)}`).join(' ');
-  const claudeCode = `claude mcp add ${MCP_SERVER_NAME} ${envFlags} -- ${quoteForShell(launch.command)} ${quoteForShell(launch.serverScriptPath)}`;
+  const q = (v: string) => quoteForShell(v, platform);
+  const envFlags = Object.entries(launch.env).map(([k, v]) => `--env ${k}=${q(v)}`).join(' ');
+  const claudeCode = `claude mcp add ${MCP_SERVER_NAME} ${envFlags} -- ${q(launch.command)} ${q(launch.serverScriptPath)}`;
   return { claudeDesktop, vscode, claudeCode, generic: launch };
 }

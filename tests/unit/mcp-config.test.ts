@@ -1,14 +1,19 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { buildMcpClientSnippets, buildServerEnv, MCP_SERVER_NAME } from '../../src/services/mcp-config';
+import path from 'node:path';
+import { buildMcpClientSnippets, buildServerEnv, quoteForShell, MCP_SERVER_NAME } from '../../src/services/mcp-config';
 
-const electronState = vi.hoisted(() => ({ packaged: false, appPath: 'C:\\repo\\Jarvis' }));
+// Paths are built with the platform's own separators so the tests pass on
+// Windows and on the Linux CI runners alike.
+const DB_PATH = path.resolve('data', 'Jarvis', 'jarvis.db');
+const INDEX_PATH = path.resolve('data', 'Jarvis', 'jarvis-index.db');
+
+const electronState = vi.hoisted(() => ({ packaged: false }));
 vi.mock('electron', () => ({
-  app: { get isPackaged() { return electronState.packaged; }, getAppPath: () => electronState.appPath },
+  app: { get isPackaged() { return electronState.packaged; }, getAppPath: () => 'unused' },
   ipcMain: { handle: vi.fn() },
 }));
-vi.mock('../../src/storage/database', () => ({ getDatabasePath: () => 'C:\\data\\Jarvis\\jarvis.db' }));
+vi.mock('../../src/storage/database', () => ({ getDatabasePath: () => path.resolve('data', 'Jarvis', 'jarvis.db') }));
 
-import path from 'node:path';
 import { describeLaunch, getMcpClientConfig, resolveServerScriptPath, serverScriptPathFrom } from '../../src/plugins/mcp-server/handler';
 
 /** Where the handler module's own folder resolves the server script to. */
@@ -16,19 +21,30 @@ const EXPECTED_DEV_SCRIPT = path.resolve(__dirname, '..', '..', 'src', 'mcp-serv
 
 describe('mcp-config snippets', () => {
   it('builds the server env, adding the Node flag only when packaged', () => {
-    expect(buildServerEnv({ dbPath: 'C:\\d\\jarvis.db', indexPath: 'C:\\d\\jarvis-index.db', packaged: false })).toEqual({
-      JARVIS_DB: 'C:\\d\\jarvis.db',
-      JARVIS_INDEX_DB: 'C:\\d\\jarvis-index.db',
+    expect(buildServerEnv({ dbPath: DB_PATH, indexPath: INDEX_PATH, packaged: false })).toEqual({
+      JARVIS_DB: DB_PATH,
+      JARVIS_INDEX_DB: INDEX_PATH,
     });
     expect(buildServerEnv({ dbPath: 'a', indexPath: 'b', packaged: true }).ELECTRON_RUN_AS_NODE).toBe('1');
   });
 
+  it('quotes for Windows shells without touching backslashes, and rejects embedded double quotes', () => {
+    expect(quoteForShell('C:\\Users\\Rob Bos\\jarvis.db', 'win32')).toBe('"C:\\Users\\Rob Bos\\jarvis.db"');
+    expect(() => quoteForShell('bad"value', 'win32')).toThrow(/double quote/);
+  });
+
+  it('quotes for POSIX shells with single quotes, escaping embedded single quotes', () => {
+    expect(quoteForShell('/home/rob/jarvis.db', 'linux')).toBe("'/home/rob/jarvis.db'");
+    expect(quoteForShell("it's $HOME `x` \\ \"q\"", 'darwin')).toBe("'it'\\''s $HOME `x` \\ \"q\"'");
+  });
+
   it('renders Claude Desktop, VS Code and Claude Code snippets from one launch', () => {
-    const snippets = buildMcpClientSnippets({
+    const launch = {
       command: 'node',
       serverScriptPath: 'C:\\repo\\dist\\mcp-server\\index.js',
       env: { JARVIS_DB: 'C:\\d\\jarvis.db' },
-    });
+    };
+    const snippets = buildMcpClientSnippets(launch, 'win32');
     const desktop = JSON.parse(snippets.claudeDesktop);
     expect(desktop.mcpServers[MCP_SERVER_NAME]).toEqual({
       command: 'node',
@@ -42,20 +58,24 @@ describe('mcp-config snippets', () => {
       'claude mcp add jarvis --env JARVIS_DB="C:\\d\\jarvis.db" -- "node" "C:\\repo\\dist\\mcp-server\\index.js"',
     );
     expect(snippets.generic.command).toBe('node');
+
+    const posix = buildMcpClientSnippets({ command: 'node', serverScriptPath: '/opt/jarvis/index.js', env: { JARVIS_DB: '/home/rob/jarvis.db' } }, 'linux');
+    expect(posix.claudeCode).toBe("claude mcp add jarvis --env JARVIS_DB='/home/rob/jarvis.db' -- 'node' '/opt/jarvis/index.js'");
   });
 });
 
 describe('mcp-server handler', () => {
   beforeEach(() => {
     electronState.packaged = false;
-    electronState.appPath = 'C:\\repo\\Jarvis';
   });
 
   it('resolves the script next to the compiled plugin, never via app.getAppPath()', () => {
-    expect(serverScriptPathFrom('C:\\repo\\Jarvis\\dist\\plugins\\mcp-server')).toBe('C:\\repo\\Jarvis\\dist\\mcp-server\\index.js');
-    expect(serverScriptPathFrom('C:\\Program Files\\Jarvis\\resources\\app.asar\\dist\\plugins\\mcp-server')).toBe(
-      'C:\\Program Files\\Jarvis\\resources\\app.asar.unpacked\\dist\\mcp-server\\index.js',
-    );
+    const pluginDir = path.resolve('repo', 'Jarvis', 'dist', 'plugins', 'mcp-server');
+    expect(serverScriptPathFrom(pluginDir)).toBe(path.resolve('repo', 'Jarvis', 'dist', 'mcp-server', 'index.js'));
+
+    const asarDir = path.resolve('Jarvis', 'resources', 'app.asar', 'dist', 'plugins', 'mcp-server');
+    expect(serverScriptPathFrom(asarDir)).toBe(path.resolve('Jarvis', 'resources', 'app.asar.unpacked', 'dist', 'mcp-server', 'index.js'));
+
     expect(resolveServerScriptPath()).toBe(EXPECTED_DEV_SCRIPT);
   });
 
@@ -64,12 +84,12 @@ describe('mcp-server handler', () => {
     expect(launch.command).toBe('node');
     expect(launch.serverScriptPath).toBe(EXPECTED_DEV_SCRIPT);
     expect(launch.env).toEqual({
-      JARVIS_DB: 'C:\\data\\Jarvis\\jarvis.db',
-      JARVIS_INDEX_DB: 'C:\\data\\Jarvis\\jarvis-index.db',
+      JARVIS_DB: DB_PATH,
+      JARVIS_INDEX_DB: INDEX_PATH,
     });
   });
 
-  it('uses the bundled Electron runtime and the unpacked asar path when installed', () => {
+  it('uses the bundled Electron runtime when installed', () => {
     electronState.packaged = true;
     const launch = describeLaunch();
     expect(launch.command).toBe(process.execPath);
@@ -81,8 +101,8 @@ describe('mcp-server handler', () => {
     expect(cfg.packaged).toBe(false);
     expect(cfg.serverScriptExists).toBe(false);
     expect(cfg.indexExists).toBe(false);
-    expect(cfg.dbPath).toBe('C:\\data\\Jarvis\\jarvis.db');
-    expect(cfg.indexPath).toBe('C:\\data\\Jarvis\\jarvis-index.db');
-    expect(JSON.parse(cfg.claudeDesktop).mcpServers.jarvis.env.JARVIS_INDEX_DB).toBe('C:\\data\\Jarvis\\jarvis-index.db');
+    expect(cfg.dbPath).toBe(DB_PATH);
+    expect(cfg.indexPath).toBe(INDEX_PATH);
+    expect(JSON.parse(cfg.claudeDesktop).mcpServers.jarvis.env.JARVIS_INDEX_DB).toBe(INDEX_PATH);
   });
 });

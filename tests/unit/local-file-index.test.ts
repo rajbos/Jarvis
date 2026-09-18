@@ -52,7 +52,8 @@ describe('local file index', () => {
   });
 
   it('derives the index path next to the main database', () => {
-    expect(getIndexDbPath('C:\\data\\Jarvis\\jarvis.db')).toBe(path.join('C:\\data\\Jarvis', INDEX_DB_FILENAME));
+    const mainDb = path.resolve('data', 'Jarvis', 'jarvis.db');
+    expect(getIndexDbPath(mainDb)).toBe(path.resolve('data', 'Jarvis', INDEX_DB_FILENAME));
   });
 
   it('classifies files by extension and basename', () => {
