@@ -15,6 +15,7 @@ import {
   runLocalDiscovery,
   type ScanProgress,
 } from '../../services/local-discovery';
+import { getFileIndexState, startFileIndexIfNeeded } from './file-index-runner';
 
 let localScanRunning = false;
 let lastLocalScanProgress: ScanProgress | null = null;
@@ -122,6 +123,23 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
     }
   });
 
+  ipcMain.handle('local:get-index-status', async () => {
+    try {
+      return await getFileIndexState();
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('local:start-index', () => {
+    try {
+      const started = startFileIndexIfNeeded(db, getWindow, true);
+      return { started };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
   ipcMain.handle('local:list-repos', () => {
     try {
       return listLocalRepos(db);
@@ -194,6 +212,8 @@ export function startLocalScanIfNeeded(
     saveDatabase();
     console.log('[LocalScan] Finished —', done.reposFound, 'repo(s) found');
     getWindow()?.webContents.send('local:scan-complete', done);
+    // Refresh the file content index now that the repo list is current.
+    startFileIndexIfNeeded(db, getWindow);
   }).catch((err: unknown) => {
     localScanRunning = false;
     console.error('[LocalScan] Failed:', err);

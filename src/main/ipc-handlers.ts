@@ -46,6 +46,8 @@ import { registerHandlers as registerBrowserCompanionHandlers } from '../plugins
 
 import { registerHandlers as registerClaudeHandlers } from '../plugins/claude/handler';
 
+import { registerHandlers as registerMcpServerHandlers } from '../plugins/mcp-server/handler';
+
 import { registerTaskIpcHandlers } from './background-tasks';
 
 
@@ -96,6 +98,8 @@ export function registerIpcHandlers(
   registerBrowserCompanionHandlers(db, getWindow);
 
   registerClaudeHandlers(db, getWindow);
+
+  registerMcpServerHandlers(db, getWindow);
 
   registerTaskIpcHandlers();
 

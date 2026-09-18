@@ -679,6 +679,11 @@ function seedBuiltInAgents(database: SqlJsDatabase): void {
   );
 }
 
+/** Absolute path of the database file currently open (null before getDatabase). */
+export function getDatabasePath(): string | null {
+  return dbPath;
+}
+
 export function saveDatabase(): void {
   if (db && dbPath) {
     const data = db.export();

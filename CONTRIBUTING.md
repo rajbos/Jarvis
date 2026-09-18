@@ -19,6 +19,14 @@ npm run dev
 `npm run dev` builds once, then runs the TypeScript compiler, the renderer bundler,
 and Electron concurrently in watch mode.
 
+Both `npm run dev` and `npm start` first run `scripts/ensure-electron.mjs`, which
+checks that the Electron binary was actually downloaded by `npm install`. If it is
+missing (for example because the install ran without network access), the script
+downloads it with visible progress instead of letting Electron's loader do a silent
+download that looks like a hang. Install scripts for `electron`, `esbuild` and
+`electron-winstaller` are approved in the `allowScripts` field of `package.json`, so
+newer npm versions that block unreviewed install scripts keep working.
+
 You can also run and debug from VS Code: press **F5** and choose
 **Jarvis: Debug Electron**. That configuration stores development data under
 `.dev-data`, keeping a repository debug session separate from an installed Jarvis.

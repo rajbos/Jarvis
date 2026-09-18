@@ -158,6 +158,25 @@ code {
   border-radius: 3px;
   font-size: 0.85em;
 }
+.mcp-snippet {
+  background: #0f3460;
+  border: 1px solid #1f4a80;
+  border-radius: 6px;
+  padding: 0.6rem 0.75rem;
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  white-space: pre;
+  overflow-x: auto;
+  user-select: text;
+  margin-top: 0.3rem;
+}
+.mcp-subheading {
+  font-size: 0.95rem;
+  margin-top: 1rem;
+  margin-bottom: 0.2rem;
+  color: #e0e0e0;
+}
 
 .user-card {
   display: flex;

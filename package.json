@@ -6,19 +6,23 @@
   "scripts": {
     "build": "tsc && node scripts/build-renderer.mjs && npm run copy-static",
     "copy-static": "node -e \"const fs=require('fs');const p=require('path');fs.mkdirSync('dist/renderer',{recursive:true});for(const f of fs.readdirSync('src/renderer')){if(f.endsWith('.html'))fs.cpSync(p.join('src/renderer',f),p.join('dist/renderer',f));}\"",
+    "prestart": "node scripts/ensure-electron.mjs",
     "start": "npm run build && electron dist/main/index.js",
     "pack:win": "npm run build && electron-builder --win --dir",
     "dist:win": "npm run build && electron-builder --win nsis --publish never",
     "publish:win": "npm run build && electron-builder --win nsis --publish always",
     "dev:tsc": "tsc --watch --preserveWatchOutput",
     "dev:esbuild": "node scripts/build-renderer.mjs --watch",
-    "dev:electron": "node scripts/watch-electron.mjs",
+    "dev:electron": "node scripts/ensure-electron.mjs && node scripts/watch-electron.mjs",
+    "predev": "node scripts/ensure-electron.mjs",
     "dev": "npm run build && concurrently --kill-others --names \"TSC,ESBuild,Electron\" --prefix-colors \"blue,yellow,green\" \"npm run dev:tsc\" \"npm run dev:esbuild\" \"npm run dev:electron\"",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "build:mcp": "tsc --project tsconfig.json && echo MCP server built",
+    "mcp": "npm run build:mcp && node dist/mcp-server/index.js"
   },
   "author": "",
   "license": "MIT",
@@ -40,11 +44,18 @@
     "vitest": "^5.0.0"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "electron-squirrel-startup": "^1.0.1",
     "electron-updater": "^6.8.9",
     "octokit": "^5.0.5",
     "preact": "^10.29.8",
     "sql.js": "^1.14.2",
-    "ws": "^8.21.3"
+    "ws": "^8.21.3",
+    "zod": "^4.4.3"
+  },
+  "allowScripts": {
+    "electron": true,
+    "electron-winstaller": true,
+    "esbuild": true
   }
 }

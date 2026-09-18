@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { DiscoveryProgress, LocalScanProgress, SecretsScanProgress, OAuthResult } from '../plugins/types';
+import type { DiscoveryProgress, LocalIndexProgress, LocalScanProgress, SecretsScanProgress, OAuthResult } from '../plugins/types';
 import type {
   AgentSessionStartingPayload,
   AgentAnalysisCompletePayload,
@@ -95,6 +95,9 @@ contextBridge.exposeInMainWorld('jarvis', {
   localRemoveFolder: (folderPath: string) => ipcRenderer.invoke('local:remove-folder', folderPath),
   localGetScanStatus: () => ipcRenderer.invoke('local:get-scan-status'),
   localStartScan: () => ipcRenderer.invoke('local:start-scan'),
+  localGetIndexStatus: () => ipcRenderer.invoke('local:get-index-status'),
+  mcpGetClientConfig: () => ipcRenderer.invoke('mcp:get-client-config'),
+  localStartIndex: () => ipcRenderer.invoke('local:start-index'),
   localListRepos: () => ipcRenderer.invoke('local:list-repos'),
   localListReposForFolder: (folderPath: string) => ipcRenderer.invoke('local:list-repos-for-folder', folderPath),
   localLinkRepo: (localRepoId: number, githubRepoId: number | null) =>
@@ -152,6 +155,16 @@ contextBridge.exposeInMainWorld('jarvis', {
     const listener = (_event: unknown, progress: LocalScanProgress) => callback(progress);
     ipcRenderer.on('local:scan-complete', listener);
     return () => { ipcRenderer.removeListener('local:scan-complete', listener); };
+  },
+  onLocalIndexProgress: (callback: (progress: LocalIndexProgress) => void) => {
+    const listener = (_event: unknown, progress: LocalIndexProgress) => callback(progress);
+    ipcRenderer.on('local:index-progress', listener);
+    return () => { ipcRenderer.removeListener('local:index-progress', listener); };
+  },
+  onLocalIndexComplete: (callback: (progress: LocalIndexProgress) => void) => {
+    const listener = (_event: unknown, progress: LocalIndexProgress) => callback(progress);
+    ipcRenderer.on('local:index-complete', listener);
+    return () => { ipcRenderer.removeListener('local:index-complete', listener); };
   },
   // Agents
   agentsList: () => ipcRenderer.invoke('agents:list'),
