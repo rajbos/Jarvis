@@ -552,7 +552,14 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
       if (!res[0]) return [];
       return res[0].values.map((row) => ({ period: row[0] as string, count: row[1] as number }));
     };
+    const toCount = (res: ReturnType<typeof db.exec>) => {
+      return (res[0]?.values[0]?.[0] as number) ?? 0;
+    };
     return {
+      daily: toRows(db.exec(
+        `SELECT date(dismissed_at) as period, COUNT(*) as count
+         FROM auto_dismiss_log GROUP BY period ORDER BY period DESC LIMIT 30`,
+      )),
       weekly: toRows(db.exec(
         `SELECT strftime('%Y-W%W', dismissed_at) as period, COUNT(*) as count
          FROM auto_dismiss_log GROUP BY period ORDER BY period DESC LIMIT 52`,
@@ -560,6 +567,13 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
       monthly: toRows(db.exec(
         `SELECT strftime('%Y-%m', dismissed_at) as period, COUNT(*) as count
          FROM auto_dismiss_log GROUP BY period ORDER BY period DESC LIMIT 24`,
+      )),
+      today: toCount(db.exec(
+        `SELECT COUNT(*) FROM auto_dismiss_log WHERE date(dismissed_at) = date('now')`,
+      )),
+      thisWeek: toCount(db.exec(
+        `SELECT COUNT(*) FROM auto_dismiss_log
+         WHERE strftime('%Y-W%W', dismissed_at) = strftime('%Y-W%W', 'now')`,
       )),
     };
   });

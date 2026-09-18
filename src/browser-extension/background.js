@@ -226,6 +226,9 @@ async function handleCommand(rawData) {
       case 'focus-window':
         data = await cmdFocusWindow(tabId);
         break;
+      case 'close-tab':
+        data = await cmdCloseTab(tabId, payload ?? {});
+        break;
       default:
         throw new Error(`Unknown command type: ${type}`);
     }
@@ -255,7 +258,7 @@ async function getTargetTabId(preferredTabId) {
 // ── Command implementations ───────────────────────────────────────────────────
 
 async function cmdNavigate(tabId, payload) {
-  const { url } = payload;
+  const { url, newTab } = payload;
   if (!url) throw new Error('url is required');
 
   // Defense-in-depth: validate URL scheme (server also validates, but this is a local guard)
@@ -266,6 +269,18 @@ async function cmdNavigate(tabId, payload) {
     }
   } catch (e) {
     throw new Error(`Invalid or disallowed URL: ${e.message}`);
+  }
+
+  // `newTab` opens a dedicated tab for this run instead of hijacking whatever the
+  // user is looking at. The response flags it with createdTab so Jarvis knows the
+  // tab is its own and may close it when the run finishes (an explicit tabId always
+  // wins — that means the caller is continuing in a tab it already has).
+  if (newTab === true && typeof tabId !== 'number') {
+    const created = await chrome.tabs.create({ url, active: true });
+    if (typeof created.id !== 'number') throw new Error('Failed to create tab');
+    await waitForTabLoaded(created.id, { acceptAlreadyComplete: true });
+    const openedTab = await chrome.tabs.get(created.id);
+    return { url: openedTab.url, title: openedTab.title, tabId: created.id, createdTab: true };
   }
 
   const targetTabId = await getTargetTabId(tabId);
@@ -290,7 +305,7 @@ async function cmdNavigate(tabId, payload) {
   // Wait for the page to finish loading
   await waitForTabLoaded(targetTabId);
   const tab = await chrome.tabs.get(targetTabId);
-  return { url: tab.url, title: tab.title, tabId: targetTabId };
+  return { url: tab.url, title: tab.title, tabId: targetTabId, createdTab: false };
 }
 
 async function cmdEvaluate(tabId, payload) {
@@ -664,25 +679,56 @@ async function cmdFocusWindow(tabId) {
   return { ok: true, windowId };
 }
 
+// Closes a tab Jarvis opened for itself. A tab that is already gone (the user
+// closed it first) is not an error — the end state is what was asked for.
+async function cmdCloseTab(tabId, payload) {
+  const targetTabId = typeof tabId === 'number' ? tabId : payload?.tabId;
+  if (typeof targetTabId !== 'number') throw new Error('tabId is required');
+
+  try {
+    await chrome.tabs.remove(targetTabId);
+  } catch (e) {
+    console.log('[JarvisBridge] Tab', targetTabId, 'could not be closed (already gone?):', e?.message ?? e);
+    return { closed: false, alreadyClosed: true };
+  }
+  return { closed: true };
+}
+
 // ── Tab load helper ───────────────────────────────────────────────────────────
 
-function waitForTabLoaded(tabId) {
+// Pass acceptAlreadyComplete for a freshly created tab: it may reach 'complete'
+// before the listener is attached, and there is no earlier state to wait for.
+function waitForTabLoaded(tabId, { acceptAlreadyComplete = false } = {}) {
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      chrome.tabs.onUpdated.removeListener(listener);
+      // Small delay to allow page scripts to run
+      setTimeout(resolve, 300);
+    };
+
     const timeout = setTimeout(() => {
+      settled = true;
       chrome.tabs.onUpdated.removeListener(listener);
       reject(new Error('Tab navigation timeout'));
     }, 15000);
 
     const listener = (updatedTabId, changeInfo) => {
-      if (updatedTabId === tabId && changeInfo.status === 'complete') {
-        clearTimeout(timeout);
-        chrome.tabs.onUpdated.removeListener(listener);
-        // Small delay to allow page scripts to run
-        setTimeout(resolve, 300);
-      }
+      if (updatedTabId === tabId && changeInfo.status === 'complete') finish();
     };
 
     chrome.tabs.onUpdated.addListener(listener);
+
+    // Checked only after the listener is attached, so a load finishing right here
+    // is caught by one path or the other.
+    if (acceptAlreadyComplete) {
+      chrome.tabs.get(tabId)
+        .then((tab) => { if (tab.status === 'complete') finish(); })
+        .catch(() => { /* tab not readable yet — the listener will fire */ });
+    }
   });
 }
 

@@ -35,8 +35,10 @@ const DEFAULT_CONFIG: JarvisConfig = {
   },
   storage: {
     database: path.join(
-      process.env.APPDATA || path.join(process.env.USERPROFILE || '', 'AppData', 'Roaming'),
-      'jarvis',
+      process.env.JARVIS_CONFIG_DIR || path.join(
+        process.env.APPDATA || path.join(process.env.USERPROFILE || '', 'AppData', 'Roaming'),
+        'jarvis',
+      ),
       'jarvis.db',
     ),
   },

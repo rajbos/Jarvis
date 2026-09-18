@@ -1,7 +1,7 @@
 // ── Agent Approval Panel ──────────────────────────────────────────────────────
 // Shows structured findings from a completed agent session with approve/reject buttons.
-import { useState } from 'preact/hooks';
-import type { AgentFinding, AgentSession } from '../types';
+import { useState, useEffect } from 'preact/hooks';
+import type { AgentFinding, AgentSession, CopilotAvailabilityResult } from '../types';
 
 const FINDING_ICON: Record<string, string> = {
   ignore: '✅',
@@ -13,16 +13,33 @@ const ACTION_LABEL: Record<string, string> = {
   close_notifications: 'Dismiss notifications',
   create_issue: 'Create GitHub issue',
   clone_repo: 'Clone repository',
+  assign_copilot: 'Create issue & assign Copilot coding agent',
   none: '',
 };
+
+/** Human-readable reason shown when the "assign Copilot" action is disabled. */
+function copilotUnavailableReason(availability: CopilotAvailabilityResult | undefined): string | null {
+  if (!availability || availability.available) return null;
+  switch (availability.reason) {
+    case 'not_authenticated':
+      return 'Not signed in to GitHub.';
+    case 'not_enabled_or_no_seat':
+      return 'Copilot coding agent is not assignable for this repo — enable it in GitHub Copilot settings and make sure your account has a Copilot seat.';
+    case 'repo_not_found_or_no_access':
+      return 'Your GitHub account/OAuth app cannot access this repository.';
+    default:
+      return availability.detail ? `Could not verify Copilot availability (${availability.detail}).` : 'Could not verify Copilot availability.';
+  }
+}
 
 interface FindingRowProps {
   finding: AgentFinding;
   onApprove: () => void;
   onReject: () => void;
+  copilotAvailability?: CopilotAvailabilityResult;
 }
 
-function FindingRow({ finding, onApprove, onReject }: FindingRowProps) {
+function FindingRow({ finding, onApprove, onReject, copilotAvailability }: FindingRowProps) {
   const [busy, setBusy] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
@@ -35,6 +52,9 @@ function FindingRow({ finding, onApprove, onReject }: FindingRowProps) {
     return ACTION_LABEL[finding.action_type] ?? finding.action_type;
   })();
   const hasAction = finding.action_type !== 'none';
+  const isAssignCopilot = finding.action_type === 'assign_copilot';
+  const copilotBlockedReason = isAssignCopilot ? copilotUnavailableReason(copilotAvailability) : null;
+  const approveDisabled = busy || copilotBlockedReason !== null;
 
   const handleApprove = async () => {
     setBusy(true);
@@ -72,7 +92,7 @@ function FindingRow({ finding, onApprove, onReject }: FindingRowProps) {
         </p>
       )}
 
-      {finding.action_type === 'create_issue' && finding.action_data && (
+      {(finding.action_type === 'create_issue' || isAssignCopilot) && finding.action_data && (
         <div class="agent-finding-issue-preview">
           <div class="agent-finding-issue-title">
             <strong>Issue title:</strong> {String(finding.action_data.issue_title ?? '')}
@@ -90,6 +110,17 @@ function FindingRow({ finding, onApprove, onReject }: FindingRowProps) {
         </div>
       )}
 
+      {isAssignCopilot && !stateLabel && (
+        <p class="agent-finding-copilot-warning">
+          ⚠ This creates a <strong>public GitHub issue</strong> and assigns the <strong>Copilot coding agent</strong>,
+          which will open a pull request. This writes to GitHub — review the issue body above before approving.
+        </p>
+      )}
+
+      {isAssignCopilot && copilotBlockedReason && !stateLabel && (
+        <p class="agent-finding-copilot-blocked">🚫 Unavailable: {copilotBlockedReason}</p>
+      )}
+
       {hasAction && (
         <div class="agent-finding-actions">
           {stateLabel ? (
@@ -103,8 +134,8 @@ function FindingRow({ finding, onApprove, onReject }: FindingRowProps) {
                 <button
                   class="agent-approve-btn"
                   onClick={() => void handleApprove()}
-                  disabled={busy}
-                  title={`Approve: ${actionLabel}`}
+                  disabled={approveDisabled}
+                  title={copilotBlockedReason ?? `Approve: ${actionLabel}`}
                 >
                   {busy ? '…' : '✓ Yes, do it'}
                 </button>
@@ -125,6 +156,63 @@ function FindingRow({ finding, onApprove, onReject }: FindingRowProps) {
   );
 }
 
+// ── Escalate to Claude ────────────────────────────────────────────────────────
+// Deeper analysis tier: hands the session's repo (as a local clone) to a
+// read-only Claude Agent SDK session that can read workflow YAML, walk git
+// history, and pull logs on demand — instead of reasoning over the fixed
+// text blob the local Ollama tier gets. Gated on clone presence, the
+// `claude` CLI being installed, and the account not being rate limited.
+interface EscalateButtonProps {
+  session: AgentSession;
+}
+
+function EscalateButton({ session }: EscalateButtonProps) {
+  const [readiness, setReadiness] = useState<{ ok: boolean; reason?: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setReadiness(null);
+    window.jarvis.agentsEscalationReadiness(session.scope_value)
+      .then((result) => { if (!cancelled) setReadiness(result); })
+      .catch((err: unknown) => {
+        if (!cancelled) setReadiness({ ok: false, reason: err instanceof Error ? err.message : String(err) });
+      });
+    return () => { cancelled = true; };
+  }, [session.scope_value]);
+
+  const handleEscalate = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await window.jarvis.agentsEscalate(session.id);
+      if (!result.ok) setError(result.error ?? 'Escalation failed');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const disabled = busy || !readiness || !readiness.ok;
+  const title = !readiness
+    ? 'Checking readiness…'
+    : readiness.ok
+      ? 'Run a deeper investigation with Claude, using this repo’s local clone'
+      : readiness.reason;
+
+  return (
+    <div class="agent-escalate">
+      <button class="agent-escalate-btn" onClick={() => void handleEscalate()} disabled={disabled} title={title}>
+        {busy ? '…' : '🧠 Escalate to Claude'}
+      </button>
+      {readiness && !readiness.ok && <span class="agent-escalate-reason">{readiness.reason}</span>}
+      {error && <span class="agent-escalate-reason agent-escalate-error">{error}</span>}
+    </div>
+  );
+}
+
 interface AgentApprovalPanelProps {
   session: AgentSession;
   onFindingUpdate: (sessionId: number) => void;
@@ -134,6 +222,19 @@ interface AgentApprovalPanelProps {
 export function AgentApprovalPanel({ session, onFindingUpdate, onNotificationsDismissed }: AgentApprovalPanelProps) {
   const actionableFindings = session.findings.filter((f) => f.action_type !== 'none');
   const infoFindings = session.findings.filter((f) => f.action_type === 'none');
+  const canEscalate = session.scope_type === 'repo' && session.provider !== 'claude-agent-sdk';
+
+  const hasAssignCopilotFinding = session.findings.some((f) => f.action_type === 'assign_copilot');
+  const [copilotAvailability, setCopilotAvailability] = useState<CopilotAvailabilityResult | undefined>(undefined);
+
+  useEffect(() => {
+    if (!hasAssignCopilotFinding || session.scope_type !== 'repo') return;
+    let cancelled = false;
+    void window.jarvis.agentsCheckCopilotAvailability(session.scope_value).then((result) => {
+      if (!cancelled) setCopilotAvailability(result);
+    });
+    return () => { cancelled = true; };
+  }, [hasAssignCopilotFinding, session.scope_type, session.scope_value]);
 
   const handleApprove = async (finding: AgentFinding) => {
     await window.jarvis.agentsApproveFinding(finding.id);
@@ -177,6 +278,7 @@ export function AgentApprovalPanel({ session, onFindingUpdate, onNotificationsDi
     return (
       <div class="agent-approval-panel">
         <p class="agent-no-findings">No structured findings were produced by the agent.</p>
+        {canEscalate && <EscalateButton session={session} />}
       </div>
     );
   }
@@ -190,6 +292,8 @@ export function AgentApprovalPanel({ session, onFindingUpdate, onNotificationsDi
         </span>
       </div>
 
+      {canEscalate && <EscalateButton session={session} />}
+
       {actionableFindings.length > 0 && (
         <div class="agent-findings-section">
           <h4 class="agent-findings-section-title">Proposed Actions</h4>
@@ -199,6 +303,7 @@ export function AgentApprovalPanel({ session, onFindingUpdate, onNotificationsDi
               finding={f}
               onApprove={() => handleApprove(f)}
               onReject={() => handleReject(f)}
+              copilotAvailability={f.action_type === 'assign_copilot' ? copilotAvailability : undefined}
             />
           ))}
         </div>

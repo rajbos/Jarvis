@@ -80,14 +80,14 @@ export async function createMemoryDatabase(): Promise<SqlJsDatabase> {
   return memDb;
 }
 
-function initializeSchema(database: SqlJsDatabase): void {
+export function initializeSchema(database: SqlJsDatabase): void {
   const result = database.exec("PRAGMA user_version");
   const userVersion = result.length > 0 ? (result[0].values[0][0] as number) : 0;
 
   if (userVersion === 0) {
     database.run(getSchema());
     seedBuiltInAgents(database);
-    database.run('PRAGMA user_version = 25');
+    database.run('PRAGMA user_version = 29');
   }
 
   if (userVersion === 1) {
@@ -520,6 +520,59 @@ function initializeSchema(database: SqlJsDatabase): void {
 
     database.run('PRAGMA user_version = 25');
   }
+
+  if (userVersion === 25) {
+    // Migration v25 → v26: add failing_step_name + error_highlights to
+    // github_workflow_jobs so agent context can name the failing step and
+    // lead with GitHub's own ##[error] annotations.
+    database.run('ALTER TABLE github_workflow_jobs ADD COLUMN failing_step_name TEXT');
+    database.run('ALTER TABLE github_workflow_jobs ADD COLUMN error_highlights TEXT');
+    database.run('PRAGMA user_version = 26');
+  }
+
+  if (userVersion === 26) {
+    // Migration v26 → v27: track which analysis tier produced an agent
+    // session (local Ollama vs. Claude Agent SDK escalation) and link an
+    // escalation back to the local triage session that prompted it.
+    database.run(`ALTER TABLE agent_sessions ADD COLUMN provider TEXT NOT NULL DEFAULT 'ollama'`);
+    database.run(`ALTER TABLE agent_sessions ADD COLUMN model TEXT`);
+    database.run(`ALTER TABLE agent_sessions ADD COLUMN parent_session_id INTEGER REFERENCES agent_sessions(id)`);
+    database.run('CREATE INDEX IF NOT EXISTS idx_agent_sessions_parent ON agent_sessions(parent_session_id)');
+    database.run('PRAGMA user_version = 27');
+  }
+
+  if (userVersion === 27) {
+    // Migration v27 → v28: refresh the seeded Workflow Failure Analyst system
+    // prompt so it knows about the assign_copilot action (Copilot coding agent
+    // handoff) — a data-only update, no schema change.
+    database.run(
+      `UPDATE agent_definitions SET system_prompt = ?, updated_at = datetime('now') WHERE name = 'Workflow Failure Analyst'`,
+      [WORKFLOW_FAILURE_ANALYST_PROMPT],
+    );
+    database.run('PRAGMA user_version = 28');
+  }
+
+  if (userVersion === 28) {
+    // Migration v28 → v29: persist the Ruddr budget cache so the Groups
+    // dashboard can render known figures instantly on open and only re-scrape
+    // once the cache TTL has expired.
+    database.run(`
+      CREATE TABLE IF NOT EXISTS ruddr_budgets (
+        project_name              TEXT NOT NULL,
+        project_url               TEXT,
+        actual_billable_hours     TEXT,
+        actual_non_billable_hours TEXT,
+        actual_total_hours        TEXT,
+        budget                    TEXT,
+        budget_left               TEXT,
+        note                      TEXT,
+        cloud_folder_url          TEXT,
+        fetched_at                DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (project_name)
+      )
+    `);
+    database.run('PRAGMA user_version = 29');
+  }
 }
 
 const WORKFLOW_FAILURE_ANALYST_PROMPT = `You are Jarvis's Workflow Failure Analyst. You have been given raw GitHub Actions log excerpts and workflow run history for a repository. Your job is to perform deep root-cause analysis — not simply re-summarise the data provided.
@@ -553,12 +606,15 @@ Write your full analysis as plain text first. Use a heading per workflow. Be spe
       "finding_type": "ignore | investigate | action_required",
       "reason": "Evidence-based explanation quoting specific log lines or run numbers",
       "pattern": "Exact recurring error string, or null if no pattern found",
-      "action_type": "close_notifications | create_issue | none",
+      "action_type": "close_notifications | create_issue | assign_copilot | none",
       "action_data": {
         "notification_ids": ["..."],
         "issue_title": "Concise, actionable title",
         "issue_body": "Markdown body: what fails, when it started, log evidence quoted, suggested investigation steps",
-        "issue_labels": ["bug", "ci"]
+        "issue_labels": ["bug", "ci"],
+        "workflow_name": "Name of the failing workflow (assign_copilot only)",
+        "failing_step": "Name of the failing step/job (assign_copilot only)",
+        "run_urls": ["https://github.com/owner/repo/actions/runs/... (assign_copilot only, links to the failing runs)"]
       }
     }
   ]
@@ -570,6 +626,7 @@ RULES:
 - NEVER fabricate log lines or run data not present in the context. Write "no log available" when absent.
 - Self-healed (later run passed on same branch) → finding_type = "ignore", action_type = "close_notifications".
 - Same step fails across 2+ runs with a consistent error → finding_type = "action_required", action_type = "create_issue". Include a detailed draft issue body quoting the failing log lines.
+- Same step fails across 2+ runs AND the root cause is well-understood and mechanical (e.g. a missing/misnamed dependency, a stale pinned version, a wrong path or config value) → finding_type = "action_required", action_type = "assign_copilot" instead of "create_issue". This hands the fix to the GitHub Copilot coding agent, which will open a pull request — reserve it for fixes a coding agent could plausibly make unattended, not failures needing human judgment, secrets, or infrastructure changes. Fill workflow_name, failing_step, and run_urls from the WORKFLOW_RUNS context so the agent has links to the evidence.
 - Single failure or insufficient log data → finding_type = "investigate", action_type = "none".
 - The "reason" field must reference specific evidence, not generic statements.`;
 

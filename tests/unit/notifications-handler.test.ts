@@ -392,21 +392,27 @@ describe('Notifications plugin — IPC handlers', () => {
   // ── github:auto-dismiss-stats ─────────────────────────────────────────────
 
   describe('github:auto-dismiss-stats', () => {
-    it('returns weekly and monthly keys on a fresh DB', () => {
+    it('returns daily, weekly and monthly keys on a fresh DB', () => {
       const result = callHandler('github:auto-dismiss-stats') as Record<string, unknown>;
+      expect(Array.isArray(result.daily)).toBe(true);
       expect(Array.isArray(result.weekly)).toBe(true);
       expect(Array.isArray(result.monthly)).toBe(true);
+      expect(result.today).toBe(0);
+      expect(result.thisWeek).toBe(0);
     });
 
-    it('aggregates entries by week and month after log insertion', () => {
+    it('aggregates entries by day, week and month after log insertion', () => {
       db.run(
         `INSERT INTO auto_dismiss_log (notification_id, dismissed_at, reason)
          VALUES ('n1', datetime('now'), 'r1'), ('n2', datetime('now'), 'r2')`,
       );
       const result = callHandler('github:auto-dismiss-stats') as Record<string, unknown>;
+      const daily = result.daily as { count: number }[];
       const weekly = result.weekly as { count: number }[];
-      const total = weekly.reduce((sum, r) => sum + r.count, 0);
-      expect(total).toBe(2);
+      expect(daily.reduce((sum, r) => sum + r.count, 0)).toBe(2);
+      expect(weekly.reduce((sum, r) => sum + r.count, 0)).toBe(2);
+      expect(result.today).toBe(2);
+      expect(result.thisWeek).toBe(2);
     });
   });
 

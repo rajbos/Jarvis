@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'preact/hooks';
 import type { AutoDismissLogEntry, AutoDismissStats } from '../types';
 
-type Granularity = 'weekly' | 'monthly';
+type Granularity = 'daily' | 'weekly' | 'monthly';
 
 // ── Reason label helpers ──────────────────────────────────────────────────────
 
@@ -50,6 +50,12 @@ function formatPeriod(period: string, granularity: Granularity): string {
     const [year, month] = period.split('-');
     const d = new Date(Number(year), Number(month) - 1, 1);
     return d.toLocaleString(undefined, { month: 'short', year: 'numeric' });
+  }
+  if (granularity === 'daily') {
+    // "2026-05-21" → "May 21"
+    const [year, month, day] = period.split('-');
+    const d = new Date(Number(year), Number(month) - 1, Number(day));
+    return d.toLocaleString(undefined, { month: 'short', day: 'numeric' });
   }
   // "2026-W21" — just show as-is; parsing ISO week is complex
   return period;
@@ -174,7 +180,7 @@ export function AutoDismissHistoryPanel({ onClose }: { onClose: () => void }) {
   const [stats, setStats] = useState<AutoDismissStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<'list' | 'chart'>('list');
-  const [granularity, setGranularity] = useState<Granularity>('weekly');
+  const [granularity, setGranularity] = useState<Granularity>('daily');
 
   useEffect(() => {
     let cancelled = false;
@@ -198,18 +204,25 @@ export function AutoDismissHistoryPanel({ onClose }: { onClose: () => void }) {
   }, []);
 
   const chartData = stats
-    ? (granularity === 'weekly' ? stats.weekly : stats.monthly)
+    ? (granularity === 'daily' ? stats.daily : granularity === 'weekly' ? stats.weekly : stats.monthly)
     : [];
-  const totalAllTime = chartData.reduce((s, d) => s + d.count, 0);
+  const totalAllTime = stats
+    ? stats.monthly.reduce((s, d) => s + d.count, 0)
+    : 0;
+  const chartNote = granularity === 'daily'
+    ? 'Showing up to 30 days of history'
+    : granularity === 'weekly'
+      ? 'Showing up to 52 weeks of history'
+      : 'Showing up to 24 months of history';
 
   return (
     <div class="adh-panel">
       <div class="adh-header">
         <div class="adh-header-left">
           <span class="adh-title">Auto-Dismissed Notifications</span>
-          {!loading && (
+          {!loading && stats && (
             <span class="adh-subtitle">
-              {entries.length} recent · {totalAllTime} all-time
+              {stats.today} today · {stats.thisWeek} this week · {entries.length} recent · {totalAllTime} all-time
             </span>
           )}
         </div>
@@ -232,6 +245,10 @@ export function AutoDismissHistoryPanel({ onClose }: { onClose: () => void }) {
         <div class="adh-chart-view">
           <div class="adh-chart-controls">
             <button
+              class={`adh-gran-btn${granularity === 'daily' ? ' adh-gran-btn--active' : ''}`}
+              onClick={() => setGranularity('daily')}
+            >Daily</button>
+            <button
               class={`adh-gran-btn${granularity === 'weekly' ? ' adh-gran-btn--active' : ''}`}
               onClick={() => setGranularity('weekly')}
             >Weekly</button>
@@ -241,9 +258,7 @@ export function AutoDismissHistoryPanel({ onClose }: { onClose: () => void }) {
             >Monthly</button>
           </div>
           <BarChart data={chartData} granularity={granularity} />
-          <div class="adh-chart-note">
-            Showing up to {granularity === 'weekly' ? '52 weeks' : '24 months'} of history
-          </div>
+          <div class="adh-chart-note">{chartNote}</div>
         </div>
       ) : (
         <div class="adh-list">

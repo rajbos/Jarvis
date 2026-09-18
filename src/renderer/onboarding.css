@@ -81,7 +81,11 @@ button:disabled {
   margin-bottom: 1.25rem;
   border-bottom: 2px solid #0f3460;
   overflow-x: auto;
-  scrollbar-width: thin;
+  scrollbar-width: none; /* still scrollable if tabs overflow, just no visible track */
+}
+
+.tab-bar::-webkit-scrollbar {
+  display: none;
 }
 
 .tab-btn {
@@ -1679,7 +1683,7 @@ body.onboarding {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  padding: 2rem;
+  padding: 2rem 2.75rem 2rem 2rem;
   min-height: 0; /* allow shrinking */
 }
 
@@ -3914,6 +3918,33 @@ h5.ec-heading { font-size: 0.9375rem; }
   font-style: italic;
 }
 
+.agent-escalate {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.agent-escalate-btn {
+  background: #2d1b52;
+  border: 1px solid #7c4dff;
+  color: #d4c2ff;
+  border-radius: 6px;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.agent-escalate-btn:hover:not(:disabled) { background: #3a2270; }
+.agent-escalate-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.agent-escalate-reason {
+  font-size: 0.8125rem;
+  color: #8892b0;
+  font-style: italic;
+}
+.agent-escalate-error { color: #e94560; font-style: normal; }
+
 .agent-finding {
   background: #16213e;
   border: 1px solid #0f3460;
@@ -4009,6 +4040,26 @@ h5.ec-heading { font-size: 0.9375rem; }
   white-space: pre-wrap;
   max-height: 150px;
   overflow-y: auto;
+}
+
+.agent-finding-copilot-warning {
+  font-size: 0.8125rem;
+  color: #ffd43b;
+  background: #3d3000;
+  border: 1px solid #ffd43b;
+  border-radius: 4px;
+  padding: 0.4rem 0.6rem;
+  margin: 0.2rem 0 0;
+}
+
+.agent-finding-copilot-blocked {
+  font-size: 0.8125rem;
+  color: #e94560;
+  background: #3d0a14;
+  border: 1px solid #e94560;
+  border-radius: 4px;
+  padding: 0.4rem 0.6rem;
+  margin: 0.2rem 0 0;
 }
 
 .agent-finding-actions {

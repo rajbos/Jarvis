@@ -16,6 +16,10 @@ contextBridge.exposeInMainWorld('jarvis', {
   getOnboardingStatus: () => ipcRenderer.invoke('onboarding:status'),
   getPreferences: () => ipcRenderer.invoke('app:get-preferences'),
   setPreferences: (prefs: Record<string, unknown>) => ipcRenderer.invoke('app:set-preferences', prefs),
+  getStartupSettings: () => ipcRenderer.invoke('app:get-startup-settings'),
+  getAboutInfo: () => ipcRenderer.invoke('app:get-about-info'),
+  setStartupSettings: (settings: { openAtLogin: boolean; startMinimized: boolean }) =>
+    ipcRenderer.invoke('app:set-startup-settings', settings),
   checkOllama: () => ipcRenderer.invoke('ollama:status'),
   listOllamaModels: () => ipcRenderer.invoke('ollama:list-models'),
   getSelectedOllamaModel: () => ipcRenderer.invoke('ollama:get-selected-model'),
@@ -159,6 +163,10 @@ contextBridge.exposeInMainWorld('jarvis', {
   agentsApproveFinding: (findingId: number) => ipcRenderer.invoke('agents:approve-finding', findingId),
   agentsRejectFinding: (findingId: number) => ipcRenderer.invoke('agents:reject-finding', findingId),
   agentsExecuteFinding: (findingId: number) => ipcRenderer.invoke('agents:execute-finding', findingId),
+  agentsEscalationReadiness: (repoFullName: string) => ipcRenderer.invoke('agents:escalation-readiness', repoFullName),
+  agentsEscalate: (sourceSessionId: number) => ipcRenderer.invoke('agents:escalate', sourceSessionId),
+  agentsCheckCopilotAvailability: (repoFullName: string) =>
+    ipcRenderer.invoke('agents:check-copilot-availability', repoFullName),
   onAgentSessionStarting: (callback: (data: AgentSessionStartingPayload) => void) => {
     const listener = (_event: unknown, data: AgentSessionStartingPayload) => callback(data);
     ipcRenderer.on('agent:session-starting', listener);
@@ -240,8 +248,8 @@ contextBridge.exposeInMainWorld('jarvis', {
     ipcRenderer.invoke('groups:get-ruddr-workspace'),
   groupsSetRuddrWorkspace: (workspace: string) =>
     ipcRenderer.invoke('groups:set-ruddr-workspace', workspace),
-  groupsGetRuddrBudget: (projectName: string) =>
-    ipcRenderer.invoke('groups:get-ruddr-budget', projectName),
+  groupsGetRuddrBudget: (projectName: string, options?: { force?: boolean }) =>
+    ipcRenderer.invoke('groups:get-ruddr-budget', projectName, options),
   groupsGetRuddrBudgetCache: () =>
     ipcRenderer.invoke('groups:get-ruddr-budget-cache'),
 

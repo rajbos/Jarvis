@@ -44,8 +44,11 @@ const EXPECTED_CHANNELS = [
   // config plugin
   'onboarding:status',
   'app:get-system-locale',
+  'app:get-about-info',
   'app:get-preferences',
   'app:set-preferences',
+  'app:get-startup-settings',
+  'app:set-startup-settings',
   // ollama plugin
   'ollama:status',
   'ollama:list-models',
@@ -120,6 +123,9 @@ const EXPECTED_CHANNELS = [
   'agents:approve-finding',
   'agents:reject-finding',
   'agents:execute-finding',
+  'agents:escalation-readiness',
+  'agents:escalate',
+  'agents:check-copilot-availability',
   // workflow data (agents plugin)
   'github:fetch-workflow-runs',
   'github:get-workflow-summary',

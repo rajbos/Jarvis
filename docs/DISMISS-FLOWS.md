@@ -45,7 +45,9 @@ Rate-limit safeguards:
 ### `prewarmRuddrCache(db)`
 
 **File:** [src/plugins/groups/handler.ts](../src/plugins/groups/handler.ts)  
-Seeds Ruddr project data from DB cache or refreshes via the Browser Companion extension. No dismissals occur.
+Seeds Ruddr project data — and the persisted Ruddr budget cache — from the DB, then refreshes the project list via the Browser Companion extension. No dismissals occur.
+
+Budgets are cached in the `ruddr_budgets` table and re-scraped at most once every 4 hours (`RUDDR_BUDGET_TTL_MS`). Opening the Groups dashboard renders the cached figures immediately and only re-scrapes projects whose cache has expired; the dashboard **Refresh** button and the per-project 💰 button bypass the TTL.
 
 ---
 

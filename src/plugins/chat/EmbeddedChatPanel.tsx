@@ -25,7 +25,7 @@ export function EmbeddedChatPanel({ visible, selectedModel, onClose, onAgentStar
   const [agentStreaming, setAgentStreaming] = useState(false);
   const [agentStreamText, setAgentStreamText] = useState('');
   const [agentSession, setAgentSession] = useState<AgentSession | null>(null);
-  const [agentSessionInfo, setAgentSessionInfo] = useState<{ agentName: string; scopeValue: string; workflowRunCount: number } | null>(null);
+  const [agentSessionInfo, setAgentSessionInfo] = useState<{ agentName: string; scopeValue: string; workflowRunCount: number; provider?: string } | null>(null);
   const [agentDebugContext, setAgentDebugContext] = useState<{ systemPrompt: string; userMessage: string } | null>(null);
   const [debugExpanded, setDebugExpanded] = useState(false);
   const [extractingFindings, setExtractingFindings] = useState(false);
@@ -96,18 +96,22 @@ export function EmbeddedChatPanel({ visible, selectedModel, onClose, onAgentStar
 
     // ── Agent streaming listeners ──────────────────────────────────────────
     const unsubSessionStarting = window.jarvis.onAgentSessionStarting?.((data) => {
-      const { agentName, scopeValue, workflowRunCount } = data;
+      const { agentName, scopeValue, workflowRunCount, provider } = data;
       agentStreamRef.current = '';
       agentStartedRef.current = true;
       setMessages([]);
       setAgentStreamText('');
       setAgentStreaming(true);
       setAgentSession(null);
-      setAgentSessionInfo({ agentName, scopeValue, workflowRunCount });
+      setAgentSessionInfo({ agentName, scopeValue, workflowRunCount, provider });
       setAgentDebugContext(null);
       setDebugExpanded(false);
-      const runNote = workflowRunCount > 0 ? ` (${workflowRunCount} cached run${workflowRunCount !== 1 ? 's' : ''})` : ' (no cached runs — fetch first)';
-      setMessages((msgs) => [...msgs, { role: 'user', content: `\ud83e\udd16 Analyse **${scopeValue}** for workflow failures${runNote}` }]);
+      const isEscalation = provider === 'claude-agent-sdk';
+      const runNote = isEscalation
+        ? ' — reading the local clone directly'
+        : (workflowRunCount > 0 ? ` (${workflowRunCount} cached run${workflowRunCount !== 1 ? 's' : ''})` : ' (no cached runs — fetch first)');
+      const verb = isEscalation ? '🧠 Escalate' : '🤖 Analyse';
+      setMessages((msgs) => [...msgs, { role: 'user', content: `${verb} **${scopeValue}** for workflow failures${runNote}` }]);
       onAgentStart?.();
     });
 

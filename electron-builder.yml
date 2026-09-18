@@ -1,0 +1,27 @@
+appId: io.github.rajbos.jarvis
+productName: Jarvis
+artifactName: Jarvis-Setup-${version}.${ext}
+directories:
+  output: release
+publish:
+  provider: github
+  owner: rajbos
+  repo: Jarvis
+  releaseType: release
+files:
+  - dist/**/*
+  - assets/**/*
+  - package.json
+extraResources:
+  - from: scripts/read-onenote-section.ps1
+    to: scripts/read-onenote-section.ps1
+win:
+  target:
+    - nsis
+  icon: assets/Jarvis1024.png
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Jarvis

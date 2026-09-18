@@ -132,6 +132,14 @@ describe('Discovery plugin — IPC handlers', () => {
         rateLimit: null,
       });
     });
+
+    it('returns a structured error when the database read fails', () => {
+      vi.mocked(listOrgs).mockImplementationOnce(() => {
+        throw new Error('database unavailable');
+      });
+      const result = callHandler('github:discovery-status');
+      expect(result).toEqual({ error: 'database unavailable' });
+    });
   });
 
   // ── github:start-discovery ────────────────────────────────────────────────

@@ -10,6 +10,9 @@ export interface AgentSessionStartingPayload {
   scopeType: string;
   scopeValue: string;
   workflowRunCount: number;
+  workflowFilter?: string | null;
+  /** Analysis tier that produced this session — 'ollama' (default) or 'claude-agent-sdk' (escalation). */
+  provider?: string;
 }
 
 export interface AgentAnalysisCompletePayload {

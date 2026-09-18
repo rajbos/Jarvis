@@ -161,6 +161,8 @@ export function getSchema(): string {
         started_at      DATETIME,
         completed_at    DATETIME,
         log_excerpt     TEXT,
+        failing_step_name TEXT,
+        error_highlights  TEXT,
         fetched_at      DATETIME DEFAULT CURRENT_TIMESTAMP
     );
     CREATE INDEX IF NOT EXISTS idx_wf_jobs_run ON github_workflow_jobs(run_id);
@@ -186,9 +188,13 @@ export function getSchema(): string {
         started_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
         completed_at  DATETIME,
         summary       TEXT,
-        raw_result    TEXT
+        raw_result    TEXT,
+        provider          TEXT NOT NULL DEFAULT 'ollama',
+        model             TEXT,
+        parent_session_id INTEGER REFERENCES agent_sessions(id)
     );
     CREATE INDEX IF NOT EXISTS idx_agent_sessions_agent ON agent_sessions(agent_id);
+    CREATE INDEX IF NOT EXISTS idx_agent_sessions_parent ON agent_sessions(parent_session_id);
 
     -- Structured findings emitted by an agent session
     CREATE TABLE IF NOT EXISTS agent_findings (
@@ -295,6 +301,22 @@ export function getSchema(): string {
         cached_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
         discovered_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (path)
+    );
+
+    -- Ruddr project budget cache (persisted across restarts so the Groups
+    -- dashboard can render immediately without re-scraping on every open)
+    CREATE TABLE IF NOT EXISTS ruddr_budgets (
+        project_name              TEXT NOT NULL,
+        project_url               TEXT,
+        actual_billable_hours     TEXT,
+        actual_non_billable_hours TEXT,
+        actual_total_hours        TEXT,
+        budget                    TEXT,
+        budget_left               TEXT,
+        note                      TEXT,
+        cloud_folder_url          TEXT,
+        fetched_at                DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (project_name)
     );
 
     -- Browser companion: reusable automation skills

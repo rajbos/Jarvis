@@ -26,6 +26,7 @@ vi.mock('electron', () => ({
   app: {
     isPackaged: false,
     getSystemLocale: vi.fn().mockReturnValue('en-US'),
+    setLoginItemSettings: vi.fn(),
   },
 }));
 
@@ -37,8 +38,21 @@ vi.mock('../../src/agent/onboarding', () => ({
   }),
 }));
 
+vi.mock('../../src/services/about', () => ({
+  getAboutInfo: vi.fn().mockResolvedValue({
+    displayVersion: '9.9.9',
+    appVersion: '9.9.9',
+    isDev: false,
+    branch: null,
+    releasedAt: '2026-02-01T12:00:00Z',
+    releaseUrl: 'https://github.com/rajbos/Jarvis/releases/tag/v9.9.9',
+    repoUrl: 'https://github.com/rajbos/Jarvis',
+  }),
+}));
+
 vi.mock('../../src/agent/config', () => ({
   loadConfig: vi.fn().mockReturnValue({
+    electron: { openAtLogin: true, startMinimized: false },
     preferences: { sortByNotifications: true },
   }),
   saveConfig: vi.fn(),
@@ -48,6 +62,7 @@ import { registerHandlers } from '../../src/plugins/config/handler';
 import { getOnboardingStatus } from '../../src/agent/onboarding';
 import { loadConfig, saveConfig } from '../../src/agent/config';
 import { app } from 'electron';
+import { getAboutInfo } from '../../src/services/about';
 
 // ── Helper ────────────────────────────────────────────────────────────────────
 
@@ -67,6 +82,11 @@ describe('Config plugin — IPC handlers', () => {
     process.env.JARVIS_ENCRYPTION_KEY = 'test-encryption-key-config-handler';
     vi.clearAllMocks();
     handlers.clear();
+    Object.defineProperty(app, 'isPackaged', { value: false, configurable: true });
+    vi.mocked(loadConfig).mockReturnValue({
+      electron: { openAtLogin: true, startMinimized: false },
+      preferences: { sortByNotifications: true },
+    } as ReturnType<typeof loadConfig>);
 
     const SQL = await initSqlJs();
     db = new SQL.Database();
@@ -112,6 +132,27 @@ describe('Config plugin — IPC handlers', () => {
     });
   });
 
+  // ── app:get-about-info ────────────────────────────────────────────────────
+
+  describe('app:get-about-info', () => {
+    it('returns the about info from the service', async () => {
+      const result = await callHandler('app:get-about-info');
+      expect(getAboutInfo).toHaveBeenCalled();
+      expect(result).toMatchObject({
+        displayVersion: '9.9.9',
+        releasedAt: '2026-02-01T12:00:00Z',
+        repoUrl: 'https://github.com/rajbos/Jarvis',
+      });
+    });
+
+    it('returns an error object when the service throws', async () => {
+      vi.mocked(getAboutInfo).mockRejectedValueOnce(new Error('boom'));
+      const result = await callHandler('app:get-about-info') as Record<string, unknown>;
+      expect(result.ok).toBe(false);
+      expect(typeof result.error).toBe('string');
+    });
+  });
+
   // ── app:get-preferences ───────────────────────────────────────────────────
 
   describe('app:get-preferences', () => {
@@ -128,6 +169,53 @@ describe('Config plugin — IPC handlers', () => {
       const result = callHandler('app:get-preferences') as Record<string, unknown>;
       expect(result.ok).toBe(false);
       expect(typeof result.error).toBe('string');
+    });
+  });
+
+  // ── app startup settings ──────────────────────────────────────────────────
+
+  describe('app startup settings', () => {
+    it('returns startup settings and reports that development cannot register at login', () => {
+      expect(callHandler('app:get-startup-settings')).toEqual({
+        openAtLogin: true,
+        startMinimized: false,
+        canRegisterAtLogin: false,
+      });
+    });
+
+    it('rejects invalid startup settings', () => {
+      expect(callHandler('app:set-startup-settings', { openAtLogin: true })).toEqual({
+        ok: false,
+        error: 'Invalid startup settings',
+      });
+    });
+
+    it('saves startup settings without registering development Electron', () => {
+      const result = callHandler('app:set-startup-settings', {
+        openAtLogin: false,
+        startMinimized: true,
+      });
+
+      expect(result).toEqual({ ok: true, canRegisterAtLogin: false });
+      expect(saveConfig).toHaveBeenCalledWith(expect.objectContaining({
+        electron: { openAtLogin: false, startMinimized: true },
+      }));
+      expect(app.setLoginItemSettings).not.toHaveBeenCalled();
+    });
+
+    it('updates Windows login registration for the packaged app', () => {
+      Object.defineProperty(app, 'isPackaged', { value: true, configurable: true });
+
+      const result = callHandler('app:set-startup-settings', {
+        openAtLogin: true,
+        startMinimized: true,
+      });
+
+      expect(result).toEqual({ ok: true, canRegisterAtLogin: true });
+      expect(app.setLoginItemSettings).toHaveBeenCalledWith({
+        openAtLogin: true,
+        args: ['--hidden'],
+      });
     });
   });
 

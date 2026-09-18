@@ -11,7 +11,9 @@ build/
 release/
 
 # IDE
-.vscode/
+.vscode/*
+!.vscode/launch.json
+!.vscode/tasks.json
 .idea/
 *.swp
 *.swo
@@ -27,10 +29,13 @@ Desktop.ini
 
 # Local storage (runtime data, not tracked)
 *.db
+.dev-data/
 logs/
 
-# Test coverage reports
+# Test coverage reports and captured run output
 coverage/
+*coverage*.txt
+*_output.txt
 
 # Compiled test artifacts
 tests/**/*.js
@@ -38,7 +43,6 @@ tests/**/*.d.ts
 tests/**/*.js.map
 
 .claude/worktrees/
-test_output.txt
 
 # User-specific runtime config (may contain secrets)
 AppData/

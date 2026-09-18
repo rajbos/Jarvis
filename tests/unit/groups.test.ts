@@ -18,6 +18,9 @@ import {
   updateRuddrProjectNote,
   updateRuddrProjectCloudFolderUrl,
   lookupRuddrProject,
+  loadRuddrBudgetsFromDb,
+  saveRuddrBudgetToDb,
+  parseSqliteUtc,
 } from '../../src/services/groups';
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -125,6 +128,67 @@ describe('Groups service', () => {
 
   it('lookupRuddrProject returns null when no project matches', () => {
     expect(lookupRuddrProject(db, 'missing')).toBeNull();
+  });
+
+  // ── Ruddr budget cache helpers ──────────────────────────────────────────────
+
+  it('creates the ruddr_budgets table in schema', () => {
+    const result = db.exec("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name");
+    const tableNames = result[0].values.map((row: unknown[]) => row[0] as string);
+    expect(tableNames).toContain('ruddr_budgets');
+  });
+
+  it('saves and loads a Ruddr budget with a fetched_at stamp', () => {
+    saveRuddrBudgetToDb(db, {
+      projectName: 'Project A',
+      actualBillableHours: '10',
+      actualNonBillableHours: '2',
+      actualTotalHours: '12',
+      budget: '40',
+      budgetLeft: '28',
+      projectUrl: 'https://www.ruddr.io/projects/a/overview',
+      note: 'a note',
+      cloudFolderUrl: 'https://example.com/a',
+    });
+
+    const loaded = loadRuddrBudgetsFromDb(db);
+    expect(loaded).toHaveLength(1);
+    expect(loaded[0]).toMatchObject({
+      projectName: 'Project A',
+      actualBillableHours: '10',
+      budget: '40',
+      budgetLeft: '28',
+      note: 'a note',
+      cloudFolderUrl: 'https://example.com/a',
+    });
+    expect(parseSqliteUtc(loaded[0].fetchedAt)).toBeGreaterThan(0);
+  });
+
+  it('saveRuddrBudgetToDb upserts figures and keeps a previous note when the new one is null', () => {
+    saveRuddrBudgetToDb(db, {
+      projectName: 'Project B', actualBillableHours: '1', actualNonBillableHours: null,
+      actualTotalHours: '1', budget: '10', budgetLeft: '9',
+      projectUrl: '/b', note: 'keep me', cloudFolderUrl: 'https://example.com/b',
+    });
+    saveRuddrBudgetToDb(db, {
+      projectName: 'Project B', actualBillableHours: '5', actualNonBillableHours: null,
+      actualTotalHours: '5', budget: '10', budgetLeft: '5',
+      projectUrl: '/b', note: null, cloudFolderUrl: null,
+    });
+
+    const loaded = loadRuddrBudgetsFromDb(db);
+    expect(loaded).toHaveLength(1);
+    expect(loaded[0].actualBillableHours).toBe('5');
+    expect(loaded[0].budgetLeft).toBe('5');
+    expect(loaded[0].note).toBe('keep me');
+    expect(loaded[0].cloudFolderUrl).toBe('https://example.com/b');
+  });
+
+  it('parseSqliteUtc reads SQLite UTC timestamps and rejects unusable values', () => {
+    expect(parseSqliteUtc('2026-01-02 03:04:05')).toBe(Date.UTC(2026, 0, 2, 3, 4, 5));
+    expect(parseSqliteUtc('2026-01-02T03:04:05Z')).toBe(Date.UTC(2026, 0, 2, 3, 4, 5));
+    expect(parseSqliteUtc(null)).toBe(0);
+    expect(parseSqliteUtc('not a date')).toBe(0);
   });
 
   // ── CRUD ────────────────────────────────────────────────────────────────────

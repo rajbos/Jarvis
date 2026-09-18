@@ -17,38 +17,55 @@ export function GroupsDashboardPanel() {
   const [budgetChecking, setBudgetChecking] = useState<string | null>(null);
   const [newRuddrProjects, setNewRuddrProjects] = useState<Array<{ name: string; path: string }>>([]); 
 
+  /**
+   * Fetches budgets one project at a time. Without `force` the main process
+   * serves its persisted cache whenever the entry is still inside the refresh
+   * window, so this is a no-op scrape-wise for fresh data.
+   */
+  const fetchBudgets = async (names: string[], force = false) => {
+    for (const name of names) {
+      setBudgetChecking(name);
+      try {
+        const result = await window.jarvis.groupsGetRuddrBudget(name, force ? { force: true } : undefined);
+        setBudgetData((prev) => ({ ...prev, [name]: result }));
+      } catch (err) {
+        setBudgetData((prev) => ({
+          ...prev,
+          [name]: { ok: false, error: err instanceof Error ? err.message : String(err) },
+        }));
+      }
+    }
+    setBudgetChecking(null);
+  };
+
   const loadData = async () => {
     setLoading(true);
+    let groupsList: Group[];
+    let initialBudgets: Record<string, RuddrBudget>;
     try {
-      const [groupsList, budgetCache] = await Promise.all([
+      const [list, budgetCache] = await Promise.all([
         window.jarvis.groupsList(),
         window.jarvis.groupsGetRuddrBudgetCache().catch(() => ({ ok: true, budgets: {} })),
       ]);
+      groupsList = list;
+      initialBudgets = budgetCache.ok ? budgetCache.budgets : {};
       setGroups(groupsList);
-      const initialBudgets: Record<string, RuddrBudget> = budgetCache.ok ? budgetCache.budgets : {};
       setBudgetData(initialBudgets);
-
-      // Auto-fetch budgets for linked projects that aren't in the cache yet
-      const allProjectNames = groupsList.flatMap((g: Group) => g.ruddrProjectNames ?? []);
-      const missing = allProjectNames.filter((n: string) => !initialBudgets[n]);
-      for (const name of missing) {
-        setBudgetChecking(name);
-        try {
-          const result = await window.jarvis.groupsGetRuddrBudget(name);
-          setBudgetData((prev) => ({ ...prev, [name]: result }));
-        } catch (err) {
-          setBudgetData((prev) => ({
-            ...prev,
-            [name]: { ok: false, error: err instanceof Error ? err.message : String(err) },
-          }));
-        }
-      }
-      setBudgetChecking(null);
     } catch (err) {
       console.error('[GroupsDashboard] Failed to load data:', err);
-    } finally {
       setLoading(false);
+      return;
     }
+    // Render the cached figures immediately — anything below only runs for
+    // projects whose cached budget is missing or past the refresh window.
+    setLoading(false);
+
+    const linkedNames = [...new Set(groupsList.flatMap((g: Group) => g.ruddrProjectNames ?? []))];
+    const needsRefresh = linkedNames.filter((n: string) => {
+      const cached = initialBudgets[n];
+      return !cached || cached.stale === true;
+    });
+    if (needsRefresh.length > 0) await fetchBudgets(needsRefresh);
   };
 
   useEffect(() => {
@@ -98,22 +115,11 @@ export function GroupsDashboardPanel() {
     // scrape runs (cleared when the main process fires project-details-refreshed).
     setDetailsLoading(true);
     // Re-fetch budget for every currently linked Ruddr project across all cards.
-    const allProjectNames = groups.flatMap((g) => g.ruddrProjectNames);
+    // This is an explicit user action, so bypass the cache TTL.
+    const allProjectNames = [...new Set(groups.flatMap((g) => g.ruddrProjectNames))];
     if (allProjectNames.length === 0) return;
     setLoading(true);
-    for (const name of allProjectNames) {
-      setBudgetChecking(name);
-      try {
-        const result = await window.jarvis.groupsGetRuddrBudget(name);
-        setBudgetData((prev) => ({ ...prev, [name]: result }));
-      } catch (err) {
-        setBudgetData((prev) => ({
-          ...prev,
-          [name]: { ok: false, error: err instanceof Error ? err.message : String(err) },
-        }));
-      }
-    }
-    setBudgetChecking(null);
+    await fetchBudgets(allProjectNames, true);
     setLoading(false);
   };
 
@@ -222,6 +228,13 @@ export function GroupsDashboardPanel() {
 }
 
 // ── GroupCard ─────────────────────────────────────────────────────────────────
+
+/** Formats a cached budget's timestamp for the "last updated" tooltip. */
+function formatFetchedAt(iso: string | null | undefined): string {
+  if (!iso) return 'unknown time';
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? 'unknown time' : d.toLocaleString();
+}
 
 function GroupCard(props: {
   group: Group;
@@ -369,7 +382,8 @@ function GroupCard(props: {
   const handleCheckBudget = async (projectName: string) => {
     setBudgetChecking(projectName);
     try {
-      const result = await window.jarvis.groupsGetRuddrBudget(projectName);
+      // Clicking 💰 is an explicit request for current numbers — skip the TTL.
+      const result = await window.jarvis.groupsGetRuddrBudget(projectName, { force: true });
       setBudgetData((prev) => ({ ...prev, [projectName]: result }));
     } catch (err) {
       setBudgetData((prev) => ({
@@ -450,7 +464,10 @@ function GroupCard(props: {
                   <div class="groups-dash-budget-section">
                     {budgetData[name].ok ? (
                       <>
-                        <div class="groups-dash-budget-table">
+                        <div
+                          class="groups-dash-budget-table"
+                          title={`Last updated ${formatFetchedAt(budgetData[name].fetchedAt)}${budgetData[name].stale ? ' (refreshing…)' : ''}`}
+                        >
                           <div class="groups-dash-budget-cell">
                             <span class="groups-dash-budget-val">{budgetData[name].actualBillableHours ?? '?'}h</span>
                             <span class="groups-dash-budget-lbl">billable</span>
@@ -467,6 +484,14 @@ function GroupCard(props: {
                         {budgetData[name].budget === '0' && (
                           <div class="groups-dash-budget-alerts">
                             <span class="groups-dash-budget-warn" title="No budget set for this project in Ruddr">⚠️ No budget set</span>
+                          </div>
+                        )}
+                        {budgetData[name].refreshError && (
+                          <div class="groups-dash-budget-alerts">
+                            <span
+                              class="groups-dash-budget-warn"
+                              title={`Showing cached figures from ${formatFetchedAt(budgetData[name].fetchedAt)} — refresh failed: ${budgetData[name].refreshError}`}
+                            >🕒 Cached — refresh failed</span>
                           </div>
                         )}
                       </>

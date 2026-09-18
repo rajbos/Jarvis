@@ -165,6 +165,10 @@ Electron uses a multi-process architecture that maps well to Jarvis:
 | **Renderer process** | Settings UI, onboarding wizard, chat/prompt window |
 | **MCP server processes** | Spawned as child processes, managed by the main process |
 
+### IPC Handler Error Contract
+
+All new `ipcMain.handle` registrations should use `safeHandle` from `src/plugins/ipc-utils.ts`. It preserves successful return values and converts synchronous exceptions or rejected promises into a resolved `{ error: string }` payload, giving renderer callers one predictable failure shape. Handlers may still perform input validation and return domain-specific error objects when appropriate.
+
 ### System Tray Behavior
 
 - On install / first launch, Jarvis starts and places an icon in the Windows system tray.

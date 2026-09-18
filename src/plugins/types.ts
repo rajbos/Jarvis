@@ -788,6 +788,14 @@ export interface WorkflowJob {
 
 
 
+  failing_step_name: string | null;
+
+
+
+  error_highlights: string | null;
+
+
+
   fetched_at: string;
 
 
@@ -856,7 +864,7 @@ export interface AgentFinding {
 
 
 
-  action_type: 'close_notifications' | 'create_issue' | 'clone_repo' | 'none';
+  action_type: 'close_notifications' | 'create_issue' | 'clone_repo' | 'assign_copilot' | 'none';
 
 
 
@@ -887,6 +895,12 @@ export interface AgentFinding {
 
 
 
+
+export interface CopilotAvailabilityResult {
+  available: boolean;
+  reason?: 'repo_not_found_or_no_access' | 'not_enabled_or_no_seat' | 'api_error' | 'not_authenticated';
+  detail?: string;
+}
 
 export interface AgentSession {
 
@@ -932,6 +946,28 @@ export interface AgentSession {
 
 
 
+  provider: string;
+
+  model: string | null;
+
+  parent_session_id: number | null;
+
+}
+
+// Raw finding shape as emitted by an analysis provider (Ollama JSON block or
+// the Claude Agent SDK's structured output) before it is persisted.
+export interface RawFinding {
+  subject?: string;
+  finding_type?: string;
+  reason?: string;
+  pattern?: string | null;
+  action_type?: string;
+  action_data?: Record<string, unknown>;
+}
+
+export interface AgentJsonResult {
+  summary?: string;
+  findings?: RawFinding[];
 }
 
 
@@ -1938,7 +1974,47 @@ export interface RuddrBudget {
 
 
 
+  note?: string | null;
+
+
+
+  cloudFolderUrl?: string | null;
+
+
+
   error?: string;
+
+
+
+  /** ISO timestamp of the scrape this data came from (null when unknown). */
+
+
+
+  fetchedAt?: string | null;
+
+
+
+  /** True when the payload was served from the cache rather than a fresh scrape. */
+
+
+
+  cached?: boolean;
+
+
+
+  /** True when the cached data is older than the refresh window. */
+
+
+
+  stale?: boolean;
+
+
+
+  /** Set when cached data was returned because a refresh attempt failed. */
+
+
+
+  refreshError?: string;
 
 
 
@@ -2006,8 +2082,11 @@ export interface AutoDismissLogEntry {
 }
 
 export interface AutoDismissStats {
+  daily: { period: string; count: number }[];
   weekly: { period: string; count: number }[];
   monthly: { period: string; count: number }[];
+  today: number;
+  thisWeek: number;
 }
 
 
@@ -2462,6 +2541,27 @@ export interface JarvisApi {
     dashboardNotifSort?: 'count' | 'name';
   }): Promise<{ ok: boolean }>;
 
+  getStartupSettings(): Promise<{
+    openAtLogin: boolean;
+    startMinimized: boolean;
+    canRegisterAtLogin: boolean;
+  }>;
+
+  getAboutInfo(): Promise<{
+    displayVersion: string;
+    appVersion: string;
+    isDev: boolean;
+    branch: string | null;
+    releasedAt: string | null;
+    releaseUrl: string | null;
+    repoUrl: string;
+  }>;
+
+  setStartupSettings(settings: {
+    openAtLogin: boolean;
+    startMinimized: boolean;
+  }): Promise<{ ok: boolean; canRegisterAtLogin?: boolean; error?: string }>;
+
 
 
   onOpenChat(cb: () => void): () => void;
@@ -2593,6 +2693,16 @@ export interface JarvisApi {
 
 
   agentsExecuteFinding(findingId: number): Promise<{ ok: boolean; error?: string; dismissedIds?: string[] }>;
+
+  agentsCheckCopilotAvailability(repoFullName: string): Promise<CopilotAvailabilityResult>;
+
+
+
+  agentsEscalationReadiness(repoFullName: string): Promise<{ ok: boolean; reason?: string; resetAt?: number | null }>;
+
+
+
+  agentsEscalate(sourceSessionId: number): Promise<{ ok: boolean; sessionId?: number; error?: string }>;
 
 
 
@@ -2731,7 +2841,7 @@ export interface JarvisApi {
 
 
 
-  groupsGetRuddrBudget(projectName: string): Promise<RuddrBudget>;
+  groupsGetRuddrBudget(projectName: string, options?: { force?: boolean }): Promise<RuddrBudget>;
 
 
 

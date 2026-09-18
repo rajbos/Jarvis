@@ -19,6 +19,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
+      - name: Check for committed build/test artifacts
+        run: |
+          matches="$(git ls-files -- '*_output.txt' '*coverage*.txt' '*.tsbuildinfo' 'coverage/*')"
+          if [ -n "$matches" ]; then
+            echo "::error::Generated build/test artifacts are committed to the repository. Remove them with 'git rm --cached' and rely on .gitignore:"
+            echo "$matches"
+            exit 1
+          fi
+          echo "No committed build/test artifacts found."
+
       - name: Set up Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
