@@ -8,7 +8,11 @@ vi.mock('electron', () => ({
 }));
 vi.mock('../../src/storage/database', () => ({ getDatabasePath: () => 'C:\\data\\Jarvis\\jarvis.db' }));
 
-import { describeLaunch, getMcpClientConfig, resolveServerScriptPath } from '../../src/plugins/mcp-server/handler';
+import path from 'node:path';
+import { describeLaunch, getMcpClientConfig, resolveServerScriptPath, serverScriptPathFrom } from '../../src/plugins/mcp-server/handler';
+
+/** Where the handler module's own folder resolves the server script to. */
+const EXPECTED_DEV_SCRIPT = path.resolve(__dirname, '..', '..', 'src', 'mcp-server', 'index.js');
 
 describe('mcp-config snippets', () => {
   it('builds the server env, adding the Node flag only when packaged', () => {
@@ -47,10 +51,18 @@ describe('mcp-server handler', () => {
     electronState.appPath = 'C:\\repo\\Jarvis';
   });
 
+  it('resolves the script next to the compiled plugin, never via app.getAppPath()', () => {
+    expect(serverScriptPathFrom('C:\\repo\\Jarvis\\dist\\plugins\\mcp-server')).toBe('C:\\repo\\Jarvis\\dist\\mcp-server\\index.js');
+    expect(serverScriptPathFrom('C:\\Program Files\\Jarvis\\resources\\app.asar\\dist\\plugins\\mcp-server')).toBe(
+      'C:\\Program Files\\Jarvis\\resources\\app.asar.unpacked\\dist\\mcp-server\\index.js',
+    );
+    expect(resolveServerScriptPath()).toBe(EXPECTED_DEV_SCRIPT);
+  });
+
   it('uses node and the checkout path in development', () => {
     const launch = describeLaunch();
     expect(launch.command).toBe('node');
-    expect(launch.serverScriptPath).toBe('C:\\repo\\Jarvis\\dist\\mcp-server\\index.js');
+    expect(launch.serverScriptPath).toBe(EXPECTED_DEV_SCRIPT);
     expect(launch.env).toEqual({
       JARVIS_DB: 'C:\\data\\Jarvis\\jarvis.db',
       JARVIS_INDEX_DB: 'C:\\data\\Jarvis\\jarvis-index.db',
@@ -59,8 +71,6 @@ describe('mcp-server handler', () => {
 
   it('uses the bundled Electron runtime and the unpacked asar path when installed', () => {
     electronState.packaged = true;
-    electronState.appPath = 'C:\\Program Files\\Jarvis\\resources\\app.asar';
-    expect(resolveServerScriptPath()).toBe('C:\\Program Files\\Jarvis\\resources\\app.asar.unpacked\\dist\\mcp-server\\index.js');
     const launch = describeLaunch();
     expect(launch.command).toBe(process.execPath);
     expect(launch.env.ELECTRON_RUN_AS_NODE).toBe('1');

@@ -21,12 +21,21 @@ export interface McpClientConfig extends McpClientSnippets {
   indexExists: boolean;
 }
 
-/** Locate dist/mcp-server/index.js for this run (repo checkout or installed app). */
-export function resolveServerScriptPath(): string {
-  const scriptPath = path.join(app.getAppPath(), 'dist', 'mcp-server', 'index.js');
+/**
+ * Locate dist/mcp-server/index.js relative to this compiled module
+ * (dist/plugins/mcp-server/handler.js). Resolving from the module rather than
+ * from app.getAppPath() works in both a repo checkout and an installed build:
+ * in dev, getAppPath() points at dist/main, which produced a wrong path.
+ */
+export function serverScriptPathFrom(moduleDir: string): string {
+  const scriptPath = path.resolve(moduleDir, '..', '..', 'mcp-server', 'index.js');
   // Inside an installed build the app lives in app.asar; the server is unpacked next to it
   // (see asarUnpack in electron-builder.yml) so a plain Node runtime can execute it.
   return scriptPath.replace(`${path.sep}app.asar${path.sep}`, `${path.sep}app.asar.unpacked${path.sep}`);
+}
+
+export function resolveServerScriptPath(): string {
+  return serverScriptPathFrom(__dirname);
 }
 
 export function describeLaunch(): McpServerLaunch & { dbPath: string | null; indexPath: string | null } {
