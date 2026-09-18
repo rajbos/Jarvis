@@ -91,7 +91,7 @@ Rob's personal assistant agent — a locally-hosted AI agent built with Electron
 
 ## MCP Server
 
-Jarvis exposes cached data (Ruddr projects, customer groups, OneNote pages) via a [Model Context Protocol](https://modelcontextprotocol.io/) server over stdio. Any MCP-compatible client (VS Code, Claude Desktop, Copilot, etc.) can connect.
+Jarvis exposes its cached data (GitHub repos and local clones, notifications, workflow runs, Ruddr projects and budgets, customer groups, OneNote pages) via a [Model Context Protocol](https://modelcontextprotocol.io/) server over stdio. Any MCP-compatible client (VS Code, Claude Desktop, Copilot, etc.) can connect. The server is read-only and holds no credentials: it only reads what the running app has already synced.
 
 ### Setup
 
@@ -140,6 +140,13 @@ After connecting, the following tools are available:
 
 | Tool | Description |
 |---|---|
+| `github_find` | Search across remote repos, local clones and notifications at once |
+| `github_search_repos` | Search discovered GitHub repos (with local clone paths) |
+| `github_local_repos` | List git clones on this machine with remotes |
+| `github_notifications` | Cached GitHub notifications with filters |
+| `github_workflow_runs` | Cached GitHub Actions runs with filters |
+| `ruddr_customer_budget` | Budget utilization for a customer (group) |
+| `ruddr_list_budgets` | All cached Ruddr budgets |
 | `ruddr_list_projects` | List all cached Ruddr projects |
 | `ruddr_get_project` | Look up a project by name or path |
 | `groups_list` | List all customer/client groups |

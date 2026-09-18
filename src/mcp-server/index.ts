@@ -26,18 +26,31 @@ import {
   searchOneNotePages,
   getOneNotePageContent,
 } from './tools/onenote.js';
+import { getCustomerBudget, listRuddrBudgets } from './tools/ruddr-budgets.js';
+import {
+  findAnywhere,
+  listNotifications,
+  listWorkflowRuns,
+  searchGitHubRepos,
+  searchLocalRepos,
+} from './tools/github.js';
 
 const server = new McpServer(
   { name: 'jarvis', version: '0.1.0' },
   {
     capabilities: { tools: {} },
     instructions: `Jarvis local assistant data server.
-Exposes data from the Jarvis SQLite database at: ${DB_PATH}
+Exposes data cached by the Jarvis desktop app in its SQLite database at: ${DB_PATH}
+Everything is read-only and comes from the cache; this server holds no GitHub or Ruddr credentials
+and never calls those services itself.
 
-Available data:
-- Ruddr projects (client/project registry)
-- Groups (customers/clients with associated repos)
-- OneNote cached pages (meeting notes, project documentation)`,
+Tool families:
+- github_*  : cached GitHub data: discovered remote repos, local git clones on disk, notifications,
+              workflow runs. Start with github_find to locate something when you do not know where it lives.
+- ruddr_*   : Ruddr project registry and cached budget/actuals. Use ruddr_customer_budget for
+              "what is the budget utilization for customer X".
+- groups_*  : customer/client groups that tie repos and Ruddr projects together.
+- onenote_* : cached OneNote pages (meeting notes, project documentation).`,
   },
 );
 
@@ -219,6 +232,212 @@ server.registerTool(
         return { content: [{ type: 'text' as const, text: `Page not found: groupId=${groupId}, path="${relativePath}", index=${pageIndex}` }] };
       }
       return { content: [{ type: 'text' as const, text: JSON.stringify(page, null, 2) }] };
+    } finally {
+      db.close();
+    }
+  },
+);
+
+// ── Tool: ruddr_customer_budget ───────────────────────────────────────────────
+
+server.registerTool(
+  'ruddr_customer_budget',
+  {
+    title: 'Customer budget utilization',
+    description:
+      'Answers "what is the budget utilization for customer X?". Resolves the customer name to a ' +
+      'Jarvis group (fuzzy match), then returns cached Ruddr budget, budget left, actual hours and a ' +
+      'computed utilization fraction (0..1, >1 = over budget) for every linked project, plus totals. ' +
+      'Falls back to matching Ruddr project names directly when no group matches. ' +
+      'Check `budgetCacheAvailable` and `fetchedAt`: data is a cache scraped by the Jarvis app, not live.',
+    inputSchema: {
+      customer: z.string().min(1).describe('Customer / group name, e.g. "Acme" (fuzzy, case-insensitive)'),
+    },
+  },
+  async ({ customer }: { customer: string }) => {
+    const db = await openSnapshot();
+    try {
+      const summary = getCustomerBudget(db, customer);
+      if (summary.resolution === 'none') {
+        const hint = summary.candidates.length > 0
+          ? ` Closest groups: ${summary.candidates.map((c) => c.name).join(', ')}.`
+          : ' Use groups_list to see available customers.';
+        return { content: [{ type: 'text' as const, text: `No customer or Ruddr project matched "${customer}".${hint}` }] };
+      }
+      return { content: [{ type: 'text' as const, text: JSON.stringify(summary, null, 2) }] };
+    } finally {
+      db.close();
+    }
+  },
+);
+
+// ── Tool: ruddr_list_budgets ──────────────────────────────────────────────────
+
+server.registerTool(
+  'ruddr_list_budgets',
+  {
+    title: 'List all cached Ruddr budgets',
+    description:
+      'Returns budget, budget left, actual hours and computed utilization for every Ruddr project ' +
+      'that has a cached budget. Empty when the Jarvis app has not scraped budgets yet.',
+  },
+  async () => {
+    const db = await openSnapshot();
+    try {
+      return { content: [{ type: 'text' as const, text: JSON.stringify(listRuddrBudgets(db), null, 2) }] };
+    } finally {
+      db.close();
+    }
+  },
+);
+
+// ── Tool: github_find ─────────────────────────────────────────────────────────
+
+server.registerTool(
+  'github_find',
+  {
+    title: 'Find across all cached GitHub data',
+    description:
+      'One-shot search across cached remote GitHub repos, local git clones on disk and GitHub ' +
+      'notifications. Use this first when you do not know where something lives (e.g. "azure devops ' +
+      'pipeline minutes script"). All words must match; matching is over repo names, descriptions, ' +
+      'languages, local paths, remote URLs and notification titles. Remote hits include any known ' +
+      'local clone paths. Note: file contents inside repos are not indexed, only repo-level metadata.',
+    inputSchema: {
+      query: z.string().min(1).describe('Search words (all must match)'),
+      limitPerSource: z.number().int().min(1).max(50).optional().default(10).describe('Max hits per source (default 10)'),
+    },
+  },
+  async ({ query, limitPerSource }: { query: string; limitPerSource?: number }) => {
+    const db = await openSnapshot();
+    try {
+      const result = findAnywhere(db, query, limitPerSource ?? 10);
+      const total = result.repos.length + result.localRepos.length + result.notifications.length;
+      if (total === 0) {
+        return { content: [{ type: 'text' as const, text: `Nothing cached matches "${query}". Try fewer or different words.` }] };
+      }
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+    } finally {
+      db.close();
+    }
+  },
+);
+
+// ── Tool: github_search_repos ─────────────────────────────────────────────────
+
+server.registerTool(
+  'github_search_repos',
+  {
+    title: 'Search cached GitHub repos',
+    description:
+      'Search remote GitHub repos discovered by Jarvis (own, org and starred repos) by words in the ' +
+      'full name, description or language. Returns metadata plus any local clone paths. ' +
+      'Archived repos are excluded unless `includeArchived` is true.',
+    inputSchema: {
+      query: z.string().min(1).describe('Search words (all must match)'),
+      owner: z.string().optional().describe('Restrict to one owner/org login'),
+      includeArchived: z.boolean().optional().default(false),
+      limit: z.number().int().min(1).max(200).optional().default(20),
+    },
+  },
+  async ({ query, owner, includeArchived, limit }: { query: string; owner?: string; includeArchived?: boolean; limit?: number }) => {
+    const db = await openSnapshot();
+    try {
+      const repos = searchGitHubRepos(db, query, { owner, includeArchived: includeArchived ?? false, limit: limit ?? 20 });
+      if (repos.length === 0) {
+        return { content: [{ type: 'text' as const, text: `No cached repos match "${query}".` }] };
+      }
+      return { content: [{ type: 'text' as const, text: JSON.stringify(repos, null, 2) }] };
+    } finally {
+      db.close();
+    }
+  },
+);
+
+// ── Tool: github_local_repos ──────────────────────────────────────────────────
+
+server.registerTool(
+  'github_local_repos',
+  {
+    title: 'List local git clones',
+    description:
+      'Lists git repositories Jarvis found on this machine, with their absolute paths, remotes and ' +
+      'the linked GitHub repo (if any). Optional `query` filters by words in the folder name, path, ' +
+      'remote URL or linked repo name/description.',
+    inputSchema: {
+      query: z.string().optional().describe('Filter words (all must match); omit to list everything'),
+      limit: z.number().int().min(1).max(500).optional().default(50),
+    },
+  },
+  async ({ query, limit }: { query?: string; limit?: number }) => {
+    const db = await openSnapshot();
+    try {
+      const repos = searchLocalRepos(db, query, limit ?? 50);
+      if (repos.length === 0) {
+        return { content: [{ type: 'text' as const, text: query ? `No local repos match "${query}".` : 'No local repos have been discovered yet.' }] };
+      }
+      return { content: [{ type: 'text' as const, text: JSON.stringify(repos, null, 2) }] };
+    } finally {
+      db.close();
+    }
+  },
+);
+
+// ── Tool: github_notifications ────────────────────────────────────────────────
+
+server.registerTool(
+  'github_notifications',
+  {
+    title: 'List cached GitHub notifications',
+    description:
+      'Returns GitHub notifications cached by Jarvis, newest first. Filter by `repo` ("owner/repo" ' +
+      'or just "owner"), `unreadOnly`, `since` (ISO timestamp) and free-text `query` over the title, ' +
+      'repo and actor.',
+    inputSchema: {
+      query: z.string().optional().describe('Search words over subject title, repo name and actor'),
+      repo: z.string().optional().describe('"owner/repo" for one repo or "owner" for all repos of an owner'),
+      unreadOnly: z.boolean().optional().default(false),
+      since: z.string().optional().describe('ISO 8601 timestamp; only notifications updated at or after it'),
+      limit: z.number().int().min(1).max(500).optional().default(50),
+    },
+  },
+  async ({ query, repo, unreadOnly, since, limit }: { query?: string; repo?: string; unreadOnly?: boolean; since?: string; limit?: number }) => {
+    const db = await openSnapshot();
+    try {
+      const items = listNotifications(db, { query, repo, unreadOnly: unreadOnly ?? false, since, limit: limit ?? 50 });
+      if (items.length === 0) {
+        return { content: [{ type: 'text' as const, text: 'No cached notifications match the given filters.' }] };
+      }
+      return { content: [{ type: 'text' as const, text: JSON.stringify(items, null, 2) }] };
+    } finally {
+      db.close();
+    }
+  },
+);
+
+// ── Tool: github_workflow_runs ────────────────────────────────────────────────
+
+server.registerTool(
+  'github_workflow_runs',
+  {
+    title: 'List cached GitHub Actions runs',
+    description:
+      'Returns GitHub Actions workflow runs cached by Jarvis, newest first. Filter by `repo` ' +
+      '("owner/repo") and `conclusion` (e.g. "failure", "success").',
+    inputSchema: {
+      repo: z.string().optional().describe('"owner/repo"'),
+      conclusion: z.string().optional().describe('e.g. "failure", "success", "cancelled"'),
+      limit: z.number().int().min(1).max(500).optional().default(50),
+    },
+  },
+  async ({ repo, conclusion, limit }: { repo?: string; conclusion?: string; limit?: number }) => {
+    const db = await openSnapshot();
+    try {
+      const runs = listWorkflowRuns(db, { repo, conclusion, limit: limit ?? 50 });
+      if (runs.length === 0) {
+        return { content: [{ type: 'text' as const, text: 'No cached workflow runs match the given filters.' }] };
+      }
+      return { content: [{ type: 'text' as const, text: JSON.stringify(runs, null, 2) }] };
     } finally {
       db.close();
     }

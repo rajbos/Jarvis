@@ -1,6 +1,10 @@
 # Jarvis MCP Server
 
-The Jarvis MCP server exposes locally-cached data from the Jarvis SQLite database over the [Model Context Protocol](https://modelcontextprotocol.io/) (stdio transport). Use it with Claude Desktop, GitHub Copilot, or any other MCP-compatible client to query your Ruddr projects, client groups, and OneNote content without leaving your AI assistant.
+The Jarvis MCP server exposes locally-cached data from the Jarvis SQLite database over the [Model Context Protocol](https://modelcontextprotocol.io/) (stdio transport). Use it with Claude Desktop, GitHub Copilot, or any other MCP-compatible client to query your GitHub repos (remote and local clones), notifications, Ruddr projects and budgets, client groups, and OneNote content without leaving your AI assistant.
+
+## Design principle: cached data only, no credentials
+
+The server is a **read-only reader of the Jarvis database**. It never receives the GitHub token, the Ruddr session or any other credential from the Electron app, and it never calls GitHub or Ruddr itself. Everything it returns is whatever the running Jarvis app last synced: repo discovery, local repo scans, notification polling, and Ruddr budget scraping. Check `fetchedAt` / `indexedAt` style fields in responses when freshness matters.
 
 ## Prerequisites
 
@@ -32,7 +36,7 @@ Add this to your `claude_desktop_config.json` (usually at `%APPDATA%\Claude\clau
   "mcpServers": {
     "jarvis": {
       "command": "node",
-      "args": ["C:\\Users\\<YOU>\\.copilot\\copilot-worktrees\\Jarvis\\rajbos-upgraded-broccoli\\dist\\mcp-server\\index.js"]
+      "args": ["C:\\path\\to\\Jarvis\\dist\\mcp-server\\index.js"]
     }
   }
 }
@@ -42,15 +46,33 @@ After a Jarvis build (`npm run build`), restart Claude Desktop to pick up change
 
 ## Available tools
 
-### Ruddr tools (Phase 1)
+Tools are grouped into families by prefix. `github_*` answers "where is / what happened with" questions across everything GitHub-related; `ruddr_*` answers project and budget questions.
+
+### GitHub tools (cached remote repos, local clones, notifications, workflow runs)
 
 | Tool | Description |
 |---|---|
+| `github_find` | One-shot search across remote repos, local clones and notifications. Start here when you do not know where something lives (e.g. "azure devops pipeline") |
+| `github_search_repos` | Search discovered GitHub repos by words in name, description or language; returns metadata plus known local clone paths. Options: `owner`, `includeArchived`, `limit` |
+| `github_local_repos` | List git clones found on this machine with paths, remotes and linked GitHub repo; optional `query` filter |
+| `github_notifications` | Cached GitHub notifications, newest first. Filters: `query`, `repo` (`owner/repo` or `owner`), `unreadOnly`, `since`, `limit` |
+| `github_workflow_runs` | Cached GitHub Actions runs. Filters: `repo`, `conclusion`, `limit` |
+
+Search terms are ANDed and matched case-insensitively with `LIKE`. Only repo-level metadata is indexed today, not file contents inside repos.
+
+### Ruddr tools (projects and budgets)
+
+| Tool | Description |
+|---|---|
+| `ruddr_customer_budget` | "What is the budget utilization for customer X?" Fuzzy-matches a Jarvis group, returns budget / budget left / actual hours and a computed `utilization` fraction per linked project plus totals. Falls back to matching Ruddr project names directly |
+| `ruddr_list_budgets` | Every cached Ruddr budget with parsed utilization |
 | `ruddr_list_projects` | List all cached Ruddr projects (name, path, note, cloud folder URL) |
 | `ruddr_get_project` | Look up one project by `name` (case-insensitive) or `path` |
 | `groups_with_ruddr` | List only groups that have Ruddr project associations |
 
-### Group & OneNote tools (Phase 2)
+Budget values are scraped from ruddr.io by the Groups plugin and cached in the `ruddr_budgets` table (schema v29+). Until the app has scraped at least once, `ruddr_customer_budget` still lists the customer's projects but reports `budgetCacheAvailable: false` and null figures.
+
+### Group & OneNote tools
 
 | Tool | Description |
 |---|---|
