@@ -32,7 +32,9 @@ jobs:
           fi
 
           # Get the latest released gh-aw-actions version
-          LATEST_VERSION=$(gh release list --repo github/gh-aw-actions --limit 1 --json tagName --jq '.[0].tagName')
+          LATEST_VERSION=$(gh release list --repo github/gh-aw-actions --limit 1 \
+            --exclude-drafts --exclude-pre-releases \
+            --json tagName --jq '.[0].tagName')
           if [ -z "$LATEST_VERSION" ]; then
             echo "Could not determine latest gh-aw-actions version. Exiting."
             exit 1
@@ -83,7 +85,7 @@ jobs:
             --state open \
             --search "chore: gh-aw lock files are out of date in:title" \
             --json title \
-            --jq --arg t "$ISSUE_TITLE" '[.[] | select(.title == $t)] | length')
+            | jq --arg t "$ISSUE_TITLE" '[.[] | select(.title == $t)] | length')
 
           if [ "${EXISTING_COUNT:-0}" -gt 0 ]; then
             echo "Open issue already exists: '$ISSUE_TITLE'. Skipping."
