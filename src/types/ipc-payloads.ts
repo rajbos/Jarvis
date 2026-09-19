@@ -51,3 +51,15 @@ export interface NewRuddrProjectsPayload {
 export interface BrowserExtensionConnectedPayload {
   count: number;
 }
+
+/**
+ * Auto-update state, owned by the main process and mirrored into the renderer.
+ * Kept in main so a downloaded update stays actionable after the notification
+ * toast is dismissed or missed — the UI reads this instead of the toast.
+ */
+export type UpdateState =
+  | { status: 'idle' }
+  | { status: 'checking' }
+  | { status: 'downloading'; version: string; percent: number }
+  | { status: 'downloaded'; version: string }
+  | { status: 'error'; error: string };

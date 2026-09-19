@@ -10,6 +10,7 @@ import type {
   BrowserExtensionEventPayload,
   NewRuddrProjectsPayload,
   BrowserExtensionConnectedPayload,
+  UpdateState,
 } from '../types/ipc-payloads';
 
 contextBridge.exposeInMainWorld('jarvis', {
@@ -18,6 +19,14 @@ contextBridge.exposeInMainWorld('jarvis', {
   setPreferences: (prefs: Record<string, unknown>) => ipcRenderer.invoke('app:set-preferences', prefs),
   getStartupSettings: () => ipcRenderer.invoke('app:get-startup-settings'),
   getAboutInfo: () => ipcRenderer.invoke('app:get-about-info'),
+  getUpdateState: () => ipcRenderer.invoke('updates:get-state'),
+  checkForUpdatesNow: () => ipcRenderer.invoke('updates:check'),
+  installUpdate: () => ipcRenderer.invoke('updates:install'),
+  onUpdateState: (callback: (state: UpdateState) => void) => {
+    const listener = (_event: unknown, state: UpdateState) => callback(state);
+    ipcRenderer.on('updates:state', listener);
+    return () => { ipcRenderer.removeListener('updates:state', listener); };
+  },
   setStartupSettings: (settings: { openAtLogin: boolean; startMinimized: boolean }) =>
     ipcRenderer.invoke('app:set-startup-settings', settings),
   checkOllama: () => ipcRenderer.invoke('ollama:status'),

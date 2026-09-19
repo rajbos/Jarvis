@@ -4785,3 +4785,60 @@ h5.ec-heading { font-size: 0.9375rem; }
   text-align: right;
   flex-shrink: 0;
 }
+
+/* ── Update button (top bar) ───────────────────────────────────────────────
+   Persistent affordance for a pending update, so a missed notification does
+   not leave a downloaded update stranded. */
+.update-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.8rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.update-btn--ready {
+  background: #1f6f3f;
+  border-color: #2e9d59;
+  color: #eafff1;
+  cursor: pointer;
+}
+
+.update-btn--ready:hover {
+  background: #268a4e;
+}
+
+.update-btn-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: #7CFFB2;
+  animation: update-btn-pulse 2s ease-in-out infinite;
+}
+
+@keyframes update-btn-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.update-btn--progress {
+  background: #15233b;
+  border-color: #22406b;
+  color: #9fb6d4;
+}
+
+.update-btn--error {
+  background: #3a1f1f;
+  border-color: #6b2d2d;
+  color: #f0b9b9;
+  cursor: pointer;
+}
+
+.update-btn--error:hover {
+  background: #4a2626;
+}

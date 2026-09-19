@@ -2277,6 +2277,7 @@ import type {
   BrowserExtensionEventPayload,
   NewRuddrProjectsPayload,
   BrowserExtensionConnectedPayload,
+  UpdateState,
 
 
 
@@ -2316,6 +2317,7 @@ export type {
   BrowserExtensionEventPayload,
   NewRuddrProjectsPayload,
   BrowserExtensionConnectedPayload,
+  UpdateState,
 
 
 
@@ -3051,6 +3053,12 @@ export interface JarvisApi {
   onBackgroundTaskComplete(cb: (record: BackgroundTaskRunRecord) => void): () => void;
   onNotificationCountsUpdated(cb: (counts: NotificationCounts) => void): () => void;
   onAutoDismissComplete(cb: (payload: AutoDismissCompletePayload) => void): () => void;
+
+  // App updates
+  getUpdateState(): Promise<UpdateState>;
+  checkForUpdatesNow(): Promise<UpdateState>;
+  installUpdate(): Promise<{ ok: boolean }>;
+  onUpdateState(cb: (state: UpdateState) => void): () => void;
 
 
 
