@@ -6,6 +6,8 @@ on:
   schedule: daily on weekdays
   workflow_dispatch:
   push:
+    branches:
+      - main
     paths:
       - '.github/workflows/repository-quality-improver.md'
       - '.github/workflows/repository-quality-improver.lock.yml'
