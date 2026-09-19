@@ -17,6 +17,8 @@ const mocks = vi.hoisted(() => {
     app: { isPackaged: true, getVersion: vi.fn(() => '1.2.3') },
     autoUpdater: new MockAutoUpdater(),
     notifications,
+    ipcMain: { handle: vi.fn() },
+    send: vi.fn(),
   };
 });
 
@@ -39,6 +41,7 @@ vi.mock('electron', () => {
 
   return {
     app: mocks.app,
+    ipcMain: mocks.ipcMain,
     Notification: MockNotification,
   };
 });
@@ -47,7 +50,22 @@ vi.mock('electron-updater', () => ({ autoUpdater: mocks.autoUpdater }));
 
 const { autoUpdater } = mocks;
 
-let checkForUpdates: typeof import('../../src/main/update-checker')['checkForUpdates'];
+type UpdateCheckerModule = typeof import('../../src/main/update-checker');
+let checkForUpdates: UpdateCheckerModule['checkForUpdates'];
+let getUpdateState: UpdateCheckerModule['getUpdateState'];
+let registerUpdateIpcHandlers: UpdateCheckerModule['registerUpdateIpcHandlers'];
+
+/** Stand-in main window that records everything pushed over `updates:state`. */
+function fakeWindow() {
+  return { isDestroyed: () => false, webContents: { send: mocks.send } };
+}
+
+/** Pull an ipcMain.handle callback out of the mock by channel name. */
+function handlerFor(channel: string): (...args: unknown[]) => unknown {
+  const entry = mocks.ipcMain.handle.mock.calls.find((call) => call[0] === channel);
+  if (!entry) throw new Error(`No handler registered for ${channel}`);
+  return entry[1] as (...args: unknown[]) => unknown;
+}
 
 describe('update checker', () => {
   beforeEach(async () => {
@@ -60,7 +78,7 @@ describe('update checker', () => {
     // The module registers its autoUpdater listeners once per import, so reset
     // modules between tests to get a fresh registration against the mock.
     vi.resetModules();
-    ({ checkForUpdates } = await import('../../src/main/update-checker'));
+    ({ checkForUpdates, getUpdateState, registerUpdateIpcHandlers } = await import('../../src/main/update-checker'));
   });
 
   it('does not contact GitHub from an unpackaged development run', async () => {
@@ -114,5 +132,70 @@ describe('update checker', () => {
     autoUpdater.emit('error', new Error('network down'));
 
     expect(mocks.notifications[0]?.options.title).toBe('Update check failed');
+  });
+
+  // ── Persistent update state ───────────────────────────────────────────────
+  // A downloaded update must stay actionable after its notification is gone,
+  // which is what the top-bar update button reads.
+
+  it('tracks download progress and the ready-to-install state', async () => {
+    await checkForUpdates();
+    expect(getUpdateState()).toEqual({ status: 'idle' });
+
+    autoUpdater.emit('update-available', { version: '1.3.0' });
+    expect(getUpdateState()).toEqual({ status: 'downloading', version: '1.3.0', percent: 0 });
+
+    autoUpdater.emit('download-progress', { percent: 42.7 });
+    expect(getUpdateState()).toEqual({ status: 'downloading', version: '1.3.0', percent: 43 });
+
+    autoUpdater.emit('update-downloaded', { version: '1.3.0' });
+    expect(getUpdateState()).toEqual({ status: 'downloaded', version: '1.3.0' });
+  });
+
+  it('keeps a downloaded update visible across later checks and failures', async () => {
+    await checkForUpdates();
+    autoUpdater.emit('update-downloaded', { version: '1.3.0' });
+
+    autoUpdater.emit('checking-for-update');
+    expect(getUpdateState()).toEqual({ status: 'downloaded', version: '1.3.0' });
+
+    autoUpdater.emit('update-not-available');
+    expect(getUpdateState()).toEqual({ status: 'downloaded', version: '1.3.0' });
+
+    autoUpdater.emit('error', new Error('network down'));
+    expect(getUpdateState()).toEqual({ status: 'downloaded', version: '1.3.0' });
+  });
+
+  it('pushes every state change to the renderer', async () => {
+    registerUpdateIpcHandlers(() => fakeWindow() as never);
+    await checkForUpdates();
+
+    autoUpdater.emit('update-available', { version: '1.3.0' });
+    autoUpdater.emit('update-downloaded', { version: '1.3.0' });
+
+    expect(mocks.send).toHaveBeenCalledWith('updates:state', { status: 'downloading', version: '1.3.0', percent: 0 });
+    expect(mocks.send).toHaveBeenCalledWith('updates:state', { status: 'downloaded', version: '1.3.0' });
+  });
+
+  it('installs from the renderer only once an update is downloaded', async () => {
+    registerUpdateIpcHandlers(() => fakeWindow() as never);
+    const install = handlerFor('updates:install');
+    await checkForUpdates();
+
+    expect(install()).toEqual({ ok: false });
+    expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
+
+    autoUpdater.emit('update-downloaded', { version: '1.3.0' });
+
+    expect(install()).toEqual({ ok: true });
+    expect(autoUpdater.quitAndInstall).toHaveBeenCalledOnce();
+  });
+
+  it('serves the current state to a renderer that starts after the download', async () => {
+    registerUpdateIpcHandlers(() => fakeWindow() as never);
+    await checkForUpdates();
+    autoUpdater.emit('update-downloaded', { version: '1.3.0' });
+
+    expect(handlerFor('updates:get-state')()).toEqual({ status: 'downloaded', version: '1.3.0' });
   });
 });

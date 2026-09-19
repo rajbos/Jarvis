@@ -15,6 +15,7 @@ import { OrgNotifPanel } from '../plugins/notifications/OrgNotifPanel';
 import { NotifRepoPanel } from '../plugins/notifications/NotifRepoPanel';
 import { EmbeddedChatPanel } from '../plugins/chat/EmbeddedChatPanel';
 import { SearchBar } from '../plugins/search/SearchBar';
+import { UpdateButton } from '../plugins/updates/UpdateButton';
 import { LocalReposStep } from '../plugins/local-repos/LocalReposStep';
 import { LocalFolderConfigPanel } from '../plugins/local-repos/LocalFolderConfigPanel';
 import { LocalFolderPanel } from '../plugins/local-repos/LocalFolderPanel';
@@ -843,6 +844,7 @@ function App() {
         <div class={`container${(activeTab === 'dashboard' || activeTab === 'groups-dashboard' || activeTab === 'dismiss-history') ? ' container--fill' : ''}`}>
       <div class="search-row">
         <SearchBar />
+        <UpdateButton />
         {!showChatPanel && selectedOllamaModel && (
           <button class="chat-reopen-btn" title="Open Chat" onClick={handleOpenChat}>💬</button>
         )}

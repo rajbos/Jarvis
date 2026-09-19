@@ -1,5 +1,6 @@
-import { app, Notification } from 'electron';
+import { app, ipcMain, Notification, type BrowserWindow } from 'electron';
 import { autoUpdater } from 'electron-updater';
+import type { UpdateState } from '../types/ipc-payloads';
 
 const INITIAL_CHECK_DELAY_MS = 15_000;
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
@@ -8,6 +9,28 @@ let initialCheckTimer: NodeJS.Timeout | null = null;
 let periodicCheckTimer: NodeJS.Timeout | null = null;
 let manualCheckInFlight = false;
 let listenersRegistered = false;
+
+// The update state lives in the main process so it survives renderer reloads and
+// missed notifications: a downloaded update stays visible in the UI until it is
+// installed, instead of being lost with the toast that announced it.
+let state: UpdateState = { status: 'idle' };
+let getMainWindow: () => BrowserWindow | null = () => null;
+
+function broadcastState(): void {
+  const win = getMainWindow();
+  if (win && !win.isDestroyed()) {
+    win.webContents.send('updates:state', state);
+  }
+}
+
+function setState(next: UpdateState): void {
+  state = next;
+  broadcastState();
+}
+
+export function getUpdateState(): UpdateState {
+  return state;
+}
 
 function showNotification(title: string, body: string, onClick?: () => void): void {
   if (!Notification.isSupported()) {
@@ -24,11 +47,24 @@ function registerListeners(): void {
   if (listenersRegistered) return;
   listenersRegistered = true;
 
+  autoUpdater.on('checking-for-update', () => {
+    // A downloaded update outranks a fresh check: keep the install prompt up so
+    // the periodic 6-hour check never hides a ready update behind a spinner.
+    if (state.status !== 'downloaded') setState({ status: 'checking' });
+  });
+
   autoUpdater.on('update-available', (info) => {
+    setState({ status: 'downloading', version: info.version, percent: 0 });
     showNotification(`Jarvis ${info.version} is available`, 'Downloading the update in the background…');
   });
 
+  autoUpdater.on('download-progress', (progress) => {
+    if (state.status !== 'downloading') return;
+    setState({ ...state, percent: Math.round(progress.percent ?? 0) });
+  });
+
   autoUpdater.on('update-not-available', () => {
+    if (state.status !== 'downloaded') setState({ status: 'idle' });
     if (manualCheckInFlight) {
       showNotification('Jarvis is up to date', `Version ${app.getVersion()} is the latest release.`);
     }
@@ -36,20 +72,29 @@ function registerListeners(): void {
   });
 
   autoUpdater.on('update-downloaded', (info) => {
+    setState({ status: 'downloaded', version: info.version });
     showNotification(
       `Jarvis ${info.version} is ready to install`,
       'Click to restart Jarvis and finish installing.',
-      () => { autoUpdater.quitAndInstall(); },
+      () => { installUpdate(); },
     );
   });
 
   autoUpdater.on('error', (error) => {
     console.warn('[Updates] Update check failed:', error);
+    if (state.status !== 'downloaded') {
+      setState({ status: 'error', error: error instanceof Error ? error.message : String(error) });
+    }
     if (manualCheckInFlight) {
       showNotification('Update check failed', 'Jarvis could not reach GitHub Releases. Try again later.');
     }
     manualCheckInFlight = false;
   });
+}
+
+export function installUpdate(): void {
+  if (state.status !== 'downloaded') return;
+  autoUpdater.quitAndInstall();
 }
 
 export async function checkForUpdates(manual = false): Promise<void> {
@@ -72,6 +117,21 @@ export async function checkForUpdates(manual = false): Promise<void> {
     }
     manualCheckInFlight = false;
   }
+}
+
+export function registerUpdateIpcHandlers(getWindow: () => BrowserWindow | null): void {
+  getMainWindow = getWindow;
+
+  ipcMain.handle('updates:get-state', (): UpdateState => state);
+  ipcMain.handle('updates:check', async (): Promise<UpdateState> => {
+    await checkForUpdates(false);
+    return state;
+  });
+  ipcMain.handle('updates:install', (): { ok: boolean } => {
+    if (state.status !== 'downloaded') return { ok: false };
+    installUpdate();
+    return { ok: true };
+  });
 }
 
 export function startUpdateChecks(): void {

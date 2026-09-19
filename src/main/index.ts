@@ -24,7 +24,7 @@ import { saveDatabase } from '../storage/database';
 import { stopBridgeServer } from '../plugins/browser-companion/server';
 
 import { setLogLevel } from '../services/logger';
-import { checkForUpdates, startUpdateChecks, stopUpdateChecks } from './update-checker';
+import { checkForUpdates, registerUpdateIpcHandlers, startUpdateChecks, stopUpdateChecks } from './update-checker';
 
 if (process.env.JARVIS_CONFIG_DIR) {
   app.setPath('userData', path.join(process.env.JARVIS_CONFIG_DIR, 'electron'));
@@ -67,6 +67,7 @@ async function initialize(): Promise<void> {
   // Register IPC handlers for renderer ↔ main communication
 
   registerIpcHandlers(db, () => mainWindow);
+  registerUpdateIpcHandlers(() => mainWindow);
 
   // Let the renderer open the Settings window (e.g. from the "PAT expired" banner)
   ipcMain.handle('app:open-settings', () => {
