@@ -11,24 +11,14 @@ import type { UpdateState } from '../../types/ipc-payloads';
  */
 export function UpdateButton() {
   const [state, setState] = useState<UpdateState>({ status: 'idle' });
-  const [justChecked, setJustChecked] = useState(false);
 
   useEffect(() => {
     void window.jarvis.getUpdateState().then(setState).catch(() => { /* dev run without updates */ });
     return window.jarvis.onUpdateState(setState);
   }, []);
 
-  // Clear the transient "up to date" confirmation a few seconds after a check.
-  useEffect(() => {
-    if (!justChecked) return;
-    const id = window.setTimeout(() => setJustChecked(false), 4000);
-    return () => window.clearTimeout(id);
-  }, [justChecked]);
-
-  const onCheck = useCallback(async () => {
-    setJustChecked(false);
-    await window.jarvis.checkForUpdatesNow();
-    setJustChecked(true);
+  const onCheck = useCallback(() => {
+    void window.jarvis.checkForUpdatesNow();
   }, []);
 
   const onInstall = useCallback(() => {
@@ -68,7 +58,7 @@ export function UpdateButton() {
     );
   }
 
-  if (justChecked) {
+  if (state.status === 'up-to-date') {
     return <span class="update-btn update-btn--progress">Up to date</span>;
   }
 
