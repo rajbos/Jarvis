@@ -4,9 +4,11 @@ import type { UpdateState } from '../types/ipc-payloads';
 
 const INITIAL_CHECK_DELAY_MS = 15_000;
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const UP_TO_DATE_DISPLAY_MS = 4_000;
 
 let initialCheckTimer: NodeJS.Timeout | null = null;
 let periodicCheckTimer: NodeJS.Timeout | null = null;
+let upToDateTimer: NodeJS.Timeout | null = null;
 let manualCheckInFlight = false;
 let listenersRegistered = false;
 
@@ -64,7 +66,16 @@ function registerListeners(): void {
   });
 
   autoUpdater.on('update-not-available', () => {
-    if (state.status !== 'downloaded') setState({ status: 'idle' });
+    if (state.status !== 'downloaded') {
+      // Surface the result in-app so a manual check always gives visible feedback,
+      // even if the OS notification is suppressed or unsupported.
+      setState({ status: 'up-to-date' });
+      if (upToDateTimer) clearTimeout(upToDateTimer);
+      upToDateTimer = setTimeout(() => {
+        upToDateTimer = null;
+        if (state.status === 'up-to-date') setState({ status: 'idle' });
+      }, UP_TO_DATE_DISPLAY_MS);
+    }
     if (manualCheckInFlight) {
       showNotification('Jarvis is up to date', `Version ${app.getVersion()} is the latest release.`);
     }
@@ -111,7 +122,13 @@ export async function checkForUpdates(manual = false): Promise<void> {
   try {
     await autoUpdater.checkForUpdates();
   } catch (error) {
+    // electron-updater usually reports failures via the 'error' event, but some
+    // failures (e.g. missing publish config) only reject this promise — make sure
+    // those are visible too instead of leaving the UI stuck on 'checking'.
     console.warn('[Updates] Update check failed:', error);
+    if (state.status !== 'downloaded') {
+      setState({ status: 'error', error: error instanceof Error ? error.message : String(error) });
+    }
     if (manual) {
       showNotification('Update check failed', 'Jarvis could not reach GitHub Releases. Try again later.');
     }
@@ -124,7 +141,7 @@ export function registerUpdateIpcHandlers(getWindow: () => BrowserWindow | null)
 
   ipcMain.handle('updates:get-state', (): UpdateState => state);
   ipcMain.handle('updates:check', async (): Promise<UpdateState> => {
-    await checkForUpdates(false);
+    await checkForUpdates(true);
     return state;
   });
   ipcMain.handle('updates:install', (): { ok: boolean } => {

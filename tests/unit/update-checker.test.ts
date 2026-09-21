@@ -198,4 +198,30 @@ describe('update checker', () => {
 
     expect(handlerFor('updates:get-state')()).toEqual({ status: 'downloaded', version: '1.3.0' });
   });
+
+  it('treats a renderer-triggered check as manual, so it always gets a notification', async () => {
+    registerUpdateIpcHandlers(() => fakeWindow() as never);
+    const check = handlerFor('updates:check');
+
+    const pending = check();
+    autoUpdater.emit('update-not-available');
+    await pending;
+
+    expect(mocks.notifications[0]?.options.title).toBe('Jarvis is up to date');
+  });
+
+  it('surfaces an up-to-date result in shared state for any trigger, not just the button', async () => {
+    await checkForUpdates();
+    autoUpdater.emit('update-not-available');
+
+    expect(getUpdateState()).toEqual({ status: 'up-to-date' });
+  });
+
+  it('sets an error state even when checkForUpdates rejects without emitting an error event', async () => {
+    autoUpdater.checkForUpdates.mockRejectedValueOnce(new Error('no publish config'));
+
+    await checkForUpdates();
+
+    expect(getUpdateState()).toEqual({ status: 'error', error: 'no publish config' });
+  });
 });
