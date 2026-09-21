@@ -266,6 +266,16 @@ function GroupCard(props: {
   const [ruddrLastCount, setRuddrLastCount] = useState(0);
   /** Per-project info (path, note) keyed by project name */
   const [projectInfo, setProjectInfo] = useState<Record<string, RuddrProjectInfo>>({});
+  /** Which project notes are expanded — closed by default to fit more cards on screen */
+  const [expandedNotes, setExpandedNotes] = useState<Set<string>>(new Set());
+
+  const toggleNote = (name: string) => {
+    setExpandedNotes((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name); else next.add(name);
+      return next;
+    });
+  };
 
   // Load project info for each linked Ruddr project
   useEffect(() => {
@@ -514,7 +524,21 @@ function GroupCard(props: {
                 <div class="groups-dash-ruddr-note">
                   {projectInfo[name]
                     ? (projectInfo[name].note
-                      ? <span class="groups-dash-note-text">{projectInfo[name].note}</span>
+                      ? (
+                        <>
+                          <button
+                            class="groups-dash-note-toggle"
+                            onClick={() => toggleNote(name)}
+                            title={expandedNotes.has(name) ? 'Collapse note' : 'Expand note'}
+                          >
+                            <span class={`groups-dash-note-toggle-caret${expandedNotes.has(name) ? ' groups-dash-note-toggle-caret--open' : ''}`}>▶</span>
+                            Note
+                          </button>
+                          {expandedNotes.has(name) && (
+                            <span class="groups-dash-note-text">{projectInfo[name].note}</span>
+                          )}
+                        </>
+                      )
                       : (detailsLoading
                         ? <span class="groups-dash-note-empty" title="Fetching note from Ruddr…">🔄 Fetching note…</span>
                         : <span class="groups-dash-note-empty" title="No note set for this project">❗ No note set</span>))
