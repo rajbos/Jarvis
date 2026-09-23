@@ -41,3 +41,4 @@ nsis:
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: Jarvis
+  include: installer/installer.nsh
