@@ -44,6 +44,10 @@ export function GroupsPanel({ onClose, onOpenOneNote, onOpenOneNoteCache }: Grou
   const refresh = async () => {
     try {
       const list = await window.jarvis.groupsList();
+      if (isIpcError(list)) {
+        console.error('[Groups] Failed to load groups:', list.error);
+        return;
+      }
       setGroups(list);
       if (selectedGroup) {
         const detail = await window.jarvis.groupsGet(selectedGroup.id);
@@ -66,7 +70,11 @@ export function GroupsPanel({ onClose, onOpenOneNote, onOpenOneNoteCache }: Grou
           window.jarvis.groupsList(),
           window.jarvis.localListRepos(),
         ]);
-        setGroups(list);
+        if (isIpcError(list)) {
+          setError(list.error);
+        } else {
+          setGroups(list);
+        }
         if (isIpcError(repos)) {
           setError(repos.error);
         } else {

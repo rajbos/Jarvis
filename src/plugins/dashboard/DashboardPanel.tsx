@@ -257,7 +257,12 @@ function NotificationList({ repoFullName, dismissedNotifIds }: { repoFullName: s
     setLoading(true);
     try {
       const list = await window.jarvis.listNotificationsForRepo(repoFullName);
-      setNotifications(list);
+      if (isIpcError(list)) {
+        console.error('[Dashboard] Failed to load notifications:', list.error);
+        setNotifications([]);
+      } else {
+        setNotifications(list);
+      }
     } catch (err) {
       console.error('[Dashboard] Failed to load notifications:', err);
       setNotifications([]);
@@ -966,7 +971,12 @@ export function DashboardPanel({ dismissedNotifIds, onOpenHistory }: { dismissed
         window.jarvis.getGitHubOAuthStatus(),
       ]);
       setSummary(sum);
-      setCurrentUserLogin(authStatus.login ?? null);
+      if (isIpcError(authStatus)) {
+        console.error('[Dashboard] Failed to load GitHub auth status:', authStatus.error);
+        setCurrentUserLogin(null);
+      } else {
+        setCurrentUserLogin(authStatus.login ?? null);
+      }
     } catch (err) {
       console.error('[Dashboard] Failed to load:', err);
     } finally {
@@ -1015,7 +1025,12 @@ export function DashboardPanel({ dismissedNotifIds, onOpenHistory }: { dismissed
       } catch (err) {
         console.warn('[Dashboard] Could not refresh notifications for triage:', repoFullName, err);
       }
-      return window.jarvis.listNotificationsForRepo(repoFullName);
+      const list = await window.jarvis.listNotificationsForRepo(repoFullName);
+      if (isIpcError(list)) {
+        console.warn('[Dashboard] Could not list notifications for triage:', repoFullName, list.error);
+        return [];
+      }
+      return list;
     }))
       .then((lists) => {
         if (cancelled) return;
