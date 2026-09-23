@@ -42,11 +42,6 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
     };
   });
 
-  safeHandle('github:start-discovery', () => {
-    startDiscoveryIfAuthed(db, getWindow, true);
-    return { started: true };
-  });
-
   safeHandle('github:start-pat-discovery', () => {
     const pat = loadGitHubPat(db);
     if (!pat) return { error: 'No PAT configured' };

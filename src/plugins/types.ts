@@ -2245,10 +2245,6 @@ export type { OnboardingStatus } from '../agent/onboarding';
 
 
 
-import type { OnboardingStatus } from '../agent/onboarding';
-
-
-
 import type {
 
 
@@ -2274,7 +2270,6 @@ import type {
 
 
   AgentDebugContextPayload,
-  BrowserExtensionEventPayload,
   NewRuddrProjectsPayload,
   BrowserExtensionConnectedPayload,
   UpdateState,
@@ -2371,14 +2366,6 @@ export interface JarvisApi {
 
 
 
-  getOnboardingStatus(): Promise<OnboardingStatus>;
-
-
-
-  startDiscovery(): Promise<{ started: boolean }>;
-
-
-
   startPatDiscovery(): Promise<{ started?: boolean; error?: string }>;
 
 
@@ -2422,10 +2409,6 @@ export interface JarvisApi {
 
 
 
-  listOllamaModels(): Promise<{ available: boolean; models: OllamaModel[]; error?: string }>;
-
-
-
   getSelectedOllamaModel(): Promise<string | null>;
 
 
@@ -2439,10 +2422,6 @@ export interface JarvisApi {
 
 
   abortChat(): Promise<{ ok: boolean }>;
-
-
-
-  adjustWindowWidth(delta: number): Promise<{ ok: boolean }>;
 
 
 
@@ -2522,31 +2501,11 @@ export interface JarvisApi {
 
 
 
-  listPrNotifications(): Promise<StoredNotification[]>;
-
-
-
-  listIssueNotifications(): Promise<StoredNotification[]>;
-
-
-
   dismissNotification(id: string): Promise<void>;
 
 
 
-  checkMergedDependabotPRs(): Promise<StoredNotification[]>;
-
-
-
-  checkDeletedBranches(): Promise<StoredNotification[]>;
-
-
-
   getRunUrlForCheckSuite(checkSuiteApiUrl: string): Promise<string | null>;
-
-
-
-  githubGetPrState(subjectUrl: string): Promise<{ state: 'open' | 'closed' | 'merged'; isDependabot: boolean; closedByMe: boolean } | null>;
 
 
 
@@ -2655,10 +2614,6 @@ export interface JarvisApi {
 
 
 
-  localLinkRepo(localRepoId: number, githubRepoId: number | null): Promise<{ ok: boolean }>;
-
-
-
   localOpenFolder(folderPath: string): Promise<void>;
 
 
@@ -2672,10 +2627,6 @@ export interface JarvisApi {
 
 
   scanRepoSecrets(): Promise<SecretsScanResult>;
-
-
-
-  listSecretsForRepo(repoFullName: string): Promise<RepoSecret[]>;
 
 
 
@@ -2803,10 +2754,6 @@ export interface JarvisApi {
 
 
 
-  dashboardGetRecentFailedRuns(): Promise<FailedWorkflowRun[]>;
-
-
-
   dashboardPushBranchUpstream(repoPath: string, branch: string): Promise<{ ok: boolean; error?: string; output?: string }>;
 
 
@@ -2840,10 +2787,6 @@ export interface JarvisApi {
 
 
   groupsRemoveLocalRepo(groupId: number, localRepoId: number): Promise<{ ok: boolean; error?: string }>;
-
-
-
-  groupsAddGithubRepo(groupId: number, githubRepoId: number): Promise<{ ok: boolean; error?: string }>;
 
 
 
@@ -2924,10 +2867,6 @@ export interface JarvisApi {
 
 
 
-  onedriveGetFolderInfo(groupId: number): Promise<OnedriveFolderInfo[]>;
-
-
-
   onedriveRescanFiles(folderId: number): Promise<{ ok: boolean; fileCount?: number; error?: string }>;
 
 
@@ -2945,10 +2884,6 @@ export interface JarvisApi {
 
 
   onedriveCacheOneNoteFilesForGroup(groupId: number): Promise<OneNoteCacheGroupResult>;
-
-
-
-  onedriveGetOneNoteCache(folderId: number, relativePath: string): Promise<{ pages: OneNoteCachedPage[] }>;
 
 
 
@@ -3000,25 +2935,11 @@ export interface JarvisApi {
 
 
 
-  browserNavigate(url: string): Promise<{ ok: boolean; data?: unknown; error?: string }>;
-
-
-
-  browserListTabs(): Promise<{ ok: boolean; data?: unknown; error?: string }>;
-
-
-
-  browserGetPageContent(tabId?: number): Promise<{ ok: boolean; data?: unknown; error?: string }>;
-
-
-
   browserFocusWindow(tabId?: number): Promise<{ ok: boolean; windowId?: number; error?: string }>;
 
 
 
   onBrowserExtensionConnected(cb: (data: BrowserExtensionConnectedPayload) => void): () => void;
-
-  onBrowserExtensionEvent(cb: (event: BrowserExtensionEventPayload) => void): () => void;
 
 
 
@@ -3043,7 +2964,6 @@ export interface JarvisApi {
   completeClaudeOAuth(code: string): Promise<{ ok: boolean; error?: string }>;
 
   // Auto-dismiss log
-  logAutoDismiss(entries: AutoDismissLogInput[]): Promise<void>;
   listAutoDismissLog(limit?: number): Promise<AutoDismissLogEntry[]>;
   getAutoDismissStats(): Promise<AutoDismissStats>;
 

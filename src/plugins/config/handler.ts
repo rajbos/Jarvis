@@ -2,19 +2,10 @@
 import { ipcMain, app } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import type { BrowserWindow } from 'electron';
-import { getOnboardingStatus } from '../../agent/onboarding';
 import { loadConfig, saveConfig } from '../../agent/config';
 import { getAboutInfo } from '../../services/about';
 
-export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWindow | null): void {
-  ipcMain.handle('onboarding:status', () => {
-    try {
-      return getOnboardingStatus(db);
-    } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
-    }
-  });
-
+export function registerHandlers(_db: SqlJsDatabase, _getWindow: () => BrowserWindow | null): void {
   ipcMain.handle('app:get-system-locale', () => app.getSystemLocale());
 
   ipcMain.handle('app:get-about-info', async () => {

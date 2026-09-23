@@ -125,33 +125,6 @@ describe('Dashboard plugin — IPC handlers', () => {
     });
   });
 
-  // ── dashboard:get-recent-failed-runs ────────────────────────────────────────
-
-  describe('dashboard:get-recent-failed-runs', () => {
-    it('returns an empty array on a fresh DB', async () => {
-      const result = await callHandler('dashboard:get-recent-failed-runs');
-      expect(Array.isArray(result)).toBe(true);
-      expect(result).toHaveLength(0);
-    });
-
-    it('returns failed runs present in the DB', async () => {
-      db.run(
-        `INSERT INTO github_workflow_runs
-           (id, repo_full_name, workflow_name, head_branch, conclusion, run_started_at, html_url)
-         VALUES
-           ('run1','owner/repo','CI','main','failure', datetime('now', '-1 day'), 'https://example.com/1')`,
-      );
-
-      const result = (await callHandler(
-        'dashboard:get-recent-failed-runs',
-      )) as Record<string, unknown>[];
-
-      expect(result).toHaveLength(1);
-      expect(result[0].repo_full_name).toBe('owner/repo');
-      expect(result[0].conclusion).toBe('failure');
-    });
-  });
-
   // ── dashboard:push-branch-upstream ──────────────────────────────────────────
 
   describe('dashboard:push-branch-upstream', () => {

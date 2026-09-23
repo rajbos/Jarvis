@@ -30,14 +30,6 @@ vi.mock('electron', () => ({
   },
 }));
 
-vi.mock('../../src/agent/onboarding', () => ({
-  getOnboardingStatus: vi.fn().mockReturnValue({
-    ollama: 'pending',
-    local_repos: 'pending',
-    github_oauth: 'pending',
-  }),
-}));
-
 vi.mock('../../src/services/about', () => ({
   getAboutInfo: vi.fn().mockResolvedValue({
     displayVersion: '9.9.9',
@@ -59,7 +51,6 @@ vi.mock('../../src/agent/config', () => ({
 }));
 
 import { registerHandlers } from '../../src/plugins/config/handler';
-import { getOnboardingStatus } from '../../src/agent/onboarding';
 import { loadConfig, saveConfig } from '../../src/agent/config';
 import { app } from 'electron';
 import { getAboutInfo } from '../../src/services/about';
@@ -97,29 +88,6 @@ describe('Config plugin — IPC handlers', () => {
 
   afterEach(() => {
     db.close();
-  });
-
-  // ── onboarding:status ─────────────────────────────────────────────────────
-
-  describe('onboarding:status', () => {
-    it('delegates to getOnboardingStatus', () => {
-      const result = callHandler('onboarding:status');
-      expect(getOnboardingStatus).toHaveBeenCalledWith(db);
-      expect(result).toEqual({
-        ollama: 'pending',
-        local_repos: 'pending',
-        github_oauth: 'pending',
-      });
-    });
-
-    it('returns an error object when the service throws', () => {
-      vi.mocked(getOnboardingStatus).mockImplementationOnce(() => {
-        throw new Error('db error');
-      });
-      const result = callHandler('onboarding:status') as Record<string, unknown>;
-      expect(result.ok).toBe(false);
-      expect(typeof result.error).toBe('string');
-    });
   });
 
   // ── app:get-system-locale ─────────────────────────────────────────────────

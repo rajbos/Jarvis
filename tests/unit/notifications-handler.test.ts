@@ -6,8 +6,7 @@
  * real in-memory DB, then invokes captured handlers directly to verify:
  * - Input validation guards
  * - `markNotificationRead` (not DELETE) is called when dismissing
- * - Auto-dismiss log CRUD
- * - `check-merged-dependabot-prs` and `check-deleted-branches` auth guards
+ * - Auto-dismiss log listing/stats
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import initSqlJs, { Database as SqlJsDatabase } from 'sql.js';
@@ -68,7 +67,6 @@ import {
   deleteNotification,
   listNotificationsForRepo,
   listIssueNotifications,
-  listMergedDependabotPRNotifications,
   listDeletedBranchNotifications,
   getNotificationCounts,
 } from '../../src/services/github-notifications';
@@ -253,103 +251,6 @@ describe('Notifications plugin — IPC handlers', () => {
 
       expect(markNotificationRead).not.toHaveBeenCalled();
       expect(deleteNotification).toHaveBeenCalledWith(db, 'notif-789');
-    });
-  });
-
-  // ── github:check-merged-dependabot-prs ───────────────────────────────────
-
-  describe('github:check-merged-dependabot-prs', () => {
-    it('returns empty array when not authenticated', async () => {
-      vi.mocked(loadGitHubAuth).mockReturnValue(null);
-      const result = await callHandler('github:check-merged-dependabot-prs');
-      expect(result).toEqual([]);
-      expect(listMergedDependabotPRNotifications).not.toHaveBeenCalled();
-    });
-
-    it('delegates to listMergedDependabotPRNotifications when authenticated', async () => {
-      vi.mocked(loadGitHubAuth).mockReturnValue({ accessToken: 'tok', login: 'user' } as AuthStub);
-      vi.mocked(listMergedDependabotPRNotifications).mockResolvedValueOnce([
-        { id: '1', subject_title: 'chore(deps): bump foo' } as any, // eslint-disable-line @typescript-eslint/no-explicit-any
-      ]);
-      const result = (await callHandler('github:check-merged-dependabot-prs')) as unknown[];
-      expect(result).toHaveLength(1);
-      expect(listMergedDependabotPRNotifications).toHaveBeenCalledWith(db, 'tok');
-    });
-
-    it('returns empty array when service throws', async () => {
-      vi.mocked(loadGitHubAuth).mockReturnValue({ accessToken: 'tok', login: 'user' } as AuthStub);
-      vi.mocked(listMergedDependabotPRNotifications).mockRejectedValueOnce(new Error('network error'));
-      const result = await callHandler('github:check-merged-dependabot-prs');
-      expect(result).toEqual([]);
-    });
-  });
-
-  // ── github:check-deleted-branches ────────────────────────────────────────
-
-  describe('github:check-deleted-branches', () => {
-    it('returns empty array when not authenticated', async () => {
-      vi.mocked(loadGitHubAuth).mockReturnValue(null);
-      const result = await callHandler('github:check-deleted-branches');
-      expect(result).toEqual([]);
-      expect(listDeletedBranchNotifications).not.toHaveBeenCalled();
-    });
-
-    it('delegates to listDeletedBranchNotifications when authenticated', async () => {
-      vi.mocked(loadGitHubAuth).mockReturnValue({ accessToken: 'tok', login: 'user' } as AuthStub);
-      vi.mocked(listDeletedBranchNotifications).mockResolvedValueOnce([
-        { id: '2', subject_title: 'delete-branch' } as any, // eslint-disable-line @typescript-eslint/no-explicit-any
-      ]);
-      const result = (await callHandler('github:check-deleted-branches')) as unknown[];
-      expect(result).toHaveLength(1);
-    });
-
-    it('returns empty array when service throws', async () => {
-      vi.mocked(loadGitHubAuth).mockReturnValue({ accessToken: 'tok', login: 'user' } as AuthStub);
-      vi.mocked(listDeletedBranchNotifications).mockRejectedValueOnce(new Error('error'));
-      const result = await callHandler('github:check-deleted-branches');
-      expect(result).toEqual([]);
-    });
-  });
-
-  // ── github:log-auto-dismiss ────────────────────────────────────────────────
-
-  describe('github:log-auto-dismiss', () => {
-    it('does nothing for non-array entries', () => {
-      callHandler('github:log-auto-dismiss', 'not-an-array');
-      const rows = db.exec('SELECT COUNT(*) FROM auto_dismiss_log');
-      expect(rows[0].values[0][0]).toBe(0);
-    });
-
-    it('does nothing for empty array', () => {
-      callHandler('github:log-auto-dismiss', []);
-      const rows = db.exec('SELECT COUNT(*) FROM auto_dismiss_log');
-      expect(rows[0].values[0][0]).toBe(0);
-    });
-
-    it('inserts valid entries into auto_dismiss_log', () => {
-      callHandler('github:log-auto-dismiss', [
-        {
-          notification_id: 'notif-1',
-          reason: 'merged_dependabot_pr',
-          repo_full_name: 'owner/repo',
-          subject_title: 'chore(deps): bump lodash',
-          subject_type: 'PullRequest',
-        },
-      ]);
-      const rows = db.exec('SELECT notification_id, reason FROM auto_dismiss_log');
-      expect(rows[0].values).toHaveLength(1);
-      expect(rows[0].values[0][0]).toBe('notif-1');
-      expect(rows[0].values[0][1]).toBe('merged_dependabot_pr');
-    });
-
-    it('skips entries with missing notification_id or reason', () => {
-      callHandler('github:log-auto-dismiss', [
-        { notification_id: null, reason: 'test' },
-        { notification_id: 'notif-2', reason: null },
-        { notification_id: 'notif-3', reason: 'valid_reason' },
-      ]);
-      const rows = db.exec('SELECT COUNT(*) FROM auto_dismiss_log');
-      expect(rows[0].values[0][0]).toBe(1);
     });
   });
 

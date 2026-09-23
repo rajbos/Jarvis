@@ -70,44 +70,6 @@ function getFailedRunCount(db: SqlJsDatabase, repoFullName: string | null): numb
 }
 
 /**
- * Get recent failed workflow runs across all repos, newest first.
- */
-function getRecentFailedRuns(db: SqlJsDatabase, limit = 20): {
-  id: string;
-  repo_full_name: string;
-  workflow_name: string;
-  head_branch: string;
-  conclusion: string;
-  run_started_at: string;
-  html_url: string;
-}[] {
-  const stmt = db.prepare(
-    `SELECT id, repo_full_name, workflow_name, head_branch, conclusion, run_started_at, html_url
-     FROM github_workflow_runs
-     WHERE conclusion = 'failure'
-       AND run_started_at >= datetime('now', '-7 days')
-     ORDER BY run_started_at DESC
-     LIMIT ?`,
-  );
-  const rows: {
-    id: string;
-    repo_full_name: string;
-    workflow_name: string;
-    head_branch: string;
-    conclusion: string;
-    run_started_at: string;
-    html_url: string;
-  }[] = [];
-  try {
-    stmt.bind([limit]);
-    while (stmt.step()) rows.push(stmt.getAsObject() as typeof rows[0]);
-  } finally {
-    stmt.free();
-  }
-  return rows;
-}
-
-/**
  * Look up last_pushed_at for a GitHub repo.
  */
 function getLastPushedAt(db: SqlJsDatabase, repoFullName: string | null): string | null {
@@ -248,27 +210,6 @@ export function registerHandlers(
         totalFailedRuns: 0,
         generatedAt: new Date().toISOString(),
       };
-    }
-  });
-
-  /**
-   * dashboard:get-recent-failed-runs
-   * Return the most recent failed workflow runs across all repos.
-   */
-  ipcMain.handle('dashboard:get-recent-failed-runs', async (): Promise<{
-    id: string;
-    repo_full_name: string;
-    workflow_name: string;
-    head_branch: string;
-    conclusion: string;
-    run_started_at: string;
-    html_url: string;
-  }[]> => {
-    try {
-      return getRecentFailedRuns(db);
-    } catch (err) {
-      console.error('[dashboard] dashboard:get-recent-failed-runs error:', err);
-      return [];
     }
   });
 

@@ -6,7 +6,6 @@
  * real in-memory DB, then invokes captured handlers directly to verify:
  * - Input validation guards
  * - Folder add/remove/list via the service layer
- * - link-repo DB writes
  * - scan-status reporting
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -64,7 +63,6 @@ import {
   removeScanFolder,
   listLocalRepos,
   listLocalReposForFolder,
-  linkLocalRepo,
 } from '../../src/services/local-discovery';
 import { shell } from 'electron';
 
@@ -256,40 +254,6 @@ describe('Local-repos plugin — IPC handlers', () => {
       });
       const result = callHandler('local:list-repos-for-folder', '/my/repos');
       expect(result).toEqual([]);
-    });
-  });
-
-  // ── local:link-repo ───────────────────────────────────────────────────────
-
-  describe('local:link-repo', () => {
-    it('returns error for non-number localRepoId', () => {
-      const result = callHandler('local:link-repo', 'bad', 1);
-      expect(result).toEqual({ ok: false, error: 'Invalid localRepoId' });
-    });
-
-    it('returns error for non-number non-null githubRepoId', () => {
-      const result = callHandler('local:link-repo', 1, 'bad');
-      expect(result).toEqual({ ok: false, error: 'Invalid githubRepoId' });
-    });
-
-    it('links with a GitHub repo ID', () => {
-      const result = callHandler('local:link-repo', 1, 2);
-      expect(result).toEqual({ ok: true });
-      expect(linkLocalRepo).toHaveBeenCalledWith(db, 1, 2);
-    });
-
-    it('unlinks by passing null githubRepoId', () => {
-      const result = callHandler('local:link-repo', 1, null);
-      expect(result).toEqual({ ok: true });
-      expect(linkLocalRepo).toHaveBeenCalledWith(db, 1, null);
-    });
-
-    it('returns error when service throws', () => {
-      vi.mocked(linkLocalRepo).mockImplementationOnce(() => {
-        throw new Error('db error');
-      });
-      const result = callHandler('local:link-repo', 1, 2) as Record<string, unknown>;
-      expect(result.ok).toBe(false);
     });
   });
 

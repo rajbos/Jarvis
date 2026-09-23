@@ -17,7 +17,6 @@ import {
   listIssueNotifications,
   deleteNotification,
   markNotificationRead,
-  listMergedDependabotPRNotifications,
   listDeletedBranchNotifications,
 } from '../../services/github-notifications';
 import { loadGitHubAuth } from '../../services/github-oauth';
@@ -478,14 +477,6 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
     return listNotificationsForStarred(db);
   });
 
-  ipcMain.handle('github:list-pr-notifications', () => {
-    return listPrNotifications(db);
-  });
-
-  ipcMain.handle('github:list-issue-notifications', () => {
-    return listIssueNotifications(db);
-  });
-
   ipcMain.handle('github:dismiss-notification', async (_event, id: string) => {
     if (typeof id !== 'string' || id.length === 0) return;
     const auth = loadGitHubAuth(db);
@@ -500,36 +491,7 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
     saveDatabase();
   });
 
-  ipcMain.handle('github:check-merged-dependabot-prs', async () => {
-    const auth = loadGitHubAuth(db);
-    if (!auth) return [];
-    try {
-      return await listMergedDependabotPRNotifications(db, auth.accessToken);
-    } catch (err) {
-      console.warn('[Jarvis] Could not check merged dependabot PRs:', err instanceof Error ? err.message : String(err));
-      return [];
-    }
-  });
-
-  ipcMain.handle('github:check-deleted-branches', async () => {
-    const auth = loadGitHubAuth(db);
-    if (!auth) return [];
-    try {
-      return await listDeletedBranchNotifications(db, auth.accessToken);
-    } catch (err) {
-      console.warn('[Jarvis] Could not check deleted branches:', err instanceof Error ? err.message : String(err));
-      return [];
-    }
-  });
-
   // ── Auto-dismiss log IPC handlers ─────────────────────────────────────────
-
-  ipcMain.handle('github:log-auto-dismiss', (_event, entries: AutoDismissLogInput[]) => {
-    if (!Array.isArray(entries) || entries.length === 0) return;
-    const valid = entries.filter((e) => typeof e.notification_id === 'string' && typeof e.reason === 'string');
-    logAutoDismissEntries(db, valid);
-    saveDatabase();
-  });
 
   ipcMain.handle('github:list-auto-dismiss-log', (_event, limit = 200) => {
     const safeLimit = typeof limit === 'number' && limit > 0 ? Math.min(limit, 1000) : 200;

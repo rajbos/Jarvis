@@ -281,39 +281,6 @@ export function registerHandlers(
 
   // ── Direct browser commands (for advanced / manual use) ───────────────────
 
-  ipcMain.handle('browser:navigate', async (_event, url: string) => {
-    if (typeof url !== 'string' || url.trim().length === 0)
-      return { ok: false, error: 'Invalid url' };
-    try {
-      const response = await sendCommand({ type: 'navigate', payload: { url: url.trim() } });
-      return response;
-    } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : String(e) };
-    }
-  });
-
-  ipcMain.handle('browser:list-tabs', async () => {
-    try {
-      const response = await sendCommand({ type: 'list-tabs', payload: {} });
-      return response;
-    } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : String(e) };
-    }
-  });
-
-  ipcMain.handle('browser:get-page-content', async (_event, tabId?: number) => {
-    try {
-      const response = await sendCommand({
-        type: 'get-page-content',
-        payload: {},
-        ...(typeof tabId === 'number' ? { tabId } : {}),
-      });
-      return response;
-    } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : String(e) };
-    }
-  });
-
   ipcMain.handle('browser:focus-window', async (_event, tabId?: number) => {
     try {
       const response = await sendCommand({
