@@ -4,6 +4,7 @@ import type { Database as SqlJsDatabase } from 'sql.js';
 import type { BrowserWindow } from 'electron';
 import { listOrgs, setOrgDiscoveryEnabled } from '../../services/github-discovery';
 import { saveDatabase } from '../../storage/database';
+import { errorMessage } from '../ipc-utils';
 
 export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWindow | null): void {
   ipcMain.handle('github:list-orgs', () => {
@@ -11,7 +12,7 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
       return listOrgs(db);
     } catch (err) {
       console.error('[IPC] github:list-orgs failed:', err);
-      return [];
+      return { ok: false, error: errorMessage(err) };
     }
   });
 

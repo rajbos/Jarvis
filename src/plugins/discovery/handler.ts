@@ -44,7 +44,7 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
 
   safeHandle('github:start-pat-discovery', () => {
     const pat = loadGitHubPat(db);
-    if (!pat) return { error: 'No PAT configured' };
+    if (!pat) return { ok: false, error: 'No PAT configured' };
 
     const auth = loadGitHubAuth(db);
     runPatDiscovery(db, pat, undefined, undefined, (progress) => {

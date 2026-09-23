@@ -78,12 +78,12 @@ describe('Orgs plugin — IPC handlers', () => {
       expect(result).toEqual({ orgs: [], directRepoCount: 0, starredRepoCount: 0 });
     });
 
-    it('returns an empty array when the service throws', () => {
+    it('returns an ok:false error contract when the service throws', () => {
       vi.mocked(listOrgs).mockImplementationOnce(() => {
         throw new Error('db error');
       });
       const result = callHandler('github:list-orgs');
-      expect(result).toEqual([]);
+      expect(result).toEqual({ ok: false, error: 'db error' });
     });
   });
 

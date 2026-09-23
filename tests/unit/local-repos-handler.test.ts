@@ -113,12 +113,12 @@ describe('Local-repos plugin — IPC handlers', () => {
       expect(result).toHaveLength(1);
     });
 
-    it('returns empty array when service throws', () => {
+    it('returns an ok:false error contract when service throws', () => {
       vi.mocked(getScanFolders).mockImplementationOnce(() => {
         throw new Error('db error');
       });
       const result = callHandler('local:get-folders');
-      expect(result).toEqual([]);
+      expect(result).toEqual({ ok: false, error: 'db error' });
     });
   });
 
@@ -221,12 +221,12 @@ describe('Local-repos plugin — IPC handlers', () => {
       expect(result).toEqual([]);
     });
 
-    it('returns empty array when service throws', () => {
+    it('returns an ok:false error contract when service throws', () => {
       vi.mocked(listLocalRepos).mockImplementationOnce(() => {
         throw new Error('db error');
       });
       const result = callHandler('local:list-repos');
-      expect(result).toEqual([]);
+      expect(result).toEqual({ ok: false, error: 'db error' });
     });
   });
 
@@ -248,12 +248,12 @@ describe('Local-repos plugin — IPC handlers', () => {
       expect(listLocalReposForFolder).toHaveBeenCalledWith(db, '/my/repos');
     });
 
-    it('returns empty array when service throws', () => {
+    it('returns an ok:false error contract when service throws', () => {
       vi.mocked(listLocalReposForFolder).mockImplementationOnce(() => {
         throw new Error('db error');
       });
       const result = callHandler('local:list-repos-for-folder', '/my/repos');
-      expect(result).toEqual([]);
+      expect(result).toEqual({ ok: false, error: 'db error' });
     });
   });
 

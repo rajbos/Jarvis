@@ -4,7 +4,24 @@
 
 // This is the single source of truth for domain types.
 
+// ── IPC error contract ───────────────────────────────────────────────────────
+// The single failure shape used by IPC handlers that surface a distinguishable
+// error to the renderer (as opposed to a success payload). Success payloads are
+// NOT wrapped — a channel that succeeds still returns its data directly; only
+// the failure path uses this shape.
+export interface IpcErrorResponse {
+  ok: false;
+  error: string;
+}
 
+export function isIpcError(value: unknown): value is IpcErrorResponse {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    (value as { ok?: unknown }).ok === false &&
+    typeof (value as { error?: unknown }).error === 'string'
+  );
+}
 
 
 
@@ -2366,7 +2383,7 @@ export interface JarvisApi {
 
 
 
-  startPatDiscovery(): Promise<{ started?: boolean; error?: string }>;
+  startPatDiscovery(): Promise<{ started?: boolean; error?: string } | IpcErrorResponse>;
 
 
 
@@ -2449,7 +2466,7 @@ export interface JarvisApi {
 
 
 
-  listOrgs(): Promise<OrgListResult>;
+  listOrgs(): Promise<OrgListResult | IpcErrorResponse>;
 
 
 
@@ -2457,15 +2474,15 @@ export interface JarvisApi {
 
 
 
-  searchRepos(query: string): Promise<Repo[]>;
+  searchRepos(query: string): Promise<Repo[] | IpcErrorResponse>;
 
 
 
-  listReposForOrg(orgLogin: string | null): Promise<Repo[]>;
+  listReposForOrg(orgLogin: string | null): Promise<Repo[] | IpcErrorResponse>;
 
 
 
-  listStarred(): Promise<Repo[]>;
+  listStarred(): Promise<Repo[] | IpcErrorResponse>;
 
 
 
@@ -2583,7 +2600,7 @@ export interface JarvisApi {
 
 
 
-  localGetFolders(): Promise<ScanFolder[]>;
+  localGetFolders(): Promise<ScanFolder[] | IpcErrorResponse>;
 
 
 
@@ -2606,11 +2623,11 @@ export interface JarvisApi {
 
 
 
-  localListRepos(): Promise<LocalRepo[]>;
+  localListRepos(): Promise<LocalRepo[] | IpcErrorResponse>;
 
 
 
-  localListReposForFolder(folderPath: string): Promise<LocalRepo[]>;
+  localListReposForFolder(folderPath: string): Promise<LocalRepo[] | IpcErrorResponse>;
 
 
 
@@ -2630,11 +2647,11 @@ export interface JarvisApi {
 
 
 
-  listAllSecrets(): Promise<RepoSecret[]>;
+  listAllSecrets(): Promise<RepoSecret[] | IpcErrorResponse>;
 
 
 
-  listSecretFavorites(): Promise<SecretFavorite[]>;
+  listSecretFavorites(): Promise<SecretFavorite[] | IpcErrorResponse>;
 
 
 

@@ -103,12 +103,12 @@ describe('Secrets plugin — IPC handlers', () => {
       expect(searchSecrets).toHaveBeenCalledWith(db, '');
     });
 
-    it('returns empty array when service throws', () => {
+    it('returns an ok:false error contract when service throws', () => {
       vi.mocked(searchSecrets).mockImplementationOnce(() => {
         throw new Error('db error');
       });
       const result = callHandler('secrets:list-all');
-      expect(result).toEqual([]);
+      expect(result).toEqual({ ok: false, error: 'db error' });
     });
   });
 
@@ -120,12 +120,12 @@ describe('Secrets plugin — IPC handlers', () => {
       expect(listSecretFavorites).toHaveBeenCalledWith(db);
     });
 
-    it('returns empty array when service throws', () => {
+    it('returns an ok:false error contract when service throws', () => {
       vi.mocked(listSecretFavorites).mockImplementationOnce(() => {
         throw new Error('db error');
       });
       const result = callHandler('secrets:list-favorites');
-      expect(result).toEqual([]);
+      expect(result).toEqual({ ok: false, error: 'db error' });
     });
   });
 

@@ -15,6 +15,7 @@ import {
   type ScanProgress,
 } from '../../services/local-discovery';
 import { getFileIndexState, startFileIndexIfNeeded } from './file-index-runner';
+import { errorMessage } from '../ipc-utils';
 
 let localScanRunning = false;
 let lastLocalScanProgress: ScanProgress | null = null;
@@ -68,7 +69,7 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
       return getScanFolders(db);
     } catch (err) {
       console.error('[IPC] local:get-folders failed:', err);
-      return [];
+      return { ok: false, error: errorMessage(err) };
     }
   });
 
@@ -144,7 +145,7 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
       return listLocalRepos(db);
     } catch (err) {
       console.error('[IPC] local:list-repos failed:', err);
-      return [];
+      return { ok: false, error: errorMessage(err) };
     }
   });
 
@@ -154,7 +155,7 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
       return listLocalReposForFolder(db, folderPath);
     } catch (err) {
       console.error('[IPC] local:list-repos-for-folder failed:', err);
-      return [];
+      return { ok: false, error: errorMessage(err) };
     }
   });
 

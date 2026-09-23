@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron';
 
-export type IpcErrorResponse = { error: string };
+export type IpcErrorResponse = { ok: false; error: string };
 
 type IpcHandler = (event: Electron.IpcMainInvokeEvent, ...args: any[]) => unknown;
 
@@ -16,13 +16,13 @@ export function safeHandle(channel: string, handler: IpcHandler): void {
       if (result && typeof (result as Promise<unknown>).then === 'function') {
         return (result as Promise<unknown>).catch((error: unknown) => {
           console.error(`[IPC] ${channel} failed:`, error);
-          return { error: errorMessage(error) } satisfies IpcErrorResponse;
+          return { ok: false, error: errorMessage(error) } satisfies IpcErrorResponse;
         });
       }
       return result;
     } catch (error) {
       console.error(`[IPC] ${channel} failed:`, error);
-      return { error: errorMessage(error) } satisfies IpcErrorResponse;
+      return { ok: false, error: errorMessage(error) } satisfies IpcErrorResponse;
     }
   });
 }

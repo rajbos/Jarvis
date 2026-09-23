@@ -10,6 +10,7 @@ import {
   addSecretFavorite,
   removeSecretFavorite,
 } from '../../services/github-secrets';
+import { errorMessage } from '../ipc-utils';
 
 export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWindow | null): void {
   ipcMain.handle('secrets:scan', async () => {
@@ -39,7 +40,7 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
       return searchSecrets(db, '');
     } catch (err) {
       console.error('[IPC] secrets:list-all failed:', err);
-      return [];
+      return { ok: false, error: errorMessage(err) };
     }
   });
 
@@ -48,7 +49,7 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
       return listSecretFavorites(db);
     } catch (err) {
       console.error('[IPC] secrets:list-favorites failed:', err);
-      return [];
+      return { ok: false, error: errorMessage(err) };
     }
   });
 
