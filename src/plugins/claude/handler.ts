@@ -1,7 +1,8 @@
 // ── Claude IPC handlers ───────────────────────────────────────────────────────
-import { ipcMain, shell, Notification } from 'electron';
+import { shell, Notification } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import type { BrowserWindow } from 'electron';
+import { safeHandle } from '../ipc-utils';
 import {
   loadClaudeCodeCredentials,
   refreshClaudeToken,
@@ -99,7 +100,7 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
   // Tracks the previous probe outcome so we can notify once when the limit lifts.
   let wasLimited = false;
 
-  ipcMain.handle('claude:status', async () => {
+  safeHandle('claude:status', async () => {
     try {
       const resolved = await resolveAccessToken(db);
       if (!resolved) {
@@ -123,7 +124,7 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
     }
   });
 
-  ipcMain.handle('claude:rate-limit', async () => {
+  safeHandle('claude:rate-limit', async () => {
     const fetchedAt = new Date().toISOString();
     try {
       const resolved = await resolveAccessToken(db);
@@ -188,7 +189,7 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
     }
   });
 
-  ipcMain.handle('claude:disconnect', () => {
+  safeHandle('claude:disconnect', () => {
     clearStoredCredentials(db);
     return { ok: true };
   });
@@ -196,7 +197,7 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
   // ── OAuth sign-in (PKCE, out-of-band code paste) ──────────────────────────
   let pendingPkce: PkcePair | null = null;
 
-  ipcMain.handle('claude:begin-oauth', () => {
+  safeHandle('claude:begin-oauth', () => {
     try {
       pendingPkce = generatePkce();
       const url = buildAuthorizeUrl(pendingPkce);
@@ -208,7 +209,7 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
     }
   });
 
-  ipcMain.handle('claude:complete-oauth', async (_event, pastedCode: string) => {
+  safeHandle('claude:complete-oauth', async (_event, pastedCode: string) => {
     if (!pendingPkce) {
       return { ok: false, error: 'No sign-in in progress — click "Sign in with Claude" first.' };
     }

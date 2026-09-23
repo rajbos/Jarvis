@@ -1,4 +1,4 @@
-import { ipcMain, dialog, BrowserWindow, shell, app } from 'electron';
+import { dialog, BrowserWindow, shell, app } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import path from 'path';
 import { saveDatabase } from '../../storage/database';
@@ -18,6 +18,7 @@ import {
 } from '../../services/onedrive-onenote-cache';
 import { readUrlShortcut } from '../../services/url-shortcut';
 import { getGroup } from '../../services/groups';
+import { safeHandle } from '../ipc-utils';
 
 function isPathWithinConfiguredRoot(db: SqlJsDatabase, filePath: string): boolean {
   const resolvedFile = path.resolve(filePath);
@@ -32,11 +33,11 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
   const scriptPath = app.isPackaged
     ? path.join(process.resourcesPath, 'scripts', 'read-onenote-section.ps1')
     : path.join(__dirname, '..', '..', '..', 'scripts', 'read-onenote-section.ps1');
-  ipcMain.handle('onedrive:list-roots', () => {
+  safeHandle('onedrive:list-roots', () => {
     return listOnedriveRoots(db);
   });
 
-  ipcMain.handle('onedrive:browse-folder', async () => {
+  safeHandle('onedrive:browse-folder', async () => {
     const win = getWindow();
     const result = await dialog.showOpenDialog(win ?? new BrowserWindow({ show: false }), {
       properties: ['openDirectory'],
@@ -48,7 +49,7 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
     return { canceled: false, folderPath: result.filePaths[0] };
   });
 
-  ipcMain.handle('onedrive:add-root', async (_event, label: string, folderPath?: string) => {
+  safeHandle('onedrive:add-root', async (_event, label: string, folderPath?: string) => {
     if (typeof label !== 'string' || label.trim().length === 0) {
       return { ok: false, error: 'Label is required' };
     }
@@ -66,75 +67,55 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
       chosenPath = result.filePaths[0];
     }
 
-    try {
-      const root = addOnedriveRoot(db, chosenPath, label.trim());
-      saveDatabase();
-      return { ok: true, root };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return { ok: false, error: msg };
-    }
+    const root = addOnedriveRoot(db, chosenPath, label.trim());
+    saveDatabase();
+    return { ok: true, root };
   });
 
-  ipcMain.handle('onedrive:remove-root', (_event, rootId: number) => {
+  safeHandle('onedrive:remove-root', (_event, rootId: number) => {
     if (typeof rootId !== 'number') return { ok: false, error: 'Invalid rootId' };
-    try {
-      removeOnedriveRoot(db, rootId);
-      saveDatabase();
-      return { ok: true };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return { ok: false, error: msg };
-    }
+    removeOnedriveRoot(db, rootId);
+    saveDatabase();
+    return { ok: true };
   });
 
-  ipcMain.handle('onedrive:discover-for-group', (_event, groupId: number) => {
+  safeHandle('onedrive:discover-for-group', (_event, groupId: number) => {
     if (typeof groupId !== 'number') return { ok: false, error: 'Invalid groupId' };
-    try {
-      const group = getGroup(db, groupId);
-      if (!group) return { ok: false, error: 'Group not found' };
+    const group = getGroup(db, groupId);
+    if (!group) return { ok: false, error: 'Group not found' };
 
-      const folders = discoverCustomerFolderForGroup(db, groupId, group.name);
+    const folders = discoverCustomerFolderForGroup(db, groupId, group.name);
 
-      // Immediately scan files for any found folders
-      for (const folder of folders) {
-        if (folder.status === 'found') {
-          try {
-            scanFilesForFolder(db, folder.id);
-          } catch {
-            // Non-fatal — folder may have become inaccessible
-          }
+    // Immediately scan files for any found folders
+    for (const folder of folders) {
+      if (folder.status === 'found') {
+        try {
+          scanFilesForFolder(db, folder.id);
+        } catch {
+          // Non-fatal — folder may have become inaccessible
         }
       }
-
-      // Return updated folder info (includes updated file counts)
-      const updated = getCustomerFolderInfo(db, groupId);
-      saveDatabase();
-      return { ok: true, folders: updated };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return { ok: false, error: msg };
     }
+
+    // Return updated folder info (includes updated file counts)
+    const updated = getCustomerFolderInfo(db, groupId);
+    saveDatabase();
+    return { ok: true, folders: updated };
   });
 
-  ipcMain.handle('onedrive:rescan-files', (_event, folderId: number) => {
+  safeHandle('onedrive:rescan-files', (_event, folderId: number) => {
     if (typeof folderId !== 'number') return { ok: false, error: 'Invalid folderId' };
-    try {
-      const fileCount = scanFilesForFolder(db, folderId);
-      saveDatabase();
-      return { ok: true, fileCount };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return { ok: false, error: msg };
-    }
+    const fileCount = scanFilesForFolder(db, folderId);
+    saveDatabase();
+    return { ok: true, fileCount };
   });
 
-  ipcMain.handle('onedrive:list-files-for-folder', (_event, folderId: number) => {
+  safeHandle('onedrive:list-files-for-folder', (_event, folderId: number) => {
     if (typeof folderId !== 'number') return [];
     return listFilesForFolder(db, folderId);
   });
 
-  ipcMain.handle('onedrive:read-onenote-file', (_event, filePath: string) => {
+  safeHandle('onedrive:read-onenote-file', (_event, filePath: string) => {
     if (typeof filePath !== 'string' || filePath.trim().length === 0) {
       return { ok: false, error: 'filePath is required' };
     }
@@ -144,16 +125,11 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
     if (!isPathWithinConfiguredRoot(db, filePath)) {
       return { ok: false, error: 'File must be inside a configured OneDrive root' };
     }
-    try {
-      const section = readOneNoteSection(filePath);
-      return { ok: true, section };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return { ok: false, error: msg };
-    }
+    const section = readOneNoteSection(filePath);
+    return { ok: true, section };
   });
 
-  ipcMain.handle('onedrive:read-url-shortcut', (_event, filePath: string) => {
+  safeHandle('onedrive:read-url-shortcut', (_event, filePath: string) => {
     if (typeof filePath !== 'string' || filePath.trim().length === 0) {
       return { ok: false, error: 'filePath is required' };
     }
@@ -163,34 +139,24 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
     if (!isPathWithinConfiguredRoot(db, filePath)) {
       return { ok: false, error: 'File must be inside a configured OneDrive root' };
     }
-    try {
-      const info = readUrlShortcut(filePath);
-      return { ok: true, ...info };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return { ok: false, error: msg };
-    }
+    const info = readUrlShortcut(filePath);
+    return { ok: true, ...info };
   });
 
-  ipcMain.handle('onedrive:cache-onenote-files-for-group', async (_event, groupId: number) => {
+  safeHandle('onedrive:cache-onenote-files-for-group', async (_event, groupId: number) => {
     if (typeof groupId !== 'number') return { ok: false, error: 'Invalid groupId' };
-    try {
-      const result = await cacheOneNoteFilesForGroup(db, groupId, scriptPath);
-      saveDatabase();
-      return { ok: true, ...result };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return { ok: false, error: msg };
-    }
+    const result = await cacheOneNoteFilesForGroup(db, groupId, scriptPath);
+    saveDatabase();
+    return { ok: true, ...result };
   });
 
-  ipcMain.handle('onedrive:get-onenote-cache-for-group', (_event, groupId: number) => {
+  safeHandle('onedrive:get-onenote-cache-for-group', (_event, groupId: number) => {
     if (typeof groupId !== 'number') return { pages: [] };
     const pages = getOneNoteCacheForGroup(db, groupId);
     return { pages };
   });
 
-  ipcMain.handle('shell:open-url', (_event, url: string) => {
+  safeHandle('shell:open-url', (_event, url: string) => {
     if (typeof url !== 'string') return { ok: false, error: 'url is required' };
     const safe = url.startsWith('https://') || url.startsWith('http://') || url.startsWith('onenote:');
     if (!safe) return { ok: false, error: 'Unsupported URL scheme' };

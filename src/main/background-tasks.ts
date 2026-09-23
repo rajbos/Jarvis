@@ -1,4 +1,4 @@
-import { ipcMain, type BrowserWindow } from 'electron';
+import type { BrowserWindow } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import { TaskScheduler } from './task-scheduler';
 import type { TaskRunRecord, TaskStatus } from './task-scheduler';
@@ -6,6 +6,7 @@ import { getScanFolders } from '../services/local-discovery';
 import { startLocalScanIfNeeded } from '../plugins/local-repos/handler';
 import { runBootWorkflowCheck, syncGitHubNotifications, runAutoDismissSweep } from '../plugins/notifications/handler';
 import { refreshRuddrProjectsInBackground, prewarmRuddrCache } from '../plugins/groups/handler';
+import { safeHandle } from '../plugins/ipc-utils';
 
 export const LOCAL_DISCOVERY_INITIAL_DELAY_MS = 30_000;
 export const LOCAL_DISCOVERY_INTERVAL_MS = 60 * 60 * 1000;
@@ -124,14 +125,10 @@ export function getBackgroundTaskScheduler(): TaskScheduler | null {
 }
 
 export function registerTaskIpcHandlers(): void {
-  ipcMain.handle('tasks:list', (): TaskStatus[] => scheduler?.listTasks() ?? []);
-  ipcMain.handle('tasks:run-now', async (_event, taskId: string): Promise<TaskRunRecord | { ok: false; error: string }> => {
+  safeHandle('tasks:list', (): TaskStatus[] => scheduler?.listTasks() ?? []);
+  safeHandle('tasks:run-now', async (_event, taskId: string): Promise<TaskRunRecord | { ok: false; error: string }> => {
     if (typeof taskId !== 'string' || taskId.length === 0) return { ok: false, error: 'Invalid taskId' };
     if (!scheduler) return { ok: false, error: 'Task scheduler is not running' };
-    try {
-      return await scheduler.runNow(taskId);
-    } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
-    }
+    return await scheduler.runNow(taskId);
   });
 }

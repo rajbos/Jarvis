@@ -1,4 +1,3 @@
-import { ipcMain } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import type { BrowserWindow } from 'electron';
 import { execFile } from 'child_process';
@@ -13,6 +12,7 @@ import {
 } from '../../services/git-health';
 import { listLocalRepos } from '../../services/local-discovery';
 import { normalizeGitHubUrl } from '../../services/local-discovery';
+import { safeHandle } from '../ipc-utils';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -101,7 +101,7 @@ export function registerHandlers(
    * showing the same GitHub repository multiple times when it's cloned in different
    * locations on disk.
    */
-  ipcMain.handle('dashboard:get-summary', async (): Promise<DashboardSummary> => {
+  safeHandle('dashboard:get-summary', async (): Promise<DashboardSummary> => {
     try {
       const localRepos = listLocalRepos(db);
 
@@ -218,7 +218,7 @@ export function registerHandlers(
    * Run `git push --set-upstream origin <branch>` in the repo directory
    * and return the result so the UI can show success/failure.
    */
-  ipcMain.handle(
+  safeHandle(
     'dashboard:push-branch-upstream',
     async (_event, repoPath: string, branch: string): Promise<{ ok: boolean; error?: string; output?: string }> => {
       // Validate the repo path exists and is a git repo

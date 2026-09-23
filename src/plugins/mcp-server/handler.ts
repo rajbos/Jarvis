@@ -2,7 +2,7 @@
 // Tells the Settings window how other MCP clients can launch the Jarvis MCP
 // server (dist/mcp-server/index.js) against this app's database and index.
 // The app never runs the server itself; MCP clients spawn it on demand.
-import { app, ipcMain } from 'electron';
+import { app } from 'electron';
 import type { BrowserWindow } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import fs from 'node:fs';
@@ -10,6 +10,7 @@ import path from 'node:path';
 import { getDatabasePath } from '../../storage/database';
 import { getIndexDbPath } from '../../services/local-file-index';
 import { buildMcpClientSnippets, buildServerEnv, type McpClientSnippets, type McpServerLaunch } from '../../services/mcp-config';
+import { safeHandle } from '../ipc-utils';
 
 export interface McpClientConfig extends McpClientSnippets {
   packaged: boolean;
@@ -66,11 +67,7 @@ export function getMcpClientConfig(): McpClientConfig {
 }
 
 export function registerHandlers(_db: SqlJsDatabase, _getWindow: () => BrowserWindow | null): void {
-  ipcMain.handle('mcp:get-client-config', () => {
-    try {
-      return getMcpClientConfig();
-    } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
-    }
+  safeHandle('mcp:get-client-config', () => {
+    return getMcpClientConfig();
   });
 }

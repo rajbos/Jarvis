@@ -1,5 +1,4 @@
 // ── Groups IPC handlers ───────────────────────────────────────────────────────
-import { ipcMain } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import type { BrowserWindow } from 'electron';
 import { saveDatabase, getConfigValue, setConfigValue } from '../../storage/database';
@@ -34,6 +33,7 @@ import {
 import type { BrowserTabSession } from '../browser-companion/tab-session';
 import type { RuddrProjectMatch } from '../types';
 import { logger } from '../../services/logger';
+import { safeHandle } from '../ipc-utils';
 
 // ── Ruddr project list cache (in-memory, backed by DB for persistence) ──────────
 let ruddrProjectsCache: RuddrProjectEntry[] | null = null;
@@ -476,98 +476,68 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
   // Make persisted budgets available to the very first dashboard query.
   seedBudgetCacheFromDb(db);
 
-  ipcMain.handle('groups:list', () => {
+  safeHandle('groups:list', () => {
     return listGroups(db);
   });
 
-  ipcMain.handle('groups:get', (_event, groupId: number) => {
+  safeHandle('groups:get', (_event, groupId: number) => {
     if (typeof groupId !== 'number') return null;
     return getGroup(db, groupId);
   });
 
-  ipcMain.handle('groups:create', (_event, name: string) => {
+  safeHandle('groups:create', (_event, name: string) => {
     if (typeof name !== 'string' || name.trim().length === 0) {
       return { ok: false, error: 'Name is required' };
     }
-    try {
-      const id = createGroup(db, name.trim());
-      saveDatabase();
-      return { ok: true, id };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return { ok: false, error: msg };
-    }
+    const id = createGroup(db, name.trim());
+    saveDatabase();
+    return { ok: true, id };
   });
 
-  ipcMain.handle('groups:rename', (_event, groupId: number, newName: string) => {
+  safeHandle('groups:rename', (_event, groupId: number, newName: string) => {
     if (typeof groupId !== 'number') return { ok: false, error: 'Invalid groupId' };
     if (typeof newName !== 'string' || newName.trim().length === 0) {
       return { ok: false, error: 'Name is required' };
     }
-    try {
-      renameGroup(db, groupId, newName.trim());
-      saveDatabase();
-      return { ok: true };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return { ok: false, error: msg };
-    }
+    renameGroup(db, groupId, newName.trim());
+    saveDatabase();
+    return { ok: true };
   });
 
-  ipcMain.handle('groups:delete', (_event, groupId: number) => {
+  safeHandle('groups:delete', (_event, groupId: number) => {
     if (typeof groupId !== 'number') return { ok: false, error: 'Invalid groupId' };
-    try {
-      deleteGroup(db, groupId);
-      saveDatabase();
-      return { ok: true };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return { ok: false, error: msg };
-    }
+    deleteGroup(db, groupId);
+    saveDatabase();
+    return { ok: true };
   });
 
-  ipcMain.handle('groups:add-local-repo', (_event, groupId: number, localRepoId: number) => {
+  safeHandle('groups:add-local-repo', (_event, groupId: number, localRepoId: number) => {
     if (typeof groupId !== 'number') return { ok: false, error: 'Invalid groupId' };
     if (typeof localRepoId !== 'number') return { ok: false, error: 'Invalid localRepoId' };
-    try {
-      addLocalRepoToGroup(db, groupId, localRepoId);
-      saveDatabase();
-      return { ok: true };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return { ok: false, error: msg };
-    }
+    addLocalRepoToGroup(db, groupId, localRepoId);
+    saveDatabase();
+    return { ok: true };
   });
 
-  ipcMain.handle('groups:remove-local-repo', (_event, groupId: number, localRepoId: number) => {
+  safeHandle('groups:remove-local-repo', (_event, groupId: number, localRepoId: number) => {
     if (typeof groupId !== 'number') return { ok: false, error: 'Invalid groupId' };
     if (typeof localRepoId !== 'number') return { ok: false, error: 'Invalid localRepoId' };
-    try {
-      removeLocalRepoFromGroup(db, groupId, localRepoId);
-      saveDatabase();
-      return { ok: true };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return { ok: false, error: msg };
-    }
+    removeLocalRepoFromGroup(db, groupId, localRepoId);
+    saveDatabase();
+    return { ok: true };
   });
 
-  ipcMain.handle('groups:remove-github-repo', (_event, groupId: number, githubRepoId: number) => {
+  safeHandle('groups:remove-github-repo', (_event, groupId: number, githubRepoId: number) => {
     if (typeof groupId !== 'number') return { ok: false, error: 'Invalid groupId' };
     if (typeof githubRepoId !== 'number') return { ok: false, error: 'Invalid githubRepoId' };
-    try {
-      removeGithubRepoFromGroup(db, groupId, githubRepoId);
-      saveDatabase();
-      return { ok: true };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return { ok: false, error: msg };
-    }
+    removeGithubRepoFromGroup(db, groupId, githubRepoId);
+    saveDatabase();
+    return { ok: true };
   });
 
   // ── Ruddr project linking ─────────────────────────────────────────────────
 
-  ipcMain.handle('groups:find-ruddr-projects', async (_event, groupName: string) => {
+  safeHandle('groups:find-ruddr-projects', async (_event, groupName: string) => {
     if (typeof groupName !== 'string' || !groupName.trim())
       return { ok: false, error: 'Invalid groupName' };
 
@@ -591,43 +561,16 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
     return { ok: true, allCount: cache.length, matches };
   });
 
-  ipcMain.handle('groups:set-ruddr-project', (_event, groupId: number, projectName: string | null) => {
+  safeHandle('groups:set-ruddr-project', (_event, groupId: number, projectName: string | null) => {
     if (typeof groupId !== 'number') return { ok: false, error: 'Invalid groupId' };
-    try {
-      if (projectName === null || projectName === undefined) {
-        // Clear all linked projects
-        db.run(
-          `UPDATE groups SET ruddr_project_name = NULL, updated_at = datetime('now') WHERE id = ?`,
-          [groupId],
-        );
-      } else {
-        // Append to existing array (no duplicates)
-        const stmt = db.prepare('SELECT ruddr_project_name FROM groups WHERE id = ?');
-        stmt.bind([groupId]);
-        let current: string[] = [];
-        if (stmt.step()) {
-          const row = stmt.getAsObject() as { ruddr_project_name: string | null };
-          current = parseRuddrNames(row.ruddr_project_name);
-        }
-        stmt.free();
-        const name = String(projectName).trim();
-        if (name && !current.includes(name)) current.push(name);
-        db.run(
-          `UPDATE groups SET ruddr_project_name = ?, updated_at = datetime('now') WHERE id = ?`,
-          [JSON.stringify(current), groupId],
-        );
-      }
-      saveDatabase();
-      return { ok: true };
-    } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
-    }
-  });
-
-  ipcMain.handle('groups:remove-ruddr-project', (_event, groupId: number, projectName: string) => {
-    if (typeof groupId !== 'number') return { ok: false, error: 'Invalid groupId' };
-    if (typeof projectName !== 'string') return { ok: false, error: 'Invalid projectName' };
-    try {
+    if (projectName === null || projectName === undefined) {
+      // Clear all linked projects
+      db.run(
+        `UPDATE groups SET ruddr_project_name = NULL, updated_at = datetime('now') WHERE id = ?`,
+        [groupId],
+      );
+    } else {
+      // Append to existing array (no duplicates)
       const stmt = db.prepare('SELECT ruddr_project_name FROM groups WHERE id = ?');
       stmt.bind([groupId]);
       let current: string[] = [];
@@ -636,32 +579,51 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
         current = parseRuddrNames(row.ruddr_project_name);
       }
       stmt.free();
-      const updated = current.filter((n) => n !== projectName.trim());
+      const name = String(projectName).trim();
+      if (name && !current.includes(name)) current.push(name);
       db.run(
         `UPDATE groups SET ruddr_project_name = ?, updated_at = datetime('now') WHERE id = ?`,
-        [updated.length ? JSON.stringify(updated) : null, groupId],
+        [JSON.stringify(current), groupId],
       );
-      saveDatabase();
-      return { ok: true };
-    } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
+    saveDatabase();
+    return { ok: true };
   });
 
-  ipcMain.handle('groups:refresh-ruddr-cache', () => {
+  safeHandle('groups:remove-ruddr-project', (_event, groupId: number, projectName: string) => {
+    if (typeof groupId !== 'number') return { ok: false, error: 'Invalid groupId' };
+    if (typeof projectName !== 'string') return { ok: false, error: 'Invalid projectName' };
+    const stmt = db.prepare('SELECT ruddr_project_name FROM groups WHERE id = ?');
+    stmt.bind([groupId]);
+    let current: string[] = [];
+    if (stmt.step()) {
+      const row = stmt.getAsObject() as { ruddr_project_name: string | null };
+      current = parseRuddrNames(row.ruddr_project_name);
+    }
+    stmt.free();
+    const updated = current.filter((n) => n !== projectName.trim());
+    db.run(
+      `UPDATE groups SET ruddr_project_name = ?, updated_at = datetime('now') WHERE id = ?`,
+      [updated.length ? JSON.stringify(updated) : null, groupId],
+    );
+    saveDatabase();
+    return { ok: true };
+  });
+
+  safeHandle('groups:refresh-ruddr-cache', () => {
     ruddrProjectsCache = null;
     return { ok: true };
   });
 
-  ipcMain.handle('groups:get-ruddr-cache', () => {
+  safeHandle('groups:get-ruddr-cache', () => {
     return { ok: true, projects: ruddrProjectsCache?.map((e) => e.name) ?? [] };
   });
 
-  ipcMain.handle('groups:get-ruddr-workspace', () => {
+  safeHandle('groups:get-ruddr-workspace', () => {
     return { ok: true, workspace: getRuddrWorkspace(db) };
   });
 
-  ipcMain.handle('groups:get-ruddr-budget', async (_event, projectName: string, options?: { force?: boolean }) => {
+  safeHandle('groups:get-ruddr-budget', async (_event, projectName: string, options?: { force?: boolean }) => {
     if (typeof projectName !== 'string' || !projectName.trim())
       return { ok: false, error: 'Invalid projectName' };
 
@@ -797,14 +759,14 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
     }
   });
 
-  ipcMain.handle('groups:get-ruddr-budget-cache', () => {
+  safeHandle('groups:get-ruddr-budget-cache', () => {
     seedBudgetCacheFromDb(db);
     const budgets: Record<string, Record<string, unknown>> = {};
     ruddrBudgetCache.forEach((value, key) => { budgets[key] = withCacheMeta(value); });
     return { ok: true, budgets };
   });
 
-  ipcMain.handle('groups:set-ruddr-workspace', (_event, workspace: string) => {
+  safeHandle('groups:set-ruddr-workspace', (_event, workspace: string) => {
     if (typeof workspace !== 'string') return { ok: false, error: 'Invalid workspace' };
     const trimmed = workspace.trim();
     if (trimmed) {
@@ -822,7 +784,7 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
 
   // ── Ruddr: manual sync + project info ──────────────────────────────────────
 
-  ipcMain.handle('groups:sync-ruddr-cache-now', async () => {
+  safeHandle('groups:sync-ruddr-cache-now', async () => {
     // Force re-fetch regardless of TTL
     ruddrProjectsCacheTime = 0;
     const session = createTabSession();
@@ -848,7 +810,7 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
     return { ok: true, count: ruddrProjectsCache?.length ?? 0 };
   });
 
-  ipcMain.handle('groups:get-ruddr-project-info', (_event, projectName: string) => {
+  safeHandle('groups:get-ruddr-project-info', (_event, projectName: string) => {
     if (typeof projectName !== 'string') return { ok: false, error: 'Invalid projectName' };
     // Try in-memory cache first, then DB
     const memEntry = ruddrProjectsCache?.find(
@@ -860,7 +822,7 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
     return { ok: false, error: 'Project not found in cache' };
   });
 
-  ipcMain.handle('groups:list-ruddr-projects', () => {
+  safeHandle('groups:list-ruddr-projects', () => {
     const projects = loadRuddrProjectsFromDb(db);
     return {
       ok: true,
