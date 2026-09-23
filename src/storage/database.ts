@@ -80,6 +80,11 @@ export async function createMemoryDatabase(): Promise<SqlJsDatabase> {
   return memDb;
 }
 
+// Bump this whenever a new `if (userVersion === N)` block is added at the end
+// of the chain in initializeSchema(). Used only to warn if a database fails to
+// reach the latest schema after migration (e.g. a gap in the version chain).
+const LATEST_SCHEMA_VERSION = 29;
+
 export function initializeSchema(database: SqlJsDatabase): void {
   const result = database.exec("PRAGMA user_version");
   const userVersion = result.length > 0 ? (result[0].values[0][0] as number) : 0;
@@ -348,9 +353,13 @@ export function initializeSchema(database: SqlJsDatabase): void {
     database.run('PRAGMA user_version = 13');
   }
 
-  if (userVersion === 14) {
-    // Migration v14 → v15: add OneDrive customer folder discovery tables
-    // (for users who ran the browser-companion build which used v12→v13 and v13→v14)
+  if (userVersion === 13 || userVersion === 14) {
+    // Migration v13/v14 → v15: add OneDrive customer folder discovery tables.
+    // v13 has no dedicated block of its own — a database sitting at v13 (reached
+    // via the v12→v13 migration above) falls into this same block as v14, since
+    // both need identical tables and every statement uses IF NOT EXISTS.
+    // (v14 databases arise from users who ran the browser-companion build which
+    // used v12→v13 and v13→v14 as separate steps before this schema converged.)
     database.run(`
       CREATE TABLE IF NOT EXISTS onedrive_roots (
         id       INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -572,6 +581,16 @@ export function initializeSchema(database: SqlJsDatabase): void {
       )
     `);
     database.run('PRAGMA user_version = 29');
+  }
+
+  const finalResult = database.exec('PRAGMA user_version');
+  const finalVersion = finalResult.length > 0 ? (finalResult[0].values[0][0] as number) : 0;
+  if (finalVersion < LATEST_SCHEMA_VERSION) {
+    console.warn(
+      `[DB] Migration chain did not reach the latest schema version. ` +
+        `Started at user_version=${userVersion}, ended at ${finalVersion}, expected ${LATEST_SCHEMA_VERSION}. ` +
+        `This database may be missing tables/columns from newer migrations.`,
+    );
   }
 }
 
