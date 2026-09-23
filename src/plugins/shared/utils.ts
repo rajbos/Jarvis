@@ -297,3 +297,14 @@ export function renderChatMarkdown(text: string): string {
   return out;
 }
 
+// ── IPC failure messages ──────────────────────────────────────────────────────
+
+/**
+ * Builds a consistent, user-facing message for a failed IPC call, e.g.
+ * describeIpcFailure('load organizations', 'network timeout') ->
+ * 'Failed to load organizations: network timeout'.
+ */
+export function describeIpcFailure(action: string, error: string): string {
+  return `Failed to ${action}: ${error}`;
+}
+
