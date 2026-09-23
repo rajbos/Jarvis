@@ -83,7 +83,8 @@ export async function createMemoryDatabase(): Promise<SqlJsDatabase> {
 // Bump this whenever a new `if (userVersion === N)` block is added at the end
 // of the chain in initializeSchema(). Used only to warn if a database fails to
 // reach the latest schema after migration (e.g. a gap in the version chain).
-const LATEST_SCHEMA_VERSION = 29;
+// A unit test fails if this drifts from the version a fresh database reaches.
+export const LATEST_SCHEMA_VERSION = 29;
 
 export function initializeSchema(database: SqlJsDatabase): void {
   const result = database.exec("PRAGMA user_version");
