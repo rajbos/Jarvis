@@ -13,12 +13,20 @@ files:
   - assets/**/*
   - package.json
 # The MCP server is spawned by other MCP clients as a plain Node script, so it
-# (and the modules it needs) must live outside app.asar.
+# (and the modules it needs) must live outside app.asar. That includes the MCP
+# SDK's own runtime dependencies; tests/unit/mcp-asar-unpack.test.ts fails when
+# one is missing here.
 asarUnpack:
   - dist/mcp-server/**
   - dist/services/local-file-index.js
   - node_modules/@modelcontextprotocol/**
   - node_modules/zod/**
+  - node_modules/zod-to-json-schema/**
+  - node_modules/ajv/**
+  - node_modules/ajv-formats/**
+  - node_modules/fast-deep-equal/**
+  - node_modules/fast-uri/**
+  - node_modules/json-schema-traverse/**
   - node_modules/sql.js/**
 extraResources:
   - from: scripts/read-onenote-section.ps1
