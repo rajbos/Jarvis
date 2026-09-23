@@ -441,6 +441,8 @@ The following actionable tasks address the findings above.
 *Next analysis: [Tomorrow's date] — Focus area selected based on diversity algorithm*
 ```
 
+**Emitting the `create_issue` safe output**: The `body` field must be the full markdown report text itself, written out inline — never a file path, shell command, or command substitution like `$(cat /tmp/gh-aw/agent/....md)`. Safe outputs do not run a shell, so any such placeholder is published verbatim instead of being expanded. If you drafted the report in a file, read that file's contents and paste the actual text into `body`. Before emitting, self-check: the `body` must start with the `### 🎯 Repository Quality Improvement Report` heading and must not contain the characters `$(`.
+
 ### If MODE is `update`
 
 When an existing open issue was found, compare your new analysis findings against the existing issue body to determine what's new:
@@ -564,6 +566,7 @@ A successful quality improvement run:
 - **Be Specific**: Provide exact file paths, line numbers, and code examples where relevant
 - **Be Actionable**: Every finding should lead to a concrete task
 - **Always Emit Safe Output**: End every run with a safe output item. Prefer `create_issue`/`add_comment` when you have findings; otherwise use `noop` with a short rationale.
+- **Never Pass Shell Syntax as a Safe Output Value**: The `body`/`body-file` content for `create_issue` and `add_comment` must be literal text you have already assembled, not a command, file path, or command substitution like `$(cat ...)`. Safe outputs do not execute shell — if you drafted content in a file, read it first and inline the actual text.
 - **Respect Timeout**: Complete within 20 minutes
 
 ## Shell Command Safety Rules
