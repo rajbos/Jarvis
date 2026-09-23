@@ -2,7 +2,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import initSqlJs, { Database as SqlJsDatabase } from 'sql.js';
 import { getSchema } from '../../src/storage/schema';
-import { getConfigValue, setConfigValue, initializeSchema } from '../../src/storage/database';
+import { getConfigValue, setConfigValue, initializeSchema, LATEST_SCHEMA_VERSION } from '../../src/storage/database';
 
 describe('Database Schema', () => {
   let db: SqlJsDatabase;
@@ -187,6 +187,15 @@ describe('Migration v28 -> v29', () => {
 });
 
 describe('Migration chain completeness (no orphaned user_version)', () => {
+  it('LATEST_SCHEMA_VERSION matches the version a fresh database migrates to', async () => {
+    // Guards the constant itself: adding a migration without bumping it fails here.
+    const SQL = await initSqlJs();
+    const freshDb = new SQL.Database();
+    initializeSchema(freshDb);
+    expect(freshDb.exec('PRAGMA user_version')[0].values[0][0]).toBe(LATEST_SCHEMA_VERSION);
+    freshDb.close();
+  });
+
   // initializeSchema() reads `PRAGMA user_version` once and then runs every
   // `if (userVersion === N)` block whose condition matches that single value
   // (they are independent ifs, not an else-if chain, so more than one block
