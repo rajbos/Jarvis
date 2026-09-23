@@ -30,7 +30,11 @@ function loadedPackages(): string[] {
     }
     process.stdout.write(JSON.stringify([...pkgs].sort()));
   `;
-  return JSON.parse(execFileSync(process.execPath, ['-e', script], { cwd: ROOT, encoding: 'utf8' }));
+  // A generous timeout so a genuine hang fails fast with a clear error instead of running
+  // until vitest's own test timeout kills the whole process ambiguously.
+  return JSON.parse(
+    execFileSync(process.execPath, ['-e', script], { cwd: ROOT, encoding: 'utf8', timeout: 15_000 })
+  );
 }
 
 function asarUnpackPatterns(): string[] {
@@ -40,6 +44,13 @@ function asarUnpackPatterns(): string[] {
 }
 
 describe('packaged MCP server dependencies', () => {
+  // loadedPackages() shells out to a brand-new `node` process, which has to resolve and
+  // require @modelcontextprotocol/sdk, zod and sql.js from node_modules cold. Warm re-runs
+  // finish in ~0.6-0.9s, but the *first* time a fresh OS process touches those files (e.g.
+  // right after `npm ci`, or when Windows Defender's real-time scanner has to inspect the
+  // files on first read) that same require chain measured up to ~8.6s locally. Running the
+  // full suite in parallel makes that first touch more likely to land on this test, so give
+  // it real headroom above vitest's 5s default instead of racing the cold-start cost.
   it('unpacks every node module the server loads at runtime', () => {
     const patterns = asarUnpackPatterns();
     const isUnpacked = (pkg: string) =>
@@ -48,5 +59,5 @@ describe('packaged MCP server dependencies', () => {
     const packages = loadedPackages();
     expect(packages).toContain('@modelcontextprotocol/sdk');
     expect(packages.filter((pkg) => !isUnpacked(pkg))).toEqual([]);
-  });
+  }, 20_000);
 });
