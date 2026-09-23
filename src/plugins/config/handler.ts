@@ -1,38 +1,27 @@
 // ── Config & onboarding IPC handlers ─────────────────────────────────────────
-import { ipcMain, app } from 'electron';
+import { app } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import type { BrowserWindow } from 'electron';
 import { loadConfig, saveConfig } from '../../agent/config';
 import { getAboutInfo } from '../../services/about';
+import { safeHandle } from '../ipc-utils';
 
 export function registerHandlers(_db: SqlJsDatabase, _getWindow: () => BrowserWindow | null): void {
-  ipcMain.handle('app:get-system-locale', () => app.getSystemLocale());
+  safeHandle('app:get-system-locale', () => app.getSystemLocale());
 
-  ipcMain.handle('app:get-about-info', async () => {
-    try {
-      return await getAboutInfo();
-    } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
-    }
+  safeHandle('app:get-about-info', async () => {
+    return await getAboutInfo();
   });
 
-  ipcMain.handle('app:get-preferences', () => {
-    try {
-      return loadConfig().preferences;
-    } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
-    }
+  safeHandle('app:get-preferences', () => {
+    return loadConfig().preferences;
   });
 
-  ipcMain.handle('app:get-startup-settings', () => {
-    try {
-      return { ...loadConfig().electron, canRegisterAtLogin: app.isPackaged };
-    } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
-    }
+  safeHandle('app:get-startup-settings', () => {
+    return { ...loadConfig().electron, canRegisterAtLogin: app.isPackaged };
   });
 
-  ipcMain.handle('app:set-startup-settings', (_event, settings: unknown) => {
+  safeHandle('app:set-startup-settings', (_event, settings: unknown) => {
     if (typeof settings !== 'object' || settings === null || Array.isArray(settings)) {
       return { ok: false, error: 'Invalid startup settings' };
     }
@@ -42,28 +31,24 @@ export function registerHandlers(_db: SqlJsDatabase, _getWindow: () => BrowserWi
       return { ok: false, error: 'Invalid startup settings' };
     }
 
-    try {
-      const config = loadConfig();
-      config.electron = {
-        openAtLogin: candidate.openAtLogin,
-        startMinimized: candidate.startMinimized,
-      };
-      saveConfig(config);
+    const config = loadConfig();
+    config.electron = {
+      openAtLogin: candidate.openAtLogin,
+      startMinimized: candidate.startMinimized,
+    };
+    saveConfig(config);
 
-      if (app.isPackaged) {
-        app.setLoginItemSettings({
-          openAtLogin: config.electron.openAtLogin,
-          args: ['--hidden'],
-        });
-      }
-
-      return { ok: true, canRegisterAtLogin: app.isPackaged };
-    } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    if (app.isPackaged) {
+      app.setLoginItemSettings({
+        openAtLogin: config.electron.openAtLogin,
+        args: ['--hidden'],
+      });
     }
+
+    return { ok: true, canRegisterAtLogin: app.isPackaged };
   });
 
-  ipcMain.handle('app:set-preferences', (_event, prefs: Partial<{
+  safeHandle('app:set-preferences', (_event, prefs: Partial<{
     sortByNotifications: boolean;
     localSortByNotifs: boolean;
     localRepoSortKey: 'name' | 'scanned' | 'notifs';
@@ -72,13 +57,9 @@ export function registerHandlers(_db: SqlJsDatabase, _getWindow: () => BrowserWi
     dashboardNotifSort: 'count' | 'name';
   }>) => {
     if (typeof prefs !== 'object' || prefs === null || Array.isArray(prefs)) return { ok: false, error: 'Invalid preferences' };
-    try {
-      const config = loadConfig();
-      config.preferences = { ...config.preferences, ...prefs };
-      saveConfig(config);
-      return { ok: true };
-    } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
-    }
+    const config = loadConfig();
+    config.preferences = { ...config.preferences, ...prefs };
+    saveConfig(config);
+    return { ok: true };
   });
 }

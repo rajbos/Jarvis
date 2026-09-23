@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Tray, Menu, session, ipcMain, Notification } from 'electron';
+import { app, BrowserWindow, Tray, Menu, session, Notification } from 'electron';
 import path from 'path';
 
 import { getDatabase, closeDatabase } from '../storage/database';
@@ -25,6 +25,7 @@ import { stopBridgeServer } from '../plugins/browser-companion/server';
 
 import { setLogLevel } from '../services/logger';
 import { checkForUpdates, registerUpdateIpcHandlers, startUpdateChecks, stopUpdateChecks } from './update-checker';
+import { safeHandle } from '../plugins/ipc-utils';
 
 if (process.env.JARVIS_CONFIG_DIR) {
   app.setPath('userData', path.join(process.env.JARVIS_CONFIG_DIR, 'electron'));
@@ -70,7 +71,7 @@ async function initialize(): Promise<void> {
   registerUpdateIpcHandlers(() => mainWindow);
 
   // Let the renderer open the Settings window (e.g. from the "PAT expired" banner)
-  ipcMain.handle('app:open-settings', () => {
+  safeHandle('app:open-settings', () => {
     showSettingsWindow();
   });
 

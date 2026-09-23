@@ -1,5 +1,5 @@
 // ── GitHub OAuth + PAT IPC handlers ──────────────────────────────────────────
-import { ipcMain, shell, Notification } from 'electron';
+import { shell, Notification } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import type { BrowserWindow } from 'electron';
 import {
@@ -18,6 +18,7 @@ import { saveDatabase, setConfigValue } from '../../storage/database';
 import { loadConfig } from '../../agent/config';
 import { completeOnboardingStep } from '../../agent/onboarding';
 import { startDiscoveryIfAuthed } from '../discovery/handler';
+import { safeHandle } from '../ipc-utils';
 
 let activeDeviceFlow: {
   deviceCode: string;
@@ -27,7 +28,7 @@ let activeDeviceFlow: {
 } | null = null;
 
 export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWindow | null): void {
-  ipcMain.handle('github:oauth-status', async () => {
+  safeHandle('github:oauth-status', async () => {
     console.log('[IPC] github:oauth-status called');
     const auth = loadGitHubAuth(db);
     if (auth) {
@@ -49,13 +50,13 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
     return { authenticated: false };
   });
 
-  ipcMain.handle('github:open-url', (_event, url: string) => {
+  safeHandle('github:open-url', (_event, url: string) => {
     if (typeof url === 'string' && url.startsWith('https://github.com/')) {
       shell.openExternal(url);
     }
   });
 
-  ipcMain.handle('github:get-run-url-for-check-suite', async (_event, checkSuiteApiUrl: string) => {
+  safeHandle('github:get-run-url-for-check-suite', async (_event, checkSuiteApiUrl: string) => {
     if (typeof checkSuiteApiUrl !== 'string') return null;
     const match = checkSuiteApiUrl.match(
       /^https:\/\/api\.github\.com\/repos\/([^/]+)\/([^/]+)\/check-suites\/(\d+)$/,
@@ -95,7 +96,7 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
     return null;
   });
 
-  ipcMain.handle('github:get-issue-state', async (_event, subjectUrl: string) => {
+  safeHandle('github:get-issue-state', async (_event, subjectUrl: string) => {
     if (typeof subjectUrl !== 'string') return null;
     if (!/^https:\/\/api\.github\.com\/repos\/[^/]+\/[^/]+\/issues\/\d+$/.test(subjectUrl)) return null;
     const auth = loadGitHubAuth(db);
@@ -133,7 +134,7 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
     } catch { return null; }
   });
 
-  ipcMain.handle('github:save-pat', async (_event, pat: string) => {
+  safeHandle('github:save-pat', async (_event, pat: string) => {
     const auth = loadGitHubAuth(db);
     if (!auth) return { error: 'Not authenticated' };
     try {
@@ -152,7 +153,7 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
     return { ok: true };
   });
 
-  ipcMain.handle('github:delete-pat', () => {
+  safeHandle('github:delete-pat', () => {
     const auth = loadGitHubAuth(db);
     if (!auth) return { ok: false };
     deleteGitHubPat(db, auth.login);
@@ -161,13 +162,13 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
     return { ok: true };
   });
 
-  ipcMain.handle('github:logout', () => {
+  safeHandle('github:logout', () => {
     deleteGitHubAuth(db);
     saveDatabase();
     return { ok: true };
   });
 
-  ipcMain.handle('github:pat-status', async () => {
+  safeHandle('github:pat-status', async () => {
     const pat = loadGitHubPat(db);
     if (!pat) return { hasPat: false };
     const result = await validateGitHubPat(pat);
@@ -181,7 +182,7 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
     return { hasPat: true, expired: false };
   });
 
-  ipcMain.handle('github:start-oauth-discovery', () => {
+  safeHandle('github:start-oauth-discovery', () => {
 
     setConfigValue(db, 'force_oauth_discovery', '1');
     saveDatabase();
@@ -189,7 +190,7 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
     return { ok: true };
   });
 
-  ipcMain.handle('github:start-oauth', async () => {
+  safeHandle('github:start-oauth', async () => {
     console.log('[IPC] github:start-oauth called');
     if (activeDeviceFlow) {
       activeDeviceFlow.aborted = true;
@@ -223,7 +224,7 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
       return { error: String(err) };
     }
   });
-  ipcMain.handle('github:get-rate-limit', async () => {
+  safeHandle('github:get-rate-limit', async () => {
     const auth = loadGitHubAuth(db);
     const pat = loadGitHubPat(db);
 

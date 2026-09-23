@@ -1,7 +1,7 @@
 // ── Browser Companion IPC handlers ───────────────────────────────────────────
-import { ipcMain } from 'electron';
 import type { BrowserWindow } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
+import { safeHandle } from '../ipc-utils';
 import { saveDatabase } from '../../storage/database';
 import {
   startBridgeServer,
@@ -20,24 +20,24 @@ export function registerHandlers(
 
   // ── Status ────────────────────────────────────────────────────────────────
 
-  ipcMain.handle('browser:status', () => {
+  safeHandle('browser:status', () => {
     return getBridgeStatus();
   });
 
   // ── Token management ──────────────────────────────────────────────────────
 
-  ipcMain.handle('browser:get-token', () => {
+  safeHandle('browser:get-token', () => {
     return { token: getBridgeToken() };
   });
 
-  ipcMain.handle('browser:regenerate-token', () => {
+  safeHandle('browser:regenerate-token', () => {
     const token = regenerateBridgeToken();
     return { token };
   });
 
   // ── Skill CRUD ────────────────────────────────────────────────────────────
 
-  ipcMain.handle('browser:list-skills', () => {
+  safeHandle('browser:list-skills', () => {
     const result = db.exec(
       `SELECT id, name, description, start_url, instructions, extract_selector, created_at, updated_at
        FROM browser_skills ORDER BY name ASC`,
@@ -49,7 +49,7 @@ export function registerHandlers(
     );
   });
 
-  ipcMain.handle(
+  safeHandle(
     'browser:create-skill',
     (
       _event,
@@ -66,29 +66,25 @@ export function registerHandlers(
       if (typeof instructions !== 'string' || instructions.trim().length === 0)
         return { ok: false, error: 'Invalid instructions' };
 
-      try {
-        db.run(
-          `INSERT INTO browser_skills (name, description, start_url, instructions, extract_selector)
-           VALUES (?, ?, ?, ?, ?)`,
-          [
-            name.trim(),
-            typeof description === 'string' ? description.trim() : '',
-            startUrl.trim(),
-            instructions.trim(),
-            typeof extractSelector === 'string' ? extractSelector.trim() : '',
-          ],
-        );
-        saveDatabase();
-        const idResult = db.exec('SELECT last_insert_rowid() AS id');
-        const id = idResult[0]?.values[0]?.[0] as number;
-        return { ok: true, id };
-      } catch (e) {
-        return { ok: false, error: e instanceof Error ? e.message : String(e) };
-      }
+      db.run(
+        `INSERT INTO browser_skills (name, description, start_url, instructions, extract_selector)
+         VALUES (?, ?, ?, ?, ?)`,
+        [
+          name.trim(),
+          typeof description === 'string' ? description.trim() : '',
+          startUrl.trim(),
+          instructions.trim(),
+          typeof extractSelector === 'string' ? extractSelector.trim() : '',
+        ],
+      );
+      saveDatabase();
+      const idResult = db.exec('SELECT last_insert_rowid() AS id');
+      const id = idResult[0]?.values[0]?.[0] as number;
+      return { ok: true, id };
     },
   );
 
-  ipcMain.handle(
+  safeHandle(
     'browser:update-skill',
     (
       _event,
@@ -126,7 +122,7 @@ export function registerHandlers(
     },
   );
 
-  ipcMain.handle('browser:delete-skill', (_event, id: number) => {
+  safeHandle('browser:delete-skill', (_event, id: number) => {
     if (typeof id !== 'number') return { ok: false, error: 'Invalid id' };
     db.run('DELETE FROM browser_skills WHERE id = ?', [id]);
     saveDatabase();
@@ -135,7 +131,7 @@ export function registerHandlers(
 
   // ── Skill run history ─────────────────────────────────────────────────────
 
-  ipcMain.handle('browser:list-runs', (_event, skillId?: number) => {
+  safeHandle('browser:list-runs', (_event, skillId?: number) => {
     if (skillId !== undefined && typeof skillId !== 'number')
       return [];
     const result = skillId !== undefined
@@ -164,7 +160,7 @@ export function registerHandlers(
 
   // ── Run / Test skill ──────────────────────────────────────────────────────
 
-  ipcMain.handle(
+  safeHandle(
     'browser:run-skill',
     async (_event, skillId: number, testMode = false) => {
       if (typeof skillId !== 'number') return { ok: false, error: 'Invalid skillId' };
@@ -281,16 +277,12 @@ export function registerHandlers(
 
   // ── Direct browser commands (for advanced / manual use) ───────────────────
 
-  ipcMain.handle('browser:focus-window', async (_event, tabId?: number) => {
-    try {
-      const response = await sendCommand({
-        type: 'focus-window',
-        payload: {},
-        ...(typeof tabId === 'number' ? { tabId } : {}),
-      });
-      return response;
-    } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : String(e) };
-    }
+  safeHandle('browser:focus-window', async (_event, tabId?: number) => {
+    const response = await sendCommand({
+      type: 'focus-window',
+      payload: {},
+      ...(typeof tabId === 'number' ? { tabId } : {}),
+    });
+    return response;
   });
 }

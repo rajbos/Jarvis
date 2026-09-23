@@ -131,6 +131,17 @@ describe('Notifications plugin — IPC handlers', () => {
       expect(getNotificationCounts).toHaveBeenCalledWith(db);
       expect(result).toMatchObject({ total: 0 });
     });
+
+    it('resolves { ok: false, error } via safeHandle when the underlying call throws', async () => {
+      vi.mocked(getNotificationCounts).mockImplementationOnce(() => {
+        throw new Error('db read failed');
+      });
+      // This handler has no try/catch of its own — safeHandle must catch the
+      // synchronous throw and turn it into a predictable error payload instead
+      // of letting it propagate/reject to the renderer.
+      const result = await callHandler('github:notification-counts');
+      expect(result).toEqual({ ok: false, error: 'db read failed' });
+    });
   });
 
   // ── github:fetch-notifications-for-owner ──────────────────────────────────

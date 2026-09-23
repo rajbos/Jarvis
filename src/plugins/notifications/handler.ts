@@ -1,5 +1,4 @@
 // ── Notifications IPC handlers ────────────────────────────────────────────────
-import { ipcMain } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import type { BrowserWindow } from 'electron';
 import type { AutoDismissLogInput } from '../types';
@@ -23,6 +22,7 @@ import { loadGitHubAuth } from '../../services/github-oauth';
 import { saveDatabase } from '../../storage/database';
 import { fetchAndStoreWorkflowData, getWorkflowSummaryForRepo } from '../../services/github-workflows';
 import { isWorkflowDataFresh } from './workflow-cache';
+import { safeHandle } from '../ipc-utils';
 
 // ── Boot workflow check constants ─────────────────────────────────────────────
 
@@ -421,63 +421,51 @@ export async function runAutoDismissSweep(
 }
 
 export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWindow | null): void {
-  ipcMain.handle('github:fetch-notifications', async () => {
-    try {
-      const result = await syncGitHubNotifications(db, _getWindow);
-      if (result.skipped) return { ok: false, error: result.error ?? 'Skipped' };
-      return result.counts ?? getNotificationCounts(db);
-    } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
-    }
+  safeHandle('github:fetch-notifications', async () => {
+    const result = await syncGitHubNotifications(db, _getWindow);
+    if (result.skipped) return { ok: false, error: result.error ?? 'Skipped' };
+    return result.counts ?? getNotificationCounts(db);
   });
 
-  ipcMain.handle('github:notification-counts', () => {
+  safeHandle('github:notification-counts', () => {
     return getNotificationCounts(db);
   });
 
-  ipcMain.handle('github:fetch-notifications-for-owner', async (_event, owner: string) => {
+  safeHandle('github:fetch-notifications-for-owner', async (_event, owner: string) => {
     if (typeof owner !== 'string' || owner.length === 0) return { ok: false, error: 'Invalid owner' };
     const auth = loadGitHubAuth(db);
     if (!auth) return { ok: false, error: 'Not authenticated' };
-    try {
-      const notifications = await fetchNotifications(auth.accessToken);
-      storeNotificationsForOwner(db, owner, notifications);
-      saveDatabase();
-      return getNotificationCounts(db);
-    } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
-    }
+    const notifications = await fetchNotifications(auth.accessToken);
+    storeNotificationsForOwner(db, owner, notifications);
+    saveDatabase();
+    return getNotificationCounts(db);
   });
 
-  ipcMain.handle('github:fetch-notifications-for-repo', async (_event, repoFullName: string) => {
+  safeHandle('github:fetch-notifications-for-repo', async (_event, repoFullName: string) => {
     if (typeof repoFullName !== 'string' || !repoFullName.includes('/')) return { ok: false, error: 'Invalid repo' };
     const auth = loadGitHubAuth(db);
     if (!auth) return { ok: false, error: 'Not authenticated' };
-    try {
-      const notifications = await fetchNotificationsForRepo(auth.accessToken, repoFullName);
-      storeNotificationsForRepo(db, repoFullName, notifications);
-      saveDatabase();
-      return getNotificationCounts(db);
-    } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
-    }
+    const notifications = await fetchNotificationsForRepo(auth.accessToken, repoFullName);
+    storeNotificationsForRepo(db, repoFullName, notifications);
+    saveDatabase();
+    return getNotificationCounts(db);
   });
 
-  ipcMain.handle('github:list-notifications-for-repo', (_event, repoFullName: string) => {
+  safeHandle('github:list-notifications-for-repo', (_event, repoFullName: string) => {
     if (typeof repoFullName !== 'string' || repoFullName.length === 0) return [];
     return listNotificationsForRepo(db, repoFullName);
   });
 
-  ipcMain.handle('github:list-notifications-for-owner', (_event, owner: string) => {
+  safeHandle('github:list-notifications-for-owner', (_event, owner: string) => {
     if (typeof owner !== 'string' || owner.length === 0) return [];
     return listNotificationsForOwner(db, owner);
   });
 
-  ipcMain.handle('github:list-notifications-for-starred', () => {
+  safeHandle('github:list-notifications-for-starred', () => {
     return listNotificationsForStarred(db);
   });
 
-  ipcMain.handle('github:dismiss-notification', async (_event, id: string) => {
+  safeHandle('github:dismiss-notification', async (_event, id: string) => {
     if (typeof id !== 'string' || id.length === 0) return;
     const auth = loadGitHubAuth(db);
     if (auth) {
@@ -493,7 +481,7 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
 
   // ── Auto-dismiss log IPC handlers ─────────────────────────────────────────
 
-  ipcMain.handle('github:list-auto-dismiss-log', (_event, limit = 200) => {
+  safeHandle('github:list-auto-dismiss-log', (_event, limit = 200) => {
     const safeLimit = typeof limit === 'number' && limit > 0 ? Math.min(limit, 1000) : 200;
     const result = db.exec(
       `SELECT id, notification_id, dismissed_at, reason, repo_full_name, subject_title, subject_type
@@ -509,7 +497,7 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
     });
   });
 
-  ipcMain.handle('github:auto-dismiss-stats', () => {
+  safeHandle('github:auto-dismiss-stats', () => {
     const toRows = (res: ReturnType<typeof db.exec>) => {
       if (!res[0]) return [];
       return res[0].values.map((row) => ({ period: row[0] as string, count: row[1] as number }));

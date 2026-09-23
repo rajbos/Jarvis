@@ -1,6 +1,7 @@
-import { app, ipcMain, Notification, type BrowserWindow } from 'electron';
+import { app, Notification, type BrowserWindow } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import type { UpdateState } from '../types/ipc-payloads';
+import { safeHandle } from '../plugins/ipc-utils';
 
 const INITIAL_CHECK_DELAY_MS = 15_000;
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
@@ -139,12 +140,12 @@ export async function checkForUpdates(manual = false): Promise<void> {
 export function registerUpdateIpcHandlers(getWindow: () => BrowserWindow | null): void {
   getMainWindow = getWindow;
 
-  ipcMain.handle('updates:get-state', (): UpdateState => state);
-  ipcMain.handle('updates:check', async (): Promise<UpdateState> => {
+  safeHandle('updates:get-state', (): UpdateState => state);
+  safeHandle('updates:check', async (): Promise<UpdateState> => {
     await checkForUpdates(true);
     return state;
   });
-  ipcMain.handle('updates:install', (): { ok: boolean } => {
+  safeHandle('updates:install', (): { ok: boolean } => {
     if (state.status !== 'downloaded') return { ok: false };
     installUpdate();
     return { ok: true };

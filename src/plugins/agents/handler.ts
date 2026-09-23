@@ -1,9 +1,10 @@
 // ── Agents IPC handlers ───────────────────────────────────────────────────────
-import { ipcMain, dialog } from 'electron';
+import { dialog } from 'electron';
 import { execFile } from 'child_process';
 import * as path from 'path';
 import type { BrowserWindow } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
+import { safeHandle } from '../ipc-utils';
 import { getConfigValue, saveDatabase } from '../../storage/database';
 import { loadGitHubAuth, loadGitHubPat } from '../../services/github-oauth';
 import {
@@ -95,11 +96,11 @@ export function registerHandlers(
 ): void {
   // ── Agent definitions ─────────────────────────────────────────────────────
 
-  ipcMain.handle('agents:list', () => {
+  safeHandle('agents:list', () => {
     return listAgentDefinitions(db);
   });
 
-  ipcMain.handle('agents:update', (_event, agentId: number, systemPrompt: string) => {
+  safeHandle('agents:update', (_event, agentId: number, systemPrompt: string) => {
     if (typeof agentId !== 'number') return { ok: false, error: 'Invalid agentId' };
     if (typeof systemPrompt !== 'string' || systemPrompt.trim().length === 0) return { ok: false, error: 'Invalid systemPrompt' };
     db.run(
@@ -112,7 +113,7 @@ export function registerHandlers(
 
   // ── Run an agent session ──────────────────────────────────────────────────
 
-  ipcMain.handle(
+  safeHandle(
     'agents:run',
     async (
       _event,
@@ -173,14 +174,14 @@ export function registerHandlers(
 
   // ── Session query ─────────────────────────────────────────────────────────
 
-  ipcMain.handle('agents:get-session', (_event, sessionId: number) => {
+  safeHandle('agents:get-session', (_event, sessionId: number) => {
     if (typeof sessionId !== 'number') return null;
     return getAgentSession(db, sessionId);
   });
 
   // ── Claude Agent SDK escalation ───────────────────────────────────────────
 
-  ipcMain.handle('agents:escalation-readiness', async (_event, repoFullName: string) => {
+  safeHandle('agents:escalation-readiness', async (_event, repoFullName: string) => {
     if (typeof repoFullName !== 'string' || repoFullName.length === 0) {
       return { ok: false, reason: 'Invalid repository' };
     }
@@ -189,7 +190,7 @@ export function registerHandlers(
     return { ok: true };
   });
 
-  ipcMain.handle('agents:escalate', async (_event, sourceSessionId: number) => {
+  safeHandle('agents:escalate', async (_event, sourceSessionId: number) => {
     if (typeof sourceSessionId !== 'number') return { ok: false, error: 'Invalid sessionId' };
 
     const sourceSession = getAgentSession(db, sourceSessionId);
@@ -238,7 +239,7 @@ export function registerHandlers(
 
   // ── Finding approval lifecycle ────────────────────────────────────────────
 
-  ipcMain.handle('agents:approve-finding', (_event, findingId: number) => {
+  safeHandle('agents:approve-finding', (_event, findingId: number) => {
     if (typeof findingId !== 'number') return { ok: false };
     db.run(
       `UPDATE agent_findings SET approved = 1, approved_at = datetime('now') WHERE id = ?`,
@@ -248,7 +249,7 @@ export function registerHandlers(
     return { ok: true };
   });
 
-  ipcMain.handle('agents:reject-finding', (_event, findingId: number) => {
+  safeHandle('agents:reject-finding', (_event, findingId: number) => {
     if (typeof findingId !== 'number') return { ok: false };
     db.run(
       `UPDATE agent_findings SET approved = 0, approved_at = datetime('now') WHERE id = ?`,
@@ -260,7 +261,7 @@ export function registerHandlers(
 
   // ── Execute an approved finding's action ──────────────────────────────────
 
-  ipcMain.handle('agents:execute-finding', async (_event, findingId: number) => {
+  safeHandle('agents:execute-finding', async (_event, findingId: number) => {
     if (typeof findingId !== 'number') return { ok: false, error: 'Invalid findingId' };
 
     const stmt = db.prepare(
@@ -402,7 +403,7 @@ export function registerHandlers(
   // Lets the UI disable the "assign Copilot" action with a concrete reason
   // instead of offering a button that would always fail.
 
-  ipcMain.handle('agents:check-copilot-availability', async (_event, repoFullName: string) => {
+  safeHandle('agents:check-copilot-availability', async (_event, repoFullName: string) => {
     if (typeof repoFullName !== 'string' || !repoFullName.includes('/')) {
       return { available: false, reason: 'api_error', detail: 'Invalid repo name' };
     }
@@ -413,7 +414,7 @@ export function registerHandlers(
 
   // ── Workflow data fetching ────────────────────────────────────────────────
 
-  ipcMain.handle('github:fetch-workflow-runs', async (_event, repoFullName: string) => {
+  safeHandle('github:fetch-workflow-runs', async (_event, repoFullName: string) => {
     if (typeof repoFullName !== 'string' || !repoFullName.includes('/')) {
       return { ok: false, error: 'Invalid repo name' };
     }
@@ -440,14 +441,14 @@ export function registerHandlers(
     }
   });
 
-  ipcMain.handle('github:get-workflow-summary', (_event, repoFullName: string) => {
+  safeHandle('github:get-workflow-summary', (_event, repoFullName: string) => {
     if (typeof repoFullName !== 'string' || repoFullName.length === 0) {
       return { repo_full_name: repoFullName, total_runs: 0, recent_runs: [], jobs_by_run: {} };
     }
     return getWorkflowSummaryForRepo(db, repoFullName);
   });
 
-  ipcMain.handle('github:get-cached-workflow-info', (_event, repoFullName: string) => {
+  safeHandle('github:get-cached-workflow-info', (_event, repoFullName: string) => {
     if (typeof repoFullName !== 'string' || repoFullName.length === 0) {
       return { fetchedAt: null, runCount: 0 };
     }

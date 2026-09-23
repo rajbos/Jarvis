@@ -328,4 +328,16 @@ describe('Browser-companion plugin — IPC handlers', () => {
     });
   });
 
+  // ── browser:focus-window ──────────────────────────────────────────────────
+  // Its own try/catch was deleted during the safeHandle migration (it only
+  // ever returned { ok: false, error }) — safeHandle now provides that.
+
+  describe('browser:focus-window', () => {
+    it('resolves { ok: false, error } via safeHandle when sendCommand throws', async () => {
+      vi.mocked(sendCommand).mockRejectedValueOnce(new Error('bridge disconnected'));
+      const result = await callHandler('browser:focus-window');
+      expect(result).toEqual({ ok: false, error: 'bridge disconnected' });
+    });
+  });
+
 });

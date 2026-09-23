@@ -1,5 +1,5 @@
 // ── Chat IPC handlers ─────────────────────────────────────────────────────────
-import { ipcMain, BrowserWindow } from 'electron';
+import { BrowserWindow } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import {
   streamChat,
@@ -11,6 +11,7 @@ import {
 } from '../../services/ollama';
 import { getConfigValue } from '../../storage/database';
 import { buildSystemContext, searchReposForChat, searchSecretsForChat, searchOneNoteForChat, searchProjectBudgetForChat } from './db-helpers';
+import { safeHandle } from '../ipc-utils';
 
 const activeChatAborts = new Map<number, AbortController>();
 
@@ -136,7 +137,7 @@ function dispatchToolCall(db: SqlJsDatabase, call: OllamaToolCall): string {
 // ── Handler registration ──────────────────────────────────────────────────────
 
 export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWindow | null): void {
-  ipcMain.handle('chat:send', (event, userMessages: Array<{ role: string; content: string }>) => {
+  safeHandle('chat:send', (event, userMessages: Array<{ role: string; content: string }>) => {
     if (!Array.isArray(userMessages) || userMessages.length === 0) return { ok: false, error: 'Invalid messages' };
     for (const msg of userMessages) {
       if (typeof msg !== 'object' || msg === null) return { ok: false, error: 'Invalid message entry' };
@@ -228,7 +229,7 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
     return { ok: true };
   });
 
-  ipcMain.handle('chat:abort', (event) => {
+  safeHandle('chat:abort', (event) => {
     const ctrl = activeChatAborts.get(event.sender.id);
     if (ctrl) {
       ctrl.abort();

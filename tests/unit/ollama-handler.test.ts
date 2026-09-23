@@ -87,9 +87,11 @@ describe('Ollama plugin — IPC handlers', () => {
 
     it('returns error shape when checkOllama throws', async () => {
       vi.mocked(checkOllama).mockRejectedValueOnce(new Error('connection refused'));
-      // The handler returns the promise without awaiting it, so the rejection
-      // propagates out of the handler rather than being caught.
-      await expect(callHandler('ollama:status')).rejects.toThrow('connection refused');
+      // The handler awaits checkOllama() inside its own try/catch, so a
+      // rejection resolves to the custom `{ available: false, ... }` shape
+      // rather than rejecting the IPC invoke call.
+      const result = await callHandler('ollama:status');
+      expect(result).toEqual({ available: false, models: [], error: 'connection refused' });
     });
   });
 

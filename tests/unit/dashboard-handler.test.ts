@@ -199,5 +199,20 @@ describe('Dashboard plugin — IPC handlers', () => {
       expect(result.ok).toBe(false);
       expect(typeof result.error).toBe('string');
     });
+
+    it('resolves { ok: false, error } via safeHandle when existsSync throws synchronously', async () => {
+      vi.mocked(existsSync).mockImplementationOnce(() => {
+        throw new Error('simulated fs failure');
+      });
+
+      const result = (await callHandler(
+        'dashboard:push-branch-upstream',
+        '/some/repo',
+        'main',
+      )) as Record<string, unknown>;
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toBe('simulated fs failure');
+    });
   });
 });

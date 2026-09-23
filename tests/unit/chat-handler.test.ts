@@ -148,6 +148,23 @@ describe('Chat plugin — IPC handlers', () => {
     });
   });
 
+  // ── chat:send — safeHandle failure wrapping ────────────────────────────────
+
+  describe('chat:send — safeHandle failure wrapping', () => {
+    it('resolves { ok: false, error } instead of throwing when a dependency throws synchronously', () => {
+      // getConfigValue calls db.prepare() — make it throw to simulate a forced failure.
+      vi.spyOn(db, 'prepare').mockImplementationOnce(() => {
+        throw new Error('simulated db failure');
+      });
+      const result = callHandler('chat:send', [{ role: 'user', content: 'Hello' }]) as {
+        ok: boolean;
+        error?: string;
+      };
+      expect(result.ok).toBe(false);
+      expect(result.error).toBe('simulated db failure');
+    });
+  });
+
   // ── chat:abort ─────────────────────────────────────────────────────────────
 
   describe('chat:abort', () => {

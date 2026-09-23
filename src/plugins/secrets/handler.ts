@@ -1,5 +1,4 @@
 // ── Secrets IPC handlers ──────────────────────────────────────────────────────
-import { ipcMain } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import type { BrowserWindow } from 'electron';
 import { loadGitHubAuth, loadGitHubPat } from '../../services/github-oauth';
@@ -10,10 +9,12 @@ import {
   addSecretFavorite,
   removeSecretFavorite,
 } from '../../services/github-secrets';
-import { errorMessage } from '../ipc-utils';
+import { safeHandle } from '../ipc-utils';
 
 export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWindow | null): void {
-  ipcMain.handle('secrets:scan', async () => {
+  // Intentionally kept custom catch/early-return shape (`{ error }`, not `{ ok: false, error }`):
+  // the renderer's secrets scan UI checks `result.error` directly.
+  safeHandle('secrets:scan', async () => {
     const auth = loadGitHubAuth(db);
     if (!auth) return { error: 'Not authenticated with GitHub' };
 
@@ -35,42 +36,24 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
     }
   });
 
-  ipcMain.handle('secrets:list-all', () => {
-    try {
-      return searchSecrets(db, '');
-    } catch (err) {
-      console.error('[IPC] secrets:list-all failed:', err);
-      return { ok: false, error: errorMessage(err) };
-    }
+  safeHandle('secrets:list-all', () => {
+    return searchSecrets(db, '');
   });
 
-  ipcMain.handle('secrets:list-favorites', () => {
-    try {
-      return listSecretFavorites(db);
-    } catch (err) {
-      console.error('[IPC] secrets:list-favorites failed:', err);
-      return { ok: false, error: errorMessage(err) };
-    }
+  safeHandle('secrets:list-favorites', () => {
+    return listSecretFavorites(db);
   });
 
-  ipcMain.handle('secrets:add-favorite', (_event, targetType: 'org' | 'repo', targetName: string) => {
+  safeHandle('secrets:add-favorite', (_event, targetType: 'org' | 'repo', targetName: string) => {
     if (targetType !== 'org' && targetType !== 'repo') return { ok: false, error: 'Invalid targetType' };
     if (typeof targetName !== 'string' || targetName.length === 0) return { ok: false, error: 'Invalid targetName' };
-    try {
-      addSecretFavorite(db, targetType, targetName);
-      return { ok: true };
-    } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
-    }
+    addSecretFavorite(db, targetType, targetName);
+    return { ok: true };
   });
 
-  ipcMain.handle('secrets:remove-favorite', (_event, targetName: string) => {
+  safeHandle('secrets:remove-favorite', (_event, targetName: string) => {
     if (typeof targetName !== 'string' || targetName.length === 0) return { ok: false, error: 'Invalid targetName' };
-    try {
-      removeSecretFavorite(db, targetName);
-      return { ok: true };
-    } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
-    }
+    removeSecretFavorite(db, targetName);
+    return { ok: true };
   });
 }
