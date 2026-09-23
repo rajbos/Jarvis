@@ -224,4 +224,22 @@ describe('update checker', () => {
 
     expect(getUpdateState()).toEqual({ status: 'error', error: 'no publish config' });
   });
+
+  // ── safeHandle migration ────────────────────────────────────────────────
+  // updates:get-state/check/install have no internal try/catch of their own,
+  // so a thrown exception used to reject the ipcMain.invoke() call. safeHandle
+  // now turns that into a resolved { ok: false, error } payload instead.
+
+  it('turns an unexpected updates:install exception into an ok:false payload instead of rejecting', async () => {
+    registerUpdateIpcHandlers(() => fakeWindow() as never);
+    await checkForUpdates();
+    autoUpdater.emit('update-downloaded', { version: '1.3.0' });
+
+    const install = handlerFor('updates:install');
+    autoUpdater.quitAndInstall.mockImplementationOnce(() => {
+      throw new Error('install failed');
+    });
+
+    expect(install()).toEqual({ ok: false, error: 'install failed' });
+  });
 });

@@ -9,7 +9,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import initSqlJs, { Database as SqlJsDatabase } from 'sql.js';
 import { getSchema } from '../../src/storage/schema';
-import { saveRuddrBudgetToDb, saveRuddrProjectsToDb } from '../../src/services/groups';
+import { saveRuddrBudgetToDb, saveRuddrProjectsToDb, listGroups } from '../../src/services/groups';
 
 // ── Track registered handlers ─────────────────────────────────────────────────
 const handlers = new Map<string, (...args: unknown[]) => unknown>();
@@ -23,6 +23,11 @@ vi.mock('electron', () => ({
     removeHandler: vi.fn(),
   },
 }));
+
+vi.mock('../../src/services/groups', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/services/groups')>();
+  return { ...actual, listGroups: vi.fn(actual.listGroups) };
+});
 
 vi.mock('../../src/storage/database', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/storage/database')>();
@@ -211,5 +216,17 @@ describe('Groups plugin — Ruddr budget cache', () => {
     expect(result.budgets['Project A'].stale).toBe(false);
     expect(typeof result.budgets['Project A'].fetchedAt).toBe('string');
     expect(result.budgets['Project Old'].stale).toBe(true);
+  });
+
+  it('resolves { ok: false, error } via safeHandle when listGroups throws (no try/catch in handler)', async () => {
+    await register();
+    vi.mocked(listGroups).mockImplementationOnce(() => {
+      throw new Error('groups table missing');
+    });
+
+    // `groups:list` has no try/catch of its own — safeHandle must turn the
+    // synchronous throw into a predictable error payload for the renderer.
+    const result = await callHandler('groups:list');
+    expect(result).toEqual({ ok: false, error: 'groups table missing' });
   });
 });

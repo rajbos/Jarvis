@@ -135,6 +135,15 @@ describe('GitHub Auth plugin — IPC handlers', () => {
       expect(result.authenticated).toBe(true);
       expect(result.login).toBe('octocat');
     });
+
+    it('resolves { ok: false, error } via safeHandle when loadGitHubAuth throws synchronously', async () => {
+      vi.spyOn(db, 'prepare').mockImplementationOnce(() => {
+        throw new Error('simulated db failure');
+      });
+      const result = (await callHandler('github:oauth-status')) as { ok: boolean; error?: string };
+      expect(result.ok).toBe(false);
+      expect(result.error).toBe('simulated db failure');
+    });
   });
 
   // ── github:pat-status ──────────────────────────────────────────────────────

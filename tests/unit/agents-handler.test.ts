@@ -82,7 +82,7 @@ import { runAgentSession } from '../../src/plugins/agents/runner';
 import { checkClaudeRateLimit } from '../../src/services/claude';
 import { resolveAccessToken } from '../../src/plugins/claude/handler';
 import { detectClaudeCli } from '../../src/services/claude-agent';
-import { createGitHubIssue } from '../../src/services/github-workflows';
+import { createGitHubIssue, getWorkflowSummaryForRepo } from '../../src/services/github-workflows';
 import { loadGitHubAuth } from '../../src/services/github-oauth';
 import { checkCopilotAssignable, assignCopilotToIssue } from '../../src/services/github-copilot';
 
@@ -482,6 +482,16 @@ describe('Agents plugin — IPC handlers', () => {
       const result = callHandler('github:get-workflow-summary', null) as Record<string, unknown>;
       expect(result.total_runs).toBe(0);
       expect(result.recent_runs).toEqual([]);
+    });
+
+    // This handler had no try/catch before the safeHandle migration — a throw
+    // used to reject the IPC invoke call. It now resolves { ok: false, error }.
+    it('resolves { ok: false, error } via safeHandle when the summary lookup throws', () => {
+      vi.mocked(getWorkflowSummaryForRepo).mockImplementationOnce(() => {
+        throw new Error('db exploded');
+      });
+      const result = callHandler('github:get-workflow-summary', 'owner/repo');
+      expect(result).toEqual({ ok: false, error: 'db exploded' });
     });
   });
 
