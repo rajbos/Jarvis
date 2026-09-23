@@ -186,6 +186,63 @@ describe('Migration v28 -> v29', () => {
   });
 });
 
+describe('Migration chain completeness (no orphaned user_version)', () => {
+  // initializeSchema() reads `PRAGMA user_version` once and then runs every
+  // `if (userVersion === N)` block whose condition matches that single value
+  // (they are independent ifs, not an else-if chain, so more than one block
+  // can fire in one call). For each block to be reachable, the tables/columns
+  // it touches with ALTER TABLE / CREATE INDEX must already exist beforehand
+  // (CREATE TABLE ... IF NOT EXISTS is safe even against an empty database).
+  // This seeds just enough of the "previous" shape for each intermediate
+  // version so every version 0..28 can be exercised without a false failure,
+  // and asserts the chain always advances — this is exactly the regression
+  // test for issue #310 (a version with no matching block, like the old v13
+  // gap, would leave the version unchanged).
+  const preSeedByVersion: Record<number, string> = {
+    1: `CREATE TABLE github_orgs (id INTEGER PRIMARY KEY AUTOINCREMENT, login TEXT)`,
+    2: `CREATE TABLE github_auth (id INTEGER PRIMARY KEY AUTOINCREMENT, login TEXT)`,
+    3: `CREATE TABLE github_auth (id INTEGER PRIMARY KEY AUTOINCREMENT, login TEXT, avatar_url TEXT)`,
+    4: `CREATE TABLE github_repos (id INTEGER PRIMARY KEY AUTOINCREMENT, full_name TEXT)`,
+    6: `CREATE TABLE local_repos (id INTEGER PRIMARY KEY AUTOINCREMENT, local_path TEXT)`,
+    7: `CREATE TABLE github_repos (id INTEGER PRIMARY KEY AUTOINCREMENT, full_name TEXT, starred INTEGER DEFAULT 0)`,
+    15: `CREATE TABLE github_notifications (id TEXT PRIMARY KEY)`,
+    16: `CREATE TABLE github_notifications (id TEXT PRIMARY KEY)`,
+    17: `CREATE TABLE github_workflow_runs (id TEXT PRIMARY KEY)`,
+    18: `CREATE TABLE groups (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT)`,
+    20: `CREATE TABLE ruddr_projects (path TEXT PRIMARY KEY, name TEXT)`,
+    21: `CREATE TABLE ruddr_projects (path TEXT PRIMARY KEY, name TEXT, cloud_folder_url TEXT)`,
+    24: `CREATE TABLE onedrive_onenote_cache (id INTEGER PRIMARY KEY AUTOINCREMENT, page_last_modified TEXT)`,
+    25: `CREATE TABLE github_workflow_jobs (id TEXT PRIMARY KEY)`,
+    26: `CREATE TABLE agent_sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, agent_id INTEGER, scope_type TEXT)`,
+    27: `CREATE TABLE agent_definitions (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, system_prompt TEXT, updated_at DATETIME)`,
+  };
+
+  it('advances the version from every intermediate user_version (0..28)', async () => {
+    const SQL = await initSqlJs();
+    const referenceDb = new SQL.Database();
+    initializeSchema(referenceDb);
+    const latest = referenceDb.exec('PRAGMA user_version')[0].values[0][0] as number;
+    referenceDb.close();
+    expect(latest).toBeGreaterThan(0);
+
+    for (let v = 0; v < latest; v++) {
+      const testDb = new SQL.Database();
+      const seed = preSeedByVersion[v];
+      if (seed) {
+        testDb.run(seed);
+      }
+      testDb.run(`PRAGMA user_version = ${v}`);
+
+      expect(() => initializeSchema(testDb), `migration starting at v${v} threw`).not.toThrow();
+
+      const result = testDb.exec('PRAGMA user_version')[0].values[0][0] as number;
+      expect(result, `migration starting at v${v} did not advance (stuck at ${result})`).toBeGreaterThan(v);
+
+      testDb.close();
+    }
+  });
+});
+
 describe('Migration v25 -> v26', () => {
   it('adds failing_step_name and error_highlights to github_workflow_jobs and bumps user_version', async () => {
     const SQL = await initSqlJs();
