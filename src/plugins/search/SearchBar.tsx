@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'preact/hooks';
 import type { Repo } from '../types';
+import { isIpcError } from '../types';
 
 export function SearchBar() {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Repo[] | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [showResults, setShowResults] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const timerRef = useRef<number>();
@@ -25,11 +27,20 @@ export function SearchBar() {
     if (q.trim().length < 2) {
       setShowResults(false);
       setResults(null);
+      setSearchError(null);
       return;
     }
     timerRef.current = window.setTimeout(async () => {
       try {
         const r = await window.jarvis.searchRepos(q.trim());
+        if (isIpcError(r)) {
+          console.error('[Search]', r.error);
+          setSearchError(r.error);
+          setResults(null);
+          setShowResults(true);
+          return;
+        }
+        setSearchError(null);
         setResults(r);
         setShowResults(true);
       } catch (err) {
@@ -59,10 +70,13 @@ export function SearchBar() {
       />
       {showResults && (
         <div class="search-results">
-          {results && results.length === 0 && (
+          {searchError && (
+            <div class="search-empty">{'Search failed: ' + searchError}</div>
+          )}
+          {!searchError && results && results.length === 0 && (
             <div class="search-empty">No repositories found</div>
           )}
-          {results &&
+          {!searchError && results &&
             results.map((repo) => {
               const slash = repo.full_name.indexOf('/');
               const orgPart = slash !== -1 ? repo.full_name.slice(0, slash) : '';

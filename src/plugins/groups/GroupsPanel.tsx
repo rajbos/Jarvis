@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'preact/hooks';
 import type { Group, GroupDetail, LocalRepo, OnedriveFolderInfo, OnedriveFile, UrlShortcutInfo } from '../types';
+import { isIpcError } from '../types';
 
 // ── GroupsPanel ───────────────────────────────────────────────────────────────
 // Allows users to create, rename, delete groups and assign local/remote repos
@@ -62,7 +63,11 @@ export function GroupsPanel({ onClose, onOpenOneNote, onOpenOneNoteCache }: Grou
           window.jarvis.localListRepos(),
         ]);
         setGroups(list);
-        setLocalRepos(repos);
+        if (isIpcError(repos)) {
+          setError(repos.error);
+        } else {
+          setLocalRepos(repos);
+        }
       } catch (err) {
         console.error('[Groups] init error:', err);
       } finally {

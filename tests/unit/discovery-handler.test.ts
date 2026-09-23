@@ -138,7 +138,7 @@ describe('Discovery plugin — IPC handlers', () => {
         throw new Error('database unavailable');
       });
       const result = callHandler('github:discovery-status');
-      expect(result).toEqual({ error: 'database unavailable' });
+      expect(result).toEqual({ ok: false, error: 'database unavailable' });
     });
   });
 
@@ -148,7 +148,7 @@ describe('Discovery plugin — IPC handlers', () => {
     it('returns an error when no PAT is configured', () => {
       vi.mocked(loadGitHubPat).mockReturnValueOnce(null);
       const result = callHandler('github:start-pat-discovery');
-      expect(result).toEqual({ error: 'No PAT configured' });
+      expect(result).toEqual({ ok: false, error: 'No PAT configured' });
     });
 
     it('starts PAT discovery when a PAT is configured', () => {

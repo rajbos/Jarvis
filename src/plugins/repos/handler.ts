@@ -2,6 +2,7 @@
 import { ipcMain } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import type { BrowserWindow } from 'electron';
+import { errorMessage } from '../ipc-utils';
 
 export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWindow | null): void {
   ipcMain.handle('github:search-repos', (_event, query: string) => {
@@ -40,7 +41,7 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
       return rows;
     } catch (err) {
       console.error('[repos] github:search-repos error:', err);
-      return [];
+      return { ok: false, error: errorMessage(err) };
     }
   });
 
@@ -82,7 +83,7 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
       return rows;
     } catch (err) {
       console.error('[repos] github:list-repos-for-org error:', err);
-      return [];
+      return { ok: false, error: errorMessage(err) };
     }
   });
 
@@ -104,7 +105,7 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
       return rows;
     } catch (err) {
       console.error('[repos] github:list-starred error:', err);
-      return [];
+      return { ok: false, error: errorMessage(err) };
     }
   });
 }

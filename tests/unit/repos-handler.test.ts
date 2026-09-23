@@ -99,12 +99,12 @@ describe('Repos plugin — IPC handlers', () => {
       expect(result).toEqual([]);
     });
 
-    it('returns empty array when the query throws (invalid SQL surface)', () => {
+    it('returns an ok:false error contract when the query throws (invalid SQL surface)', () => {
       const badDb = { prepare: () => { throw new Error('boom'); } } as unknown as SqlJsDatabase;
       handlers.clear();
       registerHandlers(badDb, () => null);
       const result = callHandler('github:search-repos', 'widgets');
-      expect(result).toEqual([]);
+      expect(result).toEqual({ ok: false, error: 'boom' });
     });
   });
 
@@ -133,12 +133,12 @@ describe('Repos plugin — IPC handlers', () => {
       expect(result[0].full_name).toBe('someone/starred-repo');
     });
 
-    it('returns empty array when the query throws', () => {
+    it('returns an ok:false error contract when the query throws', () => {
       const badDb = { prepare: () => { throw new Error('boom'); } } as unknown as SqlJsDatabase;
       handlers.clear();
       registerHandlers(badDb, () => null);
       const result = callHandler('github:list-repos-for-org', 'acme');
-      expect(result).toEqual([]);
+      expect(result).toEqual({ ok: false, error: 'boom' });
     });
   });
 
@@ -151,12 +151,12 @@ describe('Repos plugin — IPC handlers', () => {
       expect(result[0].full_name).toBe('someone/starred-repo');
     });
 
-    it('returns empty array when the query throws', () => {
+    it('returns an ok:false error contract when the query throws', () => {
       const badDb = { prepare: () => { throw new Error('boom'); } } as unknown as SqlJsDatabase;
       handlers.clear();
       registerHandlers(badDb, () => null);
       const result = callHandler('github:list-starred');
-      expect(result).toEqual([]);
+      expect(result).toEqual({ ok: false, error: 'boom' });
     });
   });
 });

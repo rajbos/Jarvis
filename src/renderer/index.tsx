@@ -61,6 +61,7 @@ import type {
   ClaudeRateLimit,
   BackgroundTaskStatus,
 } from '../plugins/types';
+import { isIpcError } from '../plugins/types';
 import '../plugins/types'; // activate the global Window augmentation
 
 type AppTab = 'dashboard' | 'groups-dashboard' | 'browser' | 'setup' | 'dismiss-history';
@@ -258,6 +259,11 @@ function App() {
     (async () => {
       try {
         const folders = await window.jarvis.localGetFolders();
+        if (isIpcError(folders)) {
+          console.error('[Jarvis] Local folders check failed:', folders.error);
+          setLocalFolders([]);
+          return;
+        }
         setLocalFolders(folders);
         const status = await window.jarvis.localGetScanStatus();
         if (status.running) {
@@ -283,7 +289,9 @@ function App() {
     (async () => {
       try {
         const persisted = await window.jarvis.listAllSecrets();
-        if (persisted.length > 0) {
+        if (isIpcError(persisted)) {
+          console.warn('[Jarvis] Could not load persisted secrets:', persisted.error);
+        } else if (persisted.length > 0) {
           setSecretsList(persisted);
           setSecretsScanned(true);
         }
@@ -292,10 +300,14 @@ function App() {
       }
       try {
         const favs = await window.jarvis.listSecretFavorites();
-        const orgs = new Set(favs.filter((f: SecretFavorite) => f.target_type === 'org').map((f: SecretFavorite) => f.target_name));
-        const repos = new Set(favs.filter((f: SecretFavorite) => f.target_type === 'repo').map((f: SecretFavorite) => f.target_name));
-        setFavoritedOrgs(orgs);
-        setFavoritedRepos(repos);
+        if (isIpcError(favs)) {
+          console.warn('[Jarvis] Could not load secret favorites:', favs.error);
+        } else {
+          const orgs = new Set(favs.filter((f: SecretFavorite) => f.target_type === 'org').map((f: SecretFavorite) => f.target_name));
+          const repos = new Set(favs.filter((f: SecretFavorite) => f.target_type === 'repo').map((f: SecretFavorite) => f.target_name));
+          setFavoritedOrgs(orgs);
+          setFavoritedRepos(repos);
+        }
       } catch (err) {
         console.warn('[Jarvis] Could not load secret favorites:', err);
       }
@@ -364,12 +376,25 @@ function App() {
       setLocalScanProgress(progress);
       setLocalScanning(false);
       setLocalScanFinished(true);
-      window.jarvis.localGetFolders().then(setLocalFolders).catch(console.error);
+      window.jarvis.localGetFolders().then((folders) => {
+        if (isIpcError(folders)) {
+          console.error('[Jarvis] Local folders reload failed:', folders.error);
+          return;
+        }
+        setLocalFolders(folders);
+      }).catch(console.error);
       // Reload repos in nav stack so counts stay fresh after scan
       const stack = localNavStackRef.current;
       if (stack.length > 0) {
         window.jarvis.localListReposForFolder(stack[0].path)
-          .then((repos) => { setLocalNavStack([{ path: stack[0].path, repos }]); setLocalLeafFolder(null); })
+          .then((repos) => {
+            if (isIpcError(repos)) {
+              console.error('[Jarvis] Failed to reload local repos:', repos.error);
+              return;
+            }
+            setLocalNavStack([{ path: stack[0].path, repos }]);
+            setLocalLeafFolder(null);
+          })
           .catch(console.error);
       }
     });
@@ -386,7 +411,13 @@ function App() {
   // Auto-resize Electron window when panels open/close
   useEffect(() => {
     if (showOrgPanel && oauthStatus?.authenticated) {
-      window.jarvis.listOrgs().then(setOrgData).catch(console.error);
+      window.jarvis.listOrgs().then((data) => {
+        if (isIpcError(data)) {
+          console.error('[Jarvis] Failed to load orgs:', data.error);
+          return;
+        }
+        setOrgData(data);
+      }).catch(console.error);
     }
   }, [showOrgPanel, discoveryFinished, oauthStatus?.authenticated]);
 
@@ -595,13 +626,15 @@ function App() {
       setRepoPanel({ orgLogin, displayName, repos: [], loading: true });
     }
     try {
-      let repos: Repo[];
-      if (orgLogin === '__starred__') {
-        repos = await window.jarvis.listStarred();
-      } else {
-        repos = await window.jarvis.listReposForOrg(orgLogin);
+      const result = orgLogin === '__starred__'
+        ? await window.jarvis.listStarred()
+        : await window.jarvis.listReposForOrg(orgLogin);
+      if (isIpcError(result)) {
+        console.error('[Jarvis] Failed to load repos:', result.error);
+        setRepoPanel(null);
+        return;
       }
-      setRepoPanel({ orgLogin, displayName, repos, loading: false });
+      setRepoPanel({ orgLogin, displayName, repos: result, loading: false });
     } catch (err) {
       console.error('[Jarvis] Failed to load repos:', err);
       setRepoPanel(null);
@@ -624,7 +657,13 @@ function App() {
         if (localFolders.length === 1) {
           // Auto-navigate into the single configured folder
           void window.jarvis.localListReposForFolder(localFolders[0].path)
-            .then((repos) => setLocalNavStack([{ path: localFolders[0].path, repos }]))
+            .then((repos) => {
+              if (isIpcError(repos)) {
+                console.error('[Jarvis] Failed to load local repos:', repos.error);
+                return;
+              }
+              setLocalNavStack([{ path: localFolders[0].path, repos }]);
+            })
             .catch(console.error);
         }
       } else {
@@ -638,12 +677,20 @@ function App() {
     const result = await window.jarvis.localAddFolder();
     if (result.canceled || result.error) return;
     const folders = await window.jarvis.localGetFolders();
+    if (isIpcError(folders)) {
+      console.error('[Jarvis] Failed to reload local folders:', folders.error);
+      return;
+    }
     setLocalFolders(folders);
   };
 
   const handleLocalRemoveFolder = async (folderPath: string) => {
     await window.jarvis.localRemoveFolder(folderPath);
     const folders = await window.jarvis.localGetFolders();
+    if (isIpcError(folders)) {
+      console.error('[Jarvis] Failed to reload local folders:', folders.error);
+      return;
+    }
     setLocalFolders(folders);
     if (localNavStack.length > 0 && localNavStack[0].path === folderPath) {
       setLocalNavStack([]);
@@ -659,6 +706,10 @@ function App() {
   const handleLocalSelectFolder = async (folderPath: string) => {
     try {
       const repos = await window.jarvis.localListReposForFolder(folderPath);
+      if (isIpcError(repos)) {
+        console.error('[Jarvis] Failed to load local repos:', repos.error);
+        return;
+      }
       setLocalNavStack([{ path: folderPath, repos }]);
       setLocalLeafFolder(null);
     } catch (err) {
@@ -749,7 +800,12 @@ function App() {
 
   const loadAllSecrets = async (): Promise<RepoSecret[]> => {
     try {
-      return await window.jarvis.listAllSecrets();
+      const result = await window.jarvis.listAllSecrets();
+      if (isIpcError(result)) {
+        console.error('[Jarvis] Failed to reload secrets:', result.error);
+        return [];
+      }
+      return result;
     } catch {
       return [];
     }
