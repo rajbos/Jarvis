@@ -4,6 +4,7 @@ import { useState, useEffect } from 'preact/hooks';
 
 import './settings.css';
 import { McpServerSection, type McpSectionApi } from './mcp-settings-section';
+import { isIpcError, type IpcErrorResponse } from '../plugins/types';
 
 
 
@@ -62,31 +63,31 @@ declare const window: Window & {
 
   jarvis: {
 
-    getGitHubOAuthStatus(): Promise<OAuthStatus>;
+    getGitHubOAuthStatus(): Promise<OAuthStatus | IpcErrorResponse>;
 
-    getPatStatus(): Promise<PatStatus>;
+    getPatStatus(): Promise<PatStatus | IpcErrorResponse>;
 
     savePat(pat: string): Promise<{ error?: string }>;
 
-    deletePat(): Promise<void>;
+    deletePat(): Promise<{ ok: boolean; error?: string }>;
 
-    logout(): Promise<void>;
+    logout(): Promise<{ ok: boolean; error?: string }>;
 
     startOAuthDiscovery(): Promise<void>;
 
     startPatDiscovery(): Promise<void>;
 
-    agentsList(): Promise<Array<{ id: number; name: string; description: string; system_prompt: string }>>;
+    agentsList(): Promise<Array<{ id: number; name: string; description: string; system_prompt: string }> | IpcErrorResponse>;
 
     agentsUpdate(agentId: number, systemPrompt: string): Promise<{ ok: boolean; error?: string }>;
 
-    onedriveListRoots(): Promise<OnedriveRoot[]>;
+    onedriveListRoots(): Promise<OnedriveRoot[] | IpcErrorResponse>;
 
     onedriveAddRoot(label: string, folderPath?: string): Promise<{ ok?: boolean; root?: OnedriveRoot; canceled?: boolean; error?: string }>;
 
     onedriveRemoveRoot(rootId: number): Promise<{ ok: boolean; error?: string }>;
 
-    groupsGetRuddrWorkspace(): Promise<{ ok: boolean; workspace: string }>;
+    groupsGetRuddrWorkspace(): Promise<{ ok: boolean; workspace: string } | IpcErrorResponse>;
 
     groupsSetRuddrWorkspace(workspace: string): Promise<{ ok: boolean; error?: string }>;
 
@@ -144,7 +145,17 @@ function OAuthSection() {
 
     try {
 
-      setStatus(await window.jarvis.getGitHubOAuthStatus());
+      const result = await window.jarvis.getGitHubOAuthStatus();
+
+      if (isIpcError(result)) {
+
+        console.error('[Jarvis] Failed to check OAuth status:', result.error);
+
+        return;
+
+      }
+
+      setStatus(result);
 
     } catch (err) {
 
@@ -168,7 +179,15 @@ function OAuthSection() {
 
     if (!confirm('Sign out of GitHub? This will remove your OAuth session.')) return;
 
-    await window.jarvis.logout();
+    const result = await window.jarvis.logout();
+
+    if (isIpcError(result)) {
+
+      console.error('[Jarvis] Failed to sign out:', result.error);
+
+      alert('Error: ' + result.error);
+
+    }
 
     await refresh();
 
@@ -280,7 +299,17 @@ function PatSection() {
 
     try {
 
-      setStatus(await window.jarvis.getPatStatus());
+      const result = await window.jarvis.getPatStatus();
+
+      if (isIpcError(result)) {
+
+        console.error('[Jarvis] Failed to check PAT status:', result.error);
+
+        return;
+
+      }
+
+      setStatus(result);
 
     } catch (err) {
 
@@ -338,7 +367,15 @@ function PatSection() {
 
   const handleRemove = async () => {
 
-    await window.jarvis.deletePat();
+    const result = await window.jarvis.deletePat();
+
+    if (isIpcError(result)) {
+
+      console.error('[Jarvis] Failed to delete PAT:', result.error);
+
+      alert('Error: ' + result.error);
+
+    }
 
     await refresh();
 
@@ -501,6 +538,14 @@ function AgentPromptsSection() {
   useEffect(() => {
 
     window.jarvis.agentsList().then((list) => {
+
+      if (isIpcError(list)) {
+
+        console.error('[Jarvis] Failed to load agents:', list.error);
+
+        return;
+
+      }
 
       setAgents(list);
 
@@ -682,7 +727,17 @@ function OneDriveSection() {
 
     try {
 
-      setRoots(await window.jarvis.onedriveListRoots());
+      const result = await window.jarvis.onedriveListRoots();
+
+      if (isIpcError(result)) {
+
+        console.error('[OneDrive] Failed to list roots:', result.error);
+
+        return;
+
+      }
+
+      setRoots(result);
 
     } catch (err) {
 
@@ -1002,7 +1057,13 @@ function RuddrSection() {
 
     window.jarvis.groupsGetRuddrWorkspace()
 
-      .then((res) => { setWorkspace(res.workspace); setDraft(res.workspace); })
+      .then((res) => {
+        if (isIpcError(res)) {
+          console.error('[Jarvis] Failed to load Ruddr workspace:', res.error);
+          return;
+        }
+        setWorkspace(res.workspace); setDraft(res.workspace);
+      })
 
       .catch(() => { /* non-fatal */ });
 
@@ -1018,7 +1079,15 @@ function RuddrSection() {
 
     try {
 
-      await window.jarvis.groupsSetRuddrWorkspace(draft.trim());
+      const result = await window.jarvis.groupsSetRuddrWorkspace(draft.trim());
+
+      if (isIpcError(result) || result.error) {
+
+        console.error('[Jarvis] Failed to save Ruddr workspace:', result.error);
+
+        return;
+
+      }
 
       setWorkspace(draft.trim());
 

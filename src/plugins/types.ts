@@ -2395,11 +2395,11 @@ export interface JarvisApi {
 
 
 
-  deletePat(): Promise<{ ok: boolean }>;
+  deletePat(): Promise<{ ok: boolean; error?: string }>;
 
 
 
-  getPatStatus(): Promise<PatStatus>;
+  getPatStatus(): Promise<PatStatus | IpcErrorResponse>;
 
 
 
@@ -2418,7 +2418,7 @@ export interface JarvisApi {
 
 
 
-  logout(): Promise<{ ok: boolean }>;
+  logout(): Promise<{ ok: boolean; error?: string }>;
 
 
 
@@ -2426,7 +2426,7 @@ export interface JarvisApi {
 
 
 
-  getSelectedOllamaModel(): Promise<string | null>;
+  getSelectedOllamaModel(): Promise<string | null | IpcErrorResponse>;
 
 
 
@@ -2458,7 +2458,7 @@ export interface JarvisApi {
 
 
 
-  getGitHubOAuthStatus(): Promise<OAuthStatus>;
+  getGitHubOAuthStatus(): Promise<OAuthStatus | IpcErrorResponse>;
 
 
 
@@ -2494,7 +2494,7 @@ export interface JarvisApi {
 
 
 
-  getNotificationCounts(): Promise<NotificationCounts>;
+  getNotificationCounts(): Promise<NotificationCounts | IpcErrorResponse>;
 
 
 
@@ -2506,15 +2506,15 @@ export interface JarvisApi {
 
 
 
-  listNotificationsForRepo(repoFullName: string): Promise<StoredNotification[]>;
+  listNotificationsForRepo(repoFullName: string): Promise<StoredNotification[] | IpcErrorResponse>;
 
 
 
-  listNotificationsForOwner(owner: string): Promise<StoredNotification[]>;
+  listNotificationsForOwner(owner: string): Promise<StoredNotification[] | IpcErrorResponse>;
 
 
 
-  listNotificationsForStarred(): Promise<StoredNotification[]>;
+  listNotificationsForStarred(): Promise<StoredNotification[] | IpcErrorResponse>;
 
 
 
@@ -2681,7 +2681,7 @@ export interface JarvisApi {
 
 
 
-  agentsList(): Promise<AgentDefinition[]>;
+  agentsList(): Promise<AgentDefinition[] | IpcErrorResponse>;
 
 
 
@@ -2693,7 +2693,7 @@ export interface JarvisApi {
 
 
 
-  agentsGetSession(sessionId: number): Promise<AgentSession | null>;
+  agentsGetSession(sessionId: number): Promise<AgentSession | null | IpcErrorResponse>;
 
 
 
@@ -2707,11 +2707,11 @@ export interface JarvisApi {
 
   agentsExecuteFinding(findingId: number): Promise<{ ok: boolean; error?: string; dismissedIds?: string[] }>;
 
-  agentsCheckCopilotAvailability(repoFullName: string): Promise<CopilotAvailabilityResult>;
+  agentsCheckCopilotAvailability(repoFullName: string): Promise<CopilotAvailabilityResult | IpcErrorResponse>;
 
 
 
-  agentsEscalationReadiness(repoFullName: string): Promise<{ ok: boolean; reason?: string; resetAt?: number | null }>;
+  agentsEscalationReadiness(repoFullName: string): Promise<{ ok: boolean; reason?: string; resetAt?: number | null } | IpcErrorResponse>;
 
 
 
@@ -2755,11 +2755,11 @@ export interface JarvisApi {
 
 
 
-  githubGetWorkflowSummary(repoFullName: string): Promise<WorkflowRunSummary>;
+  githubGetWorkflowSummary(repoFullName: string): Promise<WorkflowRunSummary | IpcErrorResponse>;
 
 
 
-  githubGetCachedWorkflowInfo(repoFullName: string): Promise<{ fetchedAt: string | null; runCount: number }>;
+  githubGetCachedWorkflowInfo(repoFullName: string): Promise<{ fetchedAt: string | null; runCount: number } | IpcErrorResponse>;
 
 
 
@@ -2779,7 +2779,7 @@ export interface JarvisApi {
 
 
 
-  groupsList(): Promise<Group[]>;
+  groupsList(): Promise<Group[] | IpcErrorResponse>;
 
 
 
@@ -2795,7 +2795,7 @@ export interface JarvisApi {
 
 
 
-  groupsGet(groupId: number): Promise<GroupDetail | null>;
+  groupsGet(groupId: number): Promise<GroupDetail | null | IpcErrorResponse>;
 
 
 
@@ -2838,7 +2838,7 @@ export interface JarvisApi {
   groupsListRuddrProjects(): Promise<{ ok: boolean; projects: Array<{ name: string; path: string; discoveredAt: string | null }> }>;
 
 
-  groupsGetRuddrWorkspace(): Promise<{ ok: boolean; workspace: string }>;
+  groupsGetRuddrWorkspace(): Promise<{ ok: boolean; workspace: string } | IpcErrorResponse>;
 
 
 
@@ -2864,7 +2864,7 @@ export interface JarvisApi {
 
 
 
-  onedriveListRoots(): Promise<OnedriveRoot[]>;
+  onedriveListRoots(): Promise<OnedriveRoot[] | IpcErrorResponse>;
 
 
 
@@ -2888,7 +2888,7 @@ export interface JarvisApi {
 
 
 
-  onedriveListFilesForFolder(folderId: number): Promise<OnedriveFile[]>;
+  onedriveListFilesForFolder(folderId: number): Promise<OnedriveFile[] | IpcErrorResponse>;
 
 
 
@@ -2916,19 +2916,19 @@ export interface JarvisApi {
 
 
 
-  browserStatus(): Promise<BrowserCompanionStatus>;
+  browserStatus(): Promise<BrowserCompanionStatus | IpcErrorResponse>;
 
 
 
-  browserGetToken(): Promise<{ token: string }>;
+  browserGetToken(): Promise<{ token: string } | IpcErrorResponse>;
 
 
 
-  browserRegenerateToken(): Promise<{ token: string }>;
+  browserRegenerateToken(): Promise<{ token: string } | IpcErrorResponse>;
 
 
 
-  browserListSkills(): Promise<BrowserSkill[]>;
+  browserListSkills(): Promise<BrowserSkill[] | IpcErrorResponse>;
 
 
 
@@ -2944,7 +2944,7 @@ export interface JarvisApi {
 
 
 
-  browserListRuns(skillId?: number): Promise<BrowserSkillRun[]>;
+  browserListRuns(skillId?: number): Promise<BrowserSkillRun[] | IpcErrorResponse>;
 
 
 
@@ -2971,7 +2971,7 @@ export interface JarvisApi {
 
 
 
-  getGitHubRateLimit(): Promise<GitHubRateLimit>;
+  getGitHubRateLimit(): Promise<GitHubRateLimit | IpcErrorResponse>;
 
   // Claude (Claude Code OAuth) rate limit
   getClaudeStatus(): Promise<ClaudeStatus>;
@@ -2981,11 +2981,11 @@ export interface JarvisApi {
   completeClaudeOAuth(code: string): Promise<{ ok: boolean; error?: string }>;
 
   // Auto-dismiss log
-  listAutoDismissLog(limit?: number): Promise<AutoDismissLogEntry[]>;
-  getAutoDismissStats(): Promise<AutoDismissStats>;
+  listAutoDismissLog(limit?: number): Promise<AutoDismissLogEntry[] | IpcErrorResponse>;
+  getAutoDismissStats(): Promise<AutoDismissStats | IpcErrorResponse>;
 
   // Background tasks
-  listBackgroundTasks(): Promise<BackgroundTaskStatus[]>;
+  listBackgroundTasks(): Promise<BackgroundTaskStatus[] | IpcErrorResponse>;
   runBackgroundTaskNow(taskId: string): Promise<BackgroundTaskRunRecord | { ok: false; error: string }>;
   onBackgroundTaskComplete(cb: (record: BackgroundTaskRunRecord) => void): () => void;
   onNotificationCountsUpdated(cb: (counts: NotificationCounts) => void): () => void;

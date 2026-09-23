@@ -158,6 +158,10 @@ function App() {
     (async () => {
       try {
         const status = await window.jarvis.getGitHubOAuthStatus();
+        if (isIpcError(status)) {
+          console.error('[Jarvis] Error checking OAuth status:', status.error);
+          return;
+        }
         if (status.authenticated) {
           setOauthStatus(status);
           const disco = await window.jarvis.getDiscoveryStatus();
@@ -170,16 +174,20 @@ function App() {
           // Load cached notification counts from DB; auto-fetch if nothing cached
           try {
             const counts = await window.jarvis.getNotificationCounts();
-            setNotifCounts(counts);
-            if (!counts.fetchedAt) {
-              setNotifFetching(true);
-              try {
-                const fresh = await window.jarvis.fetchNotifications();
-                setNotifCounts(fresh);
-              } catch (fe) {
-                console.warn('[Jarvis] Auto-fetch notifications failed:', fe);
-              } finally {
-                setNotifFetching(false);
+            if (isIpcError(counts)) {
+              console.error('[Jarvis] Failed to load notification counts:', counts.error);
+            } else {
+              setNotifCounts(counts);
+              if (!counts.fetchedAt) {
+                setNotifFetching(true);
+                try {
+                  const fresh = await window.jarvis.fetchNotifications();
+                  setNotifCounts(fresh);
+                } catch (fe) {
+                  console.warn('[Jarvis] Auto-fetch notifications failed:', fe);
+                } finally {
+                  setNotifFetching(false);
+                }
               }
             }
           } catch (e) {
@@ -197,7 +205,11 @@ function App() {
           // Load GitHub rate limit
           try {
             const rl = await window.jarvis.getGitHubRateLimit();
-            setRateLimit(rl);
+            if (isIpcError(rl)) {
+              console.warn('[Jarvis] Could not load rate limit:', rl.error);
+            } else {
+              setRateLimit(rl);
+            }
           } catch (e) {
             console.warn('[Jarvis] Could not load rate limit:', e);
           }
@@ -212,7 +224,13 @@ function App() {
   useEffect(() => {
     const loadPatStatus = () => {
       window.jarvis.getPatStatus()
-        .then(setPatStatus)
+        .then((result) => {
+          if (isIpcError(result)) {
+            console.error('[Jarvis] PAT status check failed:', result.error);
+            return;
+          }
+          setPatStatus(result);
+        })
         .catch((err: unknown) => console.error('[Jarvis] PAT status check failed:', err));
     };
     loadPatStatus();
@@ -242,7 +260,12 @@ function App() {
         setOllamaStatus({ available: false, baseUrl: 'http://127.0.0.1:11434', models: [], error: String(err) });
       });
     window.jarvis.getSelectedOllamaModel()
-      .then((model) => {
+      .then((result) => {
+        if (isIpcError(result)) {
+          console.error('[Jarvis] getSelectedOllamaModel failed:', result.error);
+          return;
+        }
+        const model = result;
         setSelectedOllamaModel(model);
         if (model) {
           const savedOpen = localStorage.getItem('chat-panel-open');
@@ -319,7 +342,13 @@ function App() {
   // Load groups on mount
   useEffect(() => {
     window.jarvis.groupsList()
-      .then(setGroups)
+      .then((result) => {
+        if (isIpcError(result)) {
+          console.warn('[Jarvis] Could not load groups:', result.error);
+          return;
+        }
+        setGroups(result);
+      })
       .catch((err: unknown) => console.warn('[Jarvis] Could not load groups:', err));
   }, []);
 
@@ -474,7 +503,11 @@ function App() {
     const id = window.setInterval(async () => {
       try {
         const rl = await window.jarvis.getGitHubRateLimit();
-        setRateLimit(rl);
+        if (isIpcError(rl)) {
+          console.warn('[Jarvis] Rate limit refresh failed:', rl.error);
+        } else {
+          setRateLimit(rl);
+        }
       } catch (e) {
         console.warn('[Jarvis] Rate limit refresh failed:', e);
       }
@@ -518,13 +551,17 @@ function App() {
           const notifications = dive.kind === 'starred'
             ? await window.jarvis.listNotificationsForStarred()
             : await window.jarvis.listNotificationsForOwner(dive.owner);
-          setNotifDive((prev) => prev ? { ...prev, notifications } : null);
+          if (!isIpcError(notifications)) {
+            setNotifDive((prev) => prev ? { ...prev, notifications } : null);
+          }
         } catch { /* ignore */ }
       }
       if (repoPanel) {
         try {
           const notifications = await window.jarvis.listNotificationsForRepo(repoPanel.repoFullName);
-          setNotifRepoPanel((prev) => prev ? { ...prev, notifications } : null);
+          if (!isIpcError(notifications)) {
+            setNotifRepoPanel((prev) => prev ? { ...prev, notifications } : null);
+          }
         } catch { /* ignore */ }
       }
     })();
@@ -552,6 +589,11 @@ function App() {
         kind === 'starred'
           ? await window.jarvis.listNotificationsForStarred()
           : await window.jarvis.listNotificationsForOwner(owner);
+      if (isIpcError(notifications)) {
+        console.error('[Jarvis] Failed to load notifications:', notifications.error);
+        setNotifDive({ title: displayName, owner, kind, notifications: [], loading: false });
+        return;
+      }
       setNotifDive({ title: displayName, owner, kind, notifications, loading: false });
     } catch (err) {
       console.error('[Jarvis] Failed to load notifications:', err);
@@ -749,6 +791,11 @@ function App() {
   const handleOpenLocalRepoNotif = async (repoFullName: string) => {
     setLocalNotifRepoPanel(null);
     const notifications = await window.jarvis.listNotificationsForRepo(repoFullName);
+    if (isIpcError(notifications)) {
+      console.error('[Jarvis] Failed to load notifications for repo:', notifications.error);
+      setLocalNotifRepoPanel({ repoFullName, notifications: [] });
+      return;
+    }
     setLocalNotifRepoPanel({ repoFullName, notifications });
   };
 
@@ -830,6 +877,10 @@ function App() {
     // Refresh group list so the step badge stays current
     try {
       const list = await window.jarvis.groupsList();
+      if (isIpcError(list)) {
+        console.warn('[Jarvis] Could not refresh groups:', list.error);
+        return;
+      }
       setGroups(list);
     } catch (err) {
       console.warn('[Jarvis] Could not refresh groups:', err);
@@ -999,6 +1050,11 @@ function App() {
             onClose={handleCloseRepos}
             onOpenRepoNotif={async (repoFullName) => {
               const notifications = await window.jarvis.listNotificationsForRepo(repoFullName);
+              if (isIpcError(notifications)) {
+                console.error('[Jarvis] Failed to load notifications for repo:', notifications.error);
+                setNotifRepoPanel({ repoFullName, notifications: [] });
+                return;
+              }
               setNotifRepoPanel({ repoFullName, notifications });
             }}
             onRefreshAll={repoPanel.orgLogin !== '__starred__'
@@ -1291,7 +1347,12 @@ function BackgroundStatusBar({
 
   const loadTasks = useCallback(async () => {
     try {
-      setBackgroundTasks(await window.jarvis.listBackgroundTasks());
+      const tasks = await window.jarvis.listBackgroundTasks();
+      if (isIpcError(tasks)) {
+        console.error('[Jarvis] Failed to load background tasks:', tasks.error);
+        return;
+      }
+      setBackgroundTasks(tasks);
     } catch { /* renderer not ready */ }
   }, []);
 

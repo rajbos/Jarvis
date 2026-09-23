@@ -47,7 +47,11 @@ export function GroupsPanel({ onClose, onOpenOneNote, onOpenOneNoteCache }: Grou
       setGroups(list);
       if (selectedGroup) {
         const detail = await window.jarvis.groupsGet(selectedGroup.id);
-        setSelectedGroup(detail);
+        if (isIpcError(detail)) {
+          console.error('[Groups] Failed to load group detail:', detail.error);
+        } else {
+          setSelectedGroup(detail);
+        }
       }
     } catch (err) {
       console.error('[Groups] Failed to load groups:', err);
@@ -79,6 +83,10 @@ export function GroupsPanel({ onClose, onOpenOneNote, onOpenOneNoteCache }: Grou
   const handleSelectGroup = async (id: number) => {
     setRenamingId(null);
     const detail = await window.jarvis.groupsGet(id);
+    if (isIpcError(detail)) {
+      console.error('[Groups] Failed to load group detail:', detail.error);
+      return;
+    }
     setSelectedGroup(detail);
   };
 
@@ -96,7 +104,11 @@ export function GroupsPanel({ onClose, onOpenOneNote, onOpenOneNoteCache }: Grou
     await refresh();
     if (result.id) {
       const detail = await window.jarvis.groupsGet(result.id);
-      setSelectedGroup(detail);
+      if (isIpcError(detail)) {
+        console.error('[Groups] Failed to load group detail:', detail.error);
+      } else {
+        setSelectedGroup(detail);
+      }
     }
   };
 
@@ -135,7 +147,11 @@ export function GroupsPanel({ onClose, onOpenOneNote, onOpenOneNoteCache }: Grou
     if (!selectedGroup) return;
     await window.jarvis.groupsRemoveLocalRepo(selectedGroup.id, localRepoId);
     const detail = await window.jarvis.groupsGet(selectedGroup.id);
-    setSelectedGroup(detail);
+    if (isIpcError(detail)) {
+      console.error('[Groups] Failed to load group detail:', detail.error);
+    } else {
+      setSelectedGroup(detail);
+    }
     await refresh();
   };
 
@@ -143,7 +159,11 @@ export function GroupsPanel({ onClose, onOpenOneNote, onOpenOneNoteCache }: Grou
     if (!selectedGroup) return;
     await window.jarvis.groupsRemoveGithubRepo(selectedGroup.id, githubRepoId);
     const detail = await window.jarvis.groupsGet(selectedGroup.id);
-    setSelectedGroup(detail);
+    if (isIpcError(detail)) {
+      console.error('[Groups] Failed to load group detail:', detail.error);
+    } else {
+      setSelectedGroup(detail);
+    }
     await refresh();
   };
 
@@ -151,7 +171,11 @@ export function GroupsPanel({ onClose, onOpenOneNote, onOpenOneNoteCache }: Grou
     if (!selectedGroup) return;
     await window.jarvis.groupsAddLocalRepo(selectedGroup.id, localRepoId);
     const detail = await window.jarvis.groupsGet(selectedGroup.id);
-    setSelectedGroup(detail);
+    if (isIpcError(detail)) {
+      console.error('[Groups] Failed to load group detail:', detail.error);
+    } else {
+      setSelectedGroup(detail);
+    }
     await refresh();
   };
 
@@ -163,7 +187,11 @@ export function GroupsPanel({ onClose, onOpenOneNote, onOpenOneNoteCache }: Grou
     try {
       await window.jarvis.onedriveDiscoverForGroup(selectedGroup.id);
       const detail = await window.jarvis.groupsGet(selectedGroup.id);
-      setSelectedGroup(detail);
+      if (isIpcError(detail)) {
+        console.error('[Groups] Failed to load group detail:', detail.error);
+      } else {
+        setSelectedGroup(detail);
+      }
     } catch (err) {
       console.error('[Groups] OneDrive discover failed:', err);
     } finally {
@@ -198,11 +226,19 @@ export function GroupsPanel({ onClose, onOpenOneNote, onOpenOneNoteCache }: Grou
     try {
       await window.jarvis.onedriveRescanFiles(folderId);
       const detail = await window.jarvis.groupsGet(selectedGroup!.id);
-      setSelectedGroup(detail);
+      if (isIpcError(detail)) {
+        console.error('[Groups] Failed to load group detail:', detail.error);
+      } else {
+        setSelectedGroup(detail);
+      }
       // Refresh file list if expanded
       if (expandedFolderId === folderId) {
         const files = await window.jarvis.onedriveListFilesForFolder(folderId);
-        setFolderFiles((prev) => ({ ...prev, [folderId]: files }));
+        if (isIpcError(files)) {
+          console.error('[Groups] Failed to list OneDrive files:', files.error);
+        } else {
+          setFolderFiles((prev) => ({ ...prev, [folderId]: files }));
+        }
       }
     } catch (err) {
       console.error('[Groups] OneDrive rescan failed:', err);
@@ -219,6 +255,10 @@ export function GroupsPanel({ onClose, onOpenOneNote, onOpenOneNoteCache }: Grou
     setExpandedFolderId(folder.id);
     if (!folderFiles[folder.id]) {
       const files = await window.jarvis.onedriveListFilesForFolder(folder.id);
+      if (isIpcError(files)) {
+        console.error('[Groups] Failed to list OneDrive files:', files.error);
+        return;
+      }
       setFolderFiles((prev) => ({ ...prev, [folder.id]: files }));
       // Pre-load URL shortcut info for .url files
       if (folder.folderPath) {

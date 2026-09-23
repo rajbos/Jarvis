@@ -1,6 +1,6 @@
 /** @jsxImportSource preact */
 import { useState, useEffect } from 'preact/hooks';
-import type { Group, RuddrProjectMatch, RuddrBudget, RuddrProjectInfo } from '../types';
+import { isIpcError, type Group, type RuddrProjectMatch, type RuddrBudget, type RuddrProjectInfo } from '../types';
 import { RuddrProjectsPanel } from './RuddrProjectsPanel';
 
 // ── GroupsDashboardPanel ──────────────────────────────────────────────────────
@@ -47,6 +47,11 @@ export function GroupsDashboardPanel() {
         window.jarvis.groupsList(),
         window.jarvis.groupsGetRuddrBudgetCache().catch(() => ({ ok: true, budgets: {} })),
       ]);
+      if (isIpcError(list)) {
+        console.error('[GroupsDashboard] Failed to load groups:', list.error);
+        setLoading(false);
+        return;
+      }
       groupsList = list;
       initialBudgets = budgetCache.ok ? budgetCache.budgets : {};
       setGroups(groupsList);

@@ -1,7 +1,7 @@
 // ── Agent Approval Panel ──────────────────────────────────────────────────────
 // Shows structured findings from a completed agent session with approve/reject buttons.
 import { useState, useEffect } from 'preact/hooks';
-import type { AgentFinding, AgentSession, CopilotAvailabilityResult } from '../types';
+import { isIpcError, type AgentFinding, type AgentSession, type CopilotAvailabilityResult } from '../types';
 
 const FINDING_ICON: Record<string, string> = {
   ignore: '✅',
@@ -175,7 +175,14 @@ function EscalateButton({ session }: EscalateButtonProps) {
     let cancelled = false;
     setReadiness(null);
     window.jarvis.agentsEscalationReadiness(session.scope_value)
-      .then((result) => { if (!cancelled) setReadiness(result); })
+      .then((result) => {
+        if (cancelled) return;
+        if (isIpcError(result)) {
+          setReadiness({ ok: false, reason: result.error });
+          return;
+        }
+        setReadiness(result);
+      })
       .catch((err: unknown) => {
         if (!cancelled) setReadiness({ ok: false, reason: err instanceof Error ? err.message : String(err) });
       });
@@ -231,7 +238,12 @@ export function AgentApprovalPanel({ session, onFindingUpdate, onNotificationsDi
     if (!hasAssignCopilotFinding || session.scope_type !== 'repo') return;
     let cancelled = false;
     void window.jarvis.agentsCheckCopilotAvailability(session.scope_value).then((result) => {
-      if (!cancelled) setCopilotAvailability(result);
+      if (cancelled) return;
+      if (isIpcError(result)) {
+        console.error('[AgentApproval] Copilot availability check failed:', result.error);
+        return;
+      }
+      setCopilotAvailability(result);
     });
     return () => { cancelled = true; };
   }, [hasAssignCopilotFinding, session.scope_type, session.scope_value]);

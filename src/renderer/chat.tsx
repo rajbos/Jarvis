@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, useCallback } from 'preact/hooks';
 import './chat.css';
 import './onboarding.css';
 // Activates the global Window.jarvis type augmentation
-import type { AgentSession } from '../plugins/types';
+import { isIpcError, type AgentSession } from '../plugins/types';
 import { AgentApprovalPanel } from '../plugins/agents/AgentApprovalPanel';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -103,7 +103,13 @@ function App() {
   // ── Init: load model + register IPC event listeners (once) ──────────────
   useEffect(() => {
     window.jarvis.getSelectedOllamaModel()
-      .then(setModel)
+      .then((result) => {
+        if (isIpcError(result)) {
+          console.error('[Chat] getSelectedOllamaModel:', result.error);
+          return;
+        }
+        setModel(result);
+      })
       .catch((err: unknown) => console.error('[Chat] getSelectedOllamaModel:', err));
 
     window.jarvis.getChatAlwaysOnTop()
@@ -156,6 +162,14 @@ function App() {
     const cleanupSessionComplete = window.jarvis.onAgentSessionComplete(async (data) => {
       try {
         const session = await window.jarvis.agentsGetSession(data.sessionId);
+        if (isIpcError(session)) {
+          console.error('[Chat] agentsGetSession:', session.error);
+          setAgentError('Failed to load completed agent session.');
+          setActiveAgent(null);
+          agentStreamRef.current = '';
+          setAgentStreamText('');
+          return;
+        }
         setAgentSession(session);
         setActiveAgent(null);
       } catch (err: unknown) {
@@ -236,6 +250,10 @@ function App() {
 
   const handleFindingUpdate = useCallback(async (sessionId: number) => {
     const updated = await window.jarvis.agentsGetSession(sessionId);
+    if (isIpcError(updated)) {
+      console.error('[Chat] agentsGetSession (finding update):', updated.error);
+      return;
+    }
     setAgentSession(updated);
   }, []);
 

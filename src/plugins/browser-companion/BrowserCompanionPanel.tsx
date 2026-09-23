@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'preact/hooks';
-import type {
-  BrowserSkill,
-  BrowserSkillRun,
-  BrowserCompanionStatus,
+import {
+  isIpcError,
+  type BrowserSkill,
+  type BrowserSkillRun,
+  type BrowserCompanionStatus,
 } from '../types';
 
 // ── Skill form ────────────────────────────────────────────────────────────────
@@ -192,6 +193,10 @@ export function BrowserCompanionPanel({ onBack }: { onBack: () => void }) {
   const loadStatus = useCallback(async () => {
     try {
       const s = await window.jarvis.browserStatus();
+      if (isIpcError(s)) {
+        console.warn('[BrowserCompanion] status error:', s.error);
+        return;
+      }
       setStatus(s);
     } catch (e) {
       console.warn('[BrowserCompanion] status error:', e);
@@ -201,6 +206,10 @@ export function BrowserCompanionPanel({ onBack }: { onBack: () => void }) {
   const loadToken = useCallback(async () => {
     try {
       const result = await window.jarvis.browserGetToken();
+      if (isIpcError(result)) {
+        console.warn('[BrowserCompanion] get-token error:', result.error);
+        return;
+      }
       setPairingToken(result.token);
     } catch (e) {
       console.warn('[BrowserCompanion] get-token error:', e);
@@ -210,6 +219,10 @@ export function BrowserCompanionPanel({ onBack }: { onBack: () => void }) {
   const loadSkills = useCallback(async () => {
     try {
       const list = await window.jarvis.browserListSkills();
+      if (isIpcError(list)) {
+        console.warn('[BrowserCompanion] list skills error:', list.error);
+        return;
+      }
       setSkills(list);
     } catch (e) {
       console.warn('[BrowserCompanion] list skills error:', e);
@@ -219,6 +232,10 @@ export function BrowserCompanionPanel({ onBack }: { onBack: () => void }) {
   const loadRuns = useCallback(async (skillId?: number) => {
     try {
       const list = await window.jarvis.browserListRuns(skillId);
+      if (isIpcError(list)) {
+        console.warn('[BrowserCompanion] list runs error:', list.error);
+        return;
+      }
       setRuns(list);
     } catch (e) {
       console.warn('[BrowserCompanion] list runs error:', e);
@@ -311,6 +328,10 @@ export function BrowserCompanionPanel({ onBack }: { onBack: () => void }) {
     setRegenerating(true);
     try {
       const result = await window.jarvis.browserRegenerateToken();
+      if (isIpcError(result)) {
+        console.warn('[BrowserCompanion] regenerate-token error:', result.error);
+        return;
+      }
       setPairingToken(result.token);
       await loadStatus();
     } catch (e) {

@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'preact/hooks';
-import type {
-  DashboardSummary,
-  RepoHealthStatus,
-  HealthWarning,
-  StoredNotification,
+import {
+  isIpcError,
+  type DashboardSummary,
+  type RepoHealthStatus,
+  type HealthWarning,
+  type StoredNotification,
 } from '../types';
 import { AgentSelector } from '../agents/AgentSelector';
 // ── Failure hint helpers ──────────────────────────────────────────────────────────
@@ -280,9 +281,12 @@ function NotificationList({ repoFullName, dismissedNotifIds }: { repoFullName: s
     const check = async () => {
       try {
         let summary = await window.jarvis.githubGetWorkflowSummary(repoFullName);
+        if (isIpcError(summary)) return;
         if (summary.total_runs === 0) {
           await window.jarvis.githubFetchWorkflowRuns(repoFullName);
-          summary = await window.jarvis.githubGetWorkflowSummary(repoFullName);
+          const refreshed = await window.jarvis.githubGetWorkflowSummary(repoFullName);
+          if (isIpcError(refreshed)) return;
+          summary = refreshed;
         }
         if (cancelled) return;
 

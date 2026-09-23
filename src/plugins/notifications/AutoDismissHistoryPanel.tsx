@@ -2,6 +2,7 @@
 // Shows all automatically dismissed notifications with an over-time chart.
 import { useState, useEffect } from 'preact/hooks';
 import type { AutoDismissLogEntry, AutoDismissStats } from '../types';
+import { isIpcError } from '../types';
 
 type Granularity = 'daily' | 'weekly' | 'monthly';
 
@@ -191,8 +192,16 @@ export function AutoDismissHistoryPanel({ onClose }: { onClose: () => void }) {
     ])
       .then(([log, s]) => {
         if (cancelled) return;
-        setEntries(log);
-        setStats(s);
+        if (isIpcError(log)) {
+          console.error('[AutoDismissHistory] Failed to load log:', log.error);
+        } else {
+          setEntries(log);
+        }
+        if (isIpcError(s)) {
+          console.error('[AutoDismissHistory] Failed to load stats:', s.error);
+        } else {
+          setStats(s);
+        }
       })
       .catch((err) => {
         console.error('[AutoDismissHistory] Failed to load:', err);
