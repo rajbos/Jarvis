@@ -42,7 +42,6 @@ import { ipcMain } from 'electron';
 // Add new channels here as new plugins are created.
 const EXPECTED_CHANNELS = [
   // config plugin
-  'onboarding:status',
   'app:get-system-locale',
   'app:get-about-info',
   'app:get-preferences',
@@ -51,18 +50,15 @@ const EXPECTED_CHANNELS = [
   'app:set-startup-settings',
   // ollama plugin
   'ollama:status',
-  'ollama:list-models',
   'ollama:get-selected-model',
   'ollama:set-selected-model',
   // chat plugin
   'chat:send',
   'chat:abort',
-  'window:adjust-width',
   // github-auth plugin
   'github:oauth-status',
   'github:open-url',
   'github:get-run-url-for-check-suite',
-  'github:get-pr-state',
   'github:get-issue-state',
   'github:save-pat',
   'github:delete-pat',
@@ -79,7 +75,6 @@ const EXPECTED_CHANNELS = [
   'claude:complete-oauth',
   // discovery plugin
   'github:discovery-status',
-  'github:start-discovery',
   'github:start-pat-discovery',
   // orgs plugin
   'github:list-orgs',
@@ -96,12 +91,7 @@ const EXPECTED_CHANNELS = [
   'github:list-notifications-for-repo',
   'github:list-notifications-for-owner',
   'github:list-notifications-for-starred',
-  'github:list-pr-notifications',
-  'github:list-issue-notifications',
   'github:dismiss-notification',
-  'github:check-merged-dependabot-prs',
-  'github:check-deleted-branches',
-  'github:log-auto-dismiss',
   'github:list-auto-dismiss-log',
   'github:auto-dismiss-stats',
   // local-repos plugin
@@ -114,7 +104,6 @@ const EXPECTED_CHANNELS = [
   'local:start-index',
   'local:list-repos',
   'local:list-repos-for-folder',
-  'local:link-repo',
   'local:open-folder',
   'local:open-terminal',
   // mcp-server plugin
@@ -136,14 +125,12 @@ const EXPECTED_CHANNELS = [
   'github:get-cached-workflow-info',
   // secrets plugin
   'secrets:scan',
-  'secrets:list-for-repo',
   'secrets:list-all',
   'secrets:list-favorites',
   'secrets:add-favorite',
   'secrets:remove-favorite',
   // dashboard plugin
   'dashboard:get-summary',
-  'dashboard:get-recent-failed-runs',
   'dashboard:push-branch-upstream',
   // groups plugin
   'groups:list',
@@ -153,7 +140,6 @@ const EXPECTED_CHANNELS = [
   'groups:delete',
   'groups:add-local-repo',
   'groups:remove-local-repo',
-  'groups:add-github-repo',
   'groups:remove-github-repo',
   'groups:find-ruddr-projects',
   'groups:set-ruddr-project',
@@ -173,13 +159,11 @@ const EXPECTED_CHANNELS = [
   'onedrive:add-root',
   'onedrive:remove-root',
   'onedrive:discover-for-group',
-  'onedrive:get-folder-info',
   'onedrive:rescan-files',
   'onedrive:list-files-for-folder',
   'onedrive:read-onenote-file',
   'onedrive:read-url-shortcut',
   'onedrive:cache-onenote-files-for-group',
-  'onedrive:get-onenote-cache',
   'onedrive:get-onenote-cache-for-group',
   'shell:open-url',
   // browser-companion plugin
@@ -192,9 +176,6 @@ const EXPECTED_CHANNELS = [
   'browser:delete-skill',
   'browser:list-runs',
   'browser:run-skill',
-  'browser:navigate',
-  'browser:list-tabs',
-  'browser:get-page-content',
   'browser:focus-window',
   // background tasks
   'tasks:list',

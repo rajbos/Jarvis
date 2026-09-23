@@ -237,12 +237,4 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
     return { ok: true };
   });
 
-  ipcMain.handle('window:adjust-width', (event, delta: number) => {
-    if (typeof delta !== 'number') return { ok: false };
-    const win = BrowserWindow.fromWebContents(event.sender);
-    if (!win) return { ok: false };
-    const [w, h] = win.getSize();
-    win.setSize(Math.max(400, w + delta), h);
-    return { ok: true };
-  });
 }

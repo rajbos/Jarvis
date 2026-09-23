@@ -11,7 +11,6 @@ import {
   removeScanFolder,
   listLocalRepos,
   listLocalReposForFolder,
-  linkLocalRepo,
   runLocalDiscovery,
   type ScanProgress,
 } from '../../services/local-discovery';
@@ -156,18 +155,6 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
     } catch (err) {
       console.error('[IPC] local:list-repos-for-folder failed:', err);
       return [];
-    }
-  });
-
-  ipcMain.handle('local:link-repo', (_event, localRepoId: number, githubRepoId: number | null) => {
-    if (typeof localRepoId !== 'number') return { ok: false, error: 'Invalid localRepoId' };
-    if (githubRepoId !== null && typeof githubRepoId !== 'number') return { ok: false, error: 'Invalid githubRepoId' };
-    try {
-      linkLocalRepo(db, localRepoId, githubRepoId);
-      saveDatabase();
-      return { ok: true };
-    } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
   });
 

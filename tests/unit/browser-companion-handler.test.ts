@@ -328,21 +328,4 @@ describe('Browser-companion plugin — IPC handlers', () => {
     });
   });
 
-  // ── browser:navigate ──────────────────────────────────────────────────────
-
-  describe('browser:navigate', () => {
-    it('returns error for empty url', async () => {
-      const result = (await callHandler('browser:navigate', '')) as Record<string, unknown>;
-      expect(result).toEqual({ ok: false, error: 'Invalid url' });
-    });
-
-    it('delegates to sendCommand for valid url', async () => {
-      const result = (await callHandler('browser:navigate', 'https://example.com')) as Record<string, unknown>;
-      expect(result.ok).toBe(true);
-      expect(sendCommand).toHaveBeenCalledWith({
-        type: 'navigate',
-        payload: { url: 'https://example.com' },
-      });
-    });
-  });
 });

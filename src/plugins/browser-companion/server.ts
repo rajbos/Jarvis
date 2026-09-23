@@ -227,8 +227,8 @@ export function startBridgeServer(getWindow: () => BrowserWindow | null): void {
             entry.resolve(response);
           }
         } else {
-          // It's an event from the extension — forward to renderer
-          getWindowFn?.()?.webContents.send('browser:extension-event', msg);
+          // It's an event from the extension. No renderer listener currently
+          // consumes this (see issue #319 dead-IPC cleanup) — nothing to do.
         }
       } catch (e) {
         console.warn('[BrowserBridge] Bad message from extension:', e);

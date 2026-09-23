@@ -14,7 +14,6 @@ import {
 import { readOneNoteSection } from '../../services/onenote-reader';
 import {
   cacheOneNoteFilesForGroup,
-  getCachedPages,
   getOneNoteCacheForGroup,
 } from '../../services/onedrive-onenote-cache';
 import { readUrlShortcut } from '../../services/url-shortcut';
@@ -118,11 +117,6 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
     }
   });
 
-  ipcMain.handle('onedrive:get-folder-info', (_event, groupId: number) => {
-    if (typeof groupId !== 'number') return [];
-    return getCustomerFolderInfo(db, groupId);
-  });
-
   ipcMain.handle('onedrive:rescan-files', (_event, folderId: number) => {
     if (typeof folderId !== 'number') return { ok: false, error: 'Invalid folderId' };
     try {
@@ -188,14 +182,6 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
       const msg = err instanceof Error ? err.message : String(err);
       return { ok: false, error: msg };
     }
-  });
-
-  ipcMain.handle('onedrive:get-onenote-cache', (_event, folderId: number, relativePath: string) => {
-    if (typeof folderId !== 'number' || typeof relativePath !== 'string') {
-      return { pages: [] };
-    }
-    const pages = getCachedPages(db, folderId, relativePath);
-    return { pages };
   });
 
   ipcMain.handle('onedrive:get-onenote-cache-for-group', (_event, groupId: number) => {

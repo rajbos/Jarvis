@@ -47,7 +47,6 @@ vi.mock('../../src/services/github-secrets', () => ({
 import { registerHandlers } from '../../src/plugins/secrets/handler';
 import { loadGitHubAuth } from '../../src/services/github-oauth';
 import {
-  listSecretsForRepo,
   searchSecrets,
   listSecretFavorites,
   addSecretFavorite,
@@ -93,36 +92,6 @@ describe('Secrets plugin — IPC handlers', () => {
       vi.mocked(loadGitHubAuth).mockReturnValue(null);
       const result = (await callHandler('secrets:scan')) as Record<string, unknown>;
       expect(result.error).toBe('Not authenticated with GitHub');
-    });
-  });
-
-  // ── secrets:list-for-repo ──────────────────────────────────────────────────
-
-  describe('secrets:list-for-repo', () => {
-    it('returns error for empty repoFullName', () => {
-      const result = callHandler('secrets:list-for-repo', '');
-      expect(result).toEqual({ ok: false, error: 'Invalid repoFullName' });
-    });
-
-    it('returns error for non-string repoFullName', () => {
-      const result = callHandler('secrets:list-for-repo', 42);
-      expect(result).toEqual({ ok: false, error: 'Invalid repoFullName' });
-    });
-
-    it('delegates to listSecretsForRepo for valid input', () => {
-      vi.mocked(listSecretsForRepo).mockReturnValue([
-        { secret_name: 'MY_TOKEN' } as any, // eslint-disable-line @typescript-eslint/no-explicit-any
-      ]);
-      callHandler('secrets:list-for-repo', 'owner/repo');
-      expect(listSecretsForRepo).toHaveBeenCalledWith(db, 'owner/repo');
-    });
-
-    it('returns empty array when service throws', () => {
-      vi.mocked(listSecretsForRepo).mockImplementationOnce(() => {
-        throw new Error('db error');
-      });
-      const result = callHandler('secrets:list-for-repo', 'owner/repo');
-      expect(result).toEqual([]);
     });
   });
 

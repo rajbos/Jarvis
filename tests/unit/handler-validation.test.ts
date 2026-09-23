@@ -194,18 +194,6 @@ describe('IPC handler input validation', () => {
     });
   });
 
-  describe('local:link-repo', () => {
-    it('returns error for non-number localRepoId', () => {
-      const result = callHandler('local:link-repo', 'abc', null);
-      expect(result).toEqual({ ok: false, error: 'Invalid localRepoId' });
-    });
-
-    it('returns error for invalid githubRepoId', () => {
-      const result = callHandler('local:link-repo', 1, 'abc');
-      expect(result).toEqual({ ok: false, error: 'Invalid githubRepoId' });
-    });
-  });
-
   // ── orgs handler ──────────────────────────────────────────────────────────
 
   describe('github:set-org-enabled', () => {
@@ -268,18 +256,6 @@ describe('IPC handler input validation', () => {
 
   // ── secrets handlers ──────────────────────────────────────────────────────
 
-  describe('secrets:list-for-repo', () => {
-    it('returns error for non-string repoFullName', () => {
-      const result = callHandler('secrets:list-for-repo', 123);
-      expect(result).toEqual({ ok: false, error: 'Invalid repoFullName' });
-    });
-
-    it('returns error for empty repoFullName', () => {
-      const result = callHandler('secrets:list-for-repo', '');
-      expect(result).toEqual({ ok: false, error: 'Invalid repoFullName' });
-    });
-  });
-
   describe('secrets:add-favorite', () => {
     it('returns error for invalid targetType', () => {
       const result = callHandler('secrets:add-favorite', 'user', 'my-org');
@@ -324,23 +300,6 @@ describe('IPC handler input validation', () => {
   });
 
   // ── chat handler ──────────────────────────────────────────────────────────
-
-  describe('window:adjust-width', () => {
-    it('returns { ok: false } for non-number delta', () => {
-      const result = callHandler('window:adjust-width', 'not a number');
-      expect(result).toEqual({ ok: false });
-    });
-
-    it('returns { ok: false } for undefined delta', () => {
-      const result = callHandler('window:adjust-width', undefined);
-      expect(result).toEqual({ ok: false });
-    });
-
-    it('returns { ok: false } when no window exists', () => {
-      const result = callHandler('window:adjust-width', 100);
-      expect(result).toEqual({ ok: false });
-    });
-  });
 
   describe('chat:send', () => {
     it('returns error when messages is not an array', () => {

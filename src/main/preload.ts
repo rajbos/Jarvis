@@ -7,14 +7,12 @@ import type {
   AgentSessionCompletePayload,
   AgentSessionErrorPayload,
   AgentDebugContextPayload,
-  BrowserExtensionEventPayload,
   NewRuddrProjectsPayload,
   BrowserExtensionConnectedPayload,
   UpdateState,
 } from '../types/ipc-payloads';
 
 contextBridge.exposeInMainWorld('jarvis', {
-  getOnboardingStatus: () => ipcRenderer.invoke('onboarding:status'),
   getPreferences: () => ipcRenderer.invoke('app:get-preferences'),
   setPreferences: (prefs: Record<string, unknown>) => ipcRenderer.invoke('app:set-preferences', prefs),
   getStartupSettings: () => ipcRenderer.invoke('app:get-startup-settings'),
@@ -30,13 +28,11 @@ contextBridge.exposeInMainWorld('jarvis', {
   setStartupSettings: (settings: { openAtLogin: boolean; startMinimized: boolean }) =>
     ipcRenderer.invoke('app:set-startup-settings', settings),
   checkOllama: () => ipcRenderer.invoke('ollama:status'),
-  listOllamaModels: () => ipcRenderer.invoke('ollama:list-models'),
   getSelectedOllamaModel: () => ipcRenderer.invoke('ollama:get-selected-model'),
   setSelectedOllamaModel: (modelName: string) => ipcRenderer.invoke('ollama:set-selected-model', modelName),
   sendChatMessage: (messages: Array<{ role: string; content: string }>) =>
     ipcRenderer.invoke('chat:send', messages),
   abortChat: () => ipcRenderer.invoke('chat:abort'),
-  adjustWindowWidth: (delta: number) => ipcRenderer.invoke('window:adjust-width', delta),
   onChatToken: (callback: (token: string) => void) => {
     const listener = (_event: unknown, token: string) => callback(token);
     ipcRenderer.on('chat:token', listener);
@@ -55,7 +51,6 @@ contextBridge.exposeInMainWorld('jarvis', {
   startGitHubOAuth: () => ipcRenderer.invoke('github:start-oauth'),
   getGitHubOAuthStatus: () => ipcRenderer.invoke('github:oauth-status'),
   getDiscoveryStatus: () => ipcRenderer.invoke('github:discovery-status'),
-  startDiscovery: () => ipcRenderer.invoke('github:start-discovery'),
   startPatDiscovery: () => ipcRenderer.invoke('github:start-pat-discovery'),
   listOrgs: () => ipcRenderer.invoke('github:list-orgs'),
   setOrgEnabled: (orgLogin: string, enabled: boolean) =>
@@ -82,20 +77,10 @@ contextBridge.exposeInMainWorld('jarvis', {
     ipcRenderer.invoke('github:list-notifications-for-owner', owner),
   listNotificationsForStarred: () =>
     ipcRenderer.invoke('github:list-notifications-for-starred'),
-  listPrNotifications: () =>
-    ipcRenderer.invoke('github:list-pr-notifications'),
-  listIssueNotifications: () =>
-    ipcRenderer.invoke('github:list-issue-notifications'),
   dismissNotification: (id: string) =>
     ipcRenderer.invoke('github:dismiss-notification', id),
-  checkMergedDependabotPRs: () =>
-    ipcRenderer.invoke('github:check-merged-dependabot-prs'),
-  checkDeletedBranches: () =>
-    ipcRenderer.invoke('github:check-deleted-branches'),
   getRunUrlForCheckSuite: (checkSuiteApiUrl: string) =>
     ipcRenderer.invoke('github:get-run-url-for-check-suite', checkSuiteApiUrl),
-  githubGetPrState: (subjectUrl: string) =>
-    ipcRenderer.invoke('github:get-pr-state', subjectUrl),
   githubGetIssueState: (subjectUrl: string) =>
     ipcRenderer.invoke('github:get-issue-state', subjectUrl),
   // Local repos
@@ -109,13 +94,10 @@ contextBridge.exposeInMainWorld('jarvis', {
   localStartIndex: () => ipcRenderer.invoke('local:start-index'),
   localListRepos: () => ipcRenderer.invoke('local:list-repos'),
   localListReposForFolder: (folderPath: string) => ipcRenderer.invoke('local:list-repos-for-folder', folderPath),
-  localLinkRepo: (localRepoId: number, githubRepoId: number | null) =>
-    ipcRenderer.invoke('local:link-repo', localRepoId, githubRepoId),
   localOpenFolder: (folderPath: string) => ipcRenderer.invoke('local:open-folder', folderPath),
   localOpenTerminal: (folderPath: string) => ipcRenderer.invoke('local:open-terminal', folderPath),
   // Secrets
   scanRepoSecrets: () => ipcRenderer.invoke('secrets:scan'),
-  listSecretsForRepo: (repoFullName: string) => ipcRenderer.invoke('secrets:list-for-repo', repoFullName),
   listAllSecrets: () => ipcRenderer.invoke('secrets:list-all'),
   listSecretFavorites: () => ipcRenderer.invoke('secrets:list-favorites'),
   addSecretFavorite: (targetType: string, targetName: string) => ipcRenderer.invoke('secrets:add-favorite', targetType, targetName),
@@ -233,7 +215,6 @@ contextBridge.exposeInMainWorld('jarvis', {
     ipcRenderer.invoke('github:get-cached-workflow-info', repoFullName),
   // Dashboard
   dashboardGetSummary: () => ipcRenderer.invoke('dashboard:get-summary'),
-  dashboardGetRecentFailedRuns: () => ipcRenderer.invoke('dashboard:get-recent-failed-runs'),
   dashboardPushBranchUpstream: (repoPath: string, branch: string) =>
     ipcRenderer.invoke('dashboard:push-branch-upstream', repoPath, branch),
   // Groups
@@ -246,8 +227,6 @@ contextBridge.exposeInMainWorld('jarvis', {
     ipcRenderer.invoke('groups:add-local-repo', groupId, localRepoId),
   groupsRemoveLocalRepo: (groupId: number, localRepoId: number) =>
     ipcRenderer.invoke('groups:remove-local-repo', groupId, localRepoId),
-  groupsAddGithubRepo: (groupId: number, githubRepoId: number) =>
-    ipcRenderer.invoke('groups:add-github-repo', groupId, githubRepoId),
   groupsRemoveGithubRepo: (groupId: number, githubRepoId: number) =>
     ipcRenderer.invoke('groups:remove-github-repo', groupId, githubRepoId),
   groupsFindRuddrProjects: (groupName: string) =>
@@ -283,8 +262,6 @@ contextBridge.exposeInMainWorld('jarvis', {
   onedriveRemoveRoot: (rootId: number) => ipcRenderer.invoke('onedrive:remove-root', rootId),
   onedriveDiscoverForGroup: (groupId: number) =>
     ipcRenderer.invoke('onedrive:discover-for-group', groupId),
-  onedriveGetFolderInfo: (groupId: number) =>
-    ipcRenderer.invoke('onedrive:get-folder-info', groupId),
   onedriveRescanFiles: (folderId: number) =>
     ipcRenderer.invoke('onedrive:rescan-files', folderId),
   onedriveListFilesForFolder: (folderId: number) =>
@@ -295,8 +272,6 @@ contextBridge.exposeInMainWorld('jarvis', {
     ipcRenderer.invoke('onedrive:read-url-shortcut', filePath),
   onedriveCacheOneNoteFilesForGroup: (groupId: number) =>
     ipcRenderer.invoke('onedrive:cache-onenote-files-for-group', groupId),
-  onedriveGetOneNoteCache: (folderId: number, relativePath: string) =>
-    ipcRenderer.invoke('onedrive:get-onenote-cache', folderId, relativePath),
   onedriveGetOneNoteCacheForGroup: (groupId: number) =>
     ipcRenderer.invoke('onedrive:get-onenote-cache-for-group', groupId),
   shellOpenUrl: (url: string) =>
@@ -314,19 +289,11 @@ contextBridge.exposeInMainWorld('jarvis', {
   browserListRuns: (skillId?: number) => ipcRenderer.invoke('browser:list-runs', skillId),
   browserRunSkill: (skillId: number, testMode?: boolean) =>
     ipcRenderer.invoke('browser:run-skill', skillId, testMode ?? false),
-  browserNavigate: (url: string) => ipcRenderer.invoke('browser:navigate', url),
-  browserListTabs: () => ipcRenderer.invoke('browser:list-tabs'),
-  browserGetPageContent: (tabId?: number) => ipcRenderer.invoke('browser:get-page-content', tabId),
   browserFocusWindow: (tabId?: number) => ipcRenderer.invoke('browser:focus-window', tabId),
   onBrowserExtensionConnected: (callback: (data: BrowserExtensionConnectedPayload) => void) => {
     const listener = (_event: unknown, data: BrowserExtensionConnectedPayload) => callback(data);
     ipcRenderer.on('browser:extension-connected', listener);
     return () => { ipcRenderer.removeListener('browser:extension-connected', listener); };
-  },
-  onBrowserExtensionEvent: (callback: (event: BrowserExtensionEventPayload) => void) => {
-    const listener = (_event: unknown, payload: BrowserExtensionEventPayload) => callback(payload);
-    ipcRenderer.on('browser:extension-event', listener);
-    return () => { ipcRenderer.removeListener('browser:extension-event', listener); };
   },
   onBackgroundStatus: (callback: (message: string) => void) => {
     const listener = (_event: unknown, message: string) => callback(message);
@@ -354,7 +321,6 @@ contextBridge.exposeInMainWorld('jarvis', {
   beginClaudeOAuth: () => ipcRenderer.invoke('claude:begin-oauth'),
   completeClaudeOAuth: (code: string) => ipcRenderer.invoke('claude:complete-oauth', code),
   // Auto-dismiss log
-  logAutoDismiss: (entries: unknown[]) => ipcRenderer.invoke('github:log-auto-dismiss', entries),
   listAutoDismissLog: (limit?: number) => ipcRenderer.invoke('github:list-auto-dismiss-log', limit),
   getAutoDismissStats: () => ipcRenderer.invoke('github:auto-dismiss-stats'),
   // Background tasks

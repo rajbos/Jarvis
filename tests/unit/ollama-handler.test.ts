@@ -93,24 +93,6 @@ describe('Ollama plugin — IPC handlers', () => {
     });
   });
 
-  // ── ollama:list-models ─────────────────────────────────────────────────────
-
-  describe('ollama:list-models', () => {
-    it('returns available flag and models list', async () => {
-      const result = (await callHandler('ollama:list-models')) as Record<string, unknown>;
-      expect(result.available).toBe(true);
-      expect(result.models).toEqual(['llama3', 'mistral']);
-    });
-
-    it('returns error shape when checkOllama throws', async () => {
-      vi.mocked(checkOllama).mockRejectedValueOnce(new Error('timeout'));
-      const result = (await callHandler('ollama:list-models')) as Record<string, unknown>;
-      expect(result.available).toBe(false);
-      expect(result.models).toEqual([]);
-      expect(typeof result.error).toBe('string');
-    });
-  });
-
   // ── ollama:get-selected-model ──────────────────────────────────────────────
 
   describe('ollama:get-selected-model', () => {

@@ -5,7 +5,6 @@ import type { BrowserWindow } from 'electron';
 import { loadGitHubAuth, loadGitHubPat } from '../../services/github-oauth';
 import {
   scanUserRepoSecrets,
-  listSecretsForRepo,
   searchSecrets,
   listSecretFavorites,
   addSecretFavorite,
@@ -32,16 +31,6 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
       return result;
     } catch (err) {
       return { error: err instanceof Error ? err.message : String(err) };
-    }
-  });
-
-  ipcMain.handle('secrets:list-for-repo', (_event, repoFullName: string) => {
-    if (typeof repoFullName !== 'string' || repoFullName.length === 0) return { ok: false, error: 'Invalid repoFullName' };
-    try {
-      return listSecretsForRepo(db, repoFullName);
-    } catch (err) {
-      console.error('[IPC] secrets:list-for-repo failed:', err);
-      return [];
     }
   });
 

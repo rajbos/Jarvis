@@ -11,7 +11,6 @@ import {
   deleteGroup,
   addLocalRepoToGroup,
   removeLocalRepoFromGroup,
-  addGithubRepoToGroup,
   removeGithubRepoFromGroup,
   parseRuddrNames,
   loadRuddrProjectsFromDb,
@@ -545,19 +544,6 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
     if (typeof localRepoId !== 'number') return { ok: false, error: 'Invalid localRepoId' };
     try {
       removeLocalRepoFromGroup(db, groupId, localRepoId);
-      saveDatabase();
-      return { ok: true };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return { ok: false, error: msg };
-    }
-  });
-
-  ipcMain.handle('groups:add-github-repo', (_event, groupId: number, githubRepoId: number) => {
-    if (typeof groupId !== 'number') return { ok: false, error: 'Invalid groupId' };
-    if (typeof githubRepoId !== 'number') return { ok: false, error: 'Invalid githubRepoId' };
-    try {
-      addGithubRepoToGroup(db, groupId, githubRepoId);
       saveDatabase();
       return { ok: true };
     } catch (err) {

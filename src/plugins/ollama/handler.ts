@@ -15,16 +15,6 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
     }
   });
 
-  ipcMain.handle('ollama:list-models', async () => {
-    try {
-      const result = await checkOllama();
-      return { available: result.available, models: result.models, error: result.error };
-    } catch (err) {
-      console.error('[ollama] ollama:list-models error:', err);
-      return { available: false, models: [], error: err instanceof Error ? err.message : String(err) };
-    }
-  });
-
   ipcMain.handle('ollama:get-selected-model', () => {
     return getConfigValue(db, 'selected_ollama_model');
   });

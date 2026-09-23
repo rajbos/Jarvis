@@ -77,12 +77,11 @@ import {
   addOnedriveRoot,
   removeOnedriveRoot,
   discoverCustomerFolderForGroup,
-  getCustomerFolderInfo,
   scanFilesForFolder,
   listFilesForFolder,
 } from '../../src/services/onedrive';
 import { getGroup } from '../../src/services/groups';
-import { getCachedPages, getOneNoteCacheForGroup } from '../../src/services/onedrive-onenote-cache';
+import { getOneNoteCacheForGroup } from '../../src/services/onedrive-onenote-cache';
 import { shell } from 'electron';
 
 // ── Helper ────────────────────────────────────────────────────────────────────
@@ -213,20 +212,6 @@ describe('OneDrive plugin — IPC handlers', () => {
     });
   });
 
-  // ── onedrive:get-folder-info ──────────────────────────────────────────────
-
-  describe('onedrive:get-folder-info', () => {
-    it('returns empty array for non-number groupId', () => {
-      const result = callHandler('onedrive:get-folder-info', 'bad');
-      expect(result).toEqual([]);
-    });
-
-    it('delegates to getCustomerFolderInfo for valid groupId', () => {
-      callHandler('onedrive:get-folder-info', 1);
-      expect(getCustomerFolderInfo).toHaveBeenCalledWith(db, 1);
-    });
-  });
-
   // ── onedrive:rescan-files ─────────────────────────────────────────────────
 
   describe('onedrive:rescan-files', () => {
@@ -314,25 +299,6 @@ describe('OneDrive plugin — IPC handlers', () => {
     it('rejects paths outside configured OneDrive roots', () => {
       const result = callHandler('onedrive:read-url-shortcut', '/path/../secret.url') as Record<string, unknown>;
       expect(result).toEqual({ ok: false, error: 'File must be inside a configured OneDrive root' });
-    });
-  });
-
-  // ── onedrive:get-onenote-cache ────────────────────────────────────────────
-
-  describe('onedrive:get-onenote-cache', () => {
-    it('returns empty pages for non-number folderId', () => {
-      const result = callHandler('onedrive:get-onenote-cache', 'bad', 'path') as Record<string, unknown>;
-      expect(result).toEqual({ pages: [] });
-    });
-
-    it('returns empty pages for non-string relativePath', () => {
-      const result = callHandler('onedrive:get-onenote-cache', 1, 42) as Record<string, unknown>;
-      expect(result).toEqual({ pages: [] });
-    });
-
-    it('delegates to getCachedPages for valid inputs', () => {
-      callHandler('onedrive:get-onenote-cache', 1, 'OneNote/Section.one');
-      expect(getCachedPages).toHaveBeenCalledWith(db, 1, 'OneNote/Section.one');
     });
   });
 

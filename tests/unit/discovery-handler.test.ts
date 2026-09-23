@@ -142,15 +142,6 @@ describe('Discovery plugin — IPC handlers', () => {
     });
   });
 
-  // ── github:start-discovery ────────────────────────────────────────────────
-
-  describe('github:start-discovery', () => {
-    it('returns started:true even when no auth is configured', () => {
-      const result = callHandler('github:start-discovery');
-      expect(result).toEqual({ started: true });
-    });
-  });
-
   // ── github:start-pat-discovery ────────────────────────────────────────────
 
   describe('github:start-pat-discovery', () => {

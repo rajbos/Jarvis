@@ -95,46 +95,6 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
     return null;
   });
 
-  ipcMain.handle('github:get-pr-state', async (_event, subjectUrl: string) => {
-    if (typeof subjectUrl !== 'string') return null;
-    if (!/^https:\/\/api\.github\.com\/repos\/[^/]+\/[^/]+\/pulls\/\d+$/.test(subjectUrl)) return null;
-    const auth = loadGitHubAuth(db);
-    if (!auth) return null;
-    try {
-      const res = await fetch(subjectUrl, {
-        headers: {
-          Authorization: `Bearer ${auth.accessToken}`,
-          Accept: 'application/vnd.github+json',
-          'X-GitHub-Api-Version': '2022-11-28',
-        },
-      });
-      if (!res.ok) return null;
-      const pr = (await res.json()) as {
-        state: string;
-        merged: boolean;
-        user: { login: string } | null;
-        merged_by: { login: string } | null;
-      };
-      const authorLogin = (pr.user?.login ?? '').toLowerCase();
-      const isDependabot = authorLogin.includes('dependabot');
-      const myLogin = auth.login.toLowerCase();
-      let state: 'open' | 'closed' | 'merged';
-      let closedByMe: boolean;
-      if (pr.merged) {
-        state = 'merged';
-        closedByMe = (pr.merged_by?.login ?? '').toLowerCase() === myLogin;
-      } else if (pr.state === 'closed') {
-        state = 'closed';
-        // No direct "closed_by" field in GitHub PR API; use PR authorship as proxy:
-        // if you authored the PR and it was closed without merge, you most likely closed it.
-        closedByMe = authorLogin === myLogin;
-      } else {
-        return { state: 'open' as const, isDependabot, closedByMe: false };
-      }
-      return { state, isDependabot, closedByMe };
-    } catch { return null; }
-  });
-
   ipcMain.handle('github:get-issue-state', async (_event, subjectUrl: string) => {
     if (typeof subjectUrl !== 'string') return null;
     if (!/^https:\/\/api\.github\.com\/repos\/[^/]+\/[^/]+\/issues\/\d+$/.test(subjectUrl)) return null;
