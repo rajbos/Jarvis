@@ -17,6 +17,11 @@ permissions:
   issues: read
   pull-requests: read
 
+network:
+  allowed:
+    - defaults
+    - node
+
 tools:
   bash: ["*"]
   cache-memory:
