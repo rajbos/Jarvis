@@ -1,0 +1,48 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "src/main/preload.ts",
+    "src/mcp-server/index.ts",
+    "src/renderer/index.tsx",
+    "src/renderer/settings.tsx",
+    "src/renderer/chat.tsx",
+    "src/renderer/about.tsx",
+    "src/browser-extension/background.js",
+    "src/browser-extension/content.js",
+    "src/browser-extension/popup.js",
+    "scripts/*.mjs",
+    "scripts/*.js",
+    "dev/*.js",
+    ".github/skills/**/*.js"
+  ],
+  "project": [
+    "src/**/*.{ts,tsx,js}",
+    "scripts/**/*.{js,mjs}",
+    "dev/**/*.js",
+    ".github/skills/**/*.js"
+  ],
+  "ignoreDependencies": [
+    // Not imported as code: the OneNote tests point at the fixture files this
+    // package ships under node_modules/@joplin/onenote-converter/test-data.
+    "@joplin/onenote-converter"
+  ],
+  "rules": {
+    "files": "off",
+    "exports": "off",
+    "types": "off",
+    "nsExports": "off",
+    "nsTypes": "off",
+    "enumMembers": "off",
+    "namespaceMembers": "off",
+    "duplicates": "off",
+    "cycles": "off",
+    "catalog": "off",
+    "catalogReferences": "off",
+    "optionalPeerDependencies": "off",
+    "binaries": "off",
+    "unresolved": "off",
+    "unlisted": "error",
+    "dependencies": "error",
+    "devDependencies": "error"
+  }
+}

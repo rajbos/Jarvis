@@ -22,7 +22,8 @@
     "lint:fix": "eslint src --fix",
     "test:coverage": "vitest run --coverage",
     "build:mcp": "tsc --project tsconfig.json && echo MCP server built",
-    "mcp": "npm run build:mcp && node dist/mcp-server/index.js"
+    "mcp": "npm run build:mcp && node dist/mcp-server/index.js",
+    "check:deps": "knip"
   },
   "author": "",
   "license": "MIT",
@@ -35,10 +36,9 @@
     "concurrently": "^10.0.5",
     "electron": "^44.4.3",
     "electron-builder": "^26.15.3",
-    "electron-reloader": "^1.2.3",
     "esbuild": "^0.28.2",
     "eslint": "^10.11.0",
-    "nodemon": "^3.1.14",
+    "knip": "^6.37.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.70.0",
     "vitest": "^5.0.0"
