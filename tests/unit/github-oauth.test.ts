@@ -141,6 +141,16 @@ describe('pollForToken', () => {
     expect(result?.access_token).toBe('gho_abc');
   });
 
+  it('never logs the access token', async () => {
+    const spies = [vi.spyOn(console, 'log'), vi.spyOn(console, 'info'), vi.spyOn(console, 'warn'), vi.spyOn(console, 'error'), vi.spyOn(console, 'debug')];
+    globalThis.fetch = vi.fn(async () =>
+      new Response(JSON.stringify({ access_token: 'gho_secret_value', token_type: 'bearer', scope: 'repo' }), { status: 200 }),
+    );
+    await pollForToken('client-id', 'device-code');
+    const logged = spies.flatMap((spy) => spy.mock.calls.flat().map((arg) => (typeof arg === 'string' ? arg : JSON.stringify(arg))));
+    expect(logged.join(' ')).not.toContain('gho_secret_value');
+  });
+
   it('throws on OAuth error response', async () => {
     globalThis.fetch = vi.fn(async () =>
       new Response(JSON.stringify({ error: 'expired_token', error_description: 'The device code has expired' }), { status: 200 }),
