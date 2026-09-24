@@ -13,6 +13,7 @@ import {
 import { listLocalRepos } from '../../services/local-discovery';
 import { normalizeGitHubUrl } from '../../services/local-discovery';
 import { safeHandle } from '../ipc-utils';
+import { logger } from '../../services/logger';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -200,7 +201,7 @@ export function registerHandlers(
         generatedAt: new Date().toISOString(),
       };
     } catch (err) {
-      console.error('[dashboard] dashboard:get-summary error:', err);
+      logger.error('[dashboard] dashboard:get-summary error:', err);
       return {
         repos: [],
         warnings: [],

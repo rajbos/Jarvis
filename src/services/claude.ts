@@ -12,6 +12,7 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
+import { logger } from './logger';
 
 // ── Credentials ───────────────────────────────────────────────────────────────
 
@@ -57,7 +58,7 @@ export function loadClaudeCodeCredentials(filePath: string = getClaudeCredential
       scopes: Array.isArray(oauth.scopes) ? oauth.scopes : undefined,
     };
   } catch (err) {
-    console.warn('[Claude] Failed to read Claude Code credentials:', err instanceof Error ? err.message : err);
+    logger.warn('[Claude] Failed to read Claude Code credentials:', err instanceof Error ? err.message : err);
     return null;
   }
 }

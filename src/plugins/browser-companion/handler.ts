@@ -3,6 +3,7 @@ import type { BrowserWindow } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import { safeHandle } from '../ipc-utils';
 import { saveDatabase } from '../../storage/database';
+import { logger } from '../../services/logger';
 import {
   startBridgeServer,
   getBridgeStatus,
@@ -241,7 +242,7 @@ export function registerHandlers(
           if (extractResponse.ok) {
             extractedData = extractResponse.data;
           } else {
-            console.warn('[BrowserSkill] Extract step warning:', extractResponse.error);
+            logger.warn('[BrowserSkill] Extract step warning:', extractResponse.error);
           }
         } else {
           extractedData = evalResponse.data;

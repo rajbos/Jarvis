@@ -2,6 +2,7 @@ import { app, Notification, type BrowserWindow } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import type { UpdateState } from '../types/ipc-payloads';
 import { safeHandle } from '../plugins/ipc-utils';
+import { logger } from '../services/logger';
 
 const INITIAL_CHECK_DELAY_MS = 15_000;
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
@@ -37,7 +38,7 @@ export function getUpdateState(): UpdateState {
 
 function showNotification(title: string, body: string, onClick?: () => void): void {
   if (!Notification.isSupported()) {
-    console.log(`[Updates] ${title}: ${body}`);
+    logger.info(`[Updates] ${title}: ${body}`);
     return;
   }
 
@@ -93,7 +94,7 @@ function registerListeners(): void {
   });
 
   autoUpdater.on('error', (error) => {
-    console.warn('[Updates] Update check failed:', error);
+    logger.warn('[Updates] Update check failed:', error);
     if (state.status !== 'downloaded') {
       setState({ status: 'error', error: error instanceof Error ? error.message : String(error) });
     }
@@ -126,7 +127,7 @@ export async function checkForUpdates(manual = false): Promise<void> {
     // electron-updater usually reports failures via the 'error' event, but some
     // failures (e.g. missing publish config) only reject this promise — make sure
     // those are visible too instead of leaving the UI stuck on 'checking'.
-    console.warn('[Updates] Update check failed:', error);
+    logger.warn('[Updates] Update check failed:', error);
     if (state.status !== 'downloaded') {
       setState({ status: 'error', error: error instanceof Error ? error.message : String(error) });
     }

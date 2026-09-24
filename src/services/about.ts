@@ -2,6 +2,7 @@
 import { app, net } from 'electron';
 import fs from 'fs';
 import path from 'path';
+import { logger } from './logger';
 
 export const REPO_URL = 'https://github.com/rajbos/Jarvis';
 const RELEASE_TAG_API = 'https://api.github.com/repos/rajbos/Jarvis/releases/tags/';
@@ -81,7 +82,7 @@ async function fetchReleaseInfo(tag: string): Promise<{ releasedAt: string | nul
       releaseCache.set(tag, result);
     }
   } catch (error) {
-    console.warn('[About] Release lookup failed:', error);
+    logger.warn('[About] Release lookup failed:', error);
   }
 
   return result;

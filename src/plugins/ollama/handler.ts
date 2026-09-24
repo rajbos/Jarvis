@@ -4,13 +4,14 @@ import type { BrowserWindow } from 'electron';
 import { checkOllama } from '../../services/ollama';
 import { getConfigValue, setConfigValue, saveDatabase } from '../../storage/database';
 import { safeHandle } from '../ipc-utils';
+import { logger } from '../../services/logger';
 
 export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWindow | null): void {
   safeHandle('ollama:status', async () => {
     try {
       return await checkOllama();
     } catch (err) {
-      console.error('[ollama] ollama:status error:', err);
+      logger.error('[ollama] ollama:status error:', err);
       return { available: false, models: [], error: err instanceof Error ? err.message : String(err) };
     }
   });

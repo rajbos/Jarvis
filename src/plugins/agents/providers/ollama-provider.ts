@@ -5,6 +5,7 @@
 // output in a single pass — the Claude Agent SDK provider does not need it.
 import { streamChat } from '../../../services/ollama';
 import { extractJsonResult } from '../json-extract';
+import { logger } from '../../../services/logger';
 import type { AgentProvider, AgentRunCallbacks, AgentRunOutcome } from './types';
 
 const PHASE2_TIMEOUT_MS = 60_000;
@@ -58,7 +59,7 @@ export const ollamaProvider: AgentProvider = {
       const phase2Msg = isTimeout
         ? 'Phase 2 timed out after 60 s — could not extract structured findings'
         : (phase2Err instanceof Error ? phase2Err.message : String(phase2Err));
-      console.warn('[Agents] Phase 2 failed:', phase2Msg);
+      logger.warn('[Agents] Phase 2 failed:', phase2Msg);
       callbacks.onFindingsError?.(phase2Msg);
       // Fall through — extractJsonResult will be tried on whatever partial response was received,
       // then fall back to phase-1 text before giving up.

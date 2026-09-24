@@ -20,6 +20,7 @@ import {
   setLastDiscoveryProgress,
 } from './state';
 import { safeHandle } from '../ipc-utils';
+import { logger } from '../../services/logger';
 
 export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWindow | null): void {
   safeHandle('github:discovery-status', () => {
@@ -59,9 +60,9 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
       setLastDiscoveryProgress(doneProgress);
       getWindow()?.webContents.send('github:discovery-progress', doneProgress);
       getWindow()?.webContents.send('github:discovery-complete', doneProgress);
-      console.log('[Discovery] PAT-only discovery finished');
+      logger.info('[Discovery] PAT-only discovery finished');
     }).catch((err) => {
-      console.error('[Discovery] PAT-only discovery failed:', err);
+      logger.error('[Discovery] PAT-only discovery failed:', err);
     });
     return { started: true };
   });
@@ -78,7 +79,7 @@ export function startDiscoveryIfAuthed(
   const sendStatus = (msg: string) => getWindow()?.webContents.send('app:background-status', msg);
 
   if (activeDiscovery && !activeDiscovery.aborted) {
-    console.log('[Discovery] Already running, skipping');
+    logger.debug('[Discovery] Already running, skipping');
     return;
   }
 
@@ -86,7 +87,7 @@ export function startDiscoveryIfAuthed(
   const forcePatFlag = getConfigValue(db, 'force_pat_discovery') === '1';
 
   if (forceOAuthFlag) {
-    console.log('[Discovery] force_oauth_discovery flag is set — running full discovery');
+    logger.info('[Discovery] force_oauth_discovery flag is set — running full discovery');
     force = true;
     setConfigValue(db, 'force_oauth_discovery', '0');
     saveDatabase();
@@ -95,7 +96,7 @@ export function startDiscoveryIfAuthed(
   if (!force && forcePatFlag) {
     const pat = loadGitHubPat(db);
     if (pat) {
-      console.log('[Discovery] force_pat_discovery flag is set — running PAT-only discovery');
+      logger.info('[Discovery] force_pat_discovery flag is set — running PAT-only discovery');
       setConfigValue(db, 'force_pat_discovery', '0');
       saveDatabase();
 
@@ -111,9 +112,9 @@ export function startDiscoveryIfAuthed(
         setLastDiscoveryProgress(doneProgress);
         getWindow()?.webContents.send('github:discovery-progress', doneProgress);
         getWindow()?.webContents.send('github:discovery-complete', doneProgress);
-        console.log('[Discovery] PAT-only discovery finished');
+        logger.info('[Discovery] PAT-only discovery finished');
       }).catch((err) => {
-        console.error('[Discovery] PAT-only discovery failed:', err);
+        logger.error('[Discovery] PAT-only discovery failed:', err);
       });
       return;
     } else {
@@ -135,24 +136,24 @@ export function startDiscoveryIfAuthed(
       const isStale = !lastIndexed || (Date.now() - new Date(lastIndexed + 'Z').getTime()) > ONE_HOUR_MS;
 
       if (isStale) {
-        console.log('[Discovery] Data is stale, running lightweight refresh');
+        logger.info('[Discovery] Data is stale, running lightweight refresh');
         sendStatus('Syncing repos\u2026');
         const pat = loadGitHubPat(db);
         runLightweightRefresh(db, auth.accessToken, (progress) => {
           setLastDiscoveryProgress(progress);
           getWindow()?.webContents.send('github:discovery-progress', progress);
         }, pat, auth.login).then(() => {
-          console.log('[Discovery] Lightweight refresh finished');
+          logger.info('[Discovery] Lightweight refresh finished');
           sendStatus('Repos synced.');
           getWindow()?.webContents.send('github:discovery-complete', lastDiscoveryProgress);
         }).catch((err) => {
-          console.error('[Discovery] Lightweight refresh failed:', err);
+          logger.error('[Discovery] Lightweight refresh failed:', err);
         });
       } else {
-        console.log(`[Discovery] Already have ${existing.orgs.length} org(s) in DB and data is fresh, skipping.`);
+        logger.debug(`[Discovery] Already have ${existing.orgs.length} org(s) in DB and data is fresh, skipping.`);
 
         if (existing.starredRepoCount === 0) {
-          console.log('[Discovery] No starred repos indexed yet - fetching stars now');
+          logger.info('[Discovery] No starred repos indexed yet - fetching stars now');
           sendStatus('Fetching starred repos\u2026');
           const starState: DiscoveryState = { callsSinceLastPause: 0, aborted: false, lastRateLimit: null };
           const starProgress: DiscoveryProgress = { phase: 'starred', orgsFound: 0, reposFound: 0 };
@@ -164,14 +165,14 @@ export function startDiscoveryIfAuthed(
             setLastDiscoveryProgress(done);
             sendStatus(starProgress.reposFound + ' starred repo' + (starProgress.reposFound !== 1 ? 's' : '') + ' loaded.');
             getWindow()?.webContents.send('github:discovery-complete', done);
-          }).catch((err) => console.error('[Discovery] Starred-only fetch failed:', err));
+          }).catch((err) => logger.error('[Discovery] Starred-only fetch failed:', err));
         }
       }
       return;
     }
   }
 
-  console.log('[Discovery] Starting background discovery for', auth.login);
+  logger.info('[Discovery] Starting background discovery for', auth.login);
   sendStatus('Discovering repos\u2026');
   const pat = loadGitHubPat(db);
   runDiscovery(db, auth.accessToken, (progress) => {
@@ -179,11 +180,11 @@ export function startDiscoveryIfAuthed(
     getWindow()?.webContents.send('github:discovery-progress', progress);
   }, pat, auth.login).then((_state) => {
     setActiveDiscovery(null);
-    console.log('[Discovery] Finished');
+    logger.info('[Discovery] Finished');
     sendStatus('Discovery finished — ' + (lastDiscoveryProgress?.reposFound ?? 0) + ' repos found.');
     getWindow()?.webContents.send('github:discovery-complete', lastDiscoveryProgress);
   }).catch((err) => {
     setActiveDiscovery(null);
-    console.error('[Discovery] Failed:', err);
+    logger.error('[Discovery] Failed:', err);
   });
 }

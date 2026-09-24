@@ -19,6 +19,7 @@ import { loadConfig } from '../../agent/config';
 import { completeOnboardingStep } from '../../agent/onboarding';
 import { startDiscoveryIfAuthed } from '../discovery/handler';
 import { safeHandle } from '../ipc-utils';
+import { logger } from '../../services/logger';
 
 let activeDeviceFlow: {
   deviceCode: string;
@@ -29,7 +30,7 @@ let activeDeviceFlow: {
 
 export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWindow | null): void {
   safeHandle('github:oauth-status', async () => {
-    console.log('[IPC] github:oauth-status called');
+    logger.debug('[IPC] github:oauth-status called');
     const auth = loadGitHubAuth(db);
     if (auth) {
       let avatarUrl = auth.avatarUrl;
@@ -42,7 +43,7 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
             saveDatabase();
           }
         } catch (e) {
-          console.warn('[IPC] Could not backfill avatar_url:', e);
+          logger.warn('[IPC] Could not backfill avatar_url:', e);
         }
       }
       return { authenticated: true, login: auth.login, scopes: auth.scopes, avatarUrl };
@@ -191,7 +192,7 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
   });
 
   safeHandle('github:start-oauth', async () => {
-    console.log('[IPC] github:start-oauth called');
+    logger.debug('[IPC] github:start-oauth called');
     if (activeDeviceFlow) {
       activeDeviceFlow.aborted = true;
       activeDeviceFlow = null;
@@ -321,7 +322,7 @@ async function startPollingLoop(
     } catch (err: unknown) {
       const msg = String(err);
       if (msg.includes('slow_down')) continue;
-      console.error('[Poll] Fatal error, aborting:', msg);
+      logger.error('[Poll] Fatal error, aborting:', msg);
       activeDeviceFlow = null;
       getWindow()?.webContents.send('github:oauth-complete', { error: msg });
       return;
@@ -353,7 +354,7 @@ export async function checkPatForExpiry(
   if (!pat) return false;
   const result = await validateGitHubPat(pat);
   if (result.status !== 'expired') return false;
-  console.warn('[PAT] Stored Personal Access Token is expired or revoked');
+  logger.warn('[PAT] Stored Personal Access Token is expired or revoked');
   getWindow()?.webContents.send('github:pat-expired');
   return true;
 }

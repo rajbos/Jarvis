@@ -5,6 +5,7 @@ import * as path from 'path';
 import type { BrowserWindow } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import { safeHandle } from '../ipc-utils';
+import { logger } from '../../services/logger';
 import { getConfigValue, saveDatabase } from '../../storage/database';
 import { loadGitHubAuth, loadGitHubPat } from '../../services/github-oauth';
 import {
@@ -164,7 +165,7 @@ export function registerHandlers(
       void runAgentSession(db, sessionId, agentDef, scopeType, scopeValue, model, getWindow, workflowFilter).then(() => {
         saveDatabase();
       }).catch((err: unknown) => {
-        console.error('[Agents] Session runner error:', err);
+        logger.error('[Agents] Session runner error:', err);
         saveDatabase();
       });
 
@@ -230,7 +231,7 @@ export function registerHandlers(
     ).then(() => {
       saveDatabase();
     }).catch((err: unknown) => {
-      console.error('[Agents] Escalated session runner error:', err);
+      logger.error('[Agents] Escalated session runner error:', err);
       saveDatabase();
     });
 
@@ -310,11 +311,11 @@ export function registerHandlers(
             }
           } catch (e) {
             errors.push(`${id}: ${e instanceof Error ? e.message : String(e)}`);
-            console.warn(`[Agents] Could not mark notification ${id} read:`, e);
+            logger.warn(`[Agents] Could not mark notification ${id} read:`, e);
           }
         }
         if (errors.length > 0) {
-          console.warn('[Agents] close_notifications partial errors:', errors);
+          logger.warn('[Agents] close_notifications partial errors:', errors);
         }
         // Mark executed and return dismissed IDs so renderer can update its lists
         db.run(

@@ -3,6 +3,7 @@ import { shell, Notification } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import type { BrowserWindow } from 'electron';
 import { safeHandle } from '../ipc-utils';
+import { logger } from '../../services/logger';
 import {
   loadClaudeCodeCredentials,
   refreshClaudeToken,
@@ -40,7 +41,7 @@ function loadStoredCredentials(db: SqlJsDatabase): ClaudeCredentials | null {
       subscriptionType: getConfigValue(db, KEY_SUBSCRIPTION) ?? undefined,
     };
   } catch {
-    console.warn('[Claude] Failed to decrypt stored token — clearing it');
+    logger.warn('[Claude] Failed to decrypt stored token — clearing it');
     clearStoredCredentials(db);
     return null;
   }
@@ -119,7 +120,7 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
         source: resolved.source,
       };
     } catch (err) {
-      console.error('[claude] claude:status error:', err);
+      logger.error('[claude] claude:status error:', err);
       return { connected: false, error: err instanceof Error ? err.message : String(err) };
     }
   });
@@ -175,7 +176,7 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
         fetchedAt,
       };
     } catch (err) {
-      console.error('[claude] claude:rate-limit error:', err);
+      logger.error('[claude] claude:rate-limit error:', err);
       return {
         configured: true,
         limited: false,

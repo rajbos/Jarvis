@@ -1,4 +1,5 @@
 import { ipcMain } from 'electron';
+import { logger } from '../services/logger';
 
 export type IpcErrorResponse = { ok: false; error: string };
 
@@ -15,13 +16,13 @@ export function safeHandle(channel: string, handler: IpcHandler): void {
       const result = handler(event, ...args);
       if (result && typeof (result as Promise<unknown>).then === 'function') {
         return (result as Promise<unknown>).catch((error: unknown) => {
-          console.error(`[IPC] ${channel} failed:`, error);
+          logger.error(`[IPC] ${channel} failed:`, error);
           return { ok: false, error: errorMessage(error) } satisfies IpcErrorResponse;
         });
       }
       return result;
     } catch (error) {
-      console.error(`[IPC] ${channel} failed:`, error);
+      logger.error(`[IPC] ${channel} failed:`, error);
       return { ok: false, error: errorMessage(error) } satisfies IpcErrorResponse;
     }
   });

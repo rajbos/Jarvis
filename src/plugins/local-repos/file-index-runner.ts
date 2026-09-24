@@ -17,6 +17,7 @@ import {
   type IndexProgress,
   type IndexStatus,
 } from '../../services/local-file-index';
+import { logger } from '../../services/logger';
 
 /** Persist after this many repos so a crash mid-run keeps most of the work. */
 const SAVE_EVERY_REPOS = 10;
@@ -68,31 +69,31 @@ export function startFileIndexIfNeeded(
   force = false,
 ): boolean {
   if (indexRunning && !force) {
-    console.log('[FileIndex] Already running, skipping');
+    logger.debug('[FileIndex] Already running, skipping');
     return false;
   }
   const indexPath = resolveIndexPath();
   if (!indexPath) {
-    console.log('[FileIndex] Main database path unknown, skipping');
+    logger.debug('[FileIndex] Main database path unknown, skipping');
     return false;
   }
   const repos = listLocalRepos(db).map((r) => ({ localPath: r.localPath, name: r.name }));
   if (repos.length === 0) {
-    console.log('[FileIndex] No local repos discovered yet, skipping');
+    logger.debug('[FileIndex] No local repos discovered yet, skipping');
     return false;
   }
 
   indexRunning = true;
   lastError = null;
-  console.log('[FileIndex] Indexing', repos.length, 'local repo(s) →', indexPath);
+  logger.info('[FileIndex] Indexing', repos.length, 'local repo(s) →', indexPath);
 
   void runFileIndex(indexPath, repos, getWindow)
     .then((done) => {
-      console.log('[FileIndex] Finished —', done.filesIndexed, 'file(s) (re)indexed across', done.reposDone, 'repo(s)');
+      logger.info('[FileIndex] Finished —', done.filesIndexed, 'file(s) (re)indexed across', done.reposDone, 'repo(s)');
     })
     .catch((err: unknown) => {
       lastError = err instanceof Error ? err.message : String(err);
-      console.error('[FileIndex] Failed:', err);
+      logger.error('[FileIndex] Failed:', err);
     })
     .finally(() => {
       indexRunning = false;

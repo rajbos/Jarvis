@@ -1,3 +1,5 @@
+import { logger } from './logger';
+
 const OLLAMA_BASE_URL = 'http://127.0.0.1:11434';
 
 export interface ChatMessage {
@@ -55,7 +57,7 @@ export async function checkOllama(): Promise<OllamaStatus> {
     const data = (await response.json()) as { models?: OllamaModel[] };
     const models: OllamaModel[] = data.models ?? [];
 
-    console.log(`[Ollama] Available — ${models.length} model(s):`, models.map((m) => m.name).join(', ') || '(none)');
+    logger.debug(`[Ollama] Available — ${models.length} model(s):`, models.map((m) => m.name).join(', ') || '(none)');
 
     return {
       available: true,
@@ -67,7 +69,7 @@ export async function checkOllama(): Promise<OllamaStatus> {
     const isAbort = message.includes('abort') || message.includes('AbortError');
     const reason = isAbort ? 'Connection timed out' : message;
 
-    console.log('[Ollama] Not available:', reason);
+    logger.debug('[Ollama] Not available:', reason);
     return {
       available: false,
       baseUrl: OLLAMA_BASE_URL,

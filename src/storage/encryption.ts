@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import path from 'path';
 import fs from 'fs';
+import { logger } from '../services/logger';
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 16;
@@ -95,7 +96,7 @@ function getOrCreateKeyWithSafeStorage(
       // Key length mismatch — fall through to regenerate
     } catch {
       // Corrupted or stale file — fall through to regenerate
-      console.warn('[Encryption] Failed to decrypt keystore.bin — regenerating key');
+      logger.warn('[Encryption] Failed to decrypt keystore.bin — regenerating key');
     }
   }
 
@@ -106,9 +107,9 @@ function getOrCreateKeyWithSafeStorage(
     const dir = path.dirname(keyFile);
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(keyFile, encrypted, { mode: 0o600 });
-    console.log('[Encryption] New key generated and persisted to keystore.bin');
+    logger.debug('[Encryption] New key generated and persisted to keystore.bin');
   } catch (err) {
-    console.error('[Encryption] Failed to persist keystore.bin:', err);
+    logger.error('[Encryption] Failed to persist keystore.bin:', err);
     // Return the in-memory key anyway — it will be regenerated next session
   }
   return key;
@@ -137,9 +138,9 @@ function getOrCreateFallbackKey(): Buffer {
     try {
       const data = fs.readFileSync(keyFile);
       if (data.length === 32) return data;
-      console.warn('[Encryption] keystore.fallback.bin has unexpected length — regenerating');
+      logger.warn('[Encryption] keystore.fallback.bin has unexpected length — regenerating');
     } catch {
-      console.warn('[Encryption] Failed to read keystore.fallback.bin — regenerating');
+      logger.warn('[Encryption] Failed to read keystore.fallback.bin — regenerating');
     }
   }
 
@@ -148,9 +149,9 @@ function getOrCreateFallbackKey(): Buffer {
     const dir = path.dirname(keyFile);
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(keyFile, key, { mode: 0o600 });
-    console.log('[Encryption] New fallback key generated and persisted to keystore.fallback.bin');
+    logger.debug('[Encryption] New fallback key generated and persisted to keystore.fallback.bin');
   } catch (err) {
-    console.error('[Encryption] Failed to persist keystore.fallback.bin:', err);
+    logger.error('[Encryption] Failed to persist keystore.fallback.bin:', err);
   }
   return key;
 }
@@ -184,7 +185,7 @@ export function getEncryptionKey(): Buffer {
     if (safeStorage.isEncryptionAvailable()) {
       return getOrCreateKeyWithSafeStorage(safeStorage);
     }
-    console.warn(
+    logger.warn(
       '[Encryption] Electron safeStorage is available but isEncryptionAvailable() ' +
       'returned false. Falling back to file-based key store. ' +
       'Set JARVIS_ENCRYPTION_KEY to avoid this weaker fallback.',
