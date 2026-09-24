@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'preact/hooks';
-import type {
-  DashboardSummary,
-  RepoHealthStatus,
-  HealthWarning,
-  StoredNotification,
+import {
+  isIpcError,
+  type DashboardSummary,
+  type RepoHealthStatus,
+  type HealthWarning,
+  type StoredNotification,
 } from '../types';
 import { AgentSelector } from '../agents/AgentSelector';
 // ── Failure hint helpers ──────────────────────────────────────────────────────────
@@ -256,7 +257,12 @@ function NotificationList({ repoFullName, dismissedNotifIds }: { repoFullName: s
     setLoading(true);
     try {
       const list = await window.jarvis.listNotificationsForRepo(repoFullName);
-      setNotifications(list);
+      if (isIpcError(list)) {
+        console.error('[Dashboard] Failed to load notifications:', list.error);
+        setNotifications([]);
+      } else {
+        setNotifications(list);
+      }
     } catch (err) {
       console.error('[Dashboard] Failed to load notifications:', err);
       setNotifications([]);
@@ -280,9 +286,12 @@ function NotificationList({ repoFullName, dismissedNotifIds }: { repoFullName: s
     const check = async () => {
       try {
         let summary = await window.jarvis.githubGetWorkflowSummary(repoFullName);
+        if (isIpcError(summary)) return;
         if (summary.total_runs === 0) {
           await window.jarvis.githubFetchWorkflowRuns(repoFullName);
-          summary = await window.jarvis.githubGetWorkflowSummary(repoFullName);
+          const refreshed = await window.jarvis.githubGetWorkflowSummary(repoFullName);
+          if (isIpcError(refreshed)) return;
+          summary = refreshed;
         }
         if (cancelled) return;
 
@@ -962,7 +971,12 @@ export function DashboardPanel({ dismissedNotifIds, onOpenHistory }: { dismissed
         window.jarvis.getGitHubOAuthStatus(),
       ]);
       setSummary(sum);
-      setCurrentUserLogin(authStatus.login ?? null);
+      if (isIpcError(authStatus)) {
+        console.error('[Dashboard] Failed to load GitHub auth status:', authStatus.error);
+        setCurrentUserLogin(null);
+      } else {
+        setCurrentUserLogin(authStatus.login ?? null);
+      }
     } catch (err) {
       console.error('[Dashboard] Failed to load:', err);
     } finally {
@@ -1011,7 +1025,12 @@ export function DashboardPanel({ dismissedNotifIds, onOpenHistory }: { dismissed
       } catch (err) {
         console.warn('[Dashboard] Could not refresh notifications for triage:', repoFullName, err);
       }
-      return window.jarvis.listNotificationsForRepo(repoFullName);
+      const list = await window.jarvis.listNotificationsForRepo(repoFullName);
+      if (isIpcError(list)) {
+        console.warn('[Dashboard] Could not list notifications for triage:', repoFullName, list.error);
+        return [];
+      }
+      return list;
     }))
       .then((lists) => {
         if (cancelled) return;

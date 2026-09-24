@@ -1,6 +1,6 @@
 // ── Agent Selector Modal ──────────────────────────────────────────────────────
 import { useState, useEffect } from 'preact/hooks';
-import type { AgentDefinition } from '../types';
+import { isIpcError, type AgentDefinition } from '../types';
 import { relativeAge } from '../shared/utils';
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -25,6 +25,10 @@ export function AgentSelector({ repoFullName, workflowFilter, onClose, onSession
   useEffect(() => {
     window.jarvis.agentsList()
       .then((defs) => {
+        if (isIpcError(defs)) {
+          setError(defs.error);
+          return;
+        }
         setAgents(defs);
         if (defs.length > 0) setSelectedId(defs[0].id);
       })
@@ -32,7 +36,7 @@ export function AgentSelector({ repoFullName, workflowFilter, onClose, onSession
       .finally(() => setLoading(false));
 
     window.jarvis.githubGetCachedWorkflowInfo(repoFullName)
-      .then(setCachedInfo)
+      .then((info) => setCachedInfo(isIpcError(info) ? { fetchedAt: null, runCount: 0 } : info))
       .catch(() => setCachedInfo({ fetchedAt: null, runCount: 0 }))
       .finally(() => setCacheLoading(false));
   }, [repoFullName]);
@@ -45,7 +49,7 @@ export function AgentSelector({ repoFullName, workflowFilter, onClose, onSession
 
   const refreshCachedInfo = () =>
     window.jarvis.githubGetCachedWorkflowInfo(repoFullName)
-      .then(setCachedInfo)
+      .then((info) => { if (!isIpcError(info)) setCachedInfo(info); })
       .catch(() => {/* non-fatal */});
 
   const handleFetchWorkflows = async () => {

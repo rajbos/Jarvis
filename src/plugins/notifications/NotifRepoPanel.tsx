@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'preact/hooks';
 import { relativeAge, notifDescription, isDirect } from '../shared/utils';
-import type { StoredNotification } from '../types';
+import { isIpcError, type StoredNotification } from '../types';
 import { AgentSelector } from '../agents/AgentSelector';
 
 // Minimum notifications in a group to show the Analyse button
@@ -212,9 +212,12 @@ export function NotifRepoPanel({ repoFullName, notifications, onClose, onRefresh
     const check = async () => {
       try {
         let summary = await window.jarvis.githubGetWorkflowSummary(repoFullName);
+        if (isIpcError(summary)) return;
         if (summary.total_runs === 0) {
           await window.jarvis.githubFetchWorkflowRuns(repoFullName);
-          summary = await window.jarvis.githubGetWorkflowSummary(repoFullName);
+          const refreshed = await window.jarvis.githubGetWorkflowSummary(repoFullName);
+          if (isIpcError(refreshed)) return;
+          summary = refreshed;
         }
         if (cancelled) return;
 

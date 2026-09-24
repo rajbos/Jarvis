@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'preact/hooks';
 import { renderChatMarkdown } from '../shared/utils';
 import { AgentApprovalPanel } from '../agents/AgentApprovalPanel';
 import type { AgentSession } from '../types';
+import { isIpcError } from '../types';
 
 interface ChatMsg {
   role: 'user' | 'assistant';
@@ -163,6 +164,10 @@ export function EmbeddedChatPanel({ visible, selectedModel, onClose, onAgentStar
       // Fetch full session with findings for approval panel
       window.jarvis.agentsGetSession?.(sessionId)
         .then((session) => {
+          if (isIpcError(session)) {
+            console.error('[Chat] agentsGetSession:', session.error);
+            return;
+          }
           if (session) setAgentSession(session);
         })
         .catch((err: unknown) => console.error('[Chat] agentsGetSession:', err));
@@ -322,7 +327,13 @@ export function EmbeddedChatPanel({ visible, selectedModel, onClose, onAgentStar
           session={agentSession}
           onFindingUpdate={(sessionId) => {
             window.jarvis.agentsGetSession?.(sessionId)
-              .then((s) => { if (s) setAgentSession(s); })
+              .then((s) => {
+                if (isIpcError(s)) {
+                  console.error('[Chat] agentsGetSession refresh:', s.error);
+                  return;
+                }
+                if (s) setAgentSession(s);
+              })
               .catch((err: unknown) => console.error('[Chat] agentsGetSession refresh:', err));
           }}
           onNotificationsDismissed={onNotificationsDismissed}
