@@ -1,5 +1,6 @@
 import type { Database as SqlJsDatabase } from 'sql.js';
 import { encrypt, decrypt, getEncryptionKey } from '../storage/encryption';
+import { logger } from './logger';
 
 const GITHUB_DEVICE_CODE_URL = 'https://github.com/login/device/code';
 const GITHUB_ACCESS_TOKEN_URL = 'https://github.com/login/oauth/access_token';
@@ -80,7 +81,8 @@ export async function pollForToken(
   }
 
   const data = await response.json() as Record<string, string>;
-  console.log('[OAuth] pollForToken raw response:', JSON.stringify(data));
+  // Never log the raw response: on success it contains the plaintext access_token.
+  logger.debug('[OAuth] pollForToken response:', data.error ?? (data.access_token ? 'token received' : 'no token'));
 
   if (data.error === 'authorization_pending') {
     return null;
@@ -90,7 +92,7 @@ export async function pollForToken(
     // GitHub wants us to back off; it sends the new required interval in seconds
     if (flow && data.interval) {
       flow.intervalMs = (Number(data.interval) + 5) * 1000;
-      console.log('[OAuth] slow_down — new interval:', flow.intervalMs, 'ms');
+      logger.debug('[OAuth] slow_down — new interval:', flow.intervalMs, 'ms');
     }
     return null;
   }
