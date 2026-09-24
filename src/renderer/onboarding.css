@@ -2129,6 +2129,44 @@ body.onboarding {
   text-align: center;
 }
 
+/* ── Shared IPC error banner ─────────────────────────────────────────────── */
+.ipc-error-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  margin-bottom: 0.6rem;
+  background: rgba(244, 67, 54, 0.1);
+  border: 1px solid rgba(244, 67, 54, 0.4);
+  border-radius: 6px;
+  color: #f88;
+  font-size: 0.85rem;
+}
+
+.ipc-error-banner-icon {
+  flex-shrink: 0;
+}
+
+.ipc-error-banner-text {
+  flex: 1;
+  word-break: break-word;
+}
+
+.ipc-error-banner-retry {
+  flex-shrink: 0;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.8rem;
+  background: rgba(244, 67, 54, 0.18);
+  border: 1px solid rgba(244, 67, 54, 0.5);
+  color: #fff;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.ipc-error-banner-retry:hover {
+  background: rgba(244, 67, 54, 0.3);
+}
+
 /* ── Local repos layout ──────────────────────────────────────────────────── */
 .local-layout {
   display: flex;

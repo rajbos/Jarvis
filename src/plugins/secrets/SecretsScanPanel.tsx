@@ -1,4 +1,5 @@
 import type { RepoSecret, SecretsScanResult, SecretsScanProgress } from '../types';
+import { IpcErrorBanner } from '../shared/IpcErrorBanner';
 
 interface SecretsScanPanelProps {
   scanning: boolean;
@@ -7,6 +8,10 @@ interface SecretsScanPanelProps {
   secrets: RepoSecret[];
   onScan: () => void;
   onClose: () => void;
+  /** Set when loading the persisted secrets list/favorites from the DB failed. */
+  listError?: string | null;
+  /** Reloads the persisted secrets list; shown as a Retry button next to listError. */
+  onRetryList?: () => void;
 }
 
 export function SecretsScanPanel({
@@ -16,6 +21,8 @@ export function SecretsScanPanel({
   secrets,
   onScan,
   onClose,
+  listError,
+  onRetryList,
 }: SecretsScanPanelProps) {
   // Group secrets by repo
   const byRepo = new Map<string, string[]>();
@@ -31,6 +38,10 @@ export function SecretsScanPanel({
         <span>Repository Secrets</span>
         <button class="repo-panel-close" title="Close" onClick={onClose}>&times;</button>
       </div>
+
+      {listError && (
+        <IpcErrorBanner message={listError} onRetry={onRetryList} />
+      )}
 
       <p style={{ fontSize: '0.82rem', color: '#c8c8c8', marginBottom: '0.75rem' }}>
         Scans your personal repositories for GitHub Actions secret names via the GitHub API.

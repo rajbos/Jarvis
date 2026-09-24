@@ -21,7 +21,8 @@ import { LocalFolderConfigPanel } from '../plugins/local-repos/LocalFolderConfig
 import { LocalFolderPanel } from '../plugins/local-repos/LocalFolderPanel';
 import { LocalSubfolderPanel } from '../plugins/local-repos/LocalSubfolderPanel';
 import { LocalRepoPanelView } from '../plugins/local-repos/LocalRepoPanelView';
-import { getReposUnder, hasDeepRepos, setSystemLocale, formatNumber, formatDurationUntil } from '../plugins/shared/utils';
+import { getReposUnder, hasDeepRepos, setSystemLocale, formatNumber, formatDurationUntil, describeIpcFailure } from '../plugins/shared/utils';
+import { IpcErrorBanner } from '../plugins/shared/IpcErrorBanner';
 import { SecretsStep } from '../plugins/secrets/SecretsStep';
 import { SecretsScanPanel } from '../plugins/secrets/SecretsScanPanel';
 import { DashboardPanel } from '../plugins/dashboard/DashboardPanel';
@@ -77,11 +78,13 @@ function App() {
   const [discoveryFinished, setDiscoveryFinished] = useState(false);
   const [showOrgPanel, setShowOrgPanel] = useState(false);
   const [orgData, setOrgData] = useState<OrgListResult | null>(null);
+  const [orgsError, setOrgsError] = useState<string | null>(null);
   const [repoPanel, setRepoPanel] = useState<{
     orgLogin: string | null;
     displayName: string;
     repos: Repo[];
     loading: boolean;
+    error?: string | null;
   } | null>(null);
   const [activeOrg, setActiveOrg] = useState<string | null>(null);
   const [ollamaStatus, setOllamaStatus] = useState<OllamaStatus | null>(null);
@@ -109,6 +112,8 @@ function App() {
 
   // Local repos state
   const [localFolders, setLocalFolders] = useState<ScanFolder[] | null>(null);
+  const [localFoldersError, setLocalFoldersError] = useState<string | null>(null);
+  const [localReposError, setLocalReposError] = useState<string | null>(null);
   const [showLocalPanel, setShowLocalPanel] = useState(false);
   const [showLocalConfig, setShowLocalConfig] = useState(false);
   const [localNavStack, setLocalNavStack] = useState<{ path: string; repos: LocalRepo[] }[]>([]);
@@ -128,6 +133,7 @@ function App() {
   const [secretsLastResult, setSecretsLastResult] = useState<SecretsScanResult | null>(null);
   const [secretsScanProgress, setSecretsScanProgress] = useState<SecretsScanProgress | null>(null);
   const [secretsList, setSecretsList] = useState<RepoSecret[]>([]);
+  const [secretsListError, setSecretsListError] = useState<string | null>(null);
   const [favoritedOrgs, setFavoritedOrgs] = useState<Set<string>>(new Set());
   const [favoritedRepos, setFavoritedRepos] = useState<Set<string>>(new Set());
 
@@ -255,63 +261,74 @@ function App() {
   }, []);
 
   // Local folders check on mount
-  useEffect(() => {
-    (async () => {
-      try {
-        const folders = await window.jarvis.localGetFolders();
-        if (isIpcError(folders)) {
-          console.error('[Jarvis] Local folders check failed:', folders.error);
-          setLocalFolders([]);
-          return;
-        }
-        setLocalFolders(folders);
-        const status = await window.jarvis.localGetScanStatus();
-        if (status.running) {
-          setLocalScanning(true);
-          if (status.progress) setLocalScanProgress(status.progress);
-        } else if (status.progress?.phase === 'done') {
-          setLocalScanProgress(status.progress);
-          setLocalScanFinished(true);
-        }
-      } catch (err) {
-        console.error('[Jarvis] Local folders check failed:', err);
-        setLocalFolders([]);
+  const loadLocalFolders = useCallback(async () => {
+    setLocalFoldersError(null);
+    try {
+      const folders = await window.jarvis.localGetFolders();
+      if (isIpcError(folders)) {
+        console.error('[Jarvis] Local folders check failed:', folders.error);
+        setLocalFoldersError(describeIpcFailure('load local folders', folders.error));
+        return;
       }
-    })();
+      setLocalFolders(folders);
+      const status = await window.jarvis.localGetScanStatus();
+      if (status.running) {
+        setLocalScanning(true);
+        if (status.progress) setLocalScanProgress(status.progress);
+      } else if (status.progress?.phase === 'done') {
+        setLocalScanProgress(status.progress);
+        setLocalScanFinished(true);
+      }
+    } catch (err) {
+      console.error('[Jarvis] Local folders check failed:', err);
+      setLocalFoldersError(describeIpcFailure('load local folders', err instanceof Error ? err.message : String(err)));
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadLocalFolders();
+    // Only run on mount — retries are triggered explicitly via loadLocalFolders().
   }, []);
 
   // Load persisted secrets from DB on mount + register progress listener
+  const loadSecretsData = useCallback(async () => {
+    setSecretsListError(null);
+    try {
+      const persisted = await window.jarvis.listAllSecrets();
+      if (isIpcError(persisted)) {
+        console.warn('[Jarvis] Could not load persisted secrets:', persisted.error);
+        setSecretsListError(describeIpcFailure('load secrets', persisted.error));
+      } else if (persisted.length > 0) {
+        setSecretsList(persisted);
+        setSecretsScanned(true);
+      }
+    } catch (err) {
+      console.warn('[Jarvis] Could not load persisted secrets:', err);
+      setSecretsListError(describeIpcFailure('load secrets', err instanceof Error ? err.message : String(err)));
+    }
+    try {
+      const favs = await window.jarvis.listSecretFavorites();
+      if (isIpcError(favs)) {
+        console.warn('[Jarvis] Could not load secret favorites:', favs.error);
+        setSecretsListError((prev) => prev ?? describeIpcFailure('load secret favorites', favs.error));
+      } else {
+        const orgs = new Set(favs.filter((f: SecretFavorite) => f.target_type === 'org').map((f: SecretFavorite) => f.target_name));
+        const repos = new Set(favs.filter((f: SecretFavorite) => f.target_type === 'repo').map((f: SecretFavorite) => f.target_name));
+        setFavoritedOrgs(orgs);
+        setFavoritedRepos(repos);
+      }
+    } catch (err) {
+      console.warn('[Jarvis] Could not load secret favorites:', err);
+      setSecretsListError((prev) => prev ?? describeIpcFailure('load secret favorites', err instanceof Error ? err.message : String(err)));
+    }
+  }, []);
+
   useEffect(() => {
     const unsubSecrets = window.jarvis.onSecretsProgress((progress: SecretsScanProgress) => {
       setSecretsScanProgress(progress);
     });
 
-    (async () => {
-      try {
-        const persisted = await window.jarvis.listAllSecrets();
-        if (isIpcError(persisted)) {
-          console.warn('[Jarvis] Could not load persisted secrets:', persisted.error);
-        } else if (persisted.length > 0) {
-          setSecretsList(persisted);
-          setSecretsScanned(true);
-        }
-      } catch (err) {
-        console.warn('[Jarvis] Could not load persisted secrets:', err);
-      }
-      try {
-        const favs = await window.jarvis.listSecretFavorites();
-        if (isIpcError(favs)) {
-          console.warn('[Jarvis] Could not load secret favorites:', favs.error);
-        } else {
-          const orgs = new Set(favs.filter((f: SecretFavorite) => f.target_type === 'org').map((f: SecretFavorite) => f.target_name));
-          const repos = new Set(favs.filter((f: SecretFavorite) => f.target_type === 'repo').map((f: SecretFavorite) => f.target_name));
-          setFavoritedOrgs(orgs);
-          setFavoritedRepos(repos);
-        }
-      } catch (err) {
-        console.warn('[Jarvis] Could not load secret favorites:', err);
-      }
-    })();
+    void loadSecretsData();
 
     return unsubSecrets;
   }, []);
@@ -376,26 +393,11 @@ function App() {
       setLocalScanProgress(progress);
       setLocalScanning(false);
       setLocalScanFinished(true);
-      window.jarvis.localGetFolders().then((folders) => {
-        if (isIpcError(folders)) {
-          console.error('[Jarvis] Local folders reload failed:', folders.error);
-          return;
-        }
-        setLocalFolders(folders);
-      }).catch(console.error);
+      void loadLocalFolders();
       // Reload repos in nav stack so counts stay fresh after scan
       const stack = localNavStackRef.current;
       if (stack.length > 0) {
-        window.jarvis.localListReposForFolder(stack[0].path)
-          .then((repos) => {
-            if (isIpcError(repos)) {
-              console.error('[Jarvis] Failed to reload local repos:', repos.error);
-              return;
-            }
-            setLocalNavStack([{ path: stack[0].path, repos }]);
-            setLocalLeafFolder(null);
-          })
-          .catch(console.error);
+        void loadLocalRepos(stack[0].path);
       }
     });
 
@@ -408,18 +410,28 @@ function App() {
     };
   }, []);
 
+  const loadOrgs = useCallback(() => {
+    if (!oauthStatus?.authenticated) return;
+    setOrgsError(null);
+    window.jarvis.listOrgs().then((data) => {
+      if (isIpcError(data)) {
+        console.error('[Jarvis] Failed to load orgs:', data.error);
+        setOrgsError(describeIpcFailure('load organizations', data.error));
+        return;
+      }
+      setOrgData(data);
+    }).catch((err) => {
+      console.error('[Jarvis] Failed to load orgs:', err);
+      setOrgsError(describeIpcFailure('load organizations', err instanceof Error ? err.message : String(err)));
+    });
+  }, [oauthStatus?.authenticated]);
+
   // Auto-resize Electron window when panels open/close
   useEffect(() => {
     if (showOrgPanel && oauthStatus?.authenticated) {
-      window.jarvis.listOrgs().then((data) => {
-        if (isIpcError(data)) {
-          console.error('[Jarvis] Failed to load orgs:', data.error);
-          return;
-        }
-        setOrgData(data);
-      }).catch(console.error);
+      loadOrgs();
     }
-  }, [showOrgPanel, discoveryFinished, oauthStatus?.authenticated]);
+  }, [showOrgPanel, discoveryFinished, oauthStatus?.authenticated, loadOrgs]);
 
   const doFetchNotifications = useCallback(async () => {
     if (!oauthStatus?.authenticated) return;
@@ -579,6 +591,7 @@ function App() {
   const closeAllPanels = () => {
     // GitHub
     setShowOrgPanel(false);
+    setOrgsError(null);
     setRepoPanel(null);
     setActiveOrg(null);
     setNotifRepoPanel(null);
@@ -589,6 +602,7 @@ function App() {
     setLocalNavStack([]);
     setLocalLeafFolder(null);
     setLocalNotifRepoPanel(null);
+    setLocalReposError(null);
     // Secrets
     setShowSecretsPanel(false);
     // Groups
@@ -631,13 +645,14 @@ function App() {
         : await window.jarvis.listReposForOrg(orgLogin);
       if (isIpcError(result)) {
         console.error('[Jarvis] Failed to load repos:', result.error);
-        setRepoPanel(null);
+        setRepoPanel({ orgLogin, displayName, repos: [], loading: false, error: describeIpcFailure('load repositories', result.error) });
         return;
       }
       setRepoPanel({ orgLogin, displayName, repos: result, loading: false });
     } catch (err) {
       console.error('[Jarvis] Failed to load repos:', err);
-      setRepoPanel(null);
+      const message = err instanceof Error ? err.message : String(err);
+      setRepoPanel({ orgLogin, displayName, repos: [], loading: false, error: describeIpcFailure('load repositories', message) });
     }
   };
 
@@ -648,6 +663,27 @@ function App() {
 
   // ── Local repo handlers ───────────────────────────────────────────────────
 
+  // Last folder path requested via loadLocalRepos, kept for the error banner's Retry button.
+  const [lastLocalFolderPath, setLastLocalFolderPath] = useState<string | null>(null);
+
+  const loadLocalRepos = useCallback(async (folderPath: string) => {
+    setLastLocalFolderPath(folderPath);
+    setLocalReposError(null);
+    try {
+      const repos = await window.jarvis.localListReposForFolder(folderPath);
+      if (isIpcError(repos)) {
+        console.error('[Jarvis] Failed to load local repos:', repos.error);
+        setLocalReposError(describeIpcFailure('load local repos', repos.error));
+        return;
+      }
+      setLocalNavStack([{ path: folderPath, repos }]);
+      setLocalLeafFolder(null);
+    } catch (err) {
+      console.error('[Jarvis] Failed to load local repos:', err);
+      setLocalReposError(describeIpcFailure('load local repos', err instanceof Error ? err.message : String(err)));
+    }
+  }, []);
+
   const handleLocalStepClick = () => {
     const wasOpen = showLocalPanel || showLocalConfig;
     closeAllPanels();
@@ -656,15 +692,7 @@ function App() {
         setShowLocalPanel(true);
         if (localFolders.length === 1) {
           // Auto-navigate into the single configured folder
-          void window.jarvis.localListReposForFolder(localFolders[0].path)
-            .then((repos) => {
-              if (isIpcError(repos)) {
-                console.error('[Jarvis] Failed to load local repos:', repos.error);
-                return;
-              }
-              setLocalNavStack([{ path: localFolders[0].path, repos }]);
-            })
-            .catch(console.error);
+          void loadLocalRepos(localFolders[0].path);
         }
       } else {
         setShowLocalConfig(true);
@@ -676,22 +704,12 @@ function App() {
   const handleLocalAddFolder = async () => {
     const result = await window.jarvis.localAddFolder();
     if (result.canceled || result.error) return;
-    const folders = await window.jarvis.localGetFolders();
-    if (isIpcError(folders)) {
-      console.error('[Jarvis] Failed to reload local folders:', folders.error);
-      return;
-    }
-    setLocalFolders(folders);
+    await loadLocalFolders();
   };
 
   const handleLocalRemoveFolder = async (folderPath: string) => {
     await window.jarvis.localRemoveFolder(folderPath);
-    const folders = await window.jarvis.localGetFolders();
-    if (isIpcError(folders)) {
-      console.error('[Jarvis] Failed to reload local folders:', folders.error);
-      return;
-    }
-    setLocalFolders(folders);
+    await loadLocalFolders();
     if (localNavStack.length > 0 && localNavStack[0].path === folderPath) {
       setLocalNavStack([]);
       setLocalLeafFolder(null);
@@ -704,17 +722,7 @@ function App() {
   };
 
   const handleLocalSelectFolder = async (folderPath: string) => {
-    try {
-      const repos = await window.jarvis.localListReposForFolder(folderPath);
-      if (isIpcError(repos)) {
-        console.error('[Jarvis] Failed to load local repos:', repos.error);
-        return;
-      }
-      setLocalNavStack([{ path: folderPath, repos }]);
-      setLocalLeafFolder(null);
-    } catch (err) {
-      console.error('[Jarvis] Failed to load local repos:', err);
-    }
+    await loadLocalRepos(folderPath);
   };
 
   const handleLocalSubfolderClick = (childPath: string) => {
@@ -803,10 +811,13 @@ function App() {
       const result = await window.jarvis.listAllSecrets();
       if (isIpcError(result)) {
         console.error('[Jarvis] Failed to reload secrets:', result.error);
+        setSecretsListError(describeIpcFailure('reload secrets', result.error));
         return [];
       }
+      setSecretsListError(null);
       return result;
-    } catch {
+    } catch (err) {
+      setSecretsListError(describeIpcFailure('reload secrets', err instanceof Error ? err.message : String(err)));
       return [];
     }
   };
@@ -967,6 +978,12 @@ function App() {
           loginDisabled={loginDisabled}
         />
 
+        {showOrgPanel && orgsError && !orgData && (
+          <div class="org-panel">
+            <IpcErrorBanner message={orgsError} onRetry={loadOrgs} />
+          </div>
+        )}
+
         {showOrgPanel && orgData && (
           <OrgPanel
             orgs={orgData.orgs}
@@ -995,6 +1012,8 @@ function App() {
             currentUserLogin={currentUserLogin}
             notifCounts={notifCounts}
             sortByNotifs={sortByNotifsRepo}
+            error={repoPanel.error}
+            onRetry={() => void handleSelectOrg(repoPanel.orgLogin, repoPanel.displayName)}
             onSortToggle={() => setSortByNotifsRepo((v) => !v)}
             onClose={handleCloseRepos}
             onOpenRepoNotif={async (repoFullName) => {
@@ -1050,6 +1069,21 @@ function App() {
             onToggle={handleLocalStepClick}
           />
         </div>
+
+        {localFoldersError && (
+          <div class="org-panel">
+            <IpcErrorBanner message={localFoldersError} onRetry={() => void loadLocalFolders()} />
+          </div>
+        )}
+
+        {localReposError && (
+          <div class="org-panel">
+            <IpcErrorBanner
+              message={localReposError}
+              onRetry={lastLocalFolderPath ? () => void loadLocalRepos(lastLocalFolderPath) : undefined}
+            />
+          </div>
+        )}
 
         {showLocalConfig && localFolders !== null && (
           <LocalFolderConfigPanel
@@ -1133,6 +1167,8 @@ function App() {
             scanProgress={secretsScanProgress}
             lastResult={secretsLastResult}
             secrets={secretsList}
+            listError={secretsListError}
+            onRetryList={() => void loadSecretsData()}
             onScan={handleSecretsStartScan}
             onClose={() => setShowSecretsPanel(false)}
           />

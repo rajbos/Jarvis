@@ -451,3 +451,22 @@ describe('deduplicateLocalRepos', () => {
     expect(deduplicateLocalRepos([])).toEqual([]);
   });
 });
+
+// ── describeIpcFailure ──────────────────────────────────────────────────────────
+import { describeIpcFailure } from '../../src/plugins/shared/utils';
+
+describe('describeIpcFailure', () => {
+  it('prefixes the error with "Failed to <action>"', () => {
+    expect(describeIpcFailure('load organizations', 'network timeout'))
+      .toBe('Failed to load organizations: network timeout');
+  });
+
+  it('includes the raw error message verbatim', () => {
+    expect(describeIpcFailure('load repos', 'GitHub API rate limit exceeded'))
+      .toContain('GitHub API rate limit exceeded');
+  });
+
+  it('handles an empty error string', () => {
+    expect(describeIpcFailure('load secrets', '')).toBe('Failed to load secrets: ');
+  });
+});

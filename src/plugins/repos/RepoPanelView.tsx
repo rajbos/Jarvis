@@ -1,5 +1,6 @@
 import { useState } from 'preact/hooks';
 import { RepoCard } from './RepoCard';
+import { IpcErrorBanner } from '../shared/IpcErrorBanner';
 import type { Repo, NotificationCounts } from '../types';
 
 interface RepoPanelViewProps {
@@ -11,6 +12,10 @@ interface RepoPanelViewProps {
   notifCounts: NotificationCounts | null;
   sortByNotifs: boolean;
   favoritedRepos?: Set<string>;
+  /** Set when the last load of this panel's repos failed. */
+  error?: string | null;
+  /** Reloads the repos for this panel; shown as a Retry button next to the error. */
+  onRetry?: () => void;
   onSortToggle: () => void;
   onClose: () => void;
   onOpenRepoNotif: (repoFullName: string) => void;
@@ -28,6 +33,8 @@ export function RepoPanelView({
   notifCounts,
   sortByNotifs,
   favoritedRepos,
+  error,
+  onRetry,
   onSortToggle,
   onClose,
   onOpenRepoNotif,
@@ -80,7 +87,10 @@ export function RepoPanelView({
         )}
         <button class="repo-panel-close" title="Close" onClick={onClose}>&times;</button>
       </div>
-      {showFilter && (
+      {error && (
+        <IpcErrorBanner message={error} onRetry={onRetry} />
+      )}
+      {!error && showFilter && (
         <div class="repo-panel-filter">
           <label class="filter-label">
             <input
@@ -92,12 +102,12 @@ export function RepoPanelView({
           </label>
         </div>
       )}
-      {loading && (
+      {!error && loading && (
         <div class="repo-panel-loading">
           <span class="repo-panel-spinner" />{' '}Loading repositories...
         </div>
       )}
-      {!loading && (
+      {!error && !loading && (
         filteredRepos.length === 0 ? (
           <div style={{ color: '#99a', fontSize: '0.85rem', padding: '0.5rem' }}>
             {repos.length === 0 ? 'No repositories found' : 'No repositories (all filtered)'}
