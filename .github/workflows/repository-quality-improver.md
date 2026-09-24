@@ -33,7 +33,6 @@ tools:
 
 safe-outputs:
   create-issue:
-    expires: 2d
     labels: [quality, automated-analysis]
     max: 1
   add-comment:
@@ -94,6 +93,77 @@ The history file should contain:
 }
 ```
 
+## Phase 0.5: Check for Existing Open Issues and Durable Topic History
+
+Before selecting a focus area, check both the open issues (to avoid duplicates) and the full issue history in any state (the durable record of past topics — cache-memory can and does get lost between runs).
+
+### 0.5.1 Search for Existing Open Issues
+
+Use the GitHub CLI to search for open issues with the `quality` and `automated-analysis` labels:
+
+```bash
+gh issue list \
+  --repo "${{ github.repository }}" \
+  --label "quality" \
+  --label "automated-analysis" \
+  --state open \
+  --json number,title,body,createdAt,labels \
+  --limit 10 \
+  > /tmp/gh-aw/agent/existing_quality_issues.json
+
+EXISTING_COUNT=$(jq length /tmp/gh-aw/agent/existing_quality_issues.json)
+echo "Found $EXISTING_COUNT existing open quality improvement issue(s)"
+
+if [ "$EXISTING_COUNT" -gt 0 ]; then
+  echo "Existing issues:"
+  jq -r '.[] | "  #\(.number): \(.title) (created \(.createdAt))"' /tmp/gh-aw/agent/existing_quality_issues.json
+fi
+```
+
+### 0.5.2 Load Durable Issue History (Any State)
+
+Open-issue search alone misses topics whose issue was already closed (e.g. expired or resolved). Fetch the last ~50 `quality` + `automated-analysis` issues in any state as the durable record of previously reported topics:
+
+```bash
+gh issue list \
+  --repo "${{ github.repository }}" \
+  --label "quality" \
+  --label "automated-analysis" \
+  --state all \
+  --json number,title,state,stateReason,closedAt \
+  --limit 50 \
+  > /tmp/gh-aw/agent/quality_issues_history.json
+
+echo "Loaded $(jq length /tmp/gh-aw/agent/quality_issues_history.json) historical quality issue(s) for topic-overlap checks"
+```
+
+When you need to judge whether a specific past issue's findings overlap your candidate focus area, fetch its body on demand: `gh issue view <number> --repo "${{ github.repository }}" --json body -q .body`. This file is the source of truth for "has this topic been reported before" — treat it as authoritative over `/tmp/gh-aw/cache-memory/focus-areas/history.json` whenever the cache-memory history is missing or covers fewer runs than this issue history.
+
+### 0.5.3 Determine Action Mode
+
+Based on the open-issue search results, decide how to proceed:
+
+- **If no existing open issues are found**: Proceed normally — conduct analysis and create a new issue.
+- **If one or more existing open issues are found**: Set the mode to **update**. Continue with the analysis in Phase 1, but in Phase 2, compare findings with the most recent existing issue's body. If there are new insights or tasks, add a comment to that issue instead of creating a new one.
+
+```bash
+if [ "$EXISTING_COUNT" -eq 0 ]; then
+  echo "MODE=create" > /tmp/gh-aw/agent/quality_action_mode.env
+  echo "Action mode: CREATE new issue"
+else
+  EXISTING_ISSUE_NUMBER=$(jq -r '.[0].number' /tmp/gh-aw/agent/existing_quality_issues.json)
+  EXISTING_ISSUE_TITLE=$(jq -r '.[0].title' /tmp/gh-aw/agent/existing_quality_issues.json)
+  echo "MODE=update" > /tmp/gh-aw/agent/quality_action_mode.env
+  echo "EXISTING_ISSUE_NUMBER=$EXISTING_ISSUE_NUMBER" >> /tmp/gh-aw/agent/quality_action_mode.env
+  echo "Action mode: UPDATE existing issue #$EXISTING_ISSUE_NUMBER ($EXISTING_ISSUE_TITLE)"
+
+  # Save the existing issue body for comparison in Phase 2
+  jq -r '.[0].body' /tmp/gh-aw/agent/existing_quality_issues.json > /tmp/gh-aw/agent/existing_issue_body.md
+fi
+```
+
+**Important**: Even in update mode, still proceed with Phase 1 analysis. The goal is to identify *new* findings that complement or extend what's already been reported.
+
 ### 0.2 Select Focus Area
 
 Choose a focus area based on the following strategy to maximize diversity and repository-specific insights:
@@ -131,57 +201,10 @@ Choose a focus area based on the following strategy to maximize diversity and re
 - **Else**: Reuse the most common or impactful focus area from the last 10 runs
 - Update the history file with the selected focus area, whether it was custom, and a brief description
 
-## Phase 0.5: Check for Existing Open Issues
-
-Before conducting analysis, check whether there is already an open issue from a previous run of this workflow. This avoids duplicate issues and ensures we build on prior findings instead of creating noise.
-
-### 0.5.1 Search for Existing Issues
-
-Use the GitHub CLI to search for open issues with the `quality` and `automated-analysis` labels:
-
-```bash
-gh issue list \
-  --repo "${{ github.repository }}" \
-  --label "quality" \
-  --label "automated-analysis" \
-  --state open \
-  --json number,title,body,createdAt,labels \
-  --limit 10 \
-  > /tmp/gh-aw/agent/existing_quality_issues.json
-
-EXISTING_COUNT=$(jq length /tmp/gh-aw/agent/existing_quality_issues.json)
-echo "Found $EXISTING_COUNT existing open quality improvement issue(s)"
-
-if [ "$EXISTING_COUNT" -gt 0 ]; then
-  echo "Existing issues:"
-  jq -r '.[] | "  #\(.number): \(.title) (created \(.createdAt))"' /tmp/gh-aw/agent/existing_quality_issues.json
-fi
-```
-
-### 0.5.2 Determine Action Mode
-
-Based on the search results, decide how to proceed:
-
-- **If no existing open issues are found**: Proceed normally — conduct analysis and create a new issue.
-- **If one or more existing open issues are found**: Set the mode to **update**. Continue with the analysis in Phase 1, but in Phase 2, compare findings with the most recent existing issue's body. If there are new insights or tasks, add a comment to that issue instead of creating a new one.
-
-```bash
-if [ "$EXISTING_COUNT" -eq 0 ]; then
-  echo "MODE=create" > /tmp/gh-aw/agent/quality_action_mode.env
-  echo "Action mode: CREATE new issue"
-else
-  EXISTING_ISSUE_NUMBER=$(jq -r '.[0].number' /tmp/gh-aw/agent/existing_quality_issues.json)
-  EXISTING_ISSUE_TITLE=$(jq -r '.[0].title' /tmp/gh-aw/agent/existing_quality_issues.json)
-  echo "MODE=update" > /tmp/gh-aw/agent/quality_action_mode.env
-  echo "EXISTING_ISSUE_NUMBER=$EXISTING_ISSUE_NUMBER" >> /tmp/gh-aw/agent/quality_action_mode.env
-  echo "Action mode: UPDATE existing issue #$EXISTING_ISSUE_NUMBER ($EXISTING_ISSUE_TITLE)"
-
-  # Save the existing issue body for comparison in Phase 2
-  jq -r '.[0].body' /tmp/gh-aw/agent/existing_quality_issues.json > /tmp/gh-aw/agent/existing_issue_body.md
-fi
-```
-
-**Important**: Even in update mode, still proceed with Phase 1 analysis. The goal is to identify *new* findings that complement or extend what's already been reported.
+**Avoiding Repeated Topics:**
+- Before finalizing your pick, check it against `/tmp/gh-aw/agent/quality_issues_history.json` (loaded in Phase 0.5) and the cache-memory history from 0.1. Don't pick a focus area that substantially overlaps a previously reported topic unless you're deliberately making a **Reuse** pick (option 3 above).
+- On a reuse pick, or whenever overlap with a past topic can't be avoided, first check whether that earlier issue's findings were actually fixed — look at the current code, not just the issue text or its `stateReason`. Your report must reference the earlier issue number(s) (e.g. "Previously reported in #X, closed without a fix / partially fixed by PR #Y") and focus on what is still unfixed, not re-report the same findings from scratch.
+- Treat the issue history as the source of truth when the cache-memory history is missing or shorter than the issue history — issues are durable, cache-memory is not.
 
 ## Phase 1: Conduct Analysis
 
@@ -559,6 +582,7 @@ A successful quality improvement run:
 ## Important Guidelines
 
 - **Avoid Duplicate Issues**: Always check for existing open issues before creating a new one. Build on prior findings rather than duplicating them.
+- **Avoid Re-Reporting Closed Topics**: Issues do expire or get closed without a fix. Check the durable issue history (0.5.2) before picking a focus area, and when a pick overlaps a past issue, verify against the current code and reference the earlier issue number(s) instead of re-reporting from scratch.
 - **Prioritize Custom Areas**: 60% of runs should invent new, repository-specific focus areas
 - **Avoid Repetition**: Don't select the same area in consecutive runs
 - **Be Creative**: Think beyond the standard categories — what unique aspects of this project need attention?
