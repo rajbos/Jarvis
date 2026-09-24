@@ -7,6 +7,7 @@ import { startLocalScanIfNeeded } from '../plugins/local-repos/handler';
 import { runBootWorkflowCheck, syncGitHubNotifications, runAutoDismissSweep } from '../plugins/notifications/handler';
 import { refreshRuddrProjectsInBackground, prewarmRuddrCache } from '../plugins/groups/handler';
 import { safeHandle } from '../plugins/ipc-utils';
+import { logger } from '../services/logger';
 
 export const LOCAL_DISCOVERY_INITIAL_DELAY_MS = 30_000;
 export const LOCAL_DISCOVERY_INTERVAL_MS = 60 * 60 * 1000;
@@ -105,7 +106,7 @@ export function startBackgroundTasks(
   scheduler.start();
 
   void prewarmRuddrCache(db).catch((err: unknown) => {
-    console.warn('[Tasks] Ruddr cache pre-warm failed:', err instanceof Error ? err.message : String(err));
+    logger.warn('[Tasks] Ruddr cache pre-warm failed:', err instanceof Error ? err.message : String(err));
   });
 
   if (options.githubReady) {

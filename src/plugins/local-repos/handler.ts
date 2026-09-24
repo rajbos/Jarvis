@@ -16,6 +16,7 @@ import {
 } from '../../services/local-discovery';
 import { getFileIndexState, startFileIndexIfNeeded } from './file-index-runner';
 import { safeHandle } from '../ipc-utils';
+import { logger } from '../../services/logger';
 
 let localScanRunning = false;
 let lastLocalScanProgress: ScanProgress | null = null;
@@ -45,11 +46,11 @@ function openTerminal(folderPath: string): void {
   try {
     isDirectory = fs.statSync(resolvedPath).isDirectory();
   } catch (err) {
-    console.error('[IPC] local:open-terminal failed: invalid folder path', resolvedPath, err);
+    logger.error('[IPC] local:open-terminal failed: invalid folder path', resolvedPath, err);
     return;
   }
   if (!isDirectory) {
-    console.error('[IPC] local:open-terminal failed: not a directory', resolvedPath);
+    logger.error('[IPC] local:open-terminal failed: not a directory', resolvedPath);
     return;
   }
 
@@ -58,7 +59,7 @@ function openTerminal(folderPath: string): void {
   launchDetached('wt.exe', ['-d', resolvedPath], resolvedPath, () => {
     const commandShell = process.env.ComSpec ?? process.env.COMSPEC ?? 'cmd.exe';
     launchDetached(commandShell, ['/k'], resolvedPath, (err) => {
-      console.error('[IPC] local:open-terminal failed:', err);
+      logger.error('[IPC] local:open-terminal failed:', err);
     });
   });
 }
@@ -139,17 +140,17 @@ export function startLocalScanIfNeeded(
   force = false,
 ): boolean {
   if (localScanRunning && !force) {
-    console.log('[LocalScan] Already running, skipping');
+    logger.debug('[LocalScan] Already running, skipping');
     return false;
   }
 
   const folders = getScanFolders(db);
   if (folders.length === 0) {
-    console.log('[LocalScan] No scan folders configured, skipping');
+    logger.debug('[LocalScan] No scan folders configured, skipping');
     return false;
   }
 
-  console.log('[LocalScan] Starting scan of', folders.length, 'folder(s)');
+  logger.info('[LocalScan] Starting scan of', folders.length, 'folder(s)');
   localScanRunning = true;
 
   runLocalDiscovery(db, (progress) => {
@@ -159,13 +160,13 @@ export function startLocalScanIfNeeded(
     localScanRunning = false;
     lastLocalScanProgress = done;
     saveDatabase();
-    console.log('[LocalScan] Finished —', done.reposFound, 'repo(s) found');
+    logger.info('[LocalScan] Finished —', done.reposFound, 'repo(s) found');
     getWindow()?.webContents.send('local:scan-complete', done);
     // Refresh the file content index now that the repo list is current.
     startFileIndexIfNeeded(db, getWindow);
   }).catch((err: unknown) => {
     localScanRunning = false;
-    console.error('[LocalScan] Failed:', err);
+    logger.error('[LocalScan] Failed:', err);
   });
   return true;
 }

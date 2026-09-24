@@ -23,6 +23,7 @@ import { saveDatabase } from '../../storage/database';
 import { fetchAndStoreWorkflowData, getWorkflowSummaryForRepo } from '../../services/github-workflows';
 import { isWorkflowDataFresh } from './workflow-cache';
 import { safeHandle } from '../ipc-utils';
+import { logger } from '../../services/logger';
 
 // ── Boot workflow check constants ─────────────────────────────────────────────
 
@@ -264,7 +265,7 @@ async function dismissStoredNotification(
   try {
     await markNotificationRead(accessToken, n.id);
   } catch (err) {
-    console.warn('[AutoDismiss] Could not mark notification as read on GitHub:', err instanceof Error ? err.message : String(err));
+    logger.warn('[AutoDismiss] Could not mark notification as read on GitHub:', err instanceof Error ? err.message : String(err));
   }
   deleteNotification(db, n.id);
   return true;
@@ -472,7 +473,7 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
       try {
         await markNotificationRead(auth.accessToken, id);
       } catch (err) {
-        console.warn('[Jarvis] Could not mark notification as read on GitHub:', err);
+        logger.warn('[Jarvis] Could not mark notification as read on GitHub:', err);
       }
     }
     deleteNotification(db, id);
@@ -554,7 +555,7 @@ export async function runBootWorkflowCheck(
   // limit on rapid restarts, e.g. during agentic dev sessions with hot reload).
   const staleRepos = allRepos.filter((repo) => !isWorkflowDataFresh(db, repo));
   if (staleRepos.length === 0) {
-    console.log('[Boot] Workflow cache is fresh for all CI repos — skipping pre-warm');
+    logger.debug('[Boot] Workflow cache is fresh for all CI repos — skipping pre-warm');
     return;
   }
 
@@ -564,7 +565,7 @@ export async function runBootWorkflowCheck(
   if (estimatedCalls > BOOT_CHECK_MAX_ESTIMATED_CALLS) {
     const remaining = await fetchTokenRateLimitRemaining(auth.accessToken);
     if (remaining !== null && remaining < BOOT_CHECK_RATE_LIMIT_THRESHOLD) {
-      console.log(
+      logger.debug(
         `[Boot] Skipping workflow pre-warm: rate limit low (${remaining} remaining, ` +
         `threshold ${BOOT_CHECK_RATE_LIMIT_THRESHOLD}) and ~${estimatedCalls} calls needed ` +
         `for ${staleRepos.length} repo(s)`,
@@ -575,17 +576,17 @@ export async function runBootWorkflowCheck(
 
   const sendStatus = (msg: string) => getWindow()?.webContents.send('app:background-status', msg);
 
-  console.log(`[Boot] Pre-warming workflow cache for ${staleRepos.length} stale repo(s)…`);
+  logger.info(`[Boot] Pre-warming workflow cache for ${staleRepos.length} stale repo(s)…`);
   sendStatus(`Caching workflow data for ${staleRepos.length} repo${staleRepos.length !== 1 ? 's' : ''}…`);
 
   for (const repo of staleRepos) {
     try {
       sendStatus(`Loading workflow runs: ${repo.split('/')[1]}…`);
       const { runsStored } = await fetchAndStoreWorkflowData(db, auth.accessToken, repo);
-      console.log(`[Boot] Cached ${runsStored} workflow run(s) for ${repo}`);
+      logger.debug(`[Boot] Cached ${runsStored} workflow run(s) for ${repo}`);
     } catch (err) {
       // Non-fatal — the UI will fall back to fetching on demand
-      console.warn(`[Boot] Could not fetch workflow runs for ${repo}:`, err instanceof Error ? err.message : String(err));
+      logger.warn(`[Boot] Could not fetch workflow runs for ${repo}:`, err instanceof Error ? err.message : String(err));
     }
   }
 

@@ -16,6 +16,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import fs from 'node:fs';
 import path from 'node:path';
+import { logger } from './logger';
 
 const execFileAsync = promisify(execFile);
 
@@ -112,7 +113,7 @@ export async function openIndexDatabase(filePath: string): Promise<SqlJsDatabase
       initializeIndexSchema(db);
       return db;
     } catch (err) {
-      console.warn('[FileIndex] Existing index unreadable, starting fresh:', (err as Error).message);
+      logger.warn('[FileIndex] Existing index unreadable, starting fresh:', (err as Error).message);
       db.close();
     }
   }
@@ -460,7 +461,7 @@ export async function indexRepos(db: SqlJsDatabase, repos: IndexableRepo[], opts
       progress.filesIndexed += r.indexed;
       progress.filesSkipped += r.skipped;
     } catch (err) {
-      console.warn('[FileIndex] Failed to index', repo.localPath, (err as Error).message);
+      logger.warn('[FileIndex] Failed to index', repo.localPath, (err as Error).message);
       db.run(
         `INSERT INTO indexed_repos (local_path, name, indexed_at, skipped_reason) VALUES (?, ?, CURRENT_TIMESTAMP, ?)
          ON CONFLICT(local_path) DO UPDATE SET indexed_at = CURRENT_TIMESTAMP, skipped_reason = excluded.skipped_reason`,

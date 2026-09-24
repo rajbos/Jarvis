@@ -2,6 +2,7 @@ import initSqlJs, { Database as SqlJsDatabase } from 'sql.js';
 import path from 'path';
 import fs from 'fs';
 import { getSchema } from './schema';
+import { logger } from '../services/logger';
 
 let db: SqlJsDatabase | null = null;
 let dbPath: string | null = null;
@@ -37,9 +38,9 @@ function rotateDatabaseBackup(filePath: string): void {
     if (fs.existsSync(bak2)) fs.copyFileSync(bak2, bak3);
     if (fs.existsSync(bak1)) fs.copyFileSync(bak1, bak2);
     fs.copyFileSync(filePath, bak1);
-    console.log('[DB] Daily backup rotated →', bak1);
+    logger.debug('[DB] Daily backup rotated →', bak1);
   } catch (err) {
-    console.warn('[DB] Backup rotation failed (non-fatal):', (err as Error).message);
+    logger.warn('[DB] Backup rotation failed (non-fatal):', (err as Error).message);
   }
 }
 
@@ -587,7 +588,7 @@ export function initializeSchema(database: SqlJsDatabase): void {
   const finalResult = database.exec('PRAGMA user_version');
   const finalVersion = finalResult.length > 0 ? (finalResult[0].values[0][0] as number) : 0;
   if (finalVersion < LATEST_SCHEMA_VERSION) {
-    console.warn(
+    logger.warn(
       `[DB] Migration chain did not reach the latest schema version. ` +
         `Started at user_version=${userVersion}, ended at ${finalVersion}, expected ${LATEST_SCHEMA_VERSION}. ` +
         `This database may be missing tables/columns from newer migrations.`,

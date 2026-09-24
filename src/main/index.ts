@@ -23,7 +23,7 @@ import { saveDatabase } from '../storage/database';
 
 import { stopBridgeServer } from '../plugins/browser-companion/server';
 
-import { setLogLevel } from '../services/logger';
+import { logger, setLogLevel } from '../services/logger';
 import { checkForUpdates, registerUpdateIpcHandlers, startUpdateChecks, stopUpdateChecks } from './update-checker';
 import { safeHandle } from '../plugins/ipc-utils';
 
@@ -61,7 +61,7 @@ async function initialize(): Promise<void> {
 
   currentDb = db;
 
-  console.log('Database initialized at:', config.storage.database);
+  logger.info('Database initialized at:', config.storage.database);
 
 
 
@@ -86,7 +86,7 @@ async function initialize(): Promise<void> {
     notification.on('click', () => showSettingsWindow());
     notification.show();
   }).catch((err) => {
-    console.warn('[PAT] Startup validity check failed:', err);
+    logger.warn('[PAT] Startup validity check failed:', err);
   });
 
 
@@ -103,17 +103,17 @@ async function initialize(): Promise<void> {
 
       saveDatabase();
 
-      console.log('[Ollama] Found with', ollama.models.length, 'model(s) — onboarding step marked complete');
+      logger.info('[Ollama] Found with', ollama.models.length, 'model(s) — onboarding step marked complete');
 
     } else if (!ollama.available && currentStatus.ollama === 'pending') {
 
-      console.log('[Ollama] Not found at startup:', ollama.error);
+      logger.debug('[Ollama] Not found at startup:', ollama.error);
 
     }
 
   }).catch((err) => {
 
-    console.error('[Ollama] Startup check failed:', err);
+    logger.error('[Ollama] Startup check failed:', err);
 
   });
 
@@ -341,7 +341,7 @@ if (app.isPackaged) {
 
   if (!gotLock) {
 
-    console.log('[Main] Another instance is already running — quitting.');
+    logger.info('[Main] Another instance is already running — quitting.');
 
     app.quit();
 
@@ -390,7 +390,7 @@ app.whenReady().then(() => {
 
   initialize().catch((err) => {
 
-    console.error('[Main] Fatal initialization error:', err);
+    logger.error('[Main] Fatal initialization error:', err);
 
     app.quit();
 

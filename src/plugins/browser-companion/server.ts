@@ -5,6 +5,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { randomBytes } from 'crypto';
 import type { BrowserWindow } from 'electron';
 import { loadConfig, saveConfig } from '../../agent/config';
+import { logger } from '../../services/logger';
 
 const configuredBridgePort = Number.parseInt(process.env.JARVIS_BRIDGE_PORT ?? '', 10);
 export const BRIDGE_PORT = Number.isInteger(configuredBridgePort) && configuredBridgePort > 0
@@ -171,7 +172,7 @@ export function startBridgeServer(getWindow: () => BrowserWindow | null): void {
 
   wss.on('listening', () => {
     started = true;
-    console.log(`[BrowserBridge] Listening on ${BRIDGE_ORIGIN}`);
+    logger.info(`[BrowserBridge] Listening on ${BRIDGE_ORIGIN}`);
   });
 
   wss.on('connection', (ws, req) => {
@@ -183,12 +184,12 @@ export function startBridgeServer(getWindow: () => BrowserWindow | null): void {
     }
 
     connectedClients.add(ws);
-    console.log('[BrowserBridge] Client connecting (pending auth). Total sockets:', connectedClients.size);
+    logger.debug('[BrowserBridge] Client connecting (pending auth). Total sockets:', connectedClients.size);
 
     // Start auth timeout — client must authenticate within AUTH_TIMEOUT_MS
     const authTimer = setTimeout(() => {
       if (authTimeouts.has(ws)) {
-        console.warn('[BrowserBridge] Auth timeout — closing unauthenticated socket');
+        logger.warn('[BrowserBridge] Auth timeout — closing unauthenticated socket');
         authTimeouts.delete(ws);
         ws.close(1008, 'Authentication timeout');
       }
@@ -204,7 +205,7 @@ export function startBridgeServer(getWindow: () => BrowserWindow | null): void {
 
       // Rate-limit authenticated commands
       if (!checkRateLimit(ws)) {
-        console.warn('[BrowserBridge] Rate limit exceeded');
+        logger.warn('[BrowserBridge] Rate limit exceeded');
         // Send error response if the message has an id
         try {
           const msg = JSON.parse(raw.toString()) as { id?: string };
@@ -231,7 +232,7 @@ export function startBridgeServer(getWindow: () => BrowserWindow | null): void {
           // consumes this (see issue #319 dead-IPC cleanup) — nothing to do.
         }
       } catch (e) {
-        console.warn('[BrowserBridge] Bad message from extension:', e);
+        logger.warn('[BrowserBridge] Bad message from extension:', e);
       }
     });
 
@@ -248,18 +249,18 @@ export function startBridgeServer(getWindow: () => BrowserWindow | null): void {
       if (ws === authenticatedClient) {
         authenticatedClient = null;
         rejectAllPending(new Error('Extension disconnected'));
-        console.log('[BrowserBridge] Authenticated extension disconnected');
+        logger.info('[BrowserBridge] Authenticated extension disconnected');
         getWindowFn?.()?.webContents.send('browser:extension-connected', { count: 0 });
       }
     });
 
     ws.on('error', (err) => {
-      console.warn('[BrowserBridge] WebSocket error:', err.message);
+      logger.warn('[BrowserBridge] WebSocket error:', err.message);
     });
   });
 
   wss.on('error', (err) => {
-    console.error('[BrowserBridge] Server error:', err.message);
+    logger.error('[BrowserBridge] Server error:', err.message);
     if (!started) {
       try { wss?.close(); } catch { /* ignore */ }
       wss = null;
@@ -287,7 +288,7 @@ function handleAuthMessage(ws: WebSocket, rawData: string): void {
 
   const expected = getBridgeToken();
   if (!msg.token || msg.token !== expected) {
-    console.warn('[BrowserBridge] Bad token from extension — closing');
+    logger.warn('[BrowserBridge] Bad token from extension — closing');
     ws.send(JSON.stringify({ type: 'auth-fail', reason: 'invalid-token' }));
     ws.close(1008, 'Invalid token');
     return;
@@ -302,14 +303,14 @@ function handleAuthMessage(ws: WebSocket, rawData: string): void {
 
   // If another extension was already authenticated, close it first (single-client policy)
   if (authenticatedClient && authenticatedClient !== ws) {
-    console.log('[BrowserBridge] New extension authenticated — replacing previous connection');
+    logger.info('[BrowserBridge] New extension authenticated — replacing previous connection');
     rejectAllPending(new Error('Extension replaced by new connection'));
     authenticatedClient.close(1000, 'Replaced by new connection');
   }
 
   authenticatedClient = ws;
   ws.send(JSON.stringify({ type: 'auth-ok' }));
-  console.log('[BrowserBridge] Extension authenticated');
+  logger.info('[BrowserBridge] Extension authenticated');
   getWindowFn?.()?.webContents.send('browser:extension-connected', { count: 1 });
 }
 
