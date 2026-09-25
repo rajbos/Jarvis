@@ -1483,6 +1483,106 @@ export interface ClaudeRateLimit {
 
 
 
+// ── Active agent sessions + PR review readiness types ─────────────────────────
+
+/** Which AI coding agent drives a session. */
+export type AgentProvider = 'copilot' | 'claude';
+
+/** Where the session runs: on this machine, or in GitHub's cloud. */
+export type AgentSessionOrigin = 'local' | 'cloud';
+
+export type AgentActivity =
+  | 'working'
+  | 'idle'
+  | 'waiting_for_user'
+  | 'queued'
+  | 'completed'
+  | 'failed'
+  | 'unknown';
+
+/** Traffic-light colour for a single readiness stage. */
+export type ReadinessLight = 'green' | 'amber' | 'red' | 'grey';
+
+export interface ActiveAgentSession {
+  /** Stable key, unique across sources: `${origin}:${provider}:${sessionId}`. */
+  key: string;
+  provider: AgentProvider;
+  origin: AgentSessionOrigin;
+  /** Human-readable client, e.g. "Copilot app", "Copilot CLI", "Claude Code", "Copilot cloud agent". */
+  client: string;
+  sessionId: string;
+  title: string | null;
+  cwd: string | null;
+  repoFullName: string | null;
+  branch: string | null;
+  activity: AgentActivity;
+  startedAt: string | null;
+  updatedAt: string | null;
+  /** Copilot cloud task id (cloud tasks, or local sessions mirrored as remote-steerable tasks). */
+  cloudTaskId?: string | null;
+  pid?: number | null;
+}
+
+export interface ReadinessStage {
+  light: ReadinessLight;
+  /** Short label rendered next to the light, e.g. "Running 2/7". */
+  label: string;
+  /** Longer explanation for the tooltip. */
+  detail: string;
+  /** True when this stage currently prevents the PR from being ready for human review. */
+  blocking: boolean;
+}
+
+export type CopilotReviewStatus = 'not_requested' | 'requested' | 'in_progress' | 'completed' | 'errored' | 'stale';
+
+export interface PrReadiness {
+  repoFullName: string;
+  prNumber: number;
+  title: string;
+  url: string;
+  state: 'OPEN' | 'CLOSED' | 'MERGED';
+  isDraft: boolean;
+  headSha: string;
+  headRef: string;
+  checks: ReadinessStage & { total: number; pending: number; failed: number; passed: number };
+  copilotReview: ReadinessStage & { status: CopilotReviewStatus };
+  /** Open PR where every gating stage has finished — ready for a human reviewer. */
+  ready: boolean;
+  waitingOn: Array<'checks' | 'copilot_review'>;
+  checkedAt: string;
+}
+
+export type ActiveSessionVerdict = 'ready' | 'waiting' | 'no_pr' | 'closed';
+
+export interface ActiveSessionEntry {
+  session: ActiveAgentSession;
+  agent: ReadinessStage;
+  pr: PrReadiness | null;
+  prError?: string | null;
+  verdict: ActiveSessionVerdict;
+  verdictLabel: string;
+}
+
+export interface ActiveSessionSourceStatus {
+  ok: boolean;
+  count: number;
+  skipped?: boolean;
+  error?: string;
+}
+
+export interface ActiveSessionsSnapshot {
+  entries: ActiveSessionEntry[];
+  sources: {
+    copilotLocal: ActiveSessionSourceStatus;
+    claudeLocal: ActiveSessionSourceStatus;
+    copilotCloud: ActiveSessionSourceStatus;
+  };
+  readyCount: number;
+  refreshedAt: string;
+}
+
+
+
 
 
 
@@ -2979,6 +3079,11 @@ export interface JarvisApi {
   disconnectClaude(): Promise<{ ok: boolean }>;
   beginClaudeOAuth(): Promise<{ ok: boolean; authorizeUrl?: string; error?: string }>;
   completeClaudeOAuth(code: string): Promise<{ ok: boolean; error?: string }>;
+
+  // Active agent sessions + PR review readiness
+  getActiveSessions(): Promise<ActiveSessionsSnapshot | null | IpcErrorResponse>;
+  refreshActiveSessions(): Promise<ActiveSessionsSnapshot | IpcErrorResponse>;
+  onActiveSessionsUpdated(cb: (snapshot: ActiveSessionsSnapshot) => void): () => void;
 
   // Auto-dismiss log
   listAutoDismissLog(limit?: number): Promise<AutoDismissLogEntry[] | IpcErrorResponse>;

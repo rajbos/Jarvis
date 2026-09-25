@@ -22,6 +22,7 @@
 13. [Configuration](#13-configuration)
 14. [Recommended Approach](#14-recommended-approach)
 15. [Claude Rate Limit Awareness](#15-claude-rate-limit-awareness)
+16. [Active Agent Sessions & PR Review Readiness](#16-active-agent-sessions--pr-review-readiness)
 
 ---
 
@@ -48,6 +49,7 @@
 | R17 | Work journal / thought capture | Track things the user has been thinking about or working on |
 | R18 | Full SQLite encryption | Encrypt sensitive data at rest to prevent exfiltration |
 | R19 | Claude rate limit awareness | Reuse local Claude Code OAuth credentials to track Pro/Max subscription usage limits, with a status-bar countdown when limited |
+| R20 | Active agent sessions & PR review readiness | List running Copilot / Claude sessions (local + cloud), link them to their PRs and signal when a PR is ready for human review |
 
 ---
 
@@ -1426,6 +1428,47 @@ When both windows are exhausted the binding reset is the *later* of the two — 
 
 ---
 
+## 16. Active Agent Sessions & PR Review Readiness
+
+The **🤖 Agent Sessions** tab lists every AI coding session that is running right now — GitHub Copilot (CLI, Copilot app, cloud agent) and Claude Code — together with the pull request it works on, and answers one question per PR: *is it ready for a human review yet?*
+
+### Session sources
+
+| Source | Where | Liveness / activity |
+|--------|-------|---------------------|
+| Copilot CLI / Copilot app (local) | `~/.copilot/session-state/<id>/` — `workspace.yaml` (cwd, name, client, `mc_task_id`), `events.jsonl` | Live while an `inuse.<pid>.lock` belongs to a running process that started before the lock was written (lock files survive crashes and Windows reuses pids, so a live pid alone is not enough). Activity from the tail of `events.jsonl` (64 KB, widened up to 4 MB when the tail holds no decisive event — permission prompts can carry large diffs): open `permission.requested` / `ask_user` → *needs input*; turn/tool/model events → *working*; `assistant.turn_end` (>20 s ago), `session.task_complete`, `session.start/resume` → *idle*. Only dirs touched in the last 3 days are inspected. |
+| Claude Code (local) | `~/.claude/sessions/<pid>.json` + transcript `~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl` | Live while the pid runs and started before the pid file was written. *Idle* when the last assistant message has `stop_reason: end_turn` or the transcript is untouched for 2 min. |
+| Copilot cloud agent | `GET /agents/tasks` (`X-GitHub-Api-Version: 2026-03-10`, user token) | Task `state`; active states plus finished tasks with a PR from the last 24 h. Tasks mirrored from local Copilot app sessions (`mc_task_id`) are skipped to avoid duplicates. |
+
+These are the same stores the [ai-engineering-fluency](https://github.com/rajbos/ai-engineering-fluency) project reads for usage analytics. Its npm package is CLI-only and reports aggregate stats (no per-session listing or liveness), so Jarvis reads the stores directly in `src/services/local-agent-sessions.ts`; that module can be swapped for the package once it exposes a per-session listing.
+
+### Linking sessions to PRs
+
+- Local sessions: the session `cwd` is resolved to repo + branch by reading `.git` metadata (`src/services/git-context.ts`, worktree-aware). The PR is matched on the *local* branch name — not the tracked upstream, which is `main` for worktrees created from `origin/main` and the parent branch for stacked branches. The branch's open PR is looked up in the push remote first, then `upstream` (filtered by head owner for fork branches). Default branches (`main`, `master`, `develop`, `trunk`) are skipped.
+- Cloud tasks: PR node ids from the task's `pull` artifacts, else the task's head branch.
+- All lookups are resolved in batched, aliased GraphQL queries (10 lookups per request, per-alias error isolation) in `src/services/pr-readiness.ts`.
+
+### Readiness rules (evaluated on the PR's head commit)
+
+| Light | Green | Amber (blocks review) | Red (does not block) | Grey |
+|-------|-------|------------------------|----------------------|------|
+| **Agent** (informational, never blocks) | Idle / done | Working, queued, needs input | Failed / timed out | Unknown |
+| **Checks** | All passed | Any check run / status still pending, or no checks yet on a commit pushed < 5 min ago | Finished, some failed | No checks reported |
+| **Copilot review** | Copilot reviewed the head commit | Review running, requested, or only older commits reviewed (*stale*) | Review run errored | No Copilot review attached |
+
+A PR is **ready for review** when it is open and neither *Checks* nor *Copilot review* is blocking. Failed checks do not block — the checks have *completed*, which is the gate; the red light tells the reviewer what to expect. Draft PRs can be ready (labelled "(draft)"). The Copilot reviewer is detected by its `copilot-pull-request-reviewer` check run (via `checkSuites`, as it isn't part of `statusCheckRollup`), pending review requests and reviews by the Copilot bot logins.
+
+### Background check & notifications
+
+The `active-sessions-readiness` background task (`src/main/background-tasks.ts`) sweeps every 2 minutes (first run 20 s after start). Each sweep upserts the `pr_readiness` table (schema v30) and raises a desktop notification when a PR becomes ready — once per head commit, tracked in `ready_notified_sha`. The notification is held while a linked agent is still *working* or *queued* (it may push more commits) and fires on the first sweep after it settles. The renderer receives each snapshot via `active-sessions:updated`; `active-sessions:get` returns the latest snapshot and `active-sessions:refresh` forces a sweep. Concurrent refreshes share one in-flight sweep.
+
+### Not covered yet
+
+- Claude Code on the web / cloud sessions (no public listing API).
+- VS Code Copilot Chat sessions (no liveness signal in the chat session store).
+
+---
+
 ## Decision Log
 
 | Decision | Status | Notes |
@@ -1442,3 +1485,5 @@ When both windows are exhausted the binding reset is the *later* of the two — 
 | Async task execution | **Actor-style task runner** | Background queue with cron scheduling, rate-limit aware |
 | Container isolation | **Docker (opt-in)** | Sandboxed execution for security-sensitive tasks |
 | Activity summaries | **Weekly generated summaries** | Cross-repo PR/issue/review aggregation + work journal |
+| Agent session discovery | **Read local session stores directly** | ai-engineering-fluency npm package has no per-session/liveness output yet; swap in when it does |
+| PR review readiness | **Checks completed + Copilot review on head commit** | Failed checks don't block; stale Copilot review does; agent activity is informational |

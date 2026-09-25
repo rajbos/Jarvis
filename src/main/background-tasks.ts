@@ -6,6 +6,7 @@ import { getScanFolders } from '../services/local-discovery';
 import { startLocalScanIfNeeded } from '../plugins/local-repos/handler';
 import { runBootWorkflowCheck, syncGitHubNotifications, runAutoDismissSweep } from '../plugins/notifications/handler';
 import { refreshRuddrProjectsInBackground, prewarmRuddrCache } from '../plugins/groups/handler';
+import { runActiveSessionsSweep } from '../plugins/active-sessions/handler';
 import { safeHandle } from '../plugins/ipc-utils';
 import { logger } from '../services/logger';
 
@@ -17,6 +18,8 @@ export const GITHUB_NOTIFICATIONS_INITIAL_DELAY_MS = 60_000;
 export const GITHUB_NOTIFICATIONS_INTERVAL_MS = 5 * 60 * 1000;
 export const GITHUB_AUTO_DISMISS_INITIAL_DELAY_MS = 90_000;
 export const GITHUB_AUTO_DISMISS_INTERVAL_MS = 10 * 60 * 1000;
+export const ACTIVE_SESSIONS_INITIAL_DELAY_MS = 20_000;
+export const ACTIVE_SESSIONS_INTERVAL_MS = 2 * 60 * 1000;
 
 let scheduler: TaskScheduler | null = null;
 
@@ -91,6 +94,14 @@ export function createBackgroundTaskScheduler(
     initialDelayMs: GITHUB_AUTO_DISMISS_INITIAL_DELAY_MS,
     intervalMs: GITHUB_AUTO_DISMISS_INTERVAL_MS,
     run: () => runAutoDismissSweep(db, getWindow),
+  });
+
+  registerTask(taskScheduler, getWindow, {
+    id: 'active-sessions-readiness',
+    label: 'Agent sessions PR readiness',
+    initialDelayMs: ACTIVE_SESSIONS_INITIAL_DELAY_MS,
+    intervalMs: ACTIVE_SESSIONS_INTERVAL_MS,
+    run: () => runActiveSessionsSweep(db, getWindow),
   });
 
   return taskScheduler;

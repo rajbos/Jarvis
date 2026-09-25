@@ -48,6 +48,8 @@ import { registerHandlers as registerClaudeHandlers } from '../plugins/claude/ha
 
 import { registerHandlers as registerMcpServerHandlers } from '../plugins/mcp-server/handler';
 
+import { registerHandlers as registerActiveSessionsHandlers } from '../plugins/active-sessions/handler';
+
 import { registerTaskIpcHandlers } from './background-tasks';
 
 
@@ -100,6 +102,8 @@ export function registerIpcHandlers(
   registerClaudeHandlers(db, getWindow);
 
   registerMcpServerHandlers(db, getWindow);
+
+  registerActiveSessionsHandlers(db, getWindow);
 
   registerTaskIpcHandlers();
 

@@ -320,6 +320,14 @@ contextBridge.exposeInMainWorld('jarvis', {
   disconnectClaude: () => ipcRenderer.invoke('claude:disconnect'),
   beginClaudeOAuth: () => ipcRenderer.invoke('claude:begin-oauth'),
   completeClaudeOAuth: (code: string) => ipcRenderer.invoke('claude:complete-oauth', code),
+  // Active agent sessions + PR review readiness
+  getActiveSessions: () => ipcRenderer.invoke('active-sessions:get'),
+  refreshActiveSessions: () => ipcRenderer.invoke('active-sessions:refresh'),
+  onActiveSessionsUpdated: (callback: (snapshot: unknown) => void) => {
+    const listener = (_event: unknown, snapshot: unknown) => callback(snapshot);
+    ipcRenderer.on('active-sessions:updated', listener);
+    return () => { ipcRenderer.removeListener('active-sessions:updated', listener); };
+  },
   // Auto-dismiss log
   listAutoDismissLog: (limit?: number) => ipcRenderer.invoke('github:list-auto-dismiss-log', limit),
   getAutoDismissStats: () => ipcRenderer.invoke('github:auto-dismiss-stats'),

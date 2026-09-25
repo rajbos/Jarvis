@@ -85,7 +85,7 @@ export async function createMemoryDatabase(): Promise<SqlJsDatabase> {
 // of the chain in initializeSchema(). Used only to warn if a database fails to
 // reach the latest schema after migration (e.g. a gap in the version chain).
 // A unit test fails if this drifts from the version a fresh database reaches.
-export const LATEST_SCHEMA_VERSION = 29;
+export const LATEST_SCHEMA_VERSION = 30;
 
 export function initializeSchema(database: SqlJsDatabase): void {
   const result = database.exec("PRAGMA user_version");
@@ -94,7 +94,7 @@ export function initializeSchema(database: SqlJsDatabase): void {
   if (userVersion === 0) {
     database.run(getSchema());
     seedBuiltInAgents(database);
-    database.run('PRAGMA user_version = 29');
+    database.run('PRAGMA user_version = 30');
   }
 
   if (userVersion === 1) {
@@ -583,6 +583,25 @@ export function initializeSchema(database: SqlJsDatabase): void {
       )
     `);
     database.run('PRAGMA user_version = 29');
+  }
+
+  if (userVersion === 29) {
+    // Migration v29 → v30: track PR review-readiness for PRs linked to active
+    // agent sessions, so the "ready for review" notification fires once per
+    // head commit instead of on every background sweep.
+    database.run(`
+      CREATE TABLE IF NOT EXISTS pr_readiness (
+        repo_full_name      TEXT NOT NULL,
+        pr_number           INTEGER NOT NULL,
+        head_sha            TEXT NOT NULL,
+        ready               INTEGER NOT NULL DEFAULT 0,
+        waiting_on          TEXT,
+        checked_at          TEXT NOT NULL,
+        ready_notified_sha  TEXT,
+        PRIMARY KEY (repo_full_name, pr_number)
+      )
+    `);
+    database.run('PRAGMA user_version = 30');
   }
 
   const finalResult = database.exec('PRAGMA user_version');
