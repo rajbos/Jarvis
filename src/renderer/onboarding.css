@@ -4907,3 +4907,257 @@ h5.ec-heading { font-size: 0.9375rem; }
 .update-btn--error:hover {
   background: #4a2626;
 }
+
+/* ── Agent sessions view ─────────────────────────────────────────────────── */
+.as-legend {
+  padding: 0.5rem 1rem;
+  font-size: 0.8125rem;
+  color: #8ab4e8;
+  border-bottom: 1px solid #1e3a5a;
+}
+
+.as-legend strong {
+  color: #a0c8ff;
+}
+
+.as-error {
+  margin: 0.5rem 1rem 0;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.8125rem;
+  color: #ffb4a8;
+  background: #3a1f1f;
+  border: 1px solid #6b2d2d;
+  border-radius: 5px;
+}
+
+.as-list {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1;
+}
+
+.as-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 0.9rem;
+  padding: 0.7rem 1rem;
+  border-bottom: 1px solid #16294a;
+  border-left: 3px solid transparent;
+}
+
+.as-row--ready {
+  border-left-color: #4caf50;
+}
+
+.as-row--waiting {
+  border-left-color: #ff9800;
+}
+
+.as-provider {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.as-provider--copilot {
+  background: #1b2a4a;
+  color: #a0c8ff;
+}
+
+.as-provider--claude {
+  background: #3a2418;
+  color: #e8a07a;
+}
+
+.as-row-main {
+  flex: 1 1 14rem;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.as-row-title {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: #dde6f5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.as-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.8125rem;
+  color: #8ab4e8;
+}
+
+.as-row-repo {
+  color: #a0c8ff;
+}
+
+.as-row-branch {
+  color: #7a8fb0;
+  font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+  font-size: 0.75rem;
+}
+
+.as-row-error {
+  font-size: 0.75rem;
+  color: #ff9e8a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.as-chip {
+  font-size: 0.6875rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid #2b4a75;
+  color: #a0c8ff;
+  background: #0f2240;
+}
+
+.as-chip--cloud {
+  border-color: #3a5a9a;
+}
+
+.as-chip--draft {
+  border-color: #55607a;
+  color: #aab4c8;
+  background: #1c2230;
+}
+
+.as-pr-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #7ab3f5;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.as-pr-link:hover {
+  color: #a0c8ff;
+}
+
+.as-lights {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.as-light {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 6.75rem;
+  padding: 0.3rem 0.55rem;
+  border-radius: 6px;
+  background: #0d1a30;
+  border: 1px solid #1a2f50;
+  cursor: default;
+}
+
+.as-light-dot {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: #4a5568;
+}
+
+.as-light--green .as-light-dot {
+  background: #4caf50;
+  box-shadow: 0 0 6px rgba(76, 175, 80, 0.6);
+}
+
+.as-light--amber .as-light-dot {
+  background: #ff9800;
+  box-shadow: 0 0 6px rgba(255, 152, 0, 0.6);
+}
+
+.as-light--red .as-light-dot {
+  background: #f44336;
+  box-shadow: 0 0 6px rgba(244, 67, 54, 0.6);
+}
+
+.as-light--blocking {
+  border-color: #6b4a1a;
+}
+
+.as-light--blocking .as-light-dot {
+  animation: as-light-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes as-light-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .as-light--blocking .as-light-dot {
+    animation: none;
+  }
+}
+
+.as-light-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+  min-width: 0;
+}
+
+.as-light-name {
+  font-size: 0.6875rem;
+  color: #7a8fb0;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.as-light-label {
+  font-size: 0.8125rem;
+  color: #dde6f5;
+  white-space: nowrap;
+}
+
+.as-verdict {
+  flex: 0 0 10rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-align: right;
+  color: #8ab4e8;
+}
+
+.as-verdict--ready {
+  color: #6fdc8c;
+}
+
+.as-verdict--waiting {
+  color: #ffb74d;
+}
+
+.as-verdict--closed {
+  color: #7a8fb0;
+}
+
+.as-footer {
+  padding: 0.4rem 1rem;
+  font-size: 0.75rem;
+  color: #5a7aa0;
+  border-top: 1px solid #1e3a5a;
+}

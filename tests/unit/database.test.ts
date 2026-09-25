@@ -186,6 +186,27 @@ describe('Migration v28 -> v29', () => {
   });
 });
 
+describe('Migration v29 -> v30', () => {
+  it('creates the pr_readiness table and bumps user_version', async () => {
+    const SQL = await initSqlJs();
+    const oldDb = new SQL.Database();
+    oldDb.run('PRAGMA user_version = 29');
+
+    initializeSchema(oldDb);
+
+    expect(oldDb.exec('PRAGMA user_version')[0].values[0][0]).toBe(30);
+
+    const columns = oldDb
+      .exec('PRAGMA table_info(pr_readiness)')[0]
+      .values.map((row: unknown[]) => row[1] as string);
+    expect(columns).toEqual(expect.arrayContaining([
+      'repo_full_name', 'pr_number', 'head_sha', 'ready', 'waiting_on', 'checked_at', 'ready_notified_sha',
+    ]));
+
+    oldDb.close();
+  });
+});
+
 describe('Migration chain completeness (no orphaned user_version)', () => {
   it('LATEST_SCHEMA_VERSION matches the version a fresh database migrates to', async () => {
     // Guards the constant itself: adding a migration without bumping it fails here.
