@@ -73,6 +73,11 @@ const EXPECTED_CHANNELS = [
   'claude:disconnect',
   'claude:begin-oauth',
   'claude:complete-oauth',
+  // copilot-usage plugin
+  'copilot-usage:get',
+  'copilot-usage:refresh',
+  'copilot-usage:get-budget',
+  'copilot-usage:set-budget',
   // discovery plugin
   'github:discovery-status',
   'github:start-pat-discovery',

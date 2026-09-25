@@ -35,6 +35,7 @@ import { GroupsDashboardPanel } from '../plugins/groups/GroupsDashboardPanel';
 import { AutoDismissHistoryPanel } from '../plugins/notifications/AutoDismissHistoryPanel';
 import { ClaudeStep } from '../plugins/claude/ClaudeStep';
 import { ClaudePanel } from '../plugins/claude/ClaudePanel';
+import { CopilotUsageBadge } from '../plugins/copilot-usage/CopilotUsageBadge';
 import { ActiveSessionsPanel } from '../plugins/active-sessions/ActiveSessionsPanel';
 
 // ── Types (imported from single source of truth in plugins/types.ts) ─────────
@@ -61,6 +62,7 @@ import type {
   GitHubRateLimit,
   ClaudeStatus,
   ClaudeRateLimit,
+  CopilotUsage,
   BackgroundTaskStatus,
 } from '../plugins/types';
 import { isIpcError } from '../plugins/types';
@@ -152,6 +154,8 @@ function App() {
   const [claudeRateLimit, setClaudeRateLimit] = useState<ClaudeRateLimit | null>(null);
   const [showClaudePanel, setShowClaudePanel] = useState(false);
   const [claudeRefreshing, setClaudeRefreshing] = useState(false);
+  // Copilot AI credit usage (refreshed by the main-process background task)
+  const [copilotUsage, setCopilotUsage] = useState<CopilotUsage | null>(null);
 
   const currentUserLogin = oauthStatus?.login ?? null;
 
@@ -265,6 +269,20 @@ function App() {
     window.jarvis.getClaudeRateLimit()
       .then(setClaudeRateLimit)
       .catch((err: unknown) => console.error('[Jarvis] Claude rate limit check failed:', err));
+  }, []);
+
+  // Copilot AI credit usage: initial load + live updates from the background task
+  useEffect(() => {
+    window.jarvis.getCopilotUsage()
+      .then((res) => {
+        if (isIpcError(res)) {
+          console.error('[Jarvis] Copilot usage check failed:', res.error);
+          return;
+        }
+        setCopilotUsage(res);
+      })
+      .catch((err: unknown) => console.error('[Jarvis] Copilot usage check failed:', err));
+    return window.jarvis.onCopilotUsageUpdated(setCopilotUsage);
   }, []);
 
   // Ollama status + selected model check on mount
@@ -1356,6 +1374,7 @@ function App() {
         localScanProgress={localScanProgress}
         rateLimit={rateLimit}
         claudeRateLimit={claudeRateLimit}
+        copilotUsage={copilotUsage}
       />
     </div>
   );
@@ -1371,6 +1390,7 @@ interface BackgroundStatusBarProps {
   localScanProgress: LocalScanProgress | null;
   rateLimit: GitHubRateLimit | null;
   claudeRateLimit: ClaudeRateLimit | null;
+  copilotUsage: CopilotUsage | null;
 }
 
 function BackgroundStatusBar({
@@ -1381,6 +1401,7 @@ function BackgroundStatusBar({
   localScanProgress,
   rateLimit,
   claudeRateLimit,
+  copilotUsage,
 }: BackgroundStatusBarProps) {
   const [ipcMessage, setIpcMessage] = useState<string | null>(null);
   const fadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1475,7 +1496,8 @@ function BackgroundStatusBar({
   const oauthBadge = rateLimit?.oauth.configured ? rateLimit.oauth : null;
   const patBadge = rateLimit?.pat.configured ? rateLimit.pat : null;
   const claudeBadge = claudeRateLimit?.configured ? claudeRateLimit : null;
-  const hasAnyBadge = oauthBadge !== null || patBadge !== null || claudeBadge !== null;
+  const copilotBadge = copilotUsage?.configured ? copilotUsage : null;
+  const hasAnyBadge = oauthBadge !== null || patBadge !== null || claudeBadge !== null || copilotBadge !== null;
 
   // Ticker: re-render every second while Claude is rate limited so the
   // countdown to the reset stays live.
@@ -1543,6 +1565,7 @@ function BackgroundStatusBar({
               </div>
             </div>
           )}
+          {copilotBadge && <CopilotUsageBadge usage={copilotBadge} />}
           {claudeBadge && (
             <span class="bg-status-claude">
               <span

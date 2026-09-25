@@ -46,6 +46,8 @@ import { registerHandlers as registerBrowserCompanionHandlers } from '../plugins
 
 import { registerHandlers as registerClaudeHandlers } from '../plugins/claude/handler';
 
+import { registerHandlers as registerCopilotUsageHandlers } from '../plugins/copilot-usage/handler';
+
 import { registerHandlers as registerMcpServerHandlers } from '../plugins/mcp-server/handler';
 
 import { registerHandlers as registerActiveSessionsHandlers } from '../plugins/active-sessions/handler';
@@ -100,6 +102,8 @@ export function registerIpcHandlers(
   registerBrowserCompanionHandlers(db, getWindow);
 
   registerClaudeHandlers(db, getWindow);
+
+  registerCopilotUsageHandlers(db, getWindow);
 
   registerMcpServerHandlers(db, getWindow);
 

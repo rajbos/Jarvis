@@ -1481,6 +1481,43 @@ export interface ClaudeRateLimit {
 
 }
 
+// ── GitHub Copilot AI credit usage types ─────────────────────────────────────
+
+export interface CopilotModelUsage {
+  model: string;
+  credits: number;
+}
+
+/** Copilot AI credit usage for the current calendar month (UTC) vs the user's budget. */
+export interface CopilotUsage {
+  /** False when no GitHub OAuth token or PAT is linked. */
+  configured: boolean;
+  /** Which token produced the data. */
+  source?: 'oauth' | 'pat';
+  login?: string;
+  year: number;
+  /** 1-12 */
+  month: number;
+  /** Unix seconds — when the monthly usage resets (1st of next month, UTC). */
+  resetsAt: number;
+  /** Total AI credits consumed this month (included + billed). */
+  creditsUsed: number;
+  includedCreditsUsed: number;
+  billedCredits: number;
+  billedAmountUsd: number;
+  byModel: CopilotModelUsage[];
+  /** Monthly budget in AI credits, as set in Settings; null when unset. */
+  budgetCredits: number | null;
+  /** Linear projection of month-end usage; null early in the month. */
+  projectedCredits: number | null;
+  /** True when the token lacks billing access (needs the `user` scope). */
+  missingScope?: boolean;
+  /** Whether the stored OAuth grant lists the `user` scope. */
+  oauthHasUserScope?: boolean;
+  error?: string;
+  fetchedAt: string; // ISO timestamp
+}
+
 
 
 // ── Active agent sessions + PR review readiness types ─────────────────────────
@@ -3079,6 +3116,13 @@ export interface JarvisApi {
   disconnectClaude(): Promise<{ ok: boolean }>;
   beginClaudeOAuth(): Promise<{ ok: boolean; authorizeUrl?: string; error?: string }>;
   completeClaudeOAuth(code: string): Promise<{ ok: boolean; error?: string }>;
+
+  // GitHub Copilot AI credit usage
+  getCopilotUsage(): Promise<CopilotUsage | IpcErrorResponse>;
+  refreshCopilotUsage(): Promise<CopilotUsage | IpcErrorResponse>;
+  getCopilotBudget(): Promise<{ ok: true; budgetCredits: number | null } | IpcErrorResponse>;
+  setCopilotBudget(credits: number | null): Promise<{ ok: true; budgetCredits: number | null } | IpcErrorResponse>;
+  onCopilotUsageUpdated(cb: (usage: CopilotUsage) => void): () => void;
 
   // Active agent sessions + PR review readiness
   getActiveSessions(): Promise<ActiveSessionsSnapshot | null | IpcErrorResponse>;

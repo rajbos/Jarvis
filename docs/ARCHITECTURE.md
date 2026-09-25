@@ -22,7 +22,8 @@
 13. [Configuration](#13-configuration)
 14. [Recommended Approach](#14-recommended-approach)
 15. [Claude Rate Limit Awareness](#15-claude-rate-limit-awareness)
-16. [Active Agent Sessions & PR Review Readiness](#16-active-agent-sessions--pr-review-readiness)
+16. [Copilot AI Credit Budget Tracking](#16-copilot-ai-credit-budget-tracking)
+17. [Active Agent Sessions & PR Review Readiness](#17-active-agent-sessions--pr-review-readiness)
 
 ---
 
@@ -49,7 +50,8 @@
 | R17 | Work journal / thought capture | Track things the user has been thinking about or working on |
 | R18 | Full SQLite encryption | Encrypt sensitive data at rest to prevent exfiltration |
 | R19 | Claude rate limit awareness | Reuse local Claude Code OAuth credentials to track Pro/Max subscription usage limits, with a status-bar countdown when limited |
-| R20 | Active agent sessions & PR review readiness | List running Copilot / Claude sessions (local + cloud), link them to their PRs and signal when a PR is ready for human review |
+| R20 | Copilot AI credit budget tracking | Show this month's GitHub Copilot AI credit usage against a user-set monthly budget |
+| R21 | Active agent sessions & PR review readiness | List running Copilot / Claude sessions (local + cloud), link them to their PRs and signal when a PR is ready for human review |
 
 ---
 
@@ -1428,7 +1430,36 @@ When both windows are exhausted the binding reset is the *later* of the two — 
 
 ---
 
-## 16. Active Agent Sessions & PR Review Readiness
+## 16. Copilot AI Credit Budget Tracking
+
+Since June 2026 GitHub Copilot bills usage in **AI credits** (1 AIC = $0.01). Usage is metered per calendar month (UTC) and resets on the 1st.
+
+### Data Source
+
+`GET /users/{username}/settings/billing/ai_credit/usage?year=YYYY&month=M` (enhanced billing platform) returns usage line items per model. Jarvis sums them:
+
+- `grossQuantity` → total credits consumed this month
+- `discountQuantity` → credits covered by the plan's included allowance
+- `netQuantity` / `netAmount` → billed credits / USD
+
+Only the user's **personal** plan usage is reported; seats billed through an organization or enterprise are not.
+
+### Authentication
+
+Reuses the linked GitHub OAuth token (device flow). The endpoint needs the classic `user` scope, so `user` replaced `read:user` in the default scopes and `resolveGitHubScopes()` forces it onto older `config.json` scope lists. Existing sign-ins get a **Re-authorize GitHub** button in Settings when the check returns 403/404. The PAT is used as a fallback (classic PAT with `user`, or fine-grained PAT with the *Plan* read permission).
+
+### Budget
+
+GitHub has no REST endpoint for personal budgets, so the monthly budget (in AI credits) is a Jarvis setting (`config` key `copilot_aic_monthly_budget`), edited under **Settings → GitHub Copilot AI Credits**. A desktop notification fires once per month at 80% and at 100% of the budget.
+
+### Scheduling & UI
+
+- **Background task** `copilot-ai-credit-usage` (main process) runs 20s after startup and then every 30 minutes, caches the result and pushes `copilot-usage:updated` to the renderer.
+- **Status bar**: `◈ Copilot used/budget AIC` badge (green / orange at ≥80% or projected overrun / red at ≥100%). Hovering shows month-to-date usage, remaining budget, included vs billed credits, the month-end projection at the current pace, top models, and the time until the monthly reset.
+
+---
+
+## 17. Active Agent Sessions & PR Review Readiness
 
 The **🤖 Agent Sessions** tab lists every AI coding session that is running right now — GitHub Copilot (CLI, Copilot app, cloud agent) and Claude Code — together with the pull request it works on, and answers one question per PR: *is it ready for a human review yet?*
 
