@@ -1,10 +1,10 @@
 import { render } from 'preact';
 
-import { useState, useEffect } from 'preact/hooks';
+import { useState, useEffect, useRef } from 'preact/hooks';
 
 import './settings.css';
 import { McpServerSection, type McpSectionApi } from './mcp-settings-section';
-import { isIpcError, type IpcErrorResponse } from '../plugins/types';
+import { isIpcError, type IpcErrorResponse, type CopilotUsage } from '../plugins/types';
 
 
 
@@ -276,6 +276,167 @@ function OAuthSection() {
 }
 
 
+
+// ── Copilot AI credits section ───────────────────────────────────────────────
+
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+function CopilotUsageSection() {
+  const [usage, setUsage] = useState<CopilotUsage | null>(null);
+  const [budget, setBudget] = useState<number | null>(null);
+  const [draft, setDraft] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [reauth, setReauth] = useState<{ userCode?: string; verificationUri?: string; error?: string } | null>(null);
+
+  useEffect(() => {
+    window.jarvis.getCopilotBudget()
+      .then((res) => {
+        if (isIpcError(res)) return;
+        setBudget(res.budgetCredits);
+        setDraft(res.budgetCredits !== null ? String(res.budgetCredits) : '');
+      })
+      .catch(() => { /* non-fatal */ });
+    window.jarvis.getCopilotUsage()
+      .then((res) => { if (!isIpcError(res)) setUsage(res); })
+      .catch(() => { /* non-fatal */ });
+    return window.jarvis.onCopilotUsageUpdated(setUsage);
+  }, []);
+
+  // After a re-authorization started here completes, re-check usage with the new token.
+  const reauthActive = useRef(false);
+  useEffect(() => {
+    return window.jarvis.onOAuthComplete((result) => {
+      if (!reauthActive.current) return;
+      reauthActive.current = false;
+      if (result.error) {
+        setReauth({ error: result.error });
+        return;
+      }
+      setReauth(null);
+      void handleCheck();
+    });
+  }, []);
+
+  const handleCheck = async () => {
+    setChecking(true);
+    try {
+      const res = await window.jarvis.refreshCopilotUsage();
+      if (!isIpcError(res)) setUsage(res);
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  const draftValue = draft.trim() === '' ? null : Number(draft);
+  const draftValid = draftValue === null || (Number.isFinite(draftValue) && draftValue >= 0);
+
+  const handleSave = async () => {
+    if (!draftValid) return;
+    setSaving(true);
+    setSaved(false);
+    try {
+      const res = await window.jarvis.setCopilotBudget(draftValue);
+      if (isIpcError(res)) {
+        alert('Error: ' + res.error);
+        return;
+      }
+      setBudget(res.budgetCredits);
+      setDraft(res.budgetCredits !== null ? String(res.budgetCredits) : '');
+      setSaved(true);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleReauthorize = async () => {
+    setReauth({});
+    reauthActive.current = true;
+    const result = await window.jarvis.startGitHubOAuth();
+    if (result.error) {
+      reauthActive.current = false;
+      setReauth({ error: result.error });
+      return;
+    }
+    setReauth({ userCode: result.userCode, verificationUri: result.verificationUri });
+  };
+
+  const showReauth = usage?.missingScope || (usage?.configured && usage.oauthHasUserScope === false);
+
+  return (
+    <div class="section">
+      <h2>GitHub Copilot AI Credits</h2>
+      <p class="hint">
+        Copilot usage is billed in AI credits (1 AIC = $0.01) per calendar month; usage resets on the 1st (UTC).
+        Set your monthly budget to track usage against it — Jarvis checks every 30 minutes and notifies you at 80% and 100%.
+        Only usage on your personal Copilot plan is reported; seats billed through an organization are not included.
+      </p>
+
+      <div class="btn-row" style={{ alignItems: 'center', gap: '0.5rem' }}>
+        <input
+          type="number"
+          min="0"
+          step="100"
+          placeholder="e.g. 3000"
+          value={draft}
+          onInput={(e) => { setDraft((e.target as HTMLInputElement).value); setSaved(false); }}
+          onKeyDown={(e: KeyboardEvent) => { if (e.key === 'Enter') void handleSave(); }}
+        />
+        <span class="hint" style={{ margin: 0 }}>
+          AI credits / month{draftValue !== null && draftValid ? ` ≈ $${(draftValue * 0.01).toFixed(2)}` : ''}
+        </span>
+        <button
+          class="btn-save"
+          onClick={() => void handleSave()}
+          disabled={saving || !draftValid || draftValue === budget}
+        >
+          {saving ? 'Saving…' : saved ? '\u2713 Saved' : 'Save'}
+        </button>
+      </div>
+
+      {usage && (
+        <p class="hint" style={{ marginTop: '0.6rem' }}>
+          {!usage.configured
+            ? 'Connect GitHub (OAuth or PAT) to track Copilot usage.'
+            : usage.error
+              ? <span style={{ color: '#ffb74d' }}>{usage.error}</span>
+              : <>
+                  {MONTH_NAMES[usage.month - 1]} {usage.year}: <strong>{Math.round(usage.creditsUsed).toLocaleString()}</strong>
+                  {usage.budgetCredits !== null ? ` of ${usage.budgetCredits.toLocaleString()}` : ''} AI credits used
+                  {usage.source ? ` (via ${usage.source === 'oauth' ? 'GitHub OAuth' : 'PAT'})` : ''}.
+                </>}
+        </p>
+      )}
+
+      {reauth && (
+        <p class="hint" style={{ marginTop: '0.4rem' }}>
+          {reauth.error
+            ? <span style={{ color: '#ff8080' }}>Re-authorization failed: {reauth.error}</span>
+            : reauth.userCode
+              ? <>A browser tab was opened at <code>{reauth.verificationUri}</code> — enter code <strong><code>{reauth.userCode}</code></strong> and approve the new <code>user</code> scope.</>
+              : 'Starting GitHub authorization…'}
+        </p>
+      )}
+
+      <div class="btn-row">
+        <button class="btn-secondary" onClick={() => void handleCheck()} disabled={checking}>
+          {checking ? 'Checking…' : 'Check usage now'}
+        </button>
+        {showReauth && (
+          <button
+            class="btn-secondary"
+            title="Re-run the GitHub device sign-in to grant the `user` scope, which is needed to read billing usage."
+            onClick={() => void handleReauthorize()}
+            disabled={reauth !== null && !reauth.error}
+          >
+            Re-authorize GitHub (grant billing access)
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
 
 // ── PAT section ──────────────────────────────────────────────────────────────
 
@@ -1247,6 +1408,7 @@ function App() {
       <StartupSection />
       <OAuthSection />
       <PatSection />
+      <CopilotUsageSection />
       <OneDriveSection />
       <RuddrSection />
       <McpServerSection api={window.jarvis as unknown as McpSectionApi} />

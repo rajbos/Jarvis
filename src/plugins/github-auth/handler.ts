@@ -15,7 +15,7 @@ import {
   deleteGitHubAuth,
 } from '../../services/github-oauth';
 import { saveDatabase, setConfigValue } from '../../storage/database';
-import { loadConfig } from '../../agent/config';
+import { loadConfig, resolveGitHubScopes } from '../../agent/config';
 import { completeOnboardingStep } from '../../agent/onboarding';
 import { startDiscoveryIfAuthed } from '../discovery/handler';
 import { safeHandle } from '../ipc-utils';
@@ -205,7 +205,7 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
     }
 
     try {
-      const deviceCode = await requestDeviceCode(clientId, config.github.scopes);
+      const deviceCode = await requestDeviceCode(clientId, resolveGitHubScopes(config.github.scopes));
       const flow = {
         deviceCode: deviceCode.device_code,
         clientId,
