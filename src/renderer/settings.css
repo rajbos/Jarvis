@@ -60,7 +60,8 @@ label {
   opacity: 0.55;
 }
 
-input[type="password"] {
+input[type="password"],
+input[type="number"] {
   width: 100%;
   max-width: 280px;
   padding: 0.35rem 0.55rem;

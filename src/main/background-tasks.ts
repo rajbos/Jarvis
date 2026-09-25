@@ -6,6 +6,7 @@ import { getScanFolders } from '../services/local-discovery';
 import { startLocalScanIfNeeded } from '../plugins/local-repos/handler';
 import { runBootWorkflowCheck, syncGitHubNotifications, runAutoDismissSweep } from '../plugins/notifications/handler';
 import { refreshRuddrProjectsInBackground, prewarmRuddrCache } from '../plugins/groups/handler';
+import { checkCopilotUsage } from '../plugins/copilot-usage/handler';
 import { safeHandle } from '../plugins/ipc-utils';
 import { logger } from '../services/logger';
 
@@ -17,6 +18,8 @@ export const GITHUB_NOTIFICATIONS_INITIAL_DELAY_MS = 60_000;
 export const GITHUB_NOTIFICATIONS_INTERVAL_MS = 5 * 60 * 1000;
 export const GITHUB_AUTO_DISMISS_INITIAL_DELAY_MS = 90_000;
 export const GITHUB_AUTO_DISMISS_INTERVAL_MS = 10 * 60 * 1000;
+export const COPILOT_USAGE_INITIAL_DELAY_MS = 20_000;
+export const COPILOT_USAGE_INTERVAL_MS = 30 * 60 * 1000;
 
 let scheduler: TaskScheduler | null = null;
 
@@ -91,6 +94,19 @@ export function createBackgroundTaskScheduler(
     initialDelayMs: GITHUB_AUTO_DISMISS_INITIAL_DELAY_MS,
     intervalMs: GITHUB_AUTO_DISMISS_INTERVAL_MS,
     run: () => runAutoDismissSweep(db, getWindow),
+  });
+
+  registerTask(taskScheduler, getWindow, {
+    id: 'copilot-ai-credit-usage',
+    label: 'Copilot AI credit usage check',
+    initialDelayMs: COPILOT_USAGE_INITIAL_DELAY_MS,
+    intervalMs: COPILOT_USAGE_INTERVAL_MS,
+    run: async () => {
+      const usage = await checkCopilotUsage(db, getWindow);
+      if (!usage.configured) return { skipped: true, reason: 'GitHub not connected' };
+      if (usage.error) throw new Error(usage.error);
+      return { creditsUsed: usage.creditsUsed, budgetCredits: usage.budgetCredits };
+    },
   });
 
   return taskScheduler;

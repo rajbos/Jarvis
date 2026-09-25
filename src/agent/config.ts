@@ -31,7 +31,8 @@ export interface JarvisConfig {
 const DEFAULT_CONFIG: JarvisConfig = {
   github: {
     oauthClientId: '', // Must be set by the user or via a registered GitHub OAuth App
-    scopes: ['repo', 'read:org', 'read:user'],
+    // `user` (superset of read:user) is needed to read Copilot AI credit billing usage.
+    scopes: ['repo', 'read:org', 'user'],
   },
   storage: {
     database: path.join(
@@ -58,6 +59,20 @@ export function getConfigDir(): string {
   if (override) return override;
   const appData = process.env.APPDATA || path.join(process.env.USERPROFILE || '', 'AppData', 'Roaming');
   return path.join(appData, 'Jarvis');
+}
+
+/**
+ * Scopes every GitHub OAuth grant must include, even when config.json pins an
+ * older scope list. `user` grants read access to the user's billing usage
+ * (Copilot AI credits) and supersedes `read:user`.
+ */
+export const REQUIRED_GITHUB_SCOPES = ['repo', 'read:org', 'user'];
+
+/** Merge configured scopes with the required ones (dropping read:user, which `user` covers). */
+export function resolveGitHubScopes(configured: string[]): string[] {
+  const merged = new Set([...configured, ...REQUIRED_GITHUB_SCOPES]);
+  if (merged.has('user')) merged.delete('read:user');
+  return [...merged];
 }
 
 export function loadConfig(): JarvisConfig {

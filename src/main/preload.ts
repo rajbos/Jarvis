@@ -320,6 +320,16 @@ contextBridge.exposeInMainWorld('jarvis', {
   disconnectClaude: () => ipcRenderer.invoke('claude:disconnect'),
   beginClaudeOAuth: () => ipcRenderer.invoke('claude:begin-oauth'),
   completeClaudeOAuth: (code: string) => ipcRenderer.invoke('claude:complete-oauth', code),
+  // GitHub Copilot AI credit usage
+  getCopilotUsage: () => ipcRenderer.invoke('copilot-usage:get'),
+  refreshCopilotUsage: () => ipcRenderer.invoke('copilot-usage:refresh'),
+  getCopilotBudget: () => ipcRenderer.invoke('copilot-usage:get-budget'),
+  setCopilotBudget: (credits: number | null) => ipcRenderer.invoke('copilot-usage:set-budget', credits),
+  onCopilotUsageUpdated: (callback: (usage: unknown) => void) => {
+    const listener = (_event: unknown, usage: unknown) => callback(usage);
+    ipcRenderer.on('copilot-usage:updated', listener);
+    return () => { ipcRenderer.removeListener('copilot-usage:updated', listener); };
+  },
   // Auto-dismiss log
   listAutoDismissLog: (limit?: number) => ipcRenderer.invoke('github:list-auto-dismiss-log', limit),
   getAutoDismissStats: () => ipcRenderer.invoke('github:auto-dismiss-stats'),
