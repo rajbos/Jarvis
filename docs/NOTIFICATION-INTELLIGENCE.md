@@ -549,7 +549,7 @@ NotifRepoPanel  →  "Analyse" button  →  AgentSelector modal
 - [ ] Create `src/plugins/agents/AgentSelector.tsx`
 - [ ] Create `src/plugins/agents/AgentApprovalPanel.tsx`
 - [ ] Update `src/plugins/notifications/NotifRepoPanel.tsx` — add "Analyse" button
-- [ ] Update `src/renderer/chat.tsx` — handle `agent:token` / `agent:session-complete` events, render approval panel
+- [ ] Update `src/plugins/chat/EmbeddedChatPanel.tsx` — handle `agent:token` / `agent:session-complete` events, render approval panel
 - [ ] Import new components in `src/renderer/index.tsx` if needed
 
 ### Phase 4 — Hardening

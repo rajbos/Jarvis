@@ -187,7 +187,7 @@ The tool automatically:
 | `src/plugins/chat/db-helpers.ts` | Search logic | `searchProjectBudgetForChat()` |
 | `src/plugins/chat/handler.ts` | Tool registration | `search_project_budget` in `CHAT_TOOLS` |
 | `src/storage/schema.ts` | Database schema | `groups`, `ruddr_projects` table definitions |
-| `src/renderer/chat.tsx` | Chat UI | Displays search results |
+| `src/plugins/chat/EmbeddedChatPanel.tsx` | Chat UI | Displays search results |
 
 ## Lessons Learned
 

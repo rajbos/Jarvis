@@ -5,7 +5,6 @@
     "src/mcp-server/index.ts",
     "src/renderer/index.tsx",
     "src/renderer/settings.tsx",
-    "src/renderer/chat.tsx",
     "src/renderer/about.tsx",
     "src/browser-extension/background.js",
     "src/browser-extension/content.js",
