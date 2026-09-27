@@ -7,6 +7,7 @@ Jarvis is a desktop productivity assistant designed to streamline your workflow 
 - **Automated Workflows:** Trigger and manage custom workflows to automate repetitive tasks.
 - **Secure Storage:** Store sensitive data securely using built-in encryption and a local database.
 - **GitHub Integration:** Connect to GitHub for repository discovery and OAuth-based authentication.
+- **Agent Sessions & PR Readiness:** See every running GitHub Copilot / Claude Code session (local or cloud), the PR it's working on, and traffic lights showing whether that PR is ready for your review (checks finished + Copilot review done on the latest commit). A background check notifies you when a PR becomes ready.
 - **Customizable Agent:** Extend Jarvis with your own agent logic and onboarding flows.
 - **Settings & Onboarding UI:** Intuitive onboarding and settings screens for easy configuration.
 - **Cross-Platform Support:** Runs on Windows, macOS, and Linux.

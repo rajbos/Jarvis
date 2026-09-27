@@ -182,6 +182,9 @@ const EXPECTED_CHANNELS = [
   'browser:list-runs',
   'browser:run-skill',
   'browser:focus-window',
+  // active agent sessions / PR readiness
+  'active-sessions:get',
+  'active-sessions:refresh',
   // background tasks
   'tasks:list',
   'tasks:run-now',

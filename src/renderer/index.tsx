@@ -36,6 +36,7 @@ import { AutoDismissHistoryPanel } from '../plugins/notifications/AutoDismissHis
 import { ClaudeStep } from '../plugins/claude/ClaudeStep';
 import { ClaudePanel } from '../plugins/claude/ClaudePanel';
 import { CopilotUsageBadge } from '../plugins/copilot-usage/CopilotUsageBadge';
+import { ActiveSessionsPanel } from '../plugins/active-sessions/ActiveSessionsPanel';
 
 // ── Types (imported from single source of truth in plugins/types.ts) ─────────
 // The global augmentation `Window.jarvis` is declared in plugins/types.ts and
@@ -67,7 +68,7 @@ import type {
 import { isIpcError } from '../plugins/types';
 import '../plugins/types'; // activate the global Window augmentation
 
-type AppTab = 'dashboard' | 'groups-dashboard' | 'browser' | 'setup' | 'dismiss-history';
+type AppTab = 'dashboard' | 'groups-dashboard' | 'agent-sessions' | 'browser' | 'setup' | 'dismiss-history';
 
 // ── App ──────────────────────────────────────────────────────────────────────
 
@@ -160,6 +161,15 @@ function App() {
 
   // Tab state
   const [activeTab, setActiveTab] = useState<AppTab>('dashboard');
+
+  // Agent sessions: ready-for-review count shown on the tab label
+  const [agentSessionsReady, setAgentSessionsReady] = useState(0);
+  useEffect(() => {
+    window.jarvis.getActiveSessions()
+      .then((s) => { if (s && !isIpcError(s)) setAgentSessionsReady(s.readyCount); })
+      .catch((err: unknown) => console.warn('[Jarvis] Active sessions load failed:', err));
+    return window.jarvis.onActiveSessionsUpdated((s) => setAgentSessionsReady(s.readyCount));
+  }, []);
 
 
   // Initial status check
@@ -977,7 +987,7 @@ function App() {
     <div class="app-shell">
       <div class="app-main-area">
         <div class="main-scroll" ref={mainScrollRef}>
-        <div class={`container${(activeTab === 'dashboard' || activeTab === 'groups-dashboard' || activeTab === 'dismiss-history') ? ' container--fill' : ''}`}>
+        <div class={`container${(activeTab === 'dashboard' || activeTab === 'groups-dashboard' || activeTab === 'agent-sessions' || activeTab === 'dismiss-history') ? ' container--fill' : ''}`}>
       <div class="search-row">
         <SearchBar />
         <UpdateButton />
@@ -996,6 +1006,11 @@ function App() {
           class={`tab-btn ${activeTab === 'groups-dashboard' ? 'tab-active' : ''}`}
           onClick={() => setActiveTab('groups-dashboard')}
         >📁 Groups Dashboard</button>
+        <button
+          class={`tab-btn ${activeTab === 'agent-sessions' ? 'tab-active' : ''}`}
+          onClick={() => setActiveTab('agent-sessions')}
+          title="Running Copilot / Claude sessions and whether their PRs are ready for review"
+        >🤖 Agent Sessions{agentSessionsReady > 0 ? ` (${agentSessionsReady} ready)` : ''}</button>
         <button
           class={`tab-btn ${activeTab === 'browser' ? 'tab-active' : ''}`}
           onClick={() => setActiveTab('browser')}
@@ -1023,6 +1038,11 @@ function App() {
       {/* ── Groups Dashboard tab ─────────────────────────────────────────── */}
       {activeTab === 'groups-dashboard' && (
         <GroupsDashboardPanel />
+      )}
+
+      {/* ── Agent sessions tab ───────────────────────────────────────────── */}
+      {activeTab === 'agent-sessions' && (
+        <ActiveSessionsPanel />
       )}
 
       {/* ── Browser Companion tab ─────────────────────────────────────────── */}

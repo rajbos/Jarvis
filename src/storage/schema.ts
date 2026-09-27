@@ -374,5 +374,18 @@ export function getSchema(): string {
     );
     CREATE INDEX IF NOT EXISTS idx_onenote_cache_lookup ON onedrive_onenote_cache(folder_id, relative_path);
     CREATE INDEX IF NOT EXISTS idx_onenote_cache_modified ON onedrive_onenote_cache(page_last_modified);
+
+    -- Last known review-readiness per PR linked to an active agent session;
+    -- ready_notified_sha stops the "ready for review" toast repeating per commit.
+    CREATE TABLE IF NOT EXISTS pr_readiness (
+        repo_full_name      TEXT NOT NULL,
+        pr_number           INTEGER NOT NULL,
+        head_sha            TEXT NOT NULL,
+        ready               INTEGER NOT NULL DEFAULT 0,
+        waiting_on          TEXT,
+        checked_at          TEXT NOT NULL,
+        ready_notified_sha  TEXT,
+        PRIMARY KEY (repo_full_name, pr_number)
+    );
   `;
 }
