@@ -154,12 +154,12 @@ describe('main window — driving the fake API', () => {
   it('reacts to push events from the main process', async () => {
     const view = await harness.open('index');
     const { page } = view;
-    await expect.poll(() => tab(page, /Agent Sessions/).innerText()).toContain('(1 ready)');
+    await expect.poll(() => tab(page, /Agent Sessions/).locator('.tab-badge').innerText()).toBe('1');
 
     const snapshot = await page.evaluate(() => window.jarvis.getActiveSessions());
     const delivered = await view.emit('onActiveSessionsUpdated', { ...snapshot, readyCount: 4 });
     expect(delivered).toBeGreaterThan(0);
-    await expect.poll(() => tab(page, /Agent Sessions/).innerText()).toContain('(4 ready)');
+    await expect.poll(() => tab(page, /Agent Sessions/).locator('.tab-badge').innerText()).toBe('4');
 
     await view.emit('onBackgroundStatus', 'Fixture background job finished');
     await expect.poll(() => page.locator('body').innerText()).toContain('Fixture background job finished');
