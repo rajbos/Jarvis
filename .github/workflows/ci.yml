@@ -50,6 +50,12 @@ jobs:
       - name: Test
         run: npm run test
 
+      - name: Install headless Chromium for view tests
+        run: npx playwright install --with-deps chromium
+
+      - name: View tests (headless browser)
+        run: npm run test:views
+
       - name: Coverage
         run: npm run test:coverage
 

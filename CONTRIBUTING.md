@@ -41,6 +41,8 @@ You can also run and debug from VS Code: press **F5** and choose
 | `npm test` | Run the unit tests with Vitest |
 | `npm run test:watch` | Vitest in watch mode |
 | `npm run test:coverage` | Run tests with a coverage report (written to `coverage/`) |
+| `npm run test:views` | Render every window in headless Chromium and run the view integration tests |
+| `npm run test:views:install` | One-time download of the headless Chromium used by `test:views` |
 | `npm run lint` | Lint `src` with ESLint (`npm run lint:fix` to autofix) |
 
 ## Before you open a pull request
@@ -51,17 +53,44 @@ across the whole project that the tests alone will not:
 ```powershell
 npm run build
 npm test
+npm run test:views
 npm run lint
 ```
 
 Fix all build errors, test failures, and lint errors before pushing. CI
 (`.github/workflows/ci.yml`) runs the same steps plus coverage.
 
+## View tests (headless browser)
+
+`tests/views/` runs the real renderer windows (`index.html`, `settings.html`,
+`about.html`) in headless Chromium through [Playwright](https://playwright.dev/),
+without Electron:
+
+- `harness/view-harness.ts` bundles the renderer with the same esbuild options as
+  `npm run build`, serves it on `127.0.0.1`, and aborts every request that leaves
+  that origin.
+- `harness/mock-jarvis-api.ts` replaces the preload bridge: a fake `window.jarvis`
+  that implements every `JarvisApi` method, records calls, and can fire push events
+  (`view.emit('onChatToken', ...)`). It is type-checked against `JarvisApi`, so a new
+  preload method fails `npm run test:views` until the fake gets a default response.
+- `harness/fixtures.ts` holds the data the fake serves. **Keep it synthetic** —
+  invented orgs, repos, groups and paths, never data from your own database or
+  accounts. `fixtures-are-synthetic.view.test.ts` fails if your OS user, host name
+  or git identity shows up in it.
+
+Override responses per test with
+`harness.open('index', { responses: { listOrgs: { ok: false, error: 'boom' } } })`,
+then drive the page with Playwright and assert on `view.calls('listOrgs')`. The
+tests fail on uncaught page errors and `console.error` output. When Playwright's
+Chromium is not installed, the harness falls back to a local Edge or Chrome
+(`JARVIS_VIEW_BROWSER_CHANNEL` forces one).
+
 ## Conventions
 
 - **Strict TypeScript** — all code is type-checked under strict settings.
 - **Tests live in `tests/unit/`** and are named `*.test.ts`. New code should come
-  with unit tests.
+  with unit tests. New or changed views get a view test in `tests/views/`
+  (`*.view.test.ts`).
 - **New IPC channels**: when adding an `ipcMain.handle` channel, also add its name
   to the `EXPECTED_CHANNELS` array in `tests/unit/ipc-registration.test.ts`.
 - **Database schema changes must be backward compatible** — never add a column to a

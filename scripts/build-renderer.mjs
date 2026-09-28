@@ -2,13 +2,17 @@
 // Bundles renderer TSX entry points into dist/renderer/ using esbuild.
 import esbuild from 'esbuild';
 import path from 'path';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const watch = process.argv.includes('--watch');
 
-/** @type {import('esbuild').BuildOptions} */
-const options = {
+/**
+ * Shared with the headless view tests (tests/views), which bundle the same
+ * entry points into a temp dir instead of dist/renderer.
+ * @type {import('esbuild').BuildOptions}
+ */
+export const options = {
   entryPoints: {
     renderer: path.join(__dirname, '..', 'src', 'renderer', 'index.tsx'),
     settings: path.join(__dirname, '..', 'src', 'renderer', 'settings.tsx'),
@@ -35,7 +39,10 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+// Only build when run as a script, not when imported for its options.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}

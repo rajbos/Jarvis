@@ -18,6 +18,8 @@
     "dev": "npm run build && concurrently --kill-others --names \"TSC,ESBuild,Electron\" --prefix-colors \"blue,yellow,green\" \"npm run dev:tsc\" \"npm run dev:esbuild\" \"npm run dev:electron\"",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:views": "tsc -p tests/views && vitest run --config vitest.views.config.ts",
+    "test:views:install": "playwright install chromium",
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
     "test:coverage": "vitest run --coverage",
@@ -39,6 +41,7 @@
     "esbuild": "^0.28.2",
     "eslint": "^10.11.0",
     "knip": "^6.37.0",
+    "playwright": "^1.63.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.70.0",
     "vitest": "^5.0.0"

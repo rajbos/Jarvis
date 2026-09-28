@@ -50,7 +50,8 @@ Scripts for development:
 
 - **Build output**: Compiled files go to `dist/`
 - **Renderer static files**: Copied from `src/renderer/*.html` to `dist/renderer/`
-- **Tests**: All test files are in `tests/unit/` and use Vitest (`*.test.ts`)
+- **Tests**: Unit tests are in `tests/unit/` and use Vitest (`*.test.ts`)
+- **View tests**: `tests/views/*.view.test.ts` render the renderer windows in headless Chromium (Playwright) against a fake `window.jarvis` (`tests/views/harness/`). Run with `npm run test:views`. Fixture data in `tests/views/harness/fixtures.ts` must stay synthetic — never use names, titles or paths from a real database or account.
 - **TypeScript config**: See `tsconfig.json` (strict mode, ES2022, declaration maps)
 
 ---
