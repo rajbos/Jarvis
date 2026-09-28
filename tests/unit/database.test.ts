@@ -245,6 +245,7 @@ describe('Migration chain completeness (no orphaned user_version)', () => {
     25: `CREATE TABLE github_workflow_jobs (id TEXT PRIMARY KEY)`,
     26: `CREATE TABLE agent_sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, agent_id INTEGER, scope_type TEXT)`,
     27: `CREATE TABLE agent_definitions (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, system_prompt TEXT, updated_at DATETIME)`,
+    30: `CREATE TABLE agent_definitions (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, system_prompt TEXT, updated_at DATETIME)`,
   };
 
   it('advances the version from every intermediate user_version (0..28)', async () => {

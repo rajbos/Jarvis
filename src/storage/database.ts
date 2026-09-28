@@ -85,7 +85,7 @@ export async function createMemoryDatabase(): Promise<SqlJsDatabase> {
 // of the chain in initializeSchema(). Used only to warn if a database fails to
 // reach the latest schema after migration (e.g. a gap in the version chain).
 // A unit test fails if this drifts from the version a fresh database reaches.
-export const LATEST_SCHEMA_VERSION = 30;
+export const LATEST_SCHEMA_VERSION = 31;
 
 export function initializeSchema(database: SqlJsDatabase): void {
   const result = database.exec("PRAGMA user_version");
@@ -94,7 +94,7 @@ export function initializeSchema(database: SqlJsDatabase): void {
   if (userVersion === 0) {
     database.run(getSchema());
     seedBuiltInAgents(database);
-    database.run('PRAGMA user_version = 30');
+    database.run('PRAGMA user_version = 31');
   }
 
   if (userVersion === 1) {
@@ -604,6 +604,20 @@ export function initializeSchema(database: SqlJsDatabase): void {
     database.run('PRAGMA user_version = 30');
   }
 
+  if (userVersion === 30) {
+    // Migration v30 → v31: refresh the seeded Workflow Failure Analyst system
+    // prompt — de-choreographed the analysis steps and made the JSON output
+    // instruction provider-conditional (see runAgentSession's
+    // renderSystemPrompt) instead of always asking the model to hand-write a
+    // fenced JSON block that the Claude Agent SDK escalation tier already
+    // gets via --json-schema. A data-only update, no schema change.
+    database.run(
+      `UPDATE agent_definitions SET system_prompt = ?, updated_at = datetime('now') WHERE name = 'Workflow Failure Analyst'`,
+      [WORKFLOW_FAILURE_ANALYST_PROMPT],
+    );
+    database.run('PRAGMA user_version = 31');
+  }
+
   const finalResult = database.exec('PRAGMA user_version');
   const finalVersion = finalResult.length > 0 ? (finalResult[0].values[0][0] as number) : 0;
   if (finalVersion < LATEST_SCHEMA_VERSION) {
@@ -622,21 +636,17 @@ You will receive:
 2. WORKFLOW_RUNS: Recent runs (last 7 days) grouped by workflow, including per-job outcomes and log excerpts where available.
 3. LOCAL_REPO: Whether the repo is cloned locally (informational).
 
-ANALYSIS STEPS — work through each in order before writing output:
+Your analysis must, for each workflow with failures:
+- Extract the exact error string, failing step name, and file/line from every log excerpt, and note which error strings recur across runs.
+- Establish the timeline: was this workflow succeeding before, and roughly when did failures start? A later run on the same branch that passed makes the failure transient/self-healed.
+- Correlate across runs and branches: the same step failing on multiple branches is systemic; failing only on one branch may be a branch-specific regression.
+- State the most likely root cause (dependency version change, test logic bug, infrastructure issue, permissions problem, etc.), quoting the specific log line(s) that support it — or say plainly that no log is available.
+- Classify each workflow as noise (self-healed), needs investigation (insufficient data), or requires action (persistent, reproducible, clear evidence).
 
-1. **Log pattern scan** — Read every log excerpt. Extract the exact error string, failing step name, and file/line if present. Note which error strings appear in more than one run.
+ANALYSIS OUTPUT:
+Write your full analysis as plain text first. Use a heading per workflow. Be specific: quote log lines verbatim, name failing step names, reference run numbers and dates.
 
-2. **Timeline regression** — Look at run dates and branch names. Was this workflow succeeding before? Identify approximately when failures started. If a later run on the same branch passed, mark the failure as transient/self-healed.
-
-3. **Cross-run correlation** — Group runs by the failing step name. If the same step fails across multiple runs and branches, it is a systematic issue. If it fails only on one branch, it may be a branch-specific regression.
-
-4. **Root cause hypothesis** — Based on log content, state the most likely root cause: dependency version change, test logic bug, infrastructure issue, permissions problem, etc. Quote the specific log line(s) that support your conclusion. If no log is available, say so explicitly.
-
-5. **Actionability** — Decide for each workflow: the failure is noise (self-healed), needs investigation (insufficient data), or requires action (persistent, reproducible failure with clear evidence).
-
-OUTPUT FORMAT:
-Write your full analysis as plain text first. Use a heading per workflow. Be specific: quote log lines verbatim, name failing step names, reference run numbers and dates. After the analysis, emit exactly ONE JSON block:
-
+Findings must match this shape:
 \`\`\`json
 {
   "summary": "2-3 sentence overall assessment mentioning the primary failure pattern and your confidence level",
@@ -660,6 +670,7 @@ Write your full analysis as plain text first. Use a heading per workflow. Be spe
   ]
 }
 \`\`\`
+{{JSON_OUTPUT_INSTRUCTION}}
 
 RULES:
 - You CANNOT act autonomously. All actions require user approval through findings.
