@@ -384,6 +384,36 @@ export function encodeClaudeProjectDir(cwd: string): string {
   return cwd.replace(/[^A-Za-z0-9]/g, '-');
 }
 
+/**
+ * Pull a human-readable title out of a Claude Code transcript: the generated
+ * `summary` entry if one exists, otherwise the first user message (truncated).
+ * Exported for tests.
+ */
+export function extractClaudeTitle(entries: Array<Record<string, unknown>>): string | null {
+  const summary = [...entries].reverse().find((e) => e.type === 'summary' && typeof e.summary === 'string');
+  if (summary) return String(summary.summary);
+
+  for (const e of entries) {
+    if (e.type !== 'user') continue;
+    const message = (e.message ?? {}) as Record<string, unknown>;
+    const content = message.content;
+    let text: string | null = null;
+    if (typeof content === 'string') {
+      text = content;
+    } else if (Array.isArray(content)) {
+      const block = content.find((c) => c && typeof c === 'object' && (c as Record<string, unknown>).type === 'text');
+      text = block && typeof (block as Record<string, unknown>).text === 'string' ? String((block as Record<string, unknown>).text) : null;
+    }
+    if (!text) continue;
+    text = text.trim().replace(/\s+/g, ' ');
+    // Skip command/tool-result scaffolding ("<command-...>") and pasted-attachment
+    // placeholders ("[Image: ...]", "[Request interrupted...]") — neither is a title.
+    if (!text || text.startsWith('<') || /^\[[^\]]*\]/.test(text)) continue;
+    return text.length > 80 ? `${text.slice(0, 79)}…` : text;
+  }
+  return null;
+}
+
 /** Exported for tests. */
 export function deriveClaudeActivity(
   entries: Array<Record<string, unknown>>,
@@ -444,10 +474,15 @@ export async function discoverClaudeLocalSessions(options: LocalSessionDiscovery
       const transcript = path.join(home, '.claude', 'projects', encodeClaudeProjectDir(cwd), `${sessionId}.jsonl`);
       const mtime = mtimeOf(transcript);
       if (mtime !== null) {
-        const entries = readTailEntries(transcript, (es) => es.some((e) => e.type === 'assistant' || e.type === 'user'));
+        // A `summary` entry (the transcript's title) isn't necessarily near the
+        // tail — widen the read until one turns up, not just until there's
+        // enough to tell activity, or titles fall back to the worktree folder name.
+        const entries = readTailEntries(
+          transcript,
+          (es) => es.some((e) => e.type === 'assistant' || e.type === 'user') && es.some((e) => e.type === 'summary'),
+        );
         activity = deriveClaudeActivity(entries, mtime, now);
-        const summary = [...entries].reverse().find((e) => e.type === 'summary' && typeof e.summary === 'string');
-        title = summary ? String(summary.summary) : null;
+        title = extractClaudeTitle(entries);
       }
     }
 
