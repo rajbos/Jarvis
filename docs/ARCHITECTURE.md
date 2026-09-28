@@ -1434,19 +1434,21 @@ When both windows are exhausted the binding reset is the *later* of the two — 
 
 Since June 2026 GitHub Copilot bills usage in **AI credits** (1 AIC = $0.01). Usage is metered per calendar month (UTC) and resets on the 1st.
 
-### Data Source
+### Data Sources
 
-`GET /users/{username}/settings/billing/ai_credit/usage?year=YYYY&month=M` (enhanced billing platform) returns usage line items per model. Jarvis sums them:
+**1. Internal quota endpoint (preferred)** — `GET /copilot_internal/user`, the call VS Code and the Copilot CLI make. Its `quota_snapshots.premium_interactions` block gives `credits_used`, `entitlement`, `remaining` and `unlimited`, plus `quota_reset_date_utc` and `copilot_plan` at the top level. It reports the quota of **any** seat, including seats billed through an organization or enterprise. GitHub only answers it for tokens minted by its own OAuth apps (VS Code, `gh`); the Jarvis OAuth app's token is refused, so Jarvis reuses the GitHub CLI's token via `gh auth token` (`getGhCliToken()`, 10s timeout, silently skipped when `gh` is missing or logged out). No special scope or user agent is needed.
+
+**2. Public billing report (fallback)** — `GET /users/{username}/settings/billing/ai_credit/usage?year=YYYY&month=M` (enhanced billing platform) returns usage line items per model. Jarvis sums them:
 
 - `grossQuantity` → total credits consumed this month
 - `discountQuantity` → credits covered by the plan's included allowance
 - `netQuantity` / `netAmount` → billed credits / USD
 
-Only the user's **personal** plan usage is reported; seats billed through an organization or enterprise are not.
+Only the user's **personal** plan usage is reported here; seats billed through an organization or enterprise show 0.
 
 ### Authentication
 
-Reuses the linked GitHub OAuth token (device flow). The endpoint needs the classic `user` scope, so `user` replaced `read:user` in the default scopes and `resolveGitHubScopes()` forces it onto older `config.json` scope lists. Existing sign-ins get a **Re-authorize GitHub** button in Settings when the check returns 403/404. The PAT is used as a fallback (classic PAT with `user`, or fine-grained PAT with the *Plan* read permission).
+Order: GitHub CLI token → linked OAuth token (device flow) → PAT. The billing report needs the classic `user` scope, so `user` replaced `read:user` in the default scopes and `resolveGitHubScopes()` forces it onto older `config.json` scope lists. Existing sign-ins get a **Re-authorize GitHub** button in Settings when the fallback returns 403/404 (and the CLI route was unavailable). The PAT is used last (classic PAT with `user`, or fine-grained PAT with the *Plan* read permission).
 
 ### Budget
 
@@ -1455,7 +1457,7 @@ GitHub has no REST endpoint for personal budgets, so the monthly budget (in AI c
 ### Scheduling & UI
 
 - **Background task** `copilot-ai-credit-usage` (main process) runs 20s after startup and then every 30 minutes, caches the result and pushes `copilot-usage:updated` to the renderer.
-- **Status bar**: `◈ Copilot used/budget AIC` badge (green / orange at ≥80% or projected overrun / red at ≥100%). Hovering shows month-to-date usage, remaining budget, included vs billed credits, the month-end projection at the current pace, top models, and the time until the monthly reset.
+- **Status bar**: `◈ Copilot used/limit AIC` badge (green / orange at ≥80% or projected overrun / red at ≥100%), where the limit is the user's budget or, when none is set, the plan's included credits from the quota endpoint. Hovering shows month-to-date usage, remaining budget, included vs entitlement (or billed) credits, the month-end projection at the current pace, top models (billing report only), the time until the reset, and which token produced the data.
 
 ---
 

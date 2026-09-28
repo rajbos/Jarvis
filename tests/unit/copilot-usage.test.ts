@@ -1,13 +1,20 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
+
+const execFileMock = vi.hoisted(() => vi.fn());
+vi.mock('child_process', () => ({ execFile: execFileMock }));
+
 import {
   currentBillingMonth,
   elapsedMonthFraction,
   projectMonthEndUsage,
   summarizeAiCreditUsage,
   fetchAiCreditUsage,
+  fetchCopilotQuota,
+  getGhCliToken,
+  parseCopilotQuota,
   type AiCreditUsageItem,
 } from '../../src/services/copilot-usage';
-import { copilotBudgetLevel } from '../../src/plugins/copilot-usage/budget-level';
+import { copilotBudgetLevel, copilotUsageLimit } from '../../src/plugins/copilot-usage/budget-level';
 import { resolveGitHubScopes } from '../../src/agent/config';
 import type { CopilotUsage } from '../../src/plugins/types';
 
@@ -122,6 +129,93 @@ describe('fetchAiCreditUsage', () => {
   });
 });
 
+// A trimmed `GET /copilot_internal/user` body as returned for an enterprise seat.
+const internalUser = {
+  login: 'rajbos',
+  copilot_plan: 'enterprise',
+  quota_reset_date: '2026-10-01',
+  quota_reset_date_utc: '2026-10-01T00:00:00.000Z',
+  quota_snapshots: {
+    chat: { unlimited: true, credits_used: 0, entitlement: 0, remaining: 0 },
+    premium_interactions: {
+      percent_remaining: 30.6, quota_remaining: 53680.2, unlimited: false, has_quota: true,
+      token_based_billing: true, credits_used: 121320, remaining: 53680, entitlement: 175000,
+    },
+  },
+};
+
+describe('parseCopilotQuota', () => {
+  it('reads the premium quota, plan and reset date', () => {
+    expect(parseCopilotQuota(internalUser)).toEqual({
+      login: 'rajbos', plan: 'enterprise', creditsUsed: 121320, entitlementCredits: 175000,
+      remainingCredits: 53680, unlimited: false, resetsAt: Date.UTC(2026, 9, 1) / 1000,
+    });
+  });
+
+  it('treats unlimited plans as having no entitlement', () => {
+    const quota = parseCopilotQuota({
+      ...internalUser,
+      quota_snapshots: { premium_interactions: { unlimited: true, credits_used: 12, entitlement: 0 } },
+    });
+    expect(quota).toMatchObject({ creditsUsed: 12, entitlementCredits: null, unlimited: true });
+  });
+
+  it('returns null when the body has no premium quota', () => {
+    expect(parseCopilotQuota({ login: 'x' })).toBeNull();
+    expect(parseCopilotQuota({ quota_snapshots: {} })).toBeNull();
+  });
+});
+
+describe('fetchCopilotQuota', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('calls the internal user endpoint with the token and parses the quota', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => JSON.stringify(internalUser) });
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await fetchCopilotQuota('gho_x');
+    expect(fetchMock.mock.calls[0][0]).toBe('https://api.github.com/copilot_internal/user');
+    expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe('Bearer gho_x');
+    expect(result).toMatchObject({ ok: true, quota: { creditsUsed: 121320, entitlementCredits: 175000 } });
+  });
+
+  it('reports HTTP errors with the GitHub message', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false, status: 404, text: async () => JSON.stringify({ message: 'Not Found' }),
+    }));
+    expect(await fetchCopilotQuota('tok')).toEqual({ ok: false, status: 404, error: 'HTTP 404: Not Found' });
+  });
+
+  it('fails when the response carries no premium quota', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => '{"login":"me"}' }));
+    expect(await fetchCopilotQuota('tok')).toMatchObject({ ok: false, status: 200, error: /premium quota/ });
+  });
+
+  it('reports network errors', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')));
+    expect(await fetchCopilotQuota('tok')).toEqual({ ok: false, status: 0, error: 'offline' });
+  });
+});
+
+describe('getGhCliToken', () => {
+  afterEach(() => execFileMock.mockReset());
+
+  it('runs `gh auth token` and returns the trimmed token', async () => {
+    execFileMock.mockImplementation((_file, _args, _opts, cb) => cb(null, 'gho_abc123\n', ''));
+    await expect(getGhCliToken()).resolves.toBe('gho_abc123');
+    expect(execFileMock.mock.calls[0].slice(0, 2)).toEqual(['gh', ['auth', 'token']]);
+  });
+
+  it('returns null when gh is missing or not logged in', async () => {
+    execFileMock.mockImplementation((_file, _args, _opts, cb) => cb(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }), '', ''));
+    await expect(getGhCliToken()).resolves.toBeNull();
+  });
+
+  it('rejects output that is not a bare token', async () => {
+    execFileMock.mockImplementation((_file, _args, _opts, cb) => cb(null, 'You are not logged into any GitHub hosts', ''));
+    await expect(getGhCliToken()).resolves.toBeNull();
+  });
+});
+
 describe('copilotBudgetLevel', () => {
   const base: CopilotUsage = {
     configured: true, year: 2026, month: 9, resetsAt: 0, creditsUsed: 0, includedCreditsUsed: 0,
@@ -136,6 +230,16 @@ describe('copilotBudgetLevel', () => {
     expect(copilotBudgetLevel({ ...base, creditsUsed: 100, projectedCredits: 1500 })).toBe('warning');
     expect(copilotBudgetLevel({ ...base, creditsUsed: 5000, budgetCredits: null })).toBe('available');
     expect(copilotBudgetLevel({ ...base, error: 'nope' })).toBe('unknown');
+  });
+
+  it('falls back to the plan entitlement when no budget is set', () => {
+    const plan = { ...base, budgetCredits: null, entitlementCredits: 175000 };
+    expect(copilotUsageLimit(plan)).toBe(175000);
+    expect(copilotUsageLimit({ ...plan, budgetCredits: 500 })).toBe(500);
+    expect(copilotUsageLimit({ ...plan, entitlementCredits: null })).toBeNull();
+    expect(copilotBudgetLevel({ ...plan, creditsUsed: 121320 })).toBe('available');
+    expect(copilotBudgetLevel({ ...plan, creditsUsed: 150000 })).toBe('warning');
+    expect(copilotBudgetLevel({ ...plan, creditsUsed: 175000 })).toBe('limited');
   });
 });
 

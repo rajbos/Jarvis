@@ -1515,11 +1515,19 @@ export interface CopilotModelUsage {
 
 /** Copilot AI credit usage for the current calendar month (UTC) vs the user's budget. */
 export interface CopilotUsage {
-  /** False when no GitHub OAuth token or PAT is linked. */
+  /** False when no GitHub CLI login, OAuth token or PAT is available. */
   configured: boolean;
-  /** Which token produced the data. */
-  source?: 'oauth' | 'pat';
+  /**
+   * Which token produced the data: the GitHub CLI's (`gh auth token`, via the
+   * internal quota endpoint VS Code uses — covers org/enterprise seats), or the
+   * linked OAuth token / PAT (public billing report — personal plans only).
+   */
+  source?: 'gh-cli' | 'oauth' | 'pat';
   login?: string;
+  /** Copilot plan reported by the quota endpoint (e.g. `enterprise`, `pro`). */
+  plan?: string;
+  /** Credits included in the plan this period (quota endpoint only); null when unknown/unlimited. */
+  entitlementCredits?: number | null;
   year: number;
   /** 1-12 */
   month: number;
