@@ -37,6 +37,7 @@ vi.mock('../../src/services/claude', () => ({
   loadClaudeCodeCredentials: vi.fn(() => null),
   refreshClaudeToken: vi.fn(),
   checkClaudeRateLimit: vi.fn(),
+  fetchClaudeUsage: vi.fn(async () => ({ extraUsage: null, cloudCredits: null })),
   isTokenPotentiallyUsable: vi.fn(() => false),
   generatePkce: vi.fn(() => ({ verifier: 'v', challenge: 'c', state: 's' })),
   buildAuthorizeUrl: vi.fn(() => 'https://example.com/authorize'),

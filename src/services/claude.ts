@@ -368,3 +368,167 @@ export async function checkClaudeRateLimit(accessToken: string): Promise<ClaudeR
     error: lastError ?? 'Probe failed',
   };
 }
+
+// ── Usage endpoint (credits) ──────────────────────────────────────────────────
+//
+// Claude Code's /usage screen reads GET /api/oauth/usage (needs the
+// user:profile scope). Besides the rate-limit windows it carries the
+// extra-usage (overage) spend and — for accounts that have them — prepaid
+// cloud session credits. Amounts in `extra_usage` are in minor units of
+// `currency` (cents for USD).
+//
+// The cloud-credit field is not documented, so it is located by name
+// (any key mentioning "cloud"/"session"/"credit" whose value carries an
+// amount) and parsed tolerantly.
+
+export interface ClaudeExtraUsage {
+  enabled: boolean;
+  /** Monthly spend cap in major currency units (e.g. dollars); null = unlimited/unknown. */
+  monthlyLimit: number | null;
+  /** Spend so far this period, major currency units. */
+  used: number | null;
+  /** Fraction of the monthly cap used, 0..1. */
+  utilization: number | null;
+  currency: string;
+}
+
+export interface ClaudeCloudCredits {
+  /** Credits left, major currency units (e.g. dollars). */
+  remaining: number | null;
+  /** Credits granted in total, major currency units. */
+  total: number | null;
+  currency: string;
+  /** Unix seconds when the credits expire; null when not reported. */
+  expiresAt: number | null;
+}
+
+export interface ClaudeUsageInfo {
+  extraUsage: ClaudeExtraUsage | null;
+  cloudCredits: ClaudeCloudCredits | null;
+  error?: string;
+}
+
+const USAGE_URL = 'https://api.anthropic.com/api/oauth/usage';
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+function asNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() !== '' && !Number.isNaN(Number(value))) return Number(value);
+  return null;
+}
+
+function asCurrency(value: unknown): string {
+  return typeof value === 'string' && value.trim() !== '' ? value.toUpperCase() : 'USD';
+}
+
+/** Normalise a 0..1 or 0..100 utilization value to a 0..1 fraction. */
+function asFraction(value: unknown): number | null {
+  const n = asNumber(value);
+  if (n === null) return null;
+  return n > 1 ? n / 100 : n;
+}
+
+function parseExtraUsage(value: unknown): ClaudeExtraUsage | null {
+  const raw = asRecord(value);
+  if (!raw) return null;
+  const limit = asNumber(raw.monthly_limit);
+  const used = asNumber(raw.used_credits);
+  return {
+    enabled: raw.is_enabled === true,
+    monthlyLimit: limit !== null ? limit / 100 : null,
+    used: used !== null ? used / 100 : null,
+    utilization: asFraction(raw.utilization),
+    currency: asCurrency(raw.currency),
+  };
+}
+
+/**
+ * Read the first numeric field matching one of `names`. Keys ending in
+ * `_minor_units` / `_cents` are converted from minor units; other keys are
+ * taken as major units unless `minorByDefault` (the convention of the
+ * usage endpoint's `*_credits` fields).
+ */
+function pickAmount(raw: Record<string, unknown>, names: string[], minorByDefault: boolean): number | null {
+  for (const name of names) {
+    for (const [suffix, minor] of [['_minor_units', true], ['_cents', true], ['', minorByDefault]] as const) {
+      const n = asNumber(raw[`${name}${suffix}`]);
+      if (n !== null) return minor ? n / 100 : n;
+    }
+  }
+  return null;
+}
+
+function parseTimestamp(value: unknown): number | null {
+  const n = asNumber(value);
+  if (n !== null && n > 0) return n > 1e12 ? Math.floor(n / 1000) : n;
+  if (typeof value === 'string') {
+    const ms = Date.parse(value);
+    if (!Number.isNaN(ms)) return Math.floor(ms / 1000);
+  }
+  return null;
+}
+
+function parseCloudCreditsObject(raw: Record<string, unknown>): ClaudeCloudCredits | null {
+  // `*_credits` fields on this endpoint are minor units (see extra_usage).
+  const minorByDefault = Object.keys(raw).some((k) => k.endsWith('_credits'));
+  const remaining = pickAmount(raw, ['remaining', 'remaining_credits', 'balance', 'available', 'amount_remaining', 'credits_remaining'], minorByDefault);
+  const total = pickAmount(raw, ['total', 'total_credits', 'granted', 'granted_credits', 'amount', 'initial', 'limit', 'credit_limit'], minorByDefault);
+  const used = pickAmount(raw, ['used', 'used_credits', 'spent', 'consumed'], minorByDefault);
+  const resolvedRemaining = remaining ?? (total !== null && used !== null ? Math.max(0, total - used) : null);
+  if (resolvedRemaining === null && total === null) return null;
+  return {
+    remaining: resolvedRemaining,
+    total,
+    currency: asCurrency(raw.currency),
+    expiresAt: parseTimestamp(raw.expires_at ?? raw.expiry ?? raw.expires ?? raw.expiration),
+  };
+}
+
+const CLOUD_CREDIT_KEY = /cloud|ccr|remote|session_credit|prepaid/i;
+
+/** Pure body-parsing helper for GET /api/oauth/usage (exported for tests). */
+export function parseClaudeUsage(body: unknown): ClaudeUsageInfo {
+  const root = asRecord(body);
+  if (!root) return { extraUsage: null, cloudCredits: null };
+
+  let cloudCredits: ClaudeCloudCredits | null = null;
+  for (const [key, value] of Object.entries(root)) {
+    if (!CLOUD_CREDIT_KEY.test(key)) continue;
+    const candidates = Array.isArray(value) ? value : [value];
+    for (const candidate of candidates) {
+      const record = asRecord(candidate);
+      if (!record) continue;
+      cloudCredits = parseCloudCreditsObject(record);
+      if (cloudCredits) break;
+    }
+    if (cloudCredits) break;
+  }
+
+  return { extraUsage: parseExtraUsage(root.extra_usage), cloudCredits };
+}
+
+/** Fetch plan usage (extra usage + cloud session credits). Never throws. */
+export async function fetchClaudeUsage(accessToken: string): Promise<ClaudeUsageInfo> {
+  try {
+    const res = await fetch(USAGE_URL, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        'anthropic-beta': 'oauth-2025-04-20',
+        'user-agent': 'claude-cli/2.0.0 (external, cli)',
+      },
+    });
+    if (!res.ok) {
+      return { extraUsage: null, cloudCredits: null, error: `HTTP ${res.status}` };
+    }
+    const body: unknown = await res.json();
+    const root = asRecord(body);
+    if (root) logger.debug(`[Claude] usage endpoint keys: ${Object.keys(root).join(', ')}`);
+    return parseClaudeUsage(body);
+  } catch (err) {
+    return { extraUsage: null, cloudCredits: null, error: err instanceof Error ? err.message : String(err) };
+  }
+}
