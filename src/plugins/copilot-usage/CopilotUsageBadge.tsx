@@ -11,8 +11,16 @@ const LEVEL_COLOR: Record<CopilotBudgetLevel, string> = {
 
 const credits = (n: number) => formatNumber(Math.round(n));
 
+interface CopilotUsageBadgeProps {
+  usage: CopilotUsage;
+  /** Opens the Settings window, where GitHub sign-in / re-authorization lives. */
+  onOpenSettings?: () => void;
+  /** Re-runs the usage check. */
+  onRefresh?: () => void;
+}
+
 /** Status-bar badge with a hover popup showing Copilot AI credit usage vs the monthly budget. */
-export function CopilotUsageBadge({ usage }: { usage: CopilotUsage }) {
+export function CopilotUsageBadge({ usage, onOpenSettings, onRefresh }: CopilotUsageBadgeProps) {
   const level = copilotBudgetLevel(usage);
   const budget = usage.budgetCredits;
   const pct = budget ? Math.round((usage.creditsUsed / budget) * 100) : null;
@@ -82,6 +90,22 @@ export function CopilotUsageBadge({ usage }: { usage: CopilotUsage }) {
         {usage.error && (
           <div class="bg-status-claude-error">
             Check failed: {usage.error}
+          </div>
+        )}
+        {(usage.error || !usage.configured) && (onOpenSettings || onRefresh) && (
+          <div class="bg-status-claude-actions">
+            {onOpenSettings && (
+              <button type="button" class="bg-status-claude-action" onClick={onOpenSettings}>
+                {usage.configured && usage.oauthHasUserScope === false
+                  ? 'Re-authorize in Settings'
+                  : !usage.configured || (usage.missingScope && usage.oauthHasUserScope === undefined)
+                    ? 'Sign in to GitHub in Settings'
+                    : 'Open Settings'}
+              </button>
+            )}
+            {onRefresh && (
+              <button type="button" class="bg-status-claude-action" onClick={onRefresh}>Check again</button>
+            )}
           </div>
         )}
         <div class="bg-status-claude-checked">

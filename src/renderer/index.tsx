@@ -1565,7 +1565,17 @@ function BackgroundStatusBar({
               </div>
             </div>
           )}
-          {copilotBadge && <CopilotUsageBadge usage={copilotBadge} />}
+          {copilotBadge && (
+            <CopilotUsageBadge
+              usage={copilotBadge}
+              onOpenSettings={() => void window.jarvis.openSettings()}
+              onRefresh={() => {
+                window.jarvis.refreshCopilotUsage()
+                  .then((res) => { if (!isIpcError(res)) setCopilotUsage(res); })
+                  .catch(() => { /* non-fatal */ });
+              }}
+            />
+          )}
           {claudeBadge && (
             <span class="bg-status-claude">
               <span
