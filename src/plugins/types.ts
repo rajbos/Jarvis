@@ -1431,6 +1431,27 @@ export interface ClaudeRateLimitWindow {
 
 
 
+/** Extra-usage (overage) spend for the billing period, from /api/oauth/usage. */
+export interface ClaudeExtraUsage {
+  enabled: boolean;
+  /** Monthly spend cap in major currency units; null = unlimited/unknown. */
+  monthlyLimit: number | null;
+  used: number | null;
+  /** Fraction of the monthly cap used, 0..1. */
+  utilization: number | null;
+  currency: string;
+}
+
+/** Prepaid Claude Code cloud session credits, from /api/oauth/usage. */
+export interface ClaudeCloudCredits {
+  /** Credits left, major currency units. */
+  remaining: number | null;
+  total: number | null;
+  currency: string;
+  /** Unix seconds when the credits expire. */
+  expiresAt: number | null;
+}
+
 export interface ClaudeRateLimit {
 
 
@@ -1468,6 +1489,10 @@ export interface ClaudeRateLimit {
 
 
   sevenDay: ClaudeRateLimitWindow | null;
+
+  extraUsage?: ClaudeExtraUsage | null;
+
+  cloudCredits?: ClaudeCloudCredits | null;
 
 
 

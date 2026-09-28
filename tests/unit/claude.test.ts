@@ -14,6 +14,7 @@ import {
   isTokenExpired,
   isTokenPotentiallyUsable,
   parseRateLimitHeaders,
+  parseClaudeUsage,
   generatePkce,
   buildAuthorizeUrl,
   parseAuthorizationCode,
@@ -236,5 +237,44 @@ describe('parseRateLimitHeaders', () => {
     expect(probe.fiveHour).toBeNull();
     expect(probe.sevenDay).toBeNull();
     expect(probe.resetAt).toBeNull();
+  });
+});
+
+// ── parseClaudeUsage ──────────────────────────────────────────────────────────
+
+describe('parseClaudeUsage', () => {
+  it('parses extra_usage amounts from minor units', () => {
+    const usage = parseClaudeUsage({
+      five_hour: { utilization: 12, resets_at: '2026-09-28T12:00:00Z' },
+      extra_usage: { is_enabled: true, monthly_limit: 5000, used_credits: 1234, utilization: 24.68, currency: 'usd' },
+    });
+    expect(usage.extraUsage).toEqual({ enabled: true, monthlyLimit: 50, used: 12.34, utilization: 0.2468, currency: 'USD' });
+    expect(usage.cloudCredits).toBeNull();
+  });
+
+  it('finds cloud session credits under a cloud-named key', () => {
+    const usage = parseClaudeUsage({
+      cloud_session_credits: { remaining_credits: 12200, total_credits: 25000, currency: 'USD', expires_at: '2026-11-05T07:59:00Z' },
+    });
+    expect(usage.cloudCredits).toEqual({
+      remaining: 122,
+      total: 250,
+      currency: 'USD',
+      expiresAt: Math.floor(Date.parse('2026-11-05T07:59:00Z') / 1000),
+    });
+  });
+
+  it('derives remaining from total and used, and honours *_minor_units', () => {
+    const usage = parseClaudeUsage({
+      ccr_credits: { amount_minor_units: 25000, used_minor_units: 12800 },
+    });
+    expect(usage.cloudCredits?.remaining).toBe(122);
+    expect(usage.cloudCredits?.total).toBe(250);
+    expect(usage.cloudCredits?.expiresAt).toBeNull();
+  });
+
+  it('returns nulls for bodies without credit data', () => {
+    expect(parseClaudeUsage(null)).toEqual({ extraUsage: null, cloudCredits: null });
+    expect(parseClaudeUsage({ five_hour: { utilization: 1 }, extra_usage: null })).toEqual({ extraUsage: null, cloudCredits: null });
   });
 });

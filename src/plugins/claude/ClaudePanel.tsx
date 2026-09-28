@@ -1,5 +1,5 @@
 import { useState } from 'preact/hooks';
-import type { ClaudeStatus, ClaudeRateLimit, ClaudeRateLimitWindow } from '../types';
+import type { ClaudeStatus, ClaudeRateLimit, ClaudeRateLimitWindow, ClaudeCloudCredits, ClaudeExtraUsage } from '../types';
 import { formatDurationUntil } from '../shared/utils';
 
 interface ClaudePanelProps {
@@ -35,6 +35,53 @@ function WindowRow({ label, win }: { label: string; win: ClaudeRateLimitWindow |
           {formatDurationUntil(win.reset)} · {new Date(win.reset * 1000).toLocaleTimeString()}
         </div>
       )}
+    </div>
+  );
+}
+
+function formatMoney(amount: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat(undefined, { style: 'currency', currency, maximumFractionDigits: amount % 1 === 0 ? 0 : 2 }).format(amount);
+  } catch {
+    return `${amount.toFixed(2)} ${currency}`;
+  }
+}
+
+function CloudCreditsRow({ credits }: { credits: ClaudeCloudCredits }) {
+  const { remaining, total, currency, expiresAt } = credits;
+  const leftFraction = remaining !== null && total !== null && total > 0 ? remaining / total : null;
+  const color = leftFraction === null ? '#99aabb' : leftFraction <= 0.1 ? '#f44336' : leftFraction <= 0.25 ? '#ff9800' : '#4caf50';
+  const value =
+    remaining !== null && total !== null
+      ? `${formatMoney(remaining, currency)} of ${formatMoney(total, currency)} left`
+      : remaining !== null
+        ? `${formatMoney(remaining, currency)} left`
+        : `${formatMoney(total as number, currency)} granted`;
+  return (
+    <div style={{ marginBottom: '0.5rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', color: '#99aabb' }}>
+        <span>Cloud session credits</span>
+        <span style={{ color, fontWeight: 600 }}>{value}</span>
+      </div>
+      {expiresAt !== null && (
+        <div style={{ fontSize: '0.75rem', color: '#667' }}>
+          Expires {new Date(expiresAt * 1000).toLocaleString()}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ExtraUsageRow({ extra }: { extra: ClaudeExtraUsage }) {
+  if (!extra.enabled && extra.used === null) return null;
+  const used = extra.used !== null ? formatMoney(extra.used, extra.currency) : '—';
+  const value = extra.monthlyLimit !== null ? `${used} of ${formatMoney(extra.monthlyLimit, extra.currency)}` : `${used} used`;
+  const pct = extra.utilization !== null ? Math.round(extra.utilization * 100) : null;
+  const color = !extra.enabled ? '#667' : pct !== null && pct >= 100 ? '#f44336' : pct !== null && pct >= 80 ? '#ff9800' : '#99aabb';
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', color: '#99aabb', marginBottom: '0.5rem' }}>
+      <span>Extra usage{extra.enabled ? '' : ' (off)'}</span>
+      <span style={{ color, fontWeight: 600 }}>{value}</span>
     </div>
   );
 }
@@ -151,6 +198,8 @@ export function ClaudePanel({ status, rateLimit, refreshing, onRefresh, onDiscon
 
       <WindowRow label="5-hour window" win={rateLimit?.fiveHour ?? null} />
       <WindowRow label="7-day window" win={rateLimit?.sevenDay ?? null} />
+      {rateLimit?.cloudCredits && <CloudCreditsRow credits={rateLimit.cloudCredits} />}
+      {rateLimit?.extraUsage && <ExtraUsageRow extra={rateLimit.extraUsage} />}
 
       {rateLimit?.fetchedAt && (
         <div style={{ fontSize: '0.72rem', color: '#556', marginBottom: '0.75rem' }}>

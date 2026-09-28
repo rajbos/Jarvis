@@ -8,6 +8,7 @@ import {
   loadClaudeCodeCredentials,
   refreshClaudeToken,
   checkClaudeRateLimit,
+  fetchClaudeUsage,
   isTokenPotentiallyUsable,
   generatePkce,
   buildAuthorizeUrl,
@@ -141,16 +142,23 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
         };
       }
 
-      let probe = await checkClaudeRateLimit(resolved.token);
+      let token = resolved.token;
+      let probe = await checkClaudeRateLimit(token);
 
       // An expired token can slip past the skew check (clock drift); refresh once and retry.
       if (probe.status === 401) {
         clearStoredCredentials(db);
         const retried = await resolveAccessToken(db);
         if (retried && retried.token !== resolved.token) {
-          probe = await checkClaudeRateLimit(retried.token);
+          token = retried.token;
+          probe = await checkClaudeRateLimit(token);
         }
       }
+
+      // Extra usage + cloud session credits come from the usage endpoint;
+      // a failure there must not hide the rate-limit result.
+      const usage = await fetchClaudeUsage(token).catch(() => null);
+      if (usage?.error) logger.debug(`[claude] usage fetch failed: ${usage.error}`);
 
       // Notify once when the rate limit lifts (limited → usable transition).
       // Probes that failed outright (network error, status 0) don't change the
@@ -172,6 +180,8 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
         retryAfterSec: probe.retryAfterSec,
         fiveHour: probe.fiveHour,
         sevenDay: probe.sevenDay,
+        extraUsage: usage?.extraUsage ?? null,
+        cloudCredits: usage?.cloudCredits ?? null,
         error: probe.error,
         fetchedAt,
       };
