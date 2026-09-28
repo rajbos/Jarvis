@@ -25,6 +25,7 @@ vi.mock('electron', () => ({
   },
   shell: { openExternal: vi.fn() },
   Notification: vi.fn().mockImplementation(() => ({ show: vi.fn() })),
+  BrowserWindow: { getAllWindows: vi.fn(() => []) },
 }));
 
 vi.mock('../../src/storage/database', async (importOriginal) => {
@@ -72,7 +73,12 @@ vi.mock('../../src/plugins/discovery/handler', () => ({
   scheduleLocalDiscovery: vi.fn(),
 }));
 
+vi.mock('../../src/plugins/copilot-usage/handler', () => ({
+  checkCopilotUsage: vi.fn(() => Promise.resolve()),
+}));
+
 import { registerHandlers } from '../../src/plugins/github-auth/handler';
+import { checkCopilotUsage } from '../../src/plugins/copilot-usage/handler';
 import { saveGitHubAuth, saveGitHubPat, fetchGitHubUser, validateGitHubPat } from '../../src/services/github-oauth';
 
 // ── Helper ────────────────────────────────────────────────────────────────────
@@ -263,6 +269,8 @@ describe('GitHub Auth plugin — IPC handlers', () => {
 
       const result = callHandler('github:logout') as Record<string, unknown>;
       expect(result.ok).toBe(true);
+      // Copilot usage is re-checked so the badge and Settings drop the stale token's state.
+      expect(checkCopilotUsage).toHaveBeenCalled();
 
       // Verify auth is gone by calling oauth-status
       // (loadGitHubAuth is the actual DB function — it reads from the real DB)

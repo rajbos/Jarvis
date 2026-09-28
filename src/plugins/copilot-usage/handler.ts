@@ -1,7 +1,6 @@
 // ── GitHub Copilot AI credit usage IPC handlers ──────────────────────────────
-import { Notification } from 'electron';
+import { Notification, BrowserWindow } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
-import type { BrowserWindow } from 'electron';
 import { safeHandle } from '../ipc-utils';
 import { logger } from '../../services/logger';
 import { fetchGitHubUser, loadGitHubAuth, loadGitHubPat } from '../../services/github-oauth';
@@ -69,9 +68,14 @@ function notifyBudgetThreshold(db: SqlJsDatabase, usage: CopilotUsage): void {
   }).show();
 }
 
+/** Push usage to every open window — the status-bar badge and the Settings window both show it. */
 function broadcast(getWindow: () => BrowserWindow | null, usage: CopilotUsage): void {
-  const win = getWindow();
-  if (win && !win.isDestroyed()) win.webContents.send('copilot-usage:updated', usage);
+  const windows = new Set(BrowserWindow.getAllWindows());
+  const main = getWindow();
+  if (main) windows.add(main);
+  for (const win of windows) {
+    if (!win.isDestroyed()) win.webContents.send('copilot-usage:updated', usage);
+  }
 }
 
 /**
@@ -144,6 +148,7 @@ export async function checkCopilotUsage(
       };
     } else {
       const missingScope = result?.missingScope ?? false;
+      const oauthHasUserScope = auth ? hasUserScope(auth.scopes) : undefined;
       usage = {
         ...base,
         ...empty,
@@ -151,10 +156,14 @@ export async function checkCopilotUsage(
         source,
         login,
         missingScope,
-        oauthHasUserScope: auth ? hasUserScope(auth.scopes) : undefined,
-        error: missingScope
-          ? 'GitHub token cannot read billing data — re-authorize GitHub in Settings to grant the "user" scope.'
-          : result?.error ?? 'Usage check failed',
+        oauthHasUserScope,
+        error: !missingScope
+          ? result?.error ?? 'Usage check failed'
+          : source === 'oauth' && oauthHasUserScope
+            // The token already carries `user`, so re-authorizing won't help:
+            // GitHub has no personal billing data for this account.
+            ? `GitHub denied access to billing usage (${result?.error ?? 'no details'}) even though the sign-in has the "user" scope — Copilot is likely billed through an organization, which isn't reported here.`
+            : 'Your GitHub sign-in cannot read billing data — re-authorize GitHub and approve "Personal user data" access.',
       };
     }
   }

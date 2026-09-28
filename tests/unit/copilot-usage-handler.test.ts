@@ -8,6 +8,7 @@ import { getSchema } from '../../src/storage/schema';
 
 const handlers = new Map<string, (...args: unknown[]) => unknown>();
 const notificationShow = vi.fn();
+const allWindows: unknown[] = [];
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -18,6 +19,7 @@ vi.mock('electron', () => ({
     removeHandler: vi.fn(),
   },
   Notification: vi.fn().mockImplementation(function () { return { show: notificationShow }; }),
+  BrowserWindow: { getAllWindows: vi.fn(() => allWindows) },
 }));
 
 vi.mock('../../src/storage/database', async (importOriginal) => {
@@ -115,6 +117,16 @@ describe('Copilot usage plugin', () => {
     expect(usage.error).toMatch(/re-authorize/i);
   });
 
+  it('does not suggest re-authorizing when the OAuth token already has the user scope', async () => {
+    mockAuth.mockReturnValue({ login: 'me', accessToken: 'oauth', scopes: 'repo,user', avatarUrl: null });
+    mockFetch.mockResolvedValue({ ok: false, status: 404, error: 'HTTP 404: Not Found', missingScope: true });
+
+    const usage = await checkCopilotUsage(db, () => null, now);
+    expect(usage.oauthHasUserScope).toBe(true);
+    expect(usage.error).not.toMatch(/re-authorize/i);
+    expect(usage.error).toContain('HTTP 404: Not Found');
+  });
+
   it('notifies once per threshold per month', async () => {
     mockAuth.mockReturnValue({ login: 'me', accessToken: 'oauth', scopes: 'user', avatarUrl: null });
     await call('copilot-usage:set-budget', 1000);
@@ -140,6 +152,23 @@ describe('Copilot usage plugin', () => {
     mockFetch.mockResolvedValue({ ok: true, summary: summary(1) });
     await checkCopilotUsage(db, () => win, now);
     expect(send).toHaveBeenCalledWith('copilot-usage:updated', expect.objectContaining({ creditsUsed: 1 }));
+  });
+
+  it('pushes updates to every open window (e.g. Settings) once', async () => {
+    const mainSend = vi.fn();
+    const settingsSend = vi.fn();
+    const main = { isDestroyed: () => false, webContents: { send: mainSend } };
+    const settings = { isDestroyed: () => false, webContents: { send: settingsSend } };
+    allWindows.push(main, settings);
+    try {
+      mockAuth.mockReturnValue({ login: 'me', accessToken: 'oauth', scopes: 'user', avatarUrl: null });
+      mockFetch.mockResolvedValue({ ok: true, summary: summary(1) });
+      await checkCopilotUsage(db, () => main as unknown as Electron.BrowserWindow, now);
+      expect(mainSend).toHaveBeenCalledTimes(1);
+      expect(settingsSend).toHaveBeenCalledWith('copilot-usage:updated', expect.objectContaining({ creditsUsed: 1 }));
+    } finally {
+      allWindows.length = 0;
+    }
   });
 
   it('validates, stores and clears the budget', async () => {
