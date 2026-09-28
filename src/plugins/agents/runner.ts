@@ -265,6 +265,31 @@ function buildFailureRangeContext(db: SqlJsDatabase, repoFullName: string, workf
   return lines.join('\n');
 }
 
+// ── System prompt rendering ───────────────────────────────────────────────────
+
+// Ollama has no schema-constrained output, so it needs an explicit final
+// instruction to re-emit findings as a fenced JSON block (see
+// ollama-provider.ts's phase 2, which re-asks for exactly this). The Claude
+// Agent SDK tier is invoked with --json-schema and reads structured findings
+// back as a dedicated field independent of the prose (see
+// services/claude-agent.ts), so asking it to also hand-write the fence just
+// duplicates the findings in the visible analysis text.
+const OLLAMA_JSON_OUTPUT_INSTRUCTION =
+  'After the analysis, emit exactly ONE JSON block matching the shape above, fenced as ```json ... ```.';
+const CLAUDE_JSON_OUTPUT_INSTRUCTION =
+  'Do not repeat the findings as a fenced JSON block in your analysis text — they are captured separately via the response schema.';
+
+/**
+ * Fill in the provider-specific output instruction left as a placeholder in
+ * a seeded system prompt. Prompts without the placeholder (e.g. Notification
+ * Triage, or a user-authored custom agent) pass through unchanged.
+ */
+function renderSystemPrompt(template: string, provider: AgentProvider): string {
+  if (!template.includes('{{JSON_OUTPUT_INSTRUCTION}}')) return template;
+  const instruction = provider.id === 'ollama' ? OLLAMA_JSON_OUTPUT_INSTRUCTION : CLAUDE_JSON_OUTPUT_INSTRUCTION;
+  return template.replace('{{JSON_OUTPUT_INSTRUCTION}}', instruction);
+}
+
 // ── Main agent session runner ─────────────────────────────────────────────────
 
 /**
@@ -302,17 +327,18 @@ export async function runAgentSession(
       : '(N/A for non-repo scope)';
 
     const userMessage = [notifContext, workflowContext, localRepoContext, failureRangeContext].join('\n\n');
+    const systemPrompt = renderSystemPrompt(agentDef.system_prompt, provider);
 
     // Emit debug context so the renderer can show it in the chat debug viewer
     getWindow()?.webContents.send('agent:debug-context', {
       sessionId,
-      systemPrompt: agentDef.system_prompt,
+      systemPrompt,
       userMessage,
     });
 
     const outcome = await provider.run(
       model,
-      agentDef.system_prompt,
+      systemPrompt,
       userMessage,
       {
         onToken: (token) => getWindow()?.webContents.send('agent:token', token),

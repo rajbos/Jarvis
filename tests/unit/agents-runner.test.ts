@@ -627,6 +627,33 @@ describe('runAgentSession — provider seam', () => {
     );
   });
 
+  it('fills the {{JSON_OUTPUT_INSTRUCTION}} placeholder per provider.id', async () => {
+    const templatedDef = { ...agentDef(), system_prompt: 'Analyse.\n{{JSON_OUTPUT_INSTRUCTION}}\nDone.' };
+    const capture = async (providerId: string) => {
+      const fakeProvider: AgentProvider = {
+        id: providerId,
+        run: vi.fn().mockImplementation(async (_model, _sys, _user, callbacks) => {
+          callbacks.onAnalysisComplete();
+          return { analysisText: '', summary: null, findings: [] };
+        }),
+      };
+      const sessionId = createAgentSession(db, agentId, 'repo', 'org/repo');
+      await runAgentSession(
+        db, sessionId, templatedDef, 'repo', 'org/repo', 'claude-opus-5', () => makeMockWindow() as never,
+        undefined, fakeProvider,
+      );
+      return (fakeProvider.run as ReturnType<typeof vi.fn>).mock.calls[0][1] as string;
+    };
+
+    const ollamaPrompt = await capture('ollama');
+    expect(ollamaPrompt).toContain('emit exactly ONE JSON block');
+    expect(ollamaPrompt).not.toContain('{{JSON_OUTPUT_INSTRUCTION}}');
+
+    const claudePrompt = await capture('claude-agent-sdk');
+    expect(claudePrompt).toContain('captured separately via the response schema');
+    expect(claudePrompt).not.toContain('{{JSON_OUTPUT_INSTRUCTION}}');
+  });
+
   it('marks the session failed when the provider throws', async () => {
     const fakeProvider: AgentProvider = {
       id: 'fake-provider',
