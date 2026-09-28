@@ -33,18 +33,25 @@ vi.mock('../../src/services/github-oauth', () => ({
 
 vi.mock('../../src/services/copilot-usage', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/services/copilot-usage')>();
-  return { ...actual, fetchAiCreditUsage: vi.fn() };
+  return { ...actual, fetchAiCreditUsage: vi.fn(), fetchCopilotQuota: vi.fn(), getGhCliToken: vi.fn(async () => null) };
 });
 
 import { registerHandlers, checkCopilotUsage, _resetCopilotUsageState } from '../../src/plugins/copilot-usage/handler';
 import { loadGitHubAuth, loadGitHubPat, fetchGitHubUser } from '../../src/services/github-oauth';
-import { fetchAiCreditUsage } from '../../src/services/copilot-usage';
+import { fetchAiCreditUsage, fetchCopilotQuota, getGhCliToken } from '../../src/services/copilot-usage';
 import type { CopilotUsage } from '../../src/plugins/types';
 
 const mockAuth = vi.mocked(loadGitHubAuth);
 const mockPat = vi.mocked(loadGitHubPat);
 const mockUser = vi.mocked(fetchGitHubUser);
 const mockFetch = vi.mocked(fetchAiCreditUsage);
+const mockQuota = vi.mocked(fetchCopilotQuota);
+const mockGhToken = vi.mocked(getGhCliToken);
+
+const enterpriseQuota = {
+  login: 'rajbos', plan: 'enterprise', creditsUsed: 121320, entitlementCredits: 175000,
+  remainingCredits: 53680, unlimited: false, resetsAt: Date.UTC(2026, 9, 1) / 1000,
+};
 
 const summary = (creditsUsed: number) => ({
   creditsUsed, includedCreditsUsed: creditsUsed, billedCredits: 0, billedAmountUsd: 0, byModel: [],
@@ -69,10 +76,51 @@ describe('Copilot usage plugin', () => {
     db.run(getSchema());
     mockAuth.mockReturnValue(null);
     mockPat.mockReturnValue(null);
+    mockGhToken.mockResolvedValue(null);
     registerHandlers(db, () => null);
   });
 
   afterEach(() => db.close());
+
+  it('prefers the GitHub CLI token and the internal quota endpoint, even without OAuth', async () => {
+    mockGhToken.mockResolvedValue('gho_cli');
+    mockQuota.mockResolvedValue({ ok: true, quota: enterpriseQuota });
+
+    const usage = await checkCopilotUsage(db, () => null, now);
+    expect(mockQuota).toHaveBeenCalledWith('gho_cli');
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(usage).toMatchObject({
+      configured: true, source: 'gh-cli', login: 'rajbos', plan: 'enterprise',
+      creditsUsed: 121320, entitlementCredits: 175000, includedCreditsUsed: 121320, billedCredits: 0,
+      resetsAt: Date.UTC(2026, 9, 1) / 1000, byModel: [],
+    });
+    expect(usage.projectedCredits).toBeGreaterThan(121320);
+  });
+
+  it('counts credits beyond the entitlement as billed overage', async () => {
+    mockGhToken.mockResolvedValue('gho_cli');
+    mockQuota.mockResolvedValue({ ok: true, quota: { ...enterpriseQuota, creditsUsed: 176000, remainingCredits: 0 } });
+
+    const usage = await checkCopilotUsage(db, () => null, now);
+    expect(usage).toMatchObject({ includedCreditsUsed: 175000, billedCredits: 1000, billedAmountUsd: 10 });
+  });
+
+  it('falls back to the billing report when the CLI quota lookup fails', async () => {
+    mockGhToken.mockResolvedValue('gho_cli');
+    mockQuota.mockResolvedValue({ ok: false, status: 404, error: 'HTTP 404: Not Found' });
+    mockAuth.mockReturnValue({ login: 'me', accessToken: 'oauth', scopes: 'repo,user', avatarUrl: null });
+    mockFetch.mockResolvedValue({ ok: true, summary: summary(5) });
+
+    const usage = await checkCopilotUsage(db, () => null, now);
+    expect(usage).toMatchObject({ source: 'oauth', creditsUsed: 5 });
+  });
+
+  it('reports not configured when the CLI fails and no token is linked', async () => {
+    mockGhToken.mockResolvedValue('gho_cli');
+    mockQuota.mockResolvedValue({ ok: false, status: 0, error: 'offline' });
+    const usage = await checkCopilotUsage(db, () => null, now);
+    expect(usage.configured).toBe(false);
+  });
 
   it('reports not configured when GitHub is not connected', async () => {
     const usage = await checkCopilotUsage(db, () => null, now);

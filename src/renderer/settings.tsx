@@ -370,7 +370,8 @@ function CopilotUsageSection() {
       <p class="hint">
         Copilot usage is billed in AI credits (1 AIC = $0.01) per calendar month; usage resets on the 1st (UTC).
         Set your monthly budget to track usage against it — Jarvis checks every 30 minutes and notifies you at 80% and 100%.
-        Only usage on your personal Copilot plan is reported; seats billed through an organization are not included.
+        When the GitHub CLI (<code>gh</code>) is logged in, Jarvis reads the same quota VS Code shows, including seats billed
+        through an organization or enterprise. Without it, only usage on your personal Copilot plan is reported.
       </p>
 
       <div class="btn-row" style={{ alignItems: 'center', gap: '0.5rem' }}>
@@ -398,13 +399,14 @@ function CopilotUsageSection() {
       {usage && (
         <p class="hint" style={{ marginTop: '0.6rem' }}>
           {!usage.configured
-            ? 'Connect GitHub (OAuth or PAT) to track Copilot usage.'
+            ? 'Log in to the GitHub CLI (gh auth login) or connect GitHub (OAuth or PAT) to track Copilot usage.'
             : usage.error
               ? <span style={{ color: '#ffb74d' }}>{usage.error}</span>
               : <>
                   {MONTH_NAMES[usage.month - 1]} {usage.year}: <strong>{Math.round(usage.creditsUsed).toLocaleString()}</strong>
                   {usage.budgetCredits !== null ? ` of ${usage.budgetCredits.toLocaleString()}` : ''} AI credits used
-                  {usage.source ? ` (via ${usage.source === 'oauth' ? 'GitHub OAuth' : 'PAT'})` : ''}.
+                  {usage.entitlementCredits ? ` (${usage.entitlementCredits.toLocaleString()} included in the ${usage.plan ?? ''} plan)` : ''}
+                  {usage.source ? ` via ${usage.source === 'gh-cli' ? 'GitHub CLI' : usage.source === 'oauth' ? 'GitHub OAuth' : 'PAT'}` : ''}.
                 </>}
         </p>
       )}

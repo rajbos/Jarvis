@@ -6,8 +6,11 @@ import { safeHandle } from '../ipc-utils';
 import { logger } from '../../services/logger';
 import { fetchGitHubUser, loadGitHubAuth, loadGitHubPat } from '../../services/github-oauth';
 import {
+  AI_CREDIT_USD,
   currentBillingMonth,
   fetchAiCreditUsage,
+  fetchCopilotQuota,
+  getGhCliToken,
   projectMonthEndUsage,
   type AiCreditFetchResult,
 } from '../../services/copilot-usage';
@@ -75,9 +78,13 @@ function broadcast(getWindow: () => BrowserWindow | null, usage: CopilotUsage): 
 }
 
 /**
- * Fetch this month's Copilot AI credit usage using the linked GitHub OAuth
- * token (falling back to the PAT when the OAuth token lacks billing access),
- * cache it, push it to the renderer, and raise budget notifications.
+ * Fetch this month's Copilot AI credit usage, cache it, push it to the
+ * renderer, and raise budget notifications.
+ *
+ * Sources, in order: the GitHub CLI's token against the internal quota
+ * endpoint VS Code uses (works for org/enterprise-billed seats), then the
+ * linked OAuth token against the public billing report, then the PAT when the
+ * OAuth token lacks billing access.
  */
 export async function checkCopilotUsage(
   db: SqlJsDatabase,
@@ -105,10 +112,38 @@ export async function checkCopilotUsage(
   const auth = loadGitHubAuth(db);
   const pat = loadGitHubPat(db);
 
-  let usage: CopilotUsage;
-  if (!auth && !pat) {
+  let usage: CopilotUsage | null = null;
+
+  const ghToken = await getGhCliToken();
+  if (ghToken) {
+    const quotaResult = await fetchCopilotQuota(ghToken);
+    if (quotaResult.ok) {
+      const q = quotaResult.quota;
+      const included = q.entitlementCredits === null ? q.creditsUsed : Math.min(q.creditsUsed, q.entitlementCredits);
+      const billed = q.creditsUsed - included;
+      usage = {
+        ...base,
+        resetsAt: q.resetsAt ?? base.resetsAt,
+        configured: true,
+        source: 'gh-cli',
+        login: q.login || auth?.login,
+        plan: q.plan,
+        entitlementCredits: q.entitlementCredits,
+        creditsUsed: q.creditsUsed,
+        includedCreditsUsed: included,
+        billedCredits: billed,
+        billedAmountUsd: Math.round(billed * AI_CREDIT_USD * 100) / 100,
+        byModel: [],
+        projectedCredits: projectMonthEndUsage(q.creditsUsed, period, now),
+      };
+    } else {
+      logger.debug(`[copilot-usage] GitHub CLI quota lookup failed (${quotaResult.error}); falling back to billing report`);
+    }
+  }
+
+  if (!usage && !auth && !pat) {
     usage = { ...base, ...empty, configured: false };
-  } else {
+  } else if (!usage) {
     let result: AiCreditFetchResult | null = null;
     let source: 'oauth' | 'pat' | undefined;
     let login: string | undefined;

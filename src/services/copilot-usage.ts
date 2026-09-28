@@ -1,18 +1,30 @@
 // ── GitHub Copilot AI credit usage service ───────────────────────────────────
 //
 // Since June 2026 Copilot is billed in AI credits (1 AIC = $0.01). Usage is
-// metered per calendar month (UTC) and resets on the 1st. We read the current
-// month's consumption from the enhanced billing platform:
+// metered per calendar month (UTC) and resets on the 1st. Two sources exist:
 //
-//   GET /users/{username}/settings/billing/ai_credit/usage?year=YYYY&month=M
+// 1. The internal endpoint VS Code and the Copilot CLI use:
 //
-// Token requirements: a classic OAuth / PAT token needs the `user` scope; a
-// fine-grained PAT needs the "Plan" user permission (read). Usage for Copilot
-// seats billed through an organization or enterprise is NOT reported here —
-// only the user's own (personal plan) consumption.
+//      GET /copilot_internal/user
+//
+//    Its `quota_snapshots.premium_interactions` block carries the credits used,
+//    the plan's entitlement and the reset date for *any* seat, including seats
+//    billed through an organization or enterprise. GitHub only answers it for
+//    tokens minted by its own OAuth apps, so Jarvis reuses the GitHub CLI's
+//    token (`gh auth token`); the Jarvis OAuth app's token is refused.
+//
+// 2. The public enhanced-billing report (fallback when `gh` is unavailable):
+//
+//      GET /users/{username}/settings/billing/ai_credit/usage?year=YYYY&month=M
+//
+//    A classic OAuth / PAT token needs the `user` scope; a fine-grained PAT
+//    needs the "Plan" user permission (read). It only reports the user's own
+//    personal-plan consumption — org/enterprise-billed seats show 0.
 //
 // There is no REST endpoint for personal budgets, so the monthly budget is a
 // Jarvis setting that the user enters in the Settings window.
+
+import { execFile } from 'child_process';
 
 export const AI_CREDIT_USD = 0.01;
 
@@ -156,5 +168,118 @@ export async function fetchAiCreditUsage(
     return { ok: true, summary: summarizeAiCreditUsage(Array.isArray(data.usageItems) ? data.usageItems : []) };
   } catch (err) {
     return { ok: false, status: 0, error: err instanceof Error ? err.message : String(err), missingScope: false };
+  }
+}
+
+// ── Internal quota endpoint (GitHub CLI token) ───────────────────────────────
+
+/** The `premium_interactions` quota of `GET /copilot_internal/user`. */
+export interface CopilotQuota {
+  login: string;
+  /** e.g. `enterprise`, `business`, `pro`, `free`. */
+  plan: string;
+  /** AI credits consumed in the current period. */
+  creditsUsed: number;
+  /** Credits included in the plan for the period; null when unlimited/unknown. */
+  entitlementCredits: number | null;
+  /** Credits left of the entitlement (0 when overage). */
+  remainingCredits: number;
+  unlimited: boolean;
+  /** Unix seconds — when the quota resets (from `quota_reset_date_utc`); null when absent. */
+  resetsAt: number | null;
+}
+
+export type CopilotQuotaFetchResult =
+  | { ok: true; quota: CopilotQuota }
+  | { ok: false; status: number; error: string };
+
+/**
+ * Resolve the GitHub CLI's OAuth token via `gh auth token`. Resolves null when
+ * `gh` is missing, not logged in, or slow to answer.
+ */
+export function getGhCliToken(): Promise<string | null> {
+  return new Promise((resolve) => {
+    try {
+      execFile('gh', ['auth', 'token'], { timeout: 10_000, windowsHide: true }, (err, stdout) => {
+        if (err) {
+          resolve(null);
+          return;
+        }
+        const token = String(stdout).trim();
+        resolve(/^[\w.-]+$/.test(token) ? token : null);
+      });
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+interface CopilotInternalUser {
+  login?: string;
+  copilot_plan?: string;
+  quota_reset_date_utc?: string;
+  quota_reset_date?: string;
+  quota_snapshots?: {
+    premium_interactions?: {
+      credits_used?: number;
+      entitlement?: number;
+      remaining?: number;
+      quota_remaining?: number;
+      unlimited?: boolean;
+      has_quota?: boolean;
+    };
+  };
+}
+
+/** Map the raw `/copilot_internal/user` body to a {@link CopilotQuota}; null when it has no premium quota. */
+export function parseCopilotQuota(data: CopilotInternalUser): CopilotQuota | null {
+  const q = data.quota_snapshots?.premium_interactions;
+  if (!q || typeof q !== 'object') return null;
+  const unlimited = q.unlimited === true;
+  const entitlement = Number(q.entitlement);
+  const resetRaw = data.quota_reset_date_utc ?? data.quota_reset_date;
+  const resetMs = resetRaw ? Date.parse(resetRaw) : NaN;
+  return {
+    login: typeof data.login === 'string' ? data.login : '',
+    plan: typeof data.copilot_plan === 'string' ? data.copilot_plan : 'unknown',
+    creditsUsed: Math.max(0, Number(q.credits_used) || 0),
+    entitlementCredits: !unlimited && Number.isFinite(entitlement) && entitlement > 0 ? entitlement : null,
+    remainingCredits: Math.max(0, Number(q.remaining ?? q.quota_remaining) || 0),
+    unlimited,
+    resetsAt: Number.isFinite(resetMs) ? Math.floor(resetMs / 1000) : null,
+  };
+}
+
+/** Fetch the current-period premium quota the way VS Code does. */
+export async function fetchCopilotQuota(token: string): Promise<CopilotQuotaFetchResult> {
+  try {
+    const res = await fetch('https://api.github.com/copilot_internal/user', {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/json',
+        'User-Agent': 'Jarvis-Agent/0.1.0',
+      },
+    });
+    const body = await res.text().catch(() => '');
+    if (!res.ok) {
+      let message = '';
+      try {
+        message = (JSON.parse(body) as { message?: string }).message ?? '';
+      } catch {
+        message = body.slice(0, 200);
+      }
+      return { ok: false, status: res.status, error: `HTTP ${res.status}${message ? `: ${message}` : ''}` };
+    }
+    let data: CopilotInternalUser;
+    try {
+      data = JSON.parse(body) as CopilotInternalUser;
+    } catch {
+      return { ok: false, status: res.status, error: 'Invalid JSON from copilot_internal/user' };
+    }
+    const quota = parseCopilotQuota(data);
+    if (!quota) return { ok: false, status: res.status, error: 'No premium quota in copilot_internal/user response' };
+    return { ok: true, quota };
+  } catch (err) {
+    return { ok: false, status: 0, error: err instanceof Error ? err.message : String(err) };
   }
 }

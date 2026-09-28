@@ -1,6 +1,6 @@
 import type { CopilotUsage } from '../types';
 import { formatNumber, formatDurationUntil } from '../shared/utils';
-import { copilotBudgetLevel, type CopilotBudgetLevel } from './budget-level';
+import { copilotBudgetLevel, copilotUsageLimit, type CopilotBudgetLevel } from './budget-level';
 
 const LEVEL_COLOR: Record<CopilotBudgetLevel, string> = {
   unknown: '#888',
@@ -11,17 +11,26 @@ const LEVEL_COLOR: Record<CopilotBudgetLevel, string> = {
 
 const credits = (n: number) => formatNumber(Math.round(n));
 
-/** Status-bar badge with a hover popup showing Copilot AI credit usage vs the monthly budget. */
+const SOURCE_LABEL: Record<NonNullable<CopilotUsage['source']>, string> = {
+  'gh-cli': 'GitHub CLI',
+  oauth: 'GitHub OAuth',
+  pat: 'PAT',
+};
+
+/** Status-bar badge with a hover popup showing Copilot AI credit usage vs the monthly budget / plan entitlement. */
 export function CopilotUsageBadge({ usage }: { usage: CopilotUsage }) {
   const level = copilotBudgetLevel(usage);
   const budget = usage.budgetCredits;
-  const pct = budget ? Math.round((usage.creditsUsed / budget) * 100) : null;
+  const entitlement = usage.entitlementCredits ?? null;
+  // Budget wins; otherwise the plan's included credits (quota endpoint) act as the ceiling.
+  const limit = copilotUsageLimit(usage);
+  const pct = limit ? Math.round((usage.creditsUsed / limit) * 100) : null;
   const monthLabel = new Date(Date.UTC(usage.year, usage.month - 1, 1)).toLocaleString(undefined, { month: 'long', year: 'numeric', timeZone: 'UTC' });
 
   const label = usage.error
     ? '◈ Copilot –'
-    : budget
-      ? `◈ Copilot ${credits(usage.creditsUsed)}/${credits(budget)} AIC`
+    : limit
+      ? `◈ Copilot ${credits(usage.creditsUsed)}/${credits(limit)} AIC`
       : `◈ Copilot ${credits(usage.creditsUsed)} AIC`;
 
   return (
@@ -34,7 +43,7 @@ export function CopilotUsageBadge({ usage }: { usage: CopilotUsage }) {
             <span class="bg-status-claude-state bg-status-claude-state--unknown">No data</span>
           ) : (
             <span class={`bg-status-claude-state bg-status-claude-state--${level}`}>
-              {credits(usage.creditsUsed)}{budget ? ` / ${credits(budget)}` : ''} AIC{pct !== null ? ` · ${pct}%` : ''}
+              {credits(usage.creditsUsed)}{limit ? ` / ${credits(limit)}` : ''} AIC{pct !== null ? ` · ${pct}%` : ''}
             </span>
           )}
           <span class="bg-status-claude-reset">
@@ -54,9 +63,13 @@ export function CopilotUsageBadge({ usage }: { usage: CopilotUsage }) {
             </div>
             <div class="bg-status-claude-row">
               <span class="bg-status-claude-label">Included</span>
-              <span class="bg-status-claude-state">{credits(usage.includedCreditsUsed)} AIC</span>
+              <span class="bg-status-claude-state">
+                {credits(usage.includedCreditsUsed)}{entitlement ? ` / ${credits(entitlement)}` : ''} AIC
+              </span>
               <span class="bg-status-claude-reset">
-                billed {credits(usage.billedCredits)} AIC · ${usage.billedAmountUsd.toFixed(2)}
+                {entitlement
+                  ? `${credits(Math.max(0, entitlement - usage.creditsUsed))} left on ${usage.plan ?? 'plan'}`
+                  : `billed ${credits(usage.billedCredits)} AIC · $${usage.billedAmountUsd.toFixed(2)}`}
               </span>
             </div>
             {usage.projectedCredits !== null && (
@@ -86,7 +99,7 @@ export function CopilotUsageBadge({ usage }: { usage: CopilotUsage }) {
         )}
         <div class="bg-status-claude-checked">
           Last checked {new Date(usage.fetchedAt).toLocaleTimeString()}
-          {usage.source ? ` via ${usage.source === 'oauth' ? 'GitHub OAuth' : 'PAT'}` : ''}
+          {usage.source ? ` via ${SOURCE_LABEL[usage.source]}` : ''}
         </div>
       </div>
     </span>
