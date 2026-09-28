@@ -1,7 +1,6 @@
 // ── GitHub OAuth + PAT IPC handlers ──────────────────────────────────────────
-import { shell, Notification } from 'electron';
+import { shell, Notification, BrowserWindow } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
-import type { BrowserWindow } from 'electron';
 import {
   requestDeviceCode,
   pollForToken,
@@ -20,6 +19,25 @@ import { completeOnboardingStep } from '../../agent/onboarding';
 import { startDiscoveryIfAuthed } from '../discovery/handler';
 import { safeHandle } from '../ipc-utils';
 import { logger } from '../../services/logger';
+import { checkCopilotUsage } from '../copilot-usage/handler';
+
+/**
+ * Sign-in can be started from the main window or the Settings window, so the
+ * result goes to every open window — otherwise the window that started the
+ * device flow never learns it finished.
+ */
+function broadcastOAuthComplete(payload: { login?: string; name?: string | null; avatarUrl?: string; error?: string }): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) win.webContents.send('github:oauth-complete', payload);
+  }
+}
+
+/** Re-run the Copilot usage check after the GitHub token changed. */
+function recheckCopilotUsage(db: SqlJsDatabase, getWindow: () => BrowserWindow | null): void {
+  checkCopilotUsage(db, getWindow).catch((err) => {
+    logger.warn('[copilot-usage] Re-check after auth change failed:', err instanceof Error ? err.message : String(err));
+  });
+}
 
 let activeDeviceFlow: {
   deviceCode: string;
@@ -166,6 +184,7 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
   safeHandle('github:logout', () => {
     deleteGitHubAuth(db);
     saveDatabase();
+    recheckCopilotUsage(db, getWindow);
     return { ok: true };
   });
 
@@ -313,25 +332,26 @@ async function startPollingLoop(
         body: `Signed in as ${user.login}. GitHub connection ready!`,
       }).show();
 
-      getWindow()?.webContents.send('github:oauth-complete', {
+      broadcastOAuthComplete({
         login: user.login,
         name: user.name,
         avatarUrl: user.avatar_url,
       });
+      recheckCopilotUsage(db, getWindow);
       return;
     } catch (err: unknown) {
       const msg = String(err);
       if (msg.includes('slow_down')) continue;
       logger.error('[Poll] Fatal error, aborting:', msg);
       activeDeviceFlow = null;
-      getWindow()?.webContents.send('github:oauth-complete', { error: msg });
+      broadcastOAuthComplete({ error: msg });
       return;
     }
   }
 
   if (!flow.aborted) {
     activeDeviceFlow = null;
-    getWindow()?.webContents.send('github:oauth-complete', { error: 'Authorization timed out. Please try again.' });
+    broadcastOAuthComplete({ error: 'Authorization timed out. Please try again.' });
   }
 }
 

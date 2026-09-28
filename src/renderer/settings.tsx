@@ -167,11 +167,29 @@ function OAuthSection() {
 
 
 
+  const [signIn, setSignIn] = useState<{ userCode?: string; verificationUri?: string; error?: string } | null>(null);
+
   useEffect(() => {
 
     refresh();
 
+    // Sign-in may be started here, from the Copilot section or from the main window.
+    return window.jarvis.onOAuthComplete((result) => {
+      setSignIn(result.error ? { error: result.error } : null);
+      void refresh();
+    });
+
   }, []);
+
+
+
+  const handleSignIn = async () => {
+    setSignIn({});
+    const result = await window.jarvis.startGitHubOAuth();
+    setSignIn(result.error
+      ? { error: result.error }
+      : { userCode: result.userCode, verificationUri: result.verificationUri });
+  };
 
 
 
@@ -265,7 +283,27 @@ function OAuthSection() {
 
       ) : (
 
-        <p style={{ fontSize: '0.85rem', color: '#778' }}>Not signed in.</p>
+        <>
+          <p style={{ fontSize: '0.85rem', color: '#778' }}>Not signed in.</p>
+          <div class="btn-row">
+            <button
+              class="btn-save"
+              onClick={() => void handleSignIn()}
+              disabled={signIn !== null && !signIn.error}
+            >
+              {signIn !== null && !signIn.error ? 'Waiting for GitHub…' : 'Sign in with GitHub'}
+            </button>
+          </div>
+          {signIn && (
+            <p class="hint" style={{ marginTop: '0.4rem' }}>
+              {signIn.error
+                ? <span style={{ color: '#ff8080' }}>Sign-in failed: {signIn.error}</span>
+                : signIn.userCode
+                  ? <>A browser tab was opened at <code>{signIn.verificationUri}</code> — enter code <strong><code>{signIn.userCode}</code></strong> and click <strong>Authorize</strong>.</>
+                  : 'Starting GitHub sign-in…'}
+            </p>
+          )}
+        </>
 
       )}
 
@@ -304,18 +342,14 @@ function CopilotUsageSection() {
     return window.jarvis.onCopilotUsageUpdated(setUsage);
   }, []);
 
-  // After a re-authorization started here completes, re-check usage with the new token.
+  // After a re-authorization started here completes, clear the pending state. The main
+  // process re-checks usage with the new token and pushes it via onCopilotUsageUpdated.
   const reauthActive = useRef(false);
   useEffect(() => {
     return window.jarvis.onOAuthComplete((result) => {
       if (!reauthActive.current) return;
       reauthActive.current = false;
-      if (result.error) {
-        setReauth({ error: result.error });
-        return;
-      }
-      setReauth(null);
-      void handleCheck();
+      setReauth(result.error ? { error: result.error } : null);
     });
   }, []);
 
@@ -362,7 +396,10 @@ function CopilotUsageSection() {
     setReauth({ userCode: result.userCode, verificationUri: result.verificationUri });
   };
 
-  const showReauth = usage?.missingScope || (usage?.configured && usage.oauthHasUserScope === false);
+  // Only offer re-authorization when the OAuth token actually lacks `user` — if it already
+  // has it, another round-trip through GitHub changes nothing.
+  const showReauth = usage?.configured && usage.oauthHasUserScope === false;
+  const needsSignIn = usage?.missingScope && usage.oauthHasUserScope === undefined;
 
   return (
     <div class="section">
@@ -401,7 +438,10 @@ function CopilotUsageSection() {
           {!usage.configured
             ? 'Log in to the GitHub CLI (gh auth login) or connect GitHub (OAuth or PAT) to track Copilot usage.'
             : usage.error
-              ? <span style={{ color: '#ffb74d' }}>{usage.error}</span>
+              ? <>
+                  <span style={{ color: '#ffb74d' }}>{usage.error}</span>
+                  {needsSignIn && <> Sign in under <strong>GitHub Account</strong> above.</>}
+                </>
               : <>
                   {MONTH_NAMES[usage.month - 1]} {usage.year}: <strong>{Math.round(usage.creditsUsed).toLocaleString()}</strong>
                   {usage.budgetCredits !== null ? ` of ${usage.budgetCredits.toLocaleString()}` : ''} AI credits used
@@ -416,7 +456,9 @@ function CopilotUsageSection() {
           {reauth.error
             ? <span style={{ color: '#ff8080' }}>Re-authorization failed: {reauth.error}</span>
             : reauth.userCode
-              ? <>A browser tab was opened at <code>{reauth.verificationUri}</code> — enter code <strong><code>{reauth.userCode}</code></strong> and approve the new <code>user</code> scope.</>
+              ? <>A browser tab was opened at <code>{reauth.verificationUri}</code> — enter code <strong><code>{reauth.userCode}</code></strong>.
+                  GitHub then asks for additional permission to <strong>Personal user data (Full access)</strong> — that is the <code>user</code> scope
+                  needed for billing data. GitHub doesn't let you pick individual scopes; just click <strong>Authorize</strong>.</>
               : 'Starting GitHub authorization…'}
         </p>
       )}
@@ -428,7 +470,7 @@ function CopilotUsageSection() {
         {showReauth && (
           <button
             class="btn-secondary"
-            title="Re-run the GitHub device sign-in to grant the `user` scope, which is needed to read billing usage."
+            title="Re-run the GitHub device sign-in. GitHub will show this as 'Personal user data — Full access' (the `user` scope), which is needed to read billing usage."
             onClick={() => void handleReauthorize()}
             disabled={reauth !== null && !reauth.error}
           >

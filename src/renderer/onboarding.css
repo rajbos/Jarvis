@@ -4420,6 +4420,26 @@ h5.ec-heading { font-size: 0.9375rem; }
   white-space: normal;
 }
 
+.bg-status-claude-actions {
+  display: flex;
+  gap: 0.4rem;
+  padding: 0 0.85rem 0.45rem;
+}
+
+.bg-status-claude-action {
+  padding: 0.25rem 0.6rem;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  font-size: var(--type-meta);
+  cursor: pointer;
+}
+
+.bg-status-claude-action:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
 .bg-status-claude-checked {
   margin-top: 0.15rem;
   padding: 0.45rem 0.85rem 0.2rem;
