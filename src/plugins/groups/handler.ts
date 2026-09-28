@@ -40,6 +40,8 @@ let ruddrProjectsCache: RuddrProjectEntry[] | null = null;
 let ruddrProjectsCacheTime = 0;
 /** Re-fetch after 8 hours so a long-running session stays reasonably fresh. */
 const RUDDR_CACHE_TTL_MS = 8 * 60 * 60 * 1000;
+/** Config key holding the epoch ms of the last successful Ruddr project-list fetch, so the TTL survives app restarts. */
+const RUDDR_LAST_CHECKED_KEY = 'ruddr_projects_last_checked_at';
 
 // ── Ruddr budget cache (in-memory, backed by DB for persistence) ─────────────
 interface CachedBudget {
@@ -271,6 +273,7 @@ async function ensureRuddrCache(
     logger.debug(`[Groups] Ruddr projects cached: ${ruddrProjectsCache.length} entries`);
     try {
       saveRuddrProjectsToDb(db, mergedProjects);
+      setConfigValue(db, RUDDR_LAST_CHECKED_KEY, String(ruddrProjectsCacheTime));
       saveDatabase();
     } catch (err) {
       logger.warn('[Groups] Failed to persist Ruddr projects to DB:', err);
@@ -285,20 +288,42 @@ async function ensureRuddrCache(
   return null;
 }
 
-/** Pre-warms the Ruddr projects cache in the background at app startup. */
+/**
+ * Pre-warms the Ruddr projects cache at app startup.
+ *
+ * Always seeds the in-memory cache from the DB (cheap, no network). The live
+ * Ruddr scrape is skipped unless the persisted last-checked timestamp is
+ * older than RUDDR_CACHE_TTL_MS, so restarting the app doesn't trigger a
+ * fresh browser scrape every time.
+ */
 export async function prewarmRuddrCache(db: SqlJsDatabase): Promise<void> {
   // Seed the persisted budget cache first so the Groups dashboard has data to
   // render the moment it is opened, even before any scrape runs.
   seedBudgetCacheFromDb(db);
+
+  // Restore the real last-checked time from the DB so the TTL below reflects
+  // when Ruddr was last actually checked, not just when this process booted.
+  const persistedCheckedAt = Number(getConfigValue(db, RUDDR_LAST_CHECKED_KEY) ?? '');
+  const lastCheckedAt = Number.isFinite(persistedCheckedAt) ? persistedCheckedAt : 0;
+  ruddrProjectsCacheTime = lastCheckedAt;
+
   // Seed the in-memory cache from DB immediately — no browser extension needed.
   if (ruddrProjectsCache === null || ruddrProjectsCache.length === 0) {
     const persisted = loadRuddrProjectsFromDb(db);
     if (persisted.length > 0) {
       ruddrProjectsCache = persisted;
-      ruddrProjectsCacheTime = Date.now();
       logger.debug(`[Groups] Ruddr cache seeded from DB: ${persisted.length} projects`);
     }
   }
+
+  // Skip the live scrape entirely if we checked Ruddr recently — no reason to
+  // open a browser tab and hit the network on every app start.
+  const dueForCheck = Date.now() - lastCheckedAt > RUDDR_CACHE_TTL_MS;
+  if (!dueForCheck) {
+    logger.debug(`[Groups] Ruddr check skipped — last checked ${new Date(lastCheckedAt).toISOString()}, within TTL`);
+    return;
+  }
+
   // Then try to refresh from browser if connected.
   const session = createTabSession();
   try {
