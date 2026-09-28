@@ -116,6 +116,22 @@ button:disabled {
   font-weight: 600;
 }
 
+.tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.1rem;
+  height: 1.1rem;
+  padding: 0 0.3rem;
+  margin-left: 0.4rem;
+  border-radius: 999px;
+  background: var(--accent-action, #e94560);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
 /* ── Dashboard panel ─────────────────────────────────────────────────────── */
 .dashboard-panel {
   width: 100%;

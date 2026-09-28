@@ -1010,7 +1010,7 @@ function App() {
           class={`tab-btn ${activeTab === 'agent-sessions' ? 'tab-active' : ''}`}
           onClick={() => setActiveTab('agent-sessions')}
           title="Running Copilot / Claude sessions and whether their PRs are ready for review"
-        >🤖 Agent Sessions{agentSessionsReady > 0 ? ` (${agentSessionsReady} ready)` : ''}</button>
+        >🤖 Agent Sessions{agentSessionsReady > 0 ? <span class="tab-badge">{agentSessionsReady}</span> : ''}</button>
         <button
           class={`tab-btn ${activeTab === 'browser' ? 'tab-active' : ''}`}
           onClick={() => setActiveTab('browser')}
