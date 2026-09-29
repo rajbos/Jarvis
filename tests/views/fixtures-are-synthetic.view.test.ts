@@ -29,8 +29,11 @@ function localIdentifiers(): string[] {
     gitConfig('user.name'),
     gitConfig('user.email'),
   ];
-  // Very short values ("ci", "me") would match unrelated fixture text.
-  return [...new Set(values.filter((v): v is string => typeof v === 'string' && v.trim().length >= 4))];
+  // Very short values ("ci", "me") would match unrelated fixture text. Bot
+  // accounts (e.g. GITHUB_ACTOR=dependabot[bot] on Dependabot PRs) are not
+  // personal identifiers and legitimately appear in the synthetic fixtures.
+  return [...new Set(values.filter((v): v is string =>
+    typeof v === 'string' && v.trim().length >= 4 && !v.trim().endsWith('[bot]')))];
 }
 
 describe('view fixtures', () => {
