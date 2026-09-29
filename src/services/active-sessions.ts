@@ -20,6 +20,7 @@ import {
 } from './local-agent-sessions';
 import {
   cloudStateToActivity,
+  fetchCopilotTaskSessions,
   fetchRepoFullNameById,
   isTaskRelevant,
   listCopilotAgentTasks,
@@ -32,6 +33,8 @@ export interface CollectActiveSessionsOptions extends LocalSessionDiscoveryOptio
   accessToken: string | null;
   /** How long a finished cloud task with a PR stays listed. */
   cloudFinishedWindowMs?: number;
+  /** Max per-task detail calls per refresh; keeps the sweep inside the rate limit. */
+  cloudSessionDetailLimit?: number;
 }
 
 /** Branches that never carry an agent's PR — skip the lookup to save API calls. */
@@ -156,9 +159,29 @@ export async function collectActiveSessions(options: CollectActiveSessionsOption
         (t) => !mirroredTaskIds.has(t.id) && isTaskRelevant(t, now, options.cloudFinishedWindowMs),
       );
       sources.copilotCloud = { ok: true, count: tasks.length };
+
+      // ── Per-task cloud sessions (model + credits) ──
+      // One detail call per task, most recently updated first, capped to keep
+      // the sweep inside the API rate limit. Failures degrade to no sessions.
+      const detailLimit = options.cloudSessionDetailLimit ?? 20;
+      const tasksByRecency = [...tasks].sort(
+        (a, b) => (Date.parse(b.updatedAt ?? '') || 0) - (Date.parse(a.updatedAt ?? '') || 0),
+      );
+      const detailResults = await Promise.all(
+        tasksByRecency.slice(0, detailLimit).map(async (task) => ({
+          taskId: task.id,
+          result: await fetchCopilotTaskSessions(token, task.id),
+        })),
+      );
+      const sessionsByTask = new Map(detailResults.flatMap(({ taskId, result }) =>
+        result.ok ? [[taskId, result.sessions] as const] : [],
+      ));
+
       const repoNames = new Map<number, string | null>();
       for (const task of tasks) {
         const session = cloudTaskToSession(task);
+        const cloudSessions = sessionsByTask.get(task.id);
+        if (cloudSessions && cloudSessions.length > 0) session.cloudSessions = cloudSessions;
         const lookups: PrLookup[] = task.pullRequestNodeIds.map((nodeId) => ({ kind: 'node', nodeId }));
         if (task.repositoryId !== null) {
           if (!repoNames.has(task.repositoryId)) {

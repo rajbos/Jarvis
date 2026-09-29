@@ -13,7 +13,7 @@ vi.mock('../../src/services/git-context', () => ({
 
 vi.mock('../../src/services/copilot-agent-tasks', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/services/copilot-agent-tasks')>();
-  return { ...actual, listCopilotAgentTasks: vi.fn(), fetchRepoFullNameById: vi.fn() };
+  return { ...actual, listCopilotAgentTasks: vi.fn(), fetchRepoFullNameById: vi.fn(), fetchCopilotTaskSessions: vi.fn() };
 });
 
 vi.mock('../../src/services/pr-readiness', async (importOriginal) => {
@@ -24,7 +24,7 @@ vi.mock('../../src/services/pr-readiness', async (importOriginal) => {
 import { collectActiveSessions, describeAgentActivity } from '../../src/services/active-sessions';
 import { discoverClaudeLocalSessions, discoverCopilotLocalSessions } from '../../src/services/local-agent-sessions';
 import { resolveGitContext } from '../../src/services/git-context';
-import { fetchRepoFullNameById, listCopilotAgentTasks } from '../../src/services/copilot-agent-tasks';
+import { fetchCopilotTaskSessions, fetchRepoFullNameById, listCopilotAgentTasks } from '../../src/services/copilot-agent-tasks';
 import { fetchPullRequests, prLookupKey, type PrLookup, type PrLookupResult } from '../../src/services/pr-readiness';
 
 const NOW = Date.parse('2026-03-01T12:00:00Z');
@@ -100,6 +100,7 @@ beforeEach(() => {
   vi.mocked(discoverCopilotLocalSessions).mockResolvedValue({ sessions: [], mirroredTaskIds: new Set() });
   vi.mocked(discoverClaudeLocalSessions).mockResolvedValue([]);
   vi.mocked(listCopilotAgentTasks).mockResolvedValue({ ok: true, tasks: [] });
+  vi.mocked(fetchCopilotTaskSessions).mockResolvedValue({ ok: true, sessions: [] });
   vi.mocked(fetchPullRequests).mockResolvedValue(new Map());
   vi.mocked(resolveGitContext).mockReturnValue(null);
 });
@@ -200,6 +201,28 @@ describe('collectActiveSessions', () => {
     expect(snap.entries[0]).toMatchObject({ verdict: 'ready', session: { origin: 'cloud', repoFullName: 'me/repo' } });
     const lookups = vi.mocked(fetchPullRequests).mock.calls[0][1];
     expect(lookups).toContainEqual({ kind: 'branch', repoFullName: 'me/repo', branch: 'copilot/y' });
+  });
+
+  it('attaches cloud sessions to cloud tasks and caps detail calls', async () => {
+    vi.mocked(listCopilotAgentTasks).mockResolvedValue({
+      ok: true,
+      tasks: [
+        { id: 'cloud-1', name: 'Cloud work', state: 'in_progress', createdAt: null, updatedAt: '2026-03-01T11:30:00Z', repositoryId: null, pullRequestNodeIds: [], headRef: null, baseRef: null },
+        { id: 'cloud-2', name: 'No details', state: 'queued', createdAt: null, updatedAt: '2026-03-01T11:00:00Z', repositoryId: null, pullRequestNodeIds: [], headRef: null, baseRef: null },
+      ],
+    });
+    vi.mocked(fetchCopilotTaskSessions).mockImplementation(async (token: string, taskId: string) =>
+      taskId === 'cloud-1'
+        ? { ok: true, sessions: [{ model: 'sweagent-capi:claude-sonnet-4', usage: { kind: 'ai_credits', amount: 1.5 } }] }
+        : { ok: false, status: 404, error: 'Agent task detail API 404' },
+    );
+    const snap = await collectActiveSessions({ accessToken: 'tok', now: () => NOW, cloudSessionDetailLimit: 1 });
+    expect(fetchCopilotTaskSessions).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(fetchCopilotTaskSessions).mock.calls[0][1]).toBe('cloud-1');
+    expect(snap.entries[0].session.cloudSessions).toEqual([
+      { model: 'sweagent-capi:claude-sonnet-4', usage: { kind: 'ai_credits', amount: 1.5 } },
+    ]);
+    expect(snap.entries[1].session.cloudSessions).toBeUndefined();
   });
 
   it('drops finished cloud tasks whose PR is already merged', async () => {

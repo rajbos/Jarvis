@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   cloudStateToActivity,
+  fetchCopilotTaskSessions,
   fetchRepoFullNameById,
   isTaskRelevant,
   listCopilotAgentTasks,
@@ -94,6 +95,51 @@ describe('listCopilotAgentTasks', () => {
   it('returns status 0 on network errors', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('offline'); }));
     expect(await listCopilotAgentTasks('tok')).toEqual({ ok: false, status: 0, error: 'offline' });
+  });
+});
+
+describe('fetchCopilotTaskSessions', () => {
+  it('maps cloud-agent sessions and normalizes usage spellings', async () => {
+    const fetchMock = vi.fn(async () => mockResponse({
+      sessions: [
+        { model: 'sweagent-capi:claude-sonnet-4', usage: { type: 'ai_credits', amount: 1_500_000_000 } },
+        { model: 'sweagent-capi:gpt-5', usage: { credits: 2.25 } },
+        { model: 'old-session', usage: { type: 'premium_requests', amount: 3 } },
+        { model: '', usage: { type: 'premium_requests', amount: 1 } },
+        { usage: null },
+      ],
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await fetchCopilotTaskSessions('tok', 't1');
+
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, { headers: Record<string, string> }];
+    expect(url).toBe('https://api.github.com/agents/tasks/t1');
+    expect(init.headers['X-GitHub-Api-Version']).toBe('2026-03-10');
+    expect(result).toEqual({
+      ok: true,
+      sessions: [
+        { model: 'sweagent-capi:claude-sonnet-4', usage: { kind: 'ai_credits', amount: 1.5 } },
+        { model: 'sweagent-capi:gpt-5', usage: { kind: 'ai_credits', amount: 2.25 } },
+        { model: 'old-session', usage: { kind: 'premium_requests', amount: 3 } },
+        { model: null, usage: { kind: 'premium_requests', amount: 1 } },
+      ],
+    });
+  });
+
+  it('returns a descriptive error on HTTP failures and tolerates a missing sessions array', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => mockResponse({ message: 'Not found' }, 404)));
+    const failed = await fetchCopilotTaskSessions('tok', 't1');
+    expect(failed.ok).toBe(false);
+    if (!failed.ok) expect(failed.error).toContain('404');
+
+    vi.stubGlobal('fetch', vi.fn(async () => mockResponse({})));
+    expect(await fetchCopilotTaskSessions('tok', 't1')).toEqual({ ok: true, sessions: [] });
+  });
+
+  it('returns status 0 on network errors', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('offline'); }));
+    expect(await fetchCopilotTaskSessions('tok', 't1')).toEqual({ ok: false, status: 0, error: 'offline' });
   });
 });
 

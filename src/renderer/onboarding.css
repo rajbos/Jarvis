@@ -5068,6 +5068,16 @@ h5.ec-heading { font-size: 0.9375rem; }
   border-color: #3a5a9a;
 }
 
+.as-chip--model {
+  border-color: #2e6e4f;
+  color: #9fd8b4;
+  background: #10301e;
+  max-width: 18rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .as-chip--draft {
   border-color: #55607a;
   color: #aab4c8;

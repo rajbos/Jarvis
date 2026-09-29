@@ -1590,6 +1590,8 @@ export interface ActiveAgentSession {
   updatedAt: string | null;
   /** Copilot cloud task id (cloud tasks, or local sessions mirrored as remote-steerable tasks). */
   cloudTaskId?: string | null;
+  /** Individual cloud-agent sessions inside the cloud task (usage per session). */
+  cloudSessions?: import('../services/copilot-agent-tasks').CloudTaskSession[];
   pid?: number | null;
 }
 

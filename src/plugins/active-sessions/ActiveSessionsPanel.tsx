@@ -10,6 +10,7 @@ import type {
   AgentProvider,
   ReadinessStage,
 } from '../types';
+import type { CloudTaskSession } from '../../services/copilot-agent-tasks';
 import { isIpcError } from '../types';
 
 function ProviderIcon({ provider }: { provider: AgentProvider }) {
@@ -51,6 +52,14 @@ function Light({ name, stage }: { name: string; stage: ReadinessStage }) {
 
 const NO_PR_STAGE: ReadinessStage = { light: 'grey', label: '—', detail: 'No pull request linked yet.', blocking: false };
 
+function formatCredits(usage: CloudTaskSession['usage']): string | null {
+  if (!usage) return null;
+  if (usage.kind === 'premium_requests') {
+    return `${usage.amount % 1 === 0 ? usage.amount : usage.amount.toFixed(1)} premium req`;
+  }
+  return `${usage.amount >= 10 ? usage.amount.toFixed(0) : usage.amount.toFixed(2)} credits`;
+}
+
 function openUrl(url: string) {
   void window.jarvis.openUrl(url);
 }
@@ -70,6 +79,16 @@ function SessionRow({ entry }: { entry: ActiveSessionEntry }) {
           <span class="as-row-client">{session.client}</span>
           {session.repoFullName && <span class="as-row-repo">{session.repoFullName}</span>}
           {session.branch && <span class="as-row-branch" title="Branch">⎇ {session.branch}</span>}
+          {(session.cloudSessions ?? []).slice(0, 3).map((cs, i) => (
+            <span key={i} class="as-chip as-chip--model" title={`Copilot cloud agent session: ${cs.model ?? 'unknown model'}`}>
+              {cs.model ?? 'session'}{formatCredits(cs.usage) ? ` · ${formatCredits(cs.usage)}` : ''}
+            </span>
+          ))}
+          {(session.cloudSessions?.length ?? 0) > 3 && (
+            <span class="as-chip as-chip--model" title={`${session.cloudSessions!.length} Copilot cloud agent sessions`}>
+              +{session.cloudSessions!.length - 3} more
+            </span>
+          )}
           {pr && (
             <button class="as-pr-link" title={`Open ${pr.url}`} onClick={() => openUrl(pr.url)}>
               #{pr.prNumber}

@@ -31,6 +31,92 @@ export type ListCloudTasksResult =
   | { ok: true; tasks: CloudAgentTask[] }
   | { ok: false; status: number; error: string };
 
+/** Billing units a cloud task session consumed (see the task detail API). */
+export interface CloudTaskSessionUsage {
+  kind: 'ai_credits' | 'premium_requests';
+  amount: number;
+}
+
+/** One Copilot cloud session inside an agent task. */
+export interface CloudTaskSession {
+  model: string | null;
+  usage: CloudTaskSessionUsage | null;
+}
+
+export type FetchTaskSessionsResult =
+  | { ok: true; sessions: CloudTaskSession[] }
+  | { ok: false; status: number; error: string };
+
+interface RawTaskSession {
+  model?: string | null;
+  usage?: { type?: string; amount?: number; credits?: number } | null;
+}
+
+/**
+ * Detect whether a task session came from the cloud agent or a CLI/remote
+ * session: cloud-agent sessions have a non-empty `model` or a `usage` block.
+ */
+export function isCloudAgentSession(session: RawTaskSession): boolean {
+  if (typeof session.model === 'string' && session.model !== '') return true;
+  if (session.usage !== null && session.usage !== undefined) return true;
+  return false;
+}
+
+/**
+ * Read a session's billing units. `ai_credits` amounts are nano-credits
+ * (divide by 1e9); the API has also been observed reporting the amount as
+ * `usage.credits` (already in credits). `premium_requests` is a plain,
+ * possibly fractional count for older sessions.
+ */
+function readSessionUsage(session: RawTaskSession): CloudTaskSessionUsage | null {
+  const usage = session.usage;
+  if (!usage) return null;
+  if (typeof usage.credits === 'number' && Number.isFinite(usage.credits)) {
+    return { kind: 'ai_credits', amount: usage.credits };
+  }
+  if (typeof usage.amount === 'number' && Number.isFinite(usage.amount)) {
+    if (usage.type === 'ai_credits') return { kind: 'ai_credits', amount: usage.amount / 1_000_000_000 };
+    return { kind: 'premium_requests', amount: usage.amount };
+  }
+  return null;
+}
+
+/**
+ * Fetch one task's sessions via the task detail API. Failures are reported
+ * but never block listing the task itself — callers decide whether to skip.
+ */
+export async function fetchCopilotTaskSessions(
+  accessToken: string,
+  taskId: string,
+): Promise<FetchTaskSessionsResult> {
+  let response: Response;
+  try {
+    response = await fetch(`${GITHUB_API}/agents/tasks/${encodeURIComponent(taskId)}`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': AGENT_TASKS_API_VERSION,
+      },
+    });
+  } catch (err) {
+    return { ok: false, status: 0, error: err instanceof Error ? err.message : String(err) };
+  }
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    return { ok: false, status: response.status, error: `Agent task detail API ${response.status}: ${text.slice(0, 200)}` };
+  }
+
+  const body = (await response.json()) as { sessions?: RawTaskSession[] };
+  const sessions = (Array.isArray(body.sessions) ? body.sessions : [])
+    .filter(isCloudAgentSession)
+    .map((s) => ({
+      model: typeof s.model === 'string' && s.model !== '' ? s.model : null,
+      usage: readSessionUsage(s),
+    }));
+  return { ok: true, sessions };
+}
+
 interface RawTask {
   id?: string;
   name?: string | null;
