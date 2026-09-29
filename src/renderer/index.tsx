@@ -36,6 +36,7 @@ import { AutoDismissHistoryPanel } from '../plugins/notifications/AutoDismissHis
 import { ClaudeStep } from '../plugins/claude/ClaudeStep';
 import { ClaudePanel } from '../plugins/claude/ClaudePanel';
 import { CopilotUsageBadge } from '../plugins/copilot-usage/CopilotUsageBadge';
+import { ClaudeIcon } from '../plugins/shared/BrandIcons';
 import { ActiveSessionsPanel } from '../plugins/active-sessions/ActiveSessionsPanel';
 
 // ── Types (imported from single source of truth in plugins/types.ts) ─────────
@@ -1582,11 +1583,12 @@ function BackgroundStatusBar({
                 class={`bg-status-rate-limit${claudeBadge.limited ? ' bg-status-rate-limit--limited' : ''}`}
                 style={{ color: claudeBadge.error ? '#888' : claudeBadge.limited ? '#f44336' : '#4caf50' }}
               >
+                <ClaudeIcon size={13} class="bg-status-brand-icon" />
                 {claudeBadge.error
-                  ? '✦ Claude –'
+                  ? 'Claude –'
                   : claudeBadge.limited
                     ? `⏳ Claude limited · ${claudeBadge.resetAt !== null ? formatDurationUntil(claudeBadge.resetAt) : 'resets soon'}`
-                    : `✦ Claude${claudeBadge.fiveHour?.utilization != null ? ` ${Math.round(claudeBadge.fiveHour.utilization * 100)}%` : ' ok'}`}
+                    : `Claude${claudeBadge.fiveHour?.utilization != null ? ` ${Math.round(claudeBadge.fiveHour.utilization * 100)}%` : ' ok'}`}
               </span>
               <div class="bg-status-claude-pop">
                 {([
