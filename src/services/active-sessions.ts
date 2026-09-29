@@ -204,6 +204,7 @@ export async function collectActiveSessions(options: CollectActiveSessionsOption
   const checkedAt = new Date(now).toISOString();
 
   const entries: ActiveSessionEntry[] = [];
+  let hiddenCloud = 0;
   for (const { session, lookups } of links) {
     let pr: PrReadiness | null = null;
     let prError: string | null = null;
@@ -227,6 +228,7 @@ export async function collectActiveSessions(options: CollectActiveSessionsOption
 
     // A finished cloud task whose PR is already merged/closed isn't active any more.
     if (session.origin === 'cloud' && pr && pr.state !== 'OPEN' && (session.activity === 'completed' || session.activity === 'failed')) {
+      hiddenCloud++;
       continue;
     }
 
@@ -239,6 +241,15 @@ export async function collectActiveSessions(options: CollectActiveSessionsOption
         ? { verdict: 'no_pr' as const, verdictLabel: 'Sign in to GitHub to check PR' }
         : verdictFor(pr)),
     });
+  }
+
+  // Report what is actually listed, so the source counts match the rows.
+  if (sources.copilotCloud.ok && !sources.copilotCloud.skipped) {
+    sources.copilotCloud = {
+      ok: true,
+      count: entries.filter((e) => e.session.origin === 'cloud').length,
+      ...(hiddenCloud > 0 ? { hidden: hiddenCloud } : {}),
+    };
   }
 
   sortEntries(entries);

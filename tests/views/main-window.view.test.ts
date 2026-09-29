@@ -151,6 +151,28 @@ describe('main window — driving the fake API', () => {
     expect(view.errors.every((e) => e.includes('fixture failure'))).toBe(true);
   });
 
+  it('filters Agent Sessions by source pill', async () => {
+    const view = await harness.open('index');
+    const { page } = view;
+    await tab(page, /Agent Sessions/).click();
+    const pills = page.locator('.as-pills');
+    const row = page.getByText('Teach the rocket sled to brake');
+    await expect.poll(() => row.count()).toBe(1);
+
+    await pills.getByRole('button', { name: /Claude local/ }).click();
+    await expect.poll(() => row.count()).toBe(0);
+    await expect.poll(() => page.locator('body').innerText()).toContain('No sessions from this source right now.');
+
+    await pills.getByRole('button', { name: /Copilot cloud/ }).click();
+    await expect.poll(() => row.count()).toBe(1);
+    expect(await pills.getByRole('button', { name: /Copilot cloud/ }).getAttribute('aria-pressed')).toBe('true');
+
+    // Clicking the active pill again clears the filter.
+    await pills.getByRole('button', { name: /Copilot cloud/ }).click();
+    expect(await pills.getByRole('button', { name: /^All/ }).getAttribute('aria-pressed')).toBe('true');
+    await expectCleanRender(view);
+  });
+
   it('reacts to push events from the main process', async () => {
     const view = await harness.open('index');
     const { page } = view;

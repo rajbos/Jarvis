@@ -4963,6 +4963,59 @@ h5.ec-heading { font-size: 0.9375rem; }
   color: #a0c8ff;
 }
 
+.as-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid #1e3a5a;
+}
+
+.as-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  padding: 0.2rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid #2b4a75;
+  color: #a0c8ff;
+  background: #0f2240;
+  cursor: pointer;
+}
+
+.as-pill:hover {
+  background: #16305a;
+}
+
+.as-pill--active {
+  border-color: #5a8ad0;
+  background: #1e3f70;
+  color: #e0ecff;
+}
+
+.as-pill-count {
+  font-weight: 600;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: rgba(160, 200, 255, 0.15);
+}
+
+.as-pill-hidden {
+  font-size: 0.6875rem;
+  color: #7a8fb0;
+}
+
+.as-pill--skipped {
+  color: #7a8fb0;
+  border-style: dashed;
+}
+
+.as-pill--error {
+  border-color: #6b2d2d;
+  color: #ffb4a8;
+}
+
 .as-error {
   margin: 0.5rem 1rem 0;
   padding: 0.4rem 0.6rem;
@@ -5204,11 +5257,4 @@ h5.ec-heading { font-size: 0.9375rem; }
 
 .as-verdict--closed {
   color: #7a8fb0;
-}
-
-.as-footer {
-  padding: 0.4rem 1rem;
-  font-size: 0.75rem;
-  color: #5a7aa0;
-  border-top: 1px solid #1e3a5a;
 }

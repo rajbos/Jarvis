@@ -99,10 +99,67 @@ function SessionRow({ entry }: { entry: ActiveSessionEntry }) {
   );
 }
 
-function sourceLabel(name: string, s: ActiveSessionSourceStatus): string {
-  if (s.skipped) return `${name}: skipped${s.error ? ` (${s.error})` : ''}`;
-  if (!s.ok) return `${name}: error`;
-  return `${name}: ${s.count}`;
+type SourceKey = keyof ActiveSessionsSnapshot['sources'];
+type SourceFilter = 'all' | SourceKey;
+
+const SOURCES: Array<{ key: SourceKey; label: string; description: string }> = [
+  { key: 'copilotLocal', label: 'Copilot local', description: 'Running Copilot CLI / app sessions on this machine (~/.copilot/session-state).' },
+  { key: 'claudeLocal', label: 'Claude local', description: 'Running Claude Code sessions on this machine (~/.claude/sessions).' },
+  { key: 'copilotCloud', label: 'Copilot cloud', description: 'Your Copilot cloud agent tasks from the GitHub agent tasks API (last 24h).' },
+];
+
+function sourceOf(entry: ActiveSessionEntry): SourceKey {
+  if (entry.session.origin === 'cloud') return 'copilotCloud';
+  return entry.session.provider === 'claude' ? 'claudeLocal' : 'copilotLocal';
+}
+
+function sourceTooltip(description: string, s: ActiveSessionSourceStatus): string {
+  const lines = [description];
+  if (s.skipped) lines.push(`Skipped${s.error ? `: ${s.error}` : ''}`);
+  else if (!s.ok) lines.push(`Error: ${s.error ?? 'unknown'}`);
+  if (s.hidden) lines.push(`${s.hidden} finished task(s) hidden because their PR is already merged or closed.`);
+  return lines.join('\n');
+}
+
+function SourcePills({ snapshot, filter, onChange }: {
+  snapshot: ActiveSessionsSnapshot;
+  filter: SourceFilter;
+  onChange: (f: SourceFilter) => void;
+}) {
+  const counts: Record<SourceKey, number> = { copilotLocal: 0, claudeLocal: 0, copilotCloud: 0 };
+  for (const entry of snapshot.entries) counts[sourceOf(entry)]++;
+
+  return (
+    <div class="as-pills" role="group" aria-label="Filter by source">
+      <button
+        class={`as-pill${filter === 'all' ? ' as-pill--active' : ''}`}
+        aria-pressed={filter === 'all'}
+        onClick={() => onChange('all')}
+      >
+        All <span class="as-pill-count">{snapshot.entries.length}</span>
+      </button>
+      {SOURCES.map(({ key, label, description }) => {
+        const status = snapshot.sources[key];
+        const state = status.skipped ? ' as-pill--skipped' : !status.ok ? ' as-pill--error' : '';
+        const active = filter === key;
+        return (
+          <button
+            key={key}
+            class={`as-pill${active ? ' as-pill--active' : ''}${state}`}
+            aria-pressed={active}
+            title={sourceTooltip(description, status)}
+            onClick={() => onChange(active ? 'all' : key)}
+          >
+            {label}{' '}
+            <span class="as-pill-count">
+              {status.skipped ? 'off' : !status.ok ? '!' : counts[key]}
+            </span>
+            {status.hidden ? <span class="as-pill-hidden">+{status.hidden} hidden</span> : null}
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 export function ActiveSessionsPanel() {
@@ -110,6 +167,7 @@ export function ActiveSessionsPanel() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<SourceFilter>('all');
 
   const refresh = async () => {
     setRefreshing(true);
@@ -154,6 +212,9 @@ export function ActiveSessionsPanel() {
   const sourceErrors = snapshot
     ? Object.entries(snapshot.sources).filter(([, s]) => !s.ok && s.error).map(([name, s]) => `${name}: ${s.error}`)
     : [];
+  const visible = snapshot
+    ? snapshot.entries.filter((e) => filter === 'all' || sourceOf(e) === filter)
+    : [];
 
   return (
     <div class="adh-panel as-panel">
@@ -178,6 +239,8 @@ export function ActiveSessionsPanel() {
         Copilot code review is attached, Copilot has reviewed that latest commit.
       </div>
 
+      {snapshot && <SourcePills snapshot={snapshot} filter={filter} onChange={setFilter} />}
+
       {error && <div class="as-error">Refresh failed: {error}</div>}
       {sourceErrors.map((e) => <div key={e} class="as-error">{e}</div>)}
 
@@ -185,21 +248,14 @@ export function ActiveSessionsPanel() {
         <div class="adh-loading">Looking for active sessions…</div>
       ) : !snapshot || snapshot.entries.length === 0 ? (
         <div class="adh-empty">No active Copilot or Claude sessions found.</div>
+      ) : visible.length === 0 ? (
+        <div class="adh-empty">No sessions from this source right now.</div>
       ) : (
         <div class="as-list">
-          {snapshot.entries.map((entry) => <SessionRow key={entry.session.key} entry={entry} />)}
+          {visible.map((entry) => <SessionRow key={entry.session.key} entry={entry} />)}
         </div>
       )}
 
-      {snapshot && (
-        <div class="as-footer">
-          {[
-            sourceLabel('Copilot local', snapshot.sources.copilotLocal),
-            sourceLabel('Claude local', snapshot.sources.claudeLocal),
-            sourceLabel('Copilot cloud', snapshot.sources.copilotCloud),
-          ].join(' · ')}
-        </div>
-      )}
     </div>
   );
 }
