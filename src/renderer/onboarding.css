@@ -4343,6 +4343,13 @@ h5.ec-heading { font-size: 0.9375rem; }
   50% { opacity: 0.55; }
 }
 
+.bg-status-brand-icon {
+  display: inline-block;
+  vertical-align: -2px;
+  margin-right: 0.3rem;
+  flex-shrink: 0;
+}
+
 /* Claude badge hover popover (mirrors the setup panel info) */
 .bg-status-claude {
   position: relative;

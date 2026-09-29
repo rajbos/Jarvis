@@ -1,6 +1,7 @@
 import type { CopilotUsage } from '../types';
 import { formatNumber, formatDurationUntil } from '../shared/utils';
 import { copilotBudgetLevel, copilotUsageLimit, type CopilotBudgetLevel } from './budget-level';
+import { CopilotIcon } from '../shared/BrandIcons';
 
 const LEVEL_COLOR: Record<CopilotBudgetLevel, string> = {
   unknown: '#888',
@@ -36,14 +37,17 @@ export function CopilotUsageBadge({ usage, onOpenSettings, onRefresh }: CopilotU
   const monthLabel = new Date(Date.UTC(usage.year, usage.month - 1, 1)).toLocaleString(undefined, { month: 'long', year: 'numeric', timeZone: 'UTC' });
 
   const label = usage.error
-    ? '◈ Copilot –'
+    ? 'Copilot –'
     : limit
-      ? `◈ Copilot ${credits(usage.creditsUsed)}/${credits(limit)} AIC`
-      : `◈ Copilot ${credits(usage.creditsUsed)} AIC`;
+      ? `Copilot ${credits(usage.creditsUsed)}/${credits(limit)} AIC`
+      : `Copilot ${credits(usage.creditsUsed)} AIC`;
 
   return (
     <span class="bg-status-claude bg-status-copilot">
-      <span class="bg-status-rate-limit" style={{ color: LEVEL_COLOR[level] }}>{label}</span>
+      <span class="bg-status-rate-limit" style={{ color: LEVEL_COLOR[level] }}>
+        <CopilotIcon size={13} class="bg-status-brand-icon" />
+        {label}
+      </span>
       <div class="bg-status-claude-pop">
         <div class="bg-status-claude-row">
           <span class="bg-status-claude-label">{monthLabel}</span>
