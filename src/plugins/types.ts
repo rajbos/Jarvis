@@ -1638,6 +1638,8 @@ export interface ActiveSessionEntry {
 export interface ActiveSessionSourceStatus {
   ok: boolean;
   count: number;
+  /** Items found but left out of the list (e.g. finished cloud tasks whose PR is merged/closed). */
+  hidden?: number;
   skipped?: boolean;
   error?: string;
 }

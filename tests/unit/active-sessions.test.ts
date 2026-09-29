@@ -234,6 +234,8 @@ describe('collectActiveSessions', () => {
 
     const snap = await collectActiveSessions({ accessToken: 'tok', now: () => NOW });
     expect(snap.entries).toEqual([]);
+    // The source count matches the listed rows; the dropped task is reported as hidden.
+    expect(snap.sources.copilotCloud).toEqual({ ok: true, count: 0, hidden: 1 });
   });
 
   it('reports PR lookup errors per session and cloud source errors per source', async () => {
