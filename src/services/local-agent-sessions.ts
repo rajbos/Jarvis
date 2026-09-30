@@ -30,9 +30,12 @@ export interface LocalSessionDiscoveryOptions {
   now?: () => number;
   /** Session-state dirs untouched for longer than this are not inspected. */
   recentWindowMs?: number;
+  /** Session-state dirs touched within this window are read for their mirrored cloud task id. */
+  mirrorWindowMs?: number;
 }
 
 const DEFAULT_RECENT_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
+const DEFAULT_MIRROR_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 const TAIL_BYTES = 64 * 1024;
 /** Tail windows tried in turn — single events (e.g. permission prompts with a full diff) can be hundreds of KB. */
 const TAIL_WINDOWS = [TAIL_BYTES, 256 * 1024, 1024 * 1024, 4 * 1024 * 1024];
@@ -291,11 +294,11 @@ export interface CopilotLocalDiscovery {
   /** Sessions with a live process holding them open. */
   sessions: ActiveAgentSession[];
   /**
-   * Cloud task ids of *every* recent local session (running or not). Local
-   * Copilot app sessions are mirrored to the agent tasks API, so these ids
-   * must be excluded when listing genuine cloud sessions.
+   * Cloud task id → client label (e.g. "Copilot app") of *every* recent local
+   * session, running or not. Local Copilot app sessions are mirrored to the
+   * agent tasks API, so these tasks must not be presented as cloud-agent work.
    */
-  mirroredTaskIds: Set<string>;
+  mirroredTasks: Map<string, string>;
 }
 
 export async function discoverCopilotLocalSessions(options: LocalSessionDiscoveryOptions = {}): Promise<CopilotLocalDiscovery> {
@@ -303,16 +306,17 @@ export async function discoverCopilotLocalSessions(options: LocalSessionDiscover
   const alive = options.isPidAlive ?? isPidAlive;
   const now = options.now?.() ?? Date.now();
   const cutoff = now - (options.recentWindowMs ?? DEFAULT_RECENT_WINDOW_MS);
+  const mirrorCutoff = Math.min(cutoff, now - (options.mirrorWindowMs ?? DEFAULT_MIRROR_WINDOW_MS));
   const root = path.join(home, '.copilot', 'session-state');
 
   const sessions: ActiveAgentSession[] = [];
-  const mirroredTaskIds = new Set<string>();
+  const mirroredTasks = new Map<string, string>();
 
   let entries: fs.Dirent[];
   try {
     entries = fs.readdirSync(root, { withFileTypes: true });
   } catch {
-    return { sessions, mirroredTaskIds };
+    return { sessions, mirroredTasks };
   }
 
   const held: Array<{ dirName: string; dir: string; files: string[]; ws: Record<string, string>; locks: LockCandidate[] }> = [];
@@ -320,8 +324,10 @@ export async function discoverCopilotLocalSessions(options: LocalSessionDiscover
     if (!entry.isDirectory()) continue;
     const dir = path.join(root, entry.name);
     let files: string[];
+    let mtimeMs: number;
     try {
-      if (fs.statSync(dir).mtimeMs < cutoff) continue;
+      mtimeMs = fs.statSync(dir).mtimeMs;
+      if (mtimeMs < mirrorCutoff) continue;
       files = fs.readdirSync(dir);
     } catch {
       continue;
@@ -329,7 +335,8 @@ export async function discoverCopilotLocalSessions(options: LocalSessionDiscover
 
     const yamlText = files.includes('workspace.yaml') ? readFileText(path.join(dir, 'workspace.yaml')) : null;
     const ws = yamlText ? parseWorkspaceYaml(yamlText) : {};
-    if (ws.mc_task_id) mirroredTaskIds.add(ws.mc_task_id);
+    if (ws.mc_task_id) mirroredTasks.set(ws.mc_task_id, clientLabel(ws.client_name));
+    if (mtimeMs < cutoff) continue;
 
     const locks = files
       .map((f) => ({ file: f, pid: f.match(/^inuse\.(\d+)\.lock$/)?.[1] }))
@@ -368,7 +375,7 @@ export async function discoverCopilotLocalSessions(options: LocalSessionDiscover
     });
   }
 
-  return { sessions, mirroredTaskIds };
+  return { sessions, mirroredTasks };
 }
 
 function readFileText(filePath: string): string | null {

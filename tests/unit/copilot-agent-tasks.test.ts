@@ -82,6 +82,25 @@ describe('listCopilotAgentTasks', () => {
     });
   });
 
+  it('follows pages until a short page, up to maxPages', async () => {
+    const page = (ids: string[]) => mockResponse({ tasks: ids.map((id) => ({ id, state: 'idle' })) });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(page(['a', 'b']))
+      .mockResolvedValueOnce(page(['c']));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await listCopilotAgentTasks('tok', { perPage: 2 });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(String(fetchMock.mock.calls[1][0])).toContain('page=2');
+    expect(result.ok && result.tasks.map((t) => t.id)).toEqual(['a', 'b', 'c']);
+
+    const capped = vi.fn(async () => page(['x', 'y']));
+    vi.stubGlobal('fetch', capped);
+    await listCopilotAgentTasks('tok', { perPage: 2, maxPages: 3 });
+    expect(capped).toHaveBeenCalledTimes(3);
+  });
+
   it('returns a descriptive error on auth failures', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => mockResponse({ message: 'Forbidden' }, 403)));
     const result = await listCopilotAgentTasks('tok');

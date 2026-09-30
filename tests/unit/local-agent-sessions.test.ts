@@ -159,16 +159,19 @@ describe('filesystem discovery', () => {
       pid: 111,
       startedAt: '2026-03-01T10:00:00.000Z',
     });
-    expect([...result.mirroredTaskIds].sort()).toEqual(['task-dead', 'task-live']);
+    expect([...result.mirroredTasks.entries()].sort()).toEqual([['task-dead', 'Copilot CLI'], ['task-live', 'Copilot app']]);
   });
 
-  it('skips session dirs older than the recent window', async () => {
-    const dir = writeCopilotSession('old', { pid: 111, yaml: 'id: old\nmc_task_id: task-old\n' });
+  it('skips session dirs older than the recent window, but records their mirrored task within the mirror window', async () => {
+    const dir = writeCopilotSession('old', { pid: 111, yaml: 'id: old\nclient_name: github/autopilot\nmc_task_id: task-old\n' });
     const old = new Date(NOW - 10 * 24 * 60 * 60 * 1000);
     fs.utimesSync(dir, old, old);
+    const ancient = writeCopilotSession('ancient', { yaml: 'id: ancient\nmc_task_id: task-ancient\n' });
+    const veryOld = new Date(NOW - 60 * 24 * 60 * 60 * 1000);
+    fs.utimesSync(ancient, veryOld, veryOld);
     const result = await discoverCopilotLocalSessions({ homeDir: home, isPidAlive: () => true, getProcessStartTimes: startedLongAgo, now: () => NOW });
     expect(result.sessions).toHaveLength(0);
-    expect(result.mirroredTaskIds.size).toBe(0);
+    expect([...result.mirroredTasks.entries()]).toEqual([['task-old', 'Copilot app']]);
   });
 
   it('rejects locks whose pid now belongs to a process started after the lock was written (pid reuse)', async () => {
