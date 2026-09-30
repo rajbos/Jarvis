@@ -347,6 +347,8 @@ export function BrowserCompanionPanel({ onBack }: { onBack: () => void }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <button
           onClick={onBack}
+          title="Back"
+          aria-label="Back"
           style={{ background: 'none', border: 'none', color: '#aaa', cursor: 'pointer', fontSize: 16, padding: 0 }}
         >
           ←

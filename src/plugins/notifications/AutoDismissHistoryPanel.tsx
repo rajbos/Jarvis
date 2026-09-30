@@ -244,7 +244,7 @@ export function AutoDismissHistoryPanel({ onClose }: { onClose: () => void }) {
             class={`adh-tab${view === 'chart' ? ' adh-tab--active' : ''}`}
             onClick={() => setView('chart')}
           >Chart</button>
-          <button class="adh-close" onClick={onClose} title="Close">×</button>
+          <button class="adh-close" onClick={onClose} title="Close" aria-label="Close">×</button>
         </div>
       </div>
 

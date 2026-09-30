@@ -164,7 +164,7 @@ export function AgentSelector({ repoFullName, workflowFilter, onClose, onSession
       <div class="agent-selector-modal">
         <div class="agent-selector-header">
           <span class="agent-selector-title">{'🤖 Run Agent Analysis'}</span>
-          <button class="agent-selector-close" onClick={onClose} title="Cancel">{'✕'}</button>
+          <button class="agent-selector-close" onClick={onClose} title="Cancel" aria-label="Cancel">{'✕'}</button>
         </div>
 
         <div class="agent-selector-scope">
