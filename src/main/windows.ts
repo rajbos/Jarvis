@@ -2,6 +2,7 @@ import { BrowserWindow, screen } from 'electron';
 import path from 'path';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import { saveDatabase } from '../storage/database';
+import { logger } from '../services/logger';
 
 export interface WindowBounds {
   x: number;
@@ -91,6 +92,26 @@ export function ensureWindowBoundsVisible(
     : adjusted;
 }
 
+/**
+ * Log renderer crashes / hangs (otherwise the window silently goes blank) and
+ * reload the window after a renderer process crash. Only the reason and exit
+ * code are logged, never page state.
+ */
+export function attachCrashHandlers(win: BrowserWindow, name: string): void {
+  win.webContents.on('render-process-gone', (_event, details) => {
+    logger.error(`[Window:${name}] renderer process gone: reason=${details.reason} exitCode=${details.exitCode}`);
+    if (details.reason !== 'clean-exit' && details.reason !== 'killed' && !win.isDestroyed()) {
+      win.reload();
+    }
+  });
+  win.on('unresponsive', () => {
+    logger.warn(`[Window:${name}] window became unresponsive`);
+  });
+  win.on('responsive', () => {
+    logger.info(`[Window:${name}] window is responsive again`);
+  });
+}
+
 export function createOnboardingWindow(db: SqlJsDatabase): BrowserWindow {
   const saved = loadWindowBounds(db);
   const primaryDisplay = screen.getPrimaryDisplay();
@@ -137,6 +158,8 @@ export function createOnboardingWindow(db: SqlJsDatabase): BrowserWindow {
   screen.on('display-removed', ensureCurrentBoundsVisible);
   screen.on('display-metrics-changed', ensureCurrentBoundsVisible);
 
+  attachCrashHandlers(win, 'main');
+
   // Prevent the window from navigating to external URLs
   win.webContents.on('will-navigate', (event, url) => {
     if (!url.startsWith('file://')) {
@@ -180,6 +203,8 @@ export function createSettingsWindow(): BrowserWindow {
 
   win.loadFile(path.join(__dirname, '..', 'renderer', 'settings.html'));
 
+  attachCrashHandlers(win, 'settings');
+
   // Prevent the window from navigating to external URLs
   win.webContents.on('will-navigate', (event, url) => {
     if (!url.startsWith('file://')) {
@@ -209,6 +234,8 @@ export function createAboutWindow(): BrowserWindow {
   });
 
   win.loadFile(path.join(__dirname, '..', 'renderer', 'about.html'));
+
+  attachCrashHandlers(win, 'about');
 
   // Prevent the window from navigating to external URLs
   win.webContents.on('will-navigate', (event, url) => {

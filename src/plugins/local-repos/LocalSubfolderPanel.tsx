@@ -60,7 +60,7 @@ export function LocalSubfolderPanel({
     <div class="repo-panel">
       <div class="repo-panel-header">
         {canGoBack && (
-          <button class="repo-panel-close" title="Back" onClick={onBack}>&#8249;</button>
+          <button class="repo-panel-close" title="Back" aria-label="Back" onClick={onBack}>&#8249;</button>
         )}
         <span class="repo-panel-title">{folderName}</span>
         <span class="local-panel-count">{formatNumber(totalRepos)} repo{totalRepos !== 1 ? 's' : ''}</span>
@@ -74,7 +74,7 @@ export function LocalSubfolderPanel({
             {'\uD83D\uDD14'} {totalNotifs}
           </span>
         )}
-        <button class="repo-panel-close" title="Configure folders" onClick={onConfigure}>&#9881;</button>
+        <button class="repo-panel-close" title="Configure folders" aria-label="Configure folders" onClick={onConfigure}>&#9881;</button>
       </div>
       <div class="org-list" style={{ marginTop: '0.5rem' }}>
         {sorted.length === 0 ? (

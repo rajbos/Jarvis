@@ -178,6 +178,8 @@ export function RuddrProjectsPanel(props: { onGroupCreated?: () => void }) {
                     <button
                       type="button"
                       class="ruddr-projects-panel__create-cancel"
+                      title="Cancel new project group"
+                      aria-label="Cancel new project group"
                       onClick={cancelCreate}
                       disabled={creating}
                     >✕</button>

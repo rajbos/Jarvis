@@ -68,6 +68,7 @@ import type {
 } from '../plugins/types';
 import { isIpcError } from '../plugins/types';
 import '../plugins/types'; // activate the global Window augmentation
+import { ErrorBoundary, installGlobalErrorHandlers } from '../plugins/shared/ErrorBoundary';
 
 type AppTab = 'dashboard' | 'groups-dashboard' | 'agent-sessions' | 'browser' | 'setup' | 'dismiss-history';
 
@@ -992,7 +993,7 @@ function App() {
         <SearchBar />
         <UpdateButton />
         {!showChatPanel && selectedOllamaModel && (
-          <button class="chat-reopen-btn" title="Open Chat" onClick={handleOpenChat}>💬</button>
+          <button class="chat-reopen-btn" title="Open Chat" aria-label="Open Chat" onClick={handleOpenChat}>💬</button>
         )}
       </div>
 
@@ -1668,4 +1669,5 @@ function BackgroundStatusBar({
 
 document.body.classList.add('onboarding');
 const root = document.getElementById('app')!;
-render(<App />, root);
+installGlobalErrorHandlers();
+render(<ErrorBoundary label="this window"><App /></ErrorBoundary>, root);
