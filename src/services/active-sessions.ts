@@ -22,6 +22,7 @@ import {
   cloudStateToActivity,
   fetchCopilotTaskSessions,
   fetchRepoFullNameById,
+  type CloudTaskSession,
   isTaskRelevant,
   listCopilotAgentTasks,
   type CloudAgentTask,
@@ -35,6 +36,8 @@ export interface CollectActiveSessionsOptions extends LocalSessionDiscoveryOptio
   cloudFinishedWindowMs?: number;
   /** Max per-task detail calls per refresh; keeps the sweep inside the rate limit. */
   cloudSessionDetailLimit?: number;
+  /** How often to re-list every agent task; in between only changed tasks are fetched. */
+  cloudFullListIntervalMs?: number;
 }
 
 /** Branches that never carry an agent's PR — skip the lookup to save API calls. */
@@ -89,6 +92,58 @@ function cloudTaskToSession(task: CloudAgentTask): ActiveAgentSession {
   };
 }
 
+// ── Agent tasks cache ─────────────────────────────────────────────────────────
+// The agent tasks API has a 60 requests/hour budget and the sweep runs every
+// few minutes. A full paged listing runs every `cloudFullListIntervalMs`; the
+// sweeps in between fetch only tasks updated since the previous fetch and
+// merge them in. Task details are re-fetched only when a task changes.
+
+const DEFAULT_FULL_LIST_INTERVAL_MS = 15 * 60 * 1000;
+/** Overlap for incremental fetches, so clock skew can't drop an update. */
+const INCREMENTAL_OVERLAP_MS = 5 * 60 * 1000;
+
+interface CloudTaskCache {
+  token: string;
+  tasks: Map<string, CloudAgentTask>;
+  fullListedAt: number;
+  fetchedAt: number;
+  details: Map<string, { updatedAt: string | null; sessions: CloudTaskSession[] }>;
+}
+
+let cloudCache: CloudTaskCache | null = null;
+
+/** Exposed for tests. */
+export function resetCloudTaskCache(): void {
+  cloudCache = null;
+}
+
+async function listCloudTasks(
+  token: string,
+  now: number,
+  fullListIntervalMs: number,
+): Promise<{ ok: true; tasks: CloudAgentTask[] } | { ok: false; error: string }> {
+  const cache = cloudCache?.token === token ? cloudCache : null;
+  if (cache && now - cache.fullListedAt < fullListIntervalMs) {
+    const since = new Date(cache.fetchedAt - INCREMENTAL_OVERLAP_MS).toISOString();
+    const listed = await listCopilotAgentTasks(token, { since });
+    if (!listed.ok) return { ok: false, error: listed.error };
+    for (const task of listed.tasks) cache.tasks.set(task.id, task);
+    cache.fetchedAt = now;
+    return { ok: true, tasks: [...cache.tasks.values()] };
+  }
+
+  const listed = await listCopilotAgentTasks(token);
+  if (!listed.ok) return { ok: false, error: listed.error };
+  cloudCache = {
+    token,
+    tasks: new Map(listed.tasks.map((t) => [t.id, t])),
+    fullListedAt: now,
+    fetchedAt: now,
+    details: cache?.details ?? new Map(),
+  };
+  return { ok: true, tasks: listed.tasks };
+}
+
 interface PendingLink {
   session: ActiveAgentSession;
   /** Lookups to try in order; the first that finds a PR wins. */
@@ -107,14 +162,14 @@ export async function collectActiveSessions(options: CollectActiveSessionsOption
   const fail = (err: unknown): ActiveSessionSourceStatus => ({ ok: false, count: 0, error: err instanceof Error ? err.message : String(err) });
 
   // ── Local sessions ──────────────────────────────────────────────────────────
-  let mirroredTaskIds = new Set<string>();
+  let mirroredTasks = new Map<string, string>();
   const localSessions: ActiveAgentSession[] = [];
   const [copilotResult, claudeResult] = await Promise.allSettled([
     (async () => discoverCopilotLocalSessions(options))(),
     (async () => discoverClaudeLocalSessions(options))(),
   ]);
   if (copilotResult.status === 'fulfilled') {
-    mirroredTaskIds = copilotResult.value.mirroredTaskIds;
+    mirroredTasks = copilotResult.value.mirroredTasks;
     localSessions.push(...copilotResult.value.sessions);
     sources.copilotLocal = { ok: true, count: copilotResult.value.sessions.length };
   } else {
@@ -150,37 +205,44 @@ export async function collectActiveSessions(options: CollectActiveSessionsOption
   if (!token) {
     sources.copilotCloud = { ok: true, count: 0, skipped: true, error: 'Not signed in to GitHub' };
   } else {
-    const since = new Date(now - (options.cloudFinishedWindowMs ?? 24 * 60 * 60 * 1000)).toISOString();
-    const listed = await listCopilotAgentTasks(token, { since });
+    const listed = await listCloudTasks(token, now, options.cloudFullListIntervalMs ?? DEFAULT_FULL_LIST_INTERVAL_MS);
     if (!listed.ok) {
       sources.copilotCloud = { ok: false, count: 0, error: listed.error };
     } else {
+      // Tasks mirrored from a local session that is still running are already
+      // listed as local rows. Mirrored sessions whose process is gone stay
+      // visible (GitHub still lists them and they can be resumed there).
+      const liveTaskIds = new Set(localSessions.flatMap((s) => (s.cloudTaskId ? [s.cloudTaskId] : [])));
       const tasks = listed.tasks.filter(
-        (t) => !mirroredTaskIds.has(t.id) && isTaskRelevant(t, now, options.cloudFinishedWindowMs),
+        (t) => !liveTaskIds.has(t.id) && isTaskRelevant(t, now, options.cloudFinishedWindowMs),
       );
       sources.copilotCloud = { ok: true, count: tasks.length };
 
       // ── Per-task cloud sessions (model + credits) ──
-      // One detail call per task, most recently updated first, capped to keep
-      // the sweep inside the API rate limit. Failures degrade to no sessions.
+      // One detail call per task that changed since its last fetch, most
+      // recently updated first, capped to keep the sweep inside the API rate
+      // limit. Failures degrade to no sessions and are retried next sweep.
+      const details = cloudCache?.details ?? new Map<string, { updatedAt: string | null; sessions: CloudTaskSession[] }>();
       const detailLimit = options.cloudSessionDetailLimit ?? 20;
-      const tasksByRecency = [...tasks].sort(
-        (a, b) => (Date.parse(b.updatedAt ?? '') || 0) - (Date.parse(a.updatedAt ?? '') || 0),
-      );
+      const stale = tasks
+        .filter((t) => !mirroredTasks.has(t.id) && details.get(t.id)?.updatedAt !== t.updatedAt)
+        .sort((a, b) => (Date.parse(b.updatedAt ?? '') || 0) - (Date.parse(a.updatedAt ?? '') || 0));
       const detailResults = await Promise.all(
-        tasksByRecency.slice(0, detailLimit).map(async (task) => ({
-          taskId: task.id,
+        stale.slice(0, detailLimit).map(async (task) => ({
+          task,
           result: await fetchCopilotTaskSessions(token, task.id),
         })),
       );
-      const sessionsByTask = new Map(detailResults.flatMap(({ taskId, result }) =>
-        result.ok ? [[taskId, result.sessions] as const] : [],
-      ));
+      for (const { task, result } of detailResults) {
+        if (result.ok) details.set(task.id, { updatedAt: task.updatedAt, sessions: result.sessions });
+      }
 
       const repoNames = new Map<number, string | null>();
       for (const task of tasks) {
         const session = cloudTaskToSession(task);
-        const cloudSessions = sessionsByTask.get(task.id);
+        const mirroredClient = mirroredTasks.get(task.id);
+        if (mirroredClient) session.client = `${mirroredClient} (idle)`;
+        const cloudSessions = details.get(task.id)?.sessions;
         if (cloudSessions && cloudSessions.length > 0) session.cloudSessions = cloudSessions;
         const lookups: PrLookup[] = task.pullRequestNodeIds.map((nodeId) => ({ kind: 'node', nodeId }));
         if (task.repositoryId !== null) {

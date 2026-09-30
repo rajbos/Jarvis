@@ -21,7 +21,7 @@ vi.mock('../../src/services/pr-readiness', async (importOriginal) => {
   return { ...actual, fetchPullRequests: vi.fn() };
 });
 
-import { collectActiveSessions, describeAgentActivity } from '../../src/services/active-sessions';
+import { collectActiveSessions, describeAgentActivity, resetCloudTaskCache } from '../../src/services/active-sessions';
 import { discoverClaudeLocalSessions, discoverCopilotLocalSessions } from '../../src/services/local-agent-sessions';
 import { resolveGitContext } from '../../src/services/git-context';
 import { fetchCopilotTaskSessions, fetchRepoFullNameById, listCopilotAgentTasks } from '../../src/services/copilot-agent-tasks';
@@ -97,7 +97,8 @@ function stubPrResults(entries: Array<[PrLookup, PrLookupResult]>) {
 
 beforeEach(() => {
   vi.resetAllMocks();
-  vi.mocked(discoverCopilotLocalSessions).mockResolvedValue({ sessions: [], mirroredTaskIds: new Set() });
+  resetCloudTaskCache();
+  vi.mocked(discoverCopilotLocalSessions).mockResolvedValue({ sessions: [], mirroredTasks: new Map() });
   vi.mocked(discoverClaudeLocalSessions).mockResolvedValue([]);
   vi.mocked(listCopilotAgentTasks).mockResolvedValue({ ok: true, tasks: [] });
   vi.mocked(fetchCopilotTaskSessions).mockResolvedValue({ ok: true, sessions: [] });
@@ -115,7 +116,7 @@ describe('describeAgentActivity', () => {
 
 describe('collectActiveSessions', () => {
   it('lists local sessions without PR data and skips the cloud when not signed in', async () => {
-    vi.mocked(discoverCopilotLocalSessions).mockResolvedValue({ sessions: [localSession({})], mirroredTaskIds: new Set() });
+    vi.mocked(discoverCopilotLocalSessions).mockResolvedValue({ sessions: [localSession({})], mirroredTasks: new Map() });
     vi.mocked(resolveGitContext).mockReturnValue(gitCtx('feature'));
 
     const snap = await collectActiveSessions({ accessToken: null, now: () => NOW });
@@ -129,7 +130,7 @@ describe('collectActiveSessions', () => {
   });
 
   it('links a local session to the open PR on its branch and evaluates readiness', async () => {
-    vi.mocked(discoverCopilotLocalSessions).mockResolvedValue({ sessions: [localSession({})], mirroredTaskIds: new Set() });
+    vi.mocked(discoverCopilotLocalSessions).mockResolvedValue({ sessions: [localSession({})], mirroredTasks: new Map() });
     vi.mocked(resolveGitContext).mockReturnValue(gitCtx('feature'));
     stubPrResults([[{ kind: 'branch', repoFullName: 'me/repo', branch: 'feature' }, { ok: true, pr: rawPr() }]]);
 
@@ -141,7 +142,7 @@ describe('collectActiveSessions', () => {
   });
 
   it('tries the upstream repo with a head-owner filter for fork branches', async () => {
-    vi.mocked(discoverCopilotLocalSessions).mockResolvedValue({ sessions: [localSession({})], mirroredTaskIds: new Set() });
+    vi.mocked(discoverCopilotLocalSessions).mockResolvedValue({ sessions: [localSession({})], mirroredTasks: new Map() });
     vi.mocked(resolveGitContext).mockReturnValue(gitCtx('feature', ['me/repo', 'org/repo']));
     const upstreamLookup: PrLookup = { kind: 'branch', repoFullName: 'org/repo', branch: 'feature', headOwner: 'me' };
     stubPrResults([
@@ -159,7 +160,7 @@ describe('collectActiveSessions', () => {
   });
 
   it('does not look up PRs for sessions on a default branch', async () => {
-    vi.mocked(discoverCopilotLocalSessions).mockResolvedValue({ sessions: [localSession({})], mirroredTaskIds: new Set() });
+    vi.mocked(discoverCopilotLocalSessions).mockResolvedValue({ sessions: [localSession({})], mirroredTasks: new Map() });
     vi.mocked(resolveGitContext).mockReturnValue(gitCtx('main'));
 
     const snap = await collectActiveSessions({ accessToken: 'tok', now: () => NOW });
@@ -169,7 +170,7 @@ describe('collectActiveSessions', () => {
   });
 
   it('matches the PR on the local branch name, not the tracked upstream branch', async () => {
-    vi.mocked(discoverCopilotLocalSessions).mockResolvedValue({ sessions: [localSession({})], mirroredTaskIds: new Set() });
+    vi.mocked(discoverCopilotLocalSessions).mockResolvedValue({ sessions: [localSession({})], mirroredTasks: new Map() });
     // A worktree created from origin/main tracks main as its upstream.
     vi.mocked(resolveGitContext).mockReturnValue({ ...gitCtx('feat'), upstreamBranch: 'main', upstreamRemote: 'origin' });
 
@@ -178,8 +179,11 @@ describe('collectActiveSessions', () => {
     expect(vi.mocked(fetchPullRequests).mock.calls[0][1]).toEqual([{ kind: 'branch', repoFullName: 'me/repo', branch: 'feat', headOwner: undefined }]);
   });
 
-  it('adds cloud tasks, skipping ones mirrored from local sessions and resolving repo ids', async () => {
-    vi.mocked(discoverCopilotLocalSessions).mockResolvedValue({ sessions: [], mirroredTaskIds: new Set(['mirrored']) });
+  it('adds cloud tasks, skipping ones mirrored from running local sessions and resolving repo ids', async () => {
+    vi.mocked(discoverCopilotLocalSessions).mockResolvedValue({
+      sessions: [localSession({ cloudTaskId: 'mirrored', cwd: null })],
+      mirroredTasks: new Map([['mirrored', 'Copilot app']]),
+    });
     vi.mocked(fetchRepoFullNameById).mockResolvedValue('me/repo');
     vi.mocked(listCopilotAgentTasks).mockResolvedValue({
       ok: true,
@@ -196,11 +200,54 @@ describe('collectActiveSessions', () => {
 
     expect(snap.sources.copilotCloud).toEqual({ ok: true, count: 2 });
     expect(fetchRepoFullNameById).toHaveBeenCalledTimes(1);
-    const keys = snap.entries.map((e) => e.session.key);
+    const keys = snap.entries.filter((e) => e.session.origin === 'cloud').map((e) => e.session.key);
     expect(keys).toEqual(['cloud:copilot:cloud-1', 'cloud:copilot:cloud-2']);
     expect(snap.entries[0]).toMatchObject({ verdict: 'ready', session: { origin: 'cloud', repoFullName: 'me/repo' } });
     const lookups = vi.mocked(fetchPullRequests).mock.calls[0][1];
     expect(lookups).toContainEqual({ kind: 'branch', repoFullName: 'me/repo', branch: 'copilot/y' });
+  });
+
+  it('lists mirrored app sessions whose local process is gone as idle app sessions, without detail calls', async () => {
+    vi.mocked(discoverCopilotLocalSessions).mockResolvedValue({ sessions: [], mirroredTasks: new Map([['app-1', 'Copilot app']]) });
+    vi.mocked(listCopilotAgentTasks).mockResolvedValue({
+      ok: true,
+      tasks: [
+        { id: 'app-1', name: 'App session', state: 'idle', createdAt: null, updatedAt: '2026-02-28T11:00:00Z', repositoryId: null, pullRequestNodeIds: [], headRef: null, baseRef: null },
+        { id: 'cloud-old', name: 'Waiting for a week', state: 'idle', createdAt: null, updatedAt: '2026-02-20T11:00:00Z', repositoryId: null, pullRequestNodeIds: [], headRef: null, baseRef: null },
+      ],
+    });
+
+    const snap = await collectActiveSessions({ accessToken: 'tok', now: () => NOW });
+
+    expect(snap.entries.map((e) => [e.session.sessionId, e.session.client])).toEqual([
+      ['app-1', 'Copilot app (idle)'],
+      ['cloud-old', 'Copilot cloud agent'],
+    ]);
+    expect(fetchCopilotTaskSessions).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(fetchCopilotTaskSessions).mock.calls[0][1]).toBe('cloud-old');
+  });
+
+  it('lists fully on the first sweep, then incrementally merges changed tasks and reuses cached details', async () => {
+    vi.mocked(listCopilotAgentTasks)
+      .mockResolvedValueOnce({ ok: true, tasks: [{ id: 'a', name: 'A', state: 'idle', createdAt: null, updatedAt: '2026-02-20T11:00:00Z', repositoryId: null, pullRequestNodeIds: [], headRef: null, baseRef: null }] })
+      .mockResolvedValueOnce({ ok: true, tasks: [{ id: 'b', name: 'B', state: 'in_progress', createdAt: null, updatedAt: '2026-03-01T12:01:00Z', repositoryId: null, pullRequestNodeIds: [], headRef: null, baseRef: null }] })
+      .mockResolvedValueOnce({ ok: true, tasks: [] });
+
+    await collectActiveSessions({ accessToken: 'tok', now: () => NOW });
+    expect(vi.mocked(listCopilotAgentTasks).mock.calls[0][1]).toBeUndefined();
+    expect(fetchCopilotTaskSessions).toHaveBeenCalledTimes(1);
+
+    const later = NOW + 2 * 60 * 1000;
+    const snap = await collectActiveSessions({ accessToken: 'tok', now: () => later });
+    expect(vi.mocked(listCopilotAgentTasks).mock.calls[1][1]).toEqual({ since: new Date(NOW - 5 * 60 * 1000).toISOString() });
+    expect(snap.entries.map((e) => e.session.sessionId).sort()).toEqual(['a', 'b']);
+    // Only the new task needs a detail call; 'a' is unchanged.
+    expect(fetchCopilotTaskSessions).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(fetchCopilotTaskSessions).mock.calls[1][1]).toBe('b');
+
+    // After the full-list interval a complete listing runs again.
+    await collectActiveSessions({ accessToken: 'tok', now: () => NOW + 16 * 60 * 1000 });
+    expect(vi.mocked(listCopilotAgentTasks).mock.calls[2][1]).toBeUndefined();
   });
 
   it('attaches cloud sessions to cloud tasks and caps detail calls', async () => {
@@ -239,7 +286,7 @@ describe('collectActiveSessions', () => {
   });
 
   it('reports PR lookup errors per session and cloud source errors per source', async () => {
-    vi.mocked(discoverCopilotLocalSessions).mockResolvedValue({ sessions: [localSession({})], mirroredTaskIds: new Set() });
+    vi.mocked(discoverCopilotLocalSessions).mockResolvedValue({ sessions: [localSession({})], mirroredTasks: new Map() });
     vi.mocked(resolveGitContext).mockReturnValue(gitCtx('feature'));
     vi.mocked(listCopilotAgentTasks).mockResolvedValue({ ok: false, status: 403, error: 'Agent tasks API 403' });
     stubPrResults([[{ kind: 'branch', repoFullName: 'me/repo', branch: 'feature' }, { ok: false, error: 'Not accessible' }]]);
@@ -267,7 +314,7 @@ describe('collectActiveSessions', () => {
         localSession({ key: 'b', sessionId: 'b', cwd: 'B' }),
         localSession({ key: 'c', sessionId: 'c', cwd: 'C' }),
       ],
-      mirroredTaskIds: new Set(),
+      mirroredTasks: new Map(),
     });
     vi.mocked(resolveGitContext).mockImplementation((cwd: string) => gitCtx(`branch-${cwd}`));
     stubPrResults([

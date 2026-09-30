@@ -156,43 +156,54 @@ function toTask(raw: RawTask): CloudAgentTask | null {
 }
 
 /**
- * List non-archived agent tasks updated since `since`. The API has no
- * "active only" filter we can rely on across states, so callers filter with
- * {@link isTaskRelevant}.
+ * List non-archived agent tasks (optionally only those updated since `since`),
+ * following pages until a short page or `maxPages`. The API has no "active
+ * only" filter we can rely on across states, so callers filter with
+ * {@link isTaskRelevant}. The endpoint has its own small rate limit
+ * (60/hour), so callers should avoid full listings on every refresh.
  */
 export async function listCopilotAgentTasks(
   accessToken: string,
-  options: { since?: string; perPage?: number } = {},
+  options: { since?: string; perPage?: number; maxPages?: number } = {},
 ): Promise<ListCloudTasksResult> {
-  const params = new URLSearchParams({ per_page: String(options.perPage ?? 50), is_archived: 'false' });
-  if (options.since) params.set('since', options.since);
+  const perPage = options.perPage ?? 100;
+  const maxPages = options.maxPages ?? 10;
+  const tasks: CloudAgentTask[] = [];
 
-  let response: Response;
-  try {
-    response = await fetch(`${GITHUB_API}/agents/tasks?${params.toString()}`, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        Accept: 'application/vnd.github+json',
-        'X-GitHub-Api-Version': AGENT_TASKS_API_VERSION,
-      },
-    });
-  } catch (err) {
-    return { ok: false, status: 0, error: err instanceof Error ? err.message : String(err) };
+  for (let page = 1; page <= maxPages; page++) {
+    const params = new URLSearchParams({ per_page: String(perPage), page: String(page), is_archived: 'false' });
+    if (options.since) params.set('since', options.since);
+
+    let response: Response;
+    try {
+      response = await fetch(`${GITHUB_API}/agents/tasks?${params.toString()}`, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Accept: 'application/vnd.github+json',
+          'X-GitHub-Api-Version': AGENT_TASKS_API_VERSION,
+        },
+      });
+    } catch (err) {
+      return { ok: false, status: 0, error: err instanceof Error ? err.message : String(err) };
+    }
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      const hint = response.status === 401 || response.status === 403 || response.status === 404
+        ? ' (token may lack access to Copilot agent tasks)'
+        : '';
+      return { ok: false, status: response.status, error: `Agent tasks API ${response.status}${hint}: ${text.slice(0, 200)}` };
+    }
+
+    const body = (await response.json()) as { tasks?: RawTask[] };
+    const raw = body.tasks ?? [];
+    for (const t of raw) {
+      if (t.archived_at) continue;
+      const task = toTask(t);
+      if (task) tasks.push(task);
+    }
+    if (raw.length < perPage) break;
   }
-
-  if (!response.ok) {
-    const text = await response.text().catch(() => '');
-    const hint = response.status === 401 || response.status === 403 || response.status === 404
-      ? ' (token may lack access to Copilot agent tasks)'
-      : '';
-    return { ok: false, status: response.status, error: `Agent tasks API ${response.status}${hint}: ${text.slice(0, 200)}` };
-  }
-
-  const body = (await response.json()) as { tasks?: RawTask[] };
-  const tasks = (body.tasks ?? [])
-    .filter((t) => !t.archived_at)
-    .map(toTask)
-    .filter((t): t is CloudAgentTask => t !== null);
   return { ok: true, tasks };
 }
 
