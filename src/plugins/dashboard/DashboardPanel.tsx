@@ -440,13 +440,13 @@ function NotificationList({ repoFullName, dismissedNotifIds }: { repoFullName: s
         <button
           class="dash-action-btn dash-notif-btn"
           onClick={(e) => { e.stopPropagation(); handleOpenOnGitHub(n); }}
-          title="Open on GitHub"
+          title="Open on GitHub" aria-label="Open on GitHub"
         >🌐</button>
         <button
           class="dash-action-btn dash-notif-btn"
           onClick={(e) => { e.stopPropagation(); void handleDismiss(n.id); }}
           disabled={dismissingIds.has(n.id)}
-          title="Dismiss notification"
+          title="Dismiss notification" aria-label="Dismiss notification"
         >✕</button>
       </div>
     </div>

@@ -59,7 +59,7 @@ export function OneNoteSectionPanel({ filePath, onClose }: Props) {
     <div class="org-panel onenote-section-panel">
       <div class="org-panel-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <span>📓 {sectionName}</span>
-        <button class="repo-panel-close" title="Close" onClick={onClose}>&times;</button>
+        <button class="repo-panel-close" title="Close" aria-label="Close" onClick={onClose}>&times;</button>
       </div>
 
       {loading && (

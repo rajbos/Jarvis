@@ -36,7 +36,7 @@ export function SecretsScanPanel({
     <div class="org-panel secrets-panel">
       <div class="org-panel-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <span>Repository Secrets</span>
-        <button class="repo-panel-close" title="Close" onClick={onClose}>&times;</button>
+        <button class="repo-panel-close" title="Close" aria-label="Close" onClick={onClose}>&times;</button>
       </div>
 
       {listError && (

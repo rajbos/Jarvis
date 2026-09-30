@@ -21,7 +21,7 @@ export function LocalFolderConfigPanel({
     <div class="org-panel local-config-panel">
       <div class="org-panel-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <span>Configure Folders</span>
-        <button class="repo-panel-close" title="Close" onClick={onClose}>&times;</button>
+        <button class="repo-panel-close" title="Close" aria-label="Close" onClick={onClose}>&times;</button>
       </div>
       <p style={{ fontSize: '0.82rem', color: '#c8c8c8', marginBottom: '0.75rem' }}>
         Add folders to scan for Git repositories. You can add specific repo folders or parent directories.
@@ -46,7 +46,7 @@ export function LocalFolderConfigPanel({
               </span>
               <button
                 class="local-folder-remove"
-                title="Remove folder"
+                title="Remove folder" aria-label="Remove folder"
                 onClick={() => onRemove(f.path)}
               >
                 &times;

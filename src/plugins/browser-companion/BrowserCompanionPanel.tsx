@@ -550,13 +550,13 @@ export function BrowserCompanionPanel({ onBack }: { onBack: () => void }) {
                       🧪 Test
                     </button>
                     <button
-                      onClick={() => setEditingSkill(skill)}
+                      title="Edit skill" aria-label="Edit skill" onClick={() => setEditingSkill(skill)}
                       style={{ padding: '3px 8px', borderRadius: 3, border: '1px solid #555', background: 'transparent', color: '#aaa', cursor: 'pointer', fontSize: 11 }}
                     >
                       ✏️
                     </button>
                     <button
-                      onClick={() => void handleDeleteSkill(skill.id)}
+                      title="Delete skill" aria-label="Delete skill" onClick={() => void handleDeleteSkill(skill.id)}
                       style={{ padding: '3px 8px', borderRadius: 3, border: 'none', background: '#3a1a1a', color: '#f88', cursor: 'pointer', fontSize: 11 }}
                     >
                       🗑

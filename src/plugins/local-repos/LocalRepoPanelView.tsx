@@ -1,5 +1,6 @@
 import { useState } from 'preact/hooks';
 import { LocalRepoCard } from './LocalRepoCard';
+import { IconButton } from '../shared/IconButton';
 import { deduplicateLocalRepos, formatNumber } from '../shared/utils';
 import type { LocalRepo, NotificationCounts } from '../types';
 
@@ -42,7 +43,7 @@ export function LocalRepoPanelView({ title, repos, notifCounts, initialSortKey =
   return (
     <div class="repo-panel">
       <div class="repo-panel-header">
-        <button class="repo-panel-close" title="Back" aria-label="Back" onClick={onClose}>&#8249;</button>
+        <IconButton icon={<>&#8249;</>} label="Back" onClick={onClose} />
         <span class="repo-panel-title">{title}</span>
         <span class="local-panel-count">
           {formatNumber(deduped.length)} repo{deduped.length !== 1 ? 's' : ''}
@@ -60,7 +61,7 @@ export function LocalRepoPanelView({ title, repos, notifCounts, initialSortKey =
             {'\uD83D\uDD14'} {totalNotifs}
           </span>
         )}
-        <button class="repo-panel-close" title="Close" onClick={onClose}>&times;</button>
+        <IconButton icon={<>&times;</>} label="Close" onClick={onClose} />
       </div>
       <div class="repo-panel-filter">
         <label class="filter-label" style={{ gap: '0.6rem' }}>

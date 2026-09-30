@@ -85,7 +85,7 @@ export function RepoPanelView({
             {'\uD83D\uDD14'} {repoNotifTotal}
           </span>
         )}
-        <button class="repo-panel-close" title="Close" onClick={onClose}>&times;</button>
+        <button class="repo-panel-close" title="Close" aria-label="Close" onClick={onClose}>&times;</button>
       </div>
       {error && (
         <IpcErrorBanner message={error} onRetry={onRetry} />
