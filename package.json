@@ -47,11 +47,11 @@
     "vitest": "^5.0.0"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/sdk": "^1.30.1",
     "electron-updater": "^6.8.9",
     "preact": "^10.29.8",
     "sql.js": "^1.14.2",
-    "ws": "^8.21.3",
+    "ws": "^8.22.0",
     "zod": "^4.6.5"
   },
   "allowScripts": {
