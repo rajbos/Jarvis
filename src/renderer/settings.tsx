@@ -3,6 +3,7 @@ import { render } from 'preact';
 import { useState, useEffect, useRef } from 'preact/hooks';
 
 import './settings.css';
+import { ErrorBoundary, installGlobalErrorHandlers } from '../plugins/shared/ErrorBoundary';
 import { McpServerSection, type McpSectionApi } from './mcp-settings-section';
 import { isIpcError, type IpcErrorResponse, type CopilotUsage } from '../plugins/types';
 
@@ -1734,5 +1735,6 @@ function DashboardSettingsSection() {
 
 const root = document.getElementById('app')!;
 
-render(<App />, root);
+installGlobalErrorHandlers();
+render(<ErrorBoundary label="this window"><App /></ErrorBoundary>, root);
 
