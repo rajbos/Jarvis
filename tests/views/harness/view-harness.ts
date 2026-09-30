@@ -15,7 +15,7 @@
  *   expect(await view.calls('groupsList')).toHaveLength(1);
  */
 import { createServer, type Server } from 'node:http';
-import { mkdtemp, readdir, readFile, rm, copyFile } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm, copyFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { AddressInfo } from 'node:net';
@@ -30,8 +30,10 @@ const ROOT = path.resolve(__dirname, '..', '..', '..');
 const RENDERER_SRC = path.join(ROOT, 'src', 'renderer');
 const MOCK_ENTRY = path.join(__dirname, 'mock-jarvis-api.ts');
 
-/** The HTML pages Electron loads — one per BrowserWindow. */
-export type ViewName = 'index' | 'settings' | 'about';
+/** The HTML pages Electron loads — one per BrowserWindow — plus test-only fixture pages. */
+export type ViewName = 'index' | 'settings' | 'about' | 'error-boundary';
+
+const ERROR_BOUNDARY_ENTRY = path.join(__dirname, 'error-boundary-fixture.tsx');
 
 export interface OpenViewOptions {
   /** Per-view response overrides (JSON values) for fake `window.jarvis` methods. */
@@ -66,6 +68,19 @@ async function buildViews(): Promise<BuiltViews> {
   for (const file of await readdir(RENDERER_SRC)) {
     if (file.endsWith('.html')) await copyFile(path.join(RENDERER_SRC, file), path.join(dir, file));
   }
+  // Test-only page: a throwing panel inside the real ErrorBoundary.
+  await esbuild.build({
+    ...rendererBuildOptions,
+    entryPoints: { 'error-boundary': ERROR_BOUNDARY_ENTRY },
+    outdir: dir,
+    logLevel: 'warning',
+    sourcemap: 'inline',
+  });
+  await writeFile(
+    path.join(dir, 'error-boundary.html'),
+    '<!doctype html><html><head><meta charset="UTF-8"><title>ErrorBoundary fixture</title></head>' +
+      '<body><div id="app"></div><script src="error-boundary.js"></script></body></html>',
+  );
   const mock = await esbuild.build({
     entryPoints: [MOCK_ENTRY],
     bundle: true,
