@@ -2,6 +2,7 @@ import { render } from 'preact';
 import { useState, useEffect } from 'preact/hooks';
 
 import './about.css';
+import { ErrorBoundary, installGlobalErrorHandlers } from '../plugins/shared/ErrorBoundary';
 
 interface AboutInfo {
   displayVersion: string;
@@ -85,4 +86,5 @@ function AboutApp() {
 }
 
 const root = document.getElementById('app')!;
-render(<AboutApp />, root);
+installGlobalErrorHandlers();
+render(<ErrorBoundary label="this window"><AboutApp /></ErrorBoundary>, root);
