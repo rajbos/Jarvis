@@ -1,9 +1,6 @@
 // ── Shared types used across plugins and the renderer shell ─────────────────
 
-
-
 // This is the single source of truth for domain types.
-
 // ── IPC error contract ───────────────────────────────────────────────────────
 // The single failure shape used by IPC handlers that surface a distinguishable
 // error to the renderer (as opposed to a success payload). Success payloads are
@@ -13,7 +10,6 @@ export interface IpcErrorResponse {
   ok: false;
   error: string;
 }
-
 export function isIpcError(value: unknown): value is IpcErrorResponse {
   return (
     typeof value === 'object' &&
@@ -23,599 +19,265 @@ export function isIpcError(value: unknown): value is IpcErrorResponse {
   );
 }
 
-
-
-
-
 export interface OAuthResult {
-
-
 
   error?: string;
 
-
-
   login?: string;
-
-
 
   name?: string;
 
-
-
   avatarUrl?: string;
-
-
 
   userCode?: string;
 
-
-
   verificationUri?: string;
 
-
-
 }
-
-
-
-
-
-
 
 export interface DiscoveryProgress {
 
-
-
   phase: string;
-
-
 
   orgsFound: number;
 
-
-
   reposFound: number;
-
-
 
   currentOrg?: string;
 
-
-
 }
-
-
-
-
-
-
 
 export interface OAuthStatus {
 
-
-
   authenticated: boolean;
-
-
 
   login?: string;
 
-
-
   avatarUrl?: string;
 
-
-
 }
-
-
-
-
-
 
 export interface PatStatus {
 
-
-
   hasPat: boolean;
-
-
 
   /** true when GitHub rejected the stored token (401) — expired or revoked */
 
-
-
   expired?: boolean;
-
-
 
   login?: string;
 
-
-
   name?: string;
-
-
 
   avatarUrl?: string;
 
-
-
 }
-
-
-
-
-
 
 export interface OllamaModel {
 
-
-
   name: string;
-
-
 
   model: string;
 
-
-
   size: number;
-
-
 
   modified_at: string;
 
-
-
   details?: {
-
-
 
     family?: string;
 
-
-
     parameter_size?: string;
-
-
 
     quantization_level?: string;
 
-
-
   };
 
-
-
 }
-
-
-
-
-
-
 
 export interface OllamaStatus {
 
-
-
   available: boolean;
-
-
 
   baseUrl: string;
 
-
-
   models: OllamaModel[];
-
-
 
   error?: string;
 
-
-
 }
-
-
-
-
-
-
 
 export interface Org {
 
-
-
   login: string;
-
-
 
   repoCount: number;
 
-
-
   discoveryEnabled: boolean;
 
-
-
 }
-
-
-
-
-
-
 
 export interface OrgListResult {
 
-
-
   orgs: Org[];
-
-
 
   directRepoCount: number;
 
-
-
   starredRepoCount: number;
 
-
-
 }
-
-
-
-
-
-
 
 export interface NotificationCounts {
 
-
-
   perOrg: Record<string, number>;   // orgLogin → unread count
-
-
 
   perRepo: Record<string, number>;  // full_name → unread count
 
-
-
   total: number;
-
-
 
   starredTotal: number;
 
-
-
   fetchedAt: string | null;
-
-
 
   error?: string;
 
-
-
 }
-
-
-
-
-
-
 
 export interface StoredNotification {
 
-
-
   id: string;
-
-
 
   repo_full_name: string;
 
-
-
   repo_owner: string;
-
-
 
   subject_type: string;
 
-
-
   subject_title: string;
-
-
 
   subject_url: string | null;
 
-
-
   subject_actor_login: string | null;
-
-
 
   subject_actor_type: string | null;
 
-
-
   reason: string;
-
-
 
   unread: number;
 
-
-
   updated_at: string;
 
-
-
 }
-
-
-
-
-
-
 
 export interface Repo {
 
-
-
   name: string;
 
-
-
   full_name: string;
-
-
 
   description?: string;
 
-
-
   language?: string;
-
-
 
   private: boolean;
 
-
-
   fork: boolean;
-
-
 
   archived: boolean;
 
-
-
   default_branch?: string;
-
-
 
   last_pushed_at?: string;
 
-
-
   parent_full_name?: string;
-
-
 
   collaboration_reason?: string;
 
-
-
 }
-
-
-
-
-
-
 
 export interface LocalRemote {
 
-
-
   name: string;
-
-
 
   url: string;
 
-
-
   githubRepoId?: number | null;
 
-
-
 }
-
-
-
-
-
-
 
 export interface LocalRepo {
 
-
-
   id: number;
-
-
 
   localPath: string;
 
-
-
   name: string;
-
-
 
   remotes: LocalRemote[];
 
-
-
   discoveredAt: string;
-
-
 
   lastScanned: string | null;
 
-
-
   linkedGithubRepoId: number | null;
 
-
-
 }
-
-
-
-
-
-
 
 export interface ScanFolder {
 
-
-
   id: number;
-
-
 
   path: string;
 
-
-
   addedAt: string;
-
-
 
   repoCount?: number;
 
-
-
 }
-
-
-
-
-
-
 
 export interface RepoSecret {
 
-
-
   full_name: string;
-
-
 
   secret_name: string;
 
-
-
   scanned_at: string;
 
-
-
 }
-
-
-
-
-
-
 
 export interface SecretFavorite {
 
-
-
   id: number;
-
-
 
   target_type: 'org' | 'repo';
 
-
-
   target_name: string;
-
-
 
   added_at: string;
 
-
-
 }
-
-
-
-
-
-
 
 export interface SecretsScanProgress {
 
-
-
   done: number;
-
-
 
   total: number;
 
-
-
   secretsFound: number;
 
-
-
 }
-
-
-
-
-
-
 
 export interface SecretsScanResult {
 
-
-
   scanned?: number;
-
-
 
   secretsFound?: number;
 
-
-
   errors?: string[];
-
-
 
   error?: string;
 
-
-
 }
-
-
-
-
-
-
 
 /** Progress of the local file content index (jarvis-index.db) build. */
 export interface LocalIndexProgress {
@@ -626,7 +288,6 @@ export interface LocalIndexProgress {
   filesSkipped: number;
   currentRepo?: string;
 }
-
 /** Ready-to-paste MCP client configuration for connecting to this Jarvis instance. */
 export interface McpClientConfig {
   claudeDesktop: string;
@@ -639,7 +300,6 @@ export interface McpClientConfig {
   indexPath: string | null;
   indexExists: boolean;
 }
-
 export interface LocalIndexStatus {
   running: boolean;
   progress: LocalIndexProgress | null;
@@ -654,361 +314,171 @@ export interface LocalIndexStatus {
     repos: Array<{ localPath: string; name: string | null; fileCount: number; indexedAt: string | null; skippedReason: string | null }>;
   } | null;
 }
-
 export interface LocalScanProgress {
-
-
 
   phase: 'scanning' | 'done';
 
-
-
   foldersScanned: number;
-
-
 
   reposFound: number;
 
-
-
   currentFolder?: string;
 
-
-
 }
-
-
-
-
-
-
 
 // ── Agent framework types ─────────────────────────────────────────────────────
 
-
-
-
-
-
-
 export interface AgentDefinition {
-
-
 
   id: number;
 
-
-
   name: string;
-
-
 
   description: string;
 
-
-
   system_prompt: string;
-
-
 
   tools_allowed: string; // JSON array of IPC channel names
 
-
-
   created_at: string;
-
-
 
   updated_at: string;
 
-
-
 }
-
-
-
-
-
-
 
 export interface WorkflowRun {
 
-
-
   id: string;
 
-
-
   repo_full_name: string;
-
-
 
   workflow_name: string;
 
-
-
   workflow_id: string;
-
-
 
   workflow_path: string | null;
 
-
-
   head_branch: string;
-
-
 
   head_sha: string;
 
-
-
   event: string;
-
-
 
   status: string;
 
-
-
   conclusion: string | null;
-
-
 
   run_number: number;
 
-
-
   run_started_at: string;
-
-
 
   updated_at: string;
 
-
-
   html_url: string;
-
-
 
   fetched_at: string;
 
-
-
 }
-
-
-
-
-
-
 
 export interface WorkflowJob {
 
-
-
   id: string;
-
-
 
   run_id: string;
 
-
-
   repo_full_name: string;
-
-
 
   name: string;
 
-
-
   status: string;
-
-
 
   conclusion: string | null;
 
-
-
   started_at: string;
-
-
 
   completed_at: string | null;
 
-
-
   log_excerpt: string | null;
-
-
 
   failing_step_name: string | null;
 
-
-
   error_highlights: string | null;
-
-
 
   fetched_at: string;
 
-
-
 }
-
-
-
-
-
-
 
 export interface WorkflowRunSummary {
 
-
-
   repo_full_name: string;
-
-
 
   total_runs: number;
 
-
-
   recent_runs: WorkflowRun[];
-
-
 
   jobs_by_run: Record<string, WorkflowJob[]>; // run_id → jobs
 
-
-
 }
-
-
-
-
-
-
 
 export interface AgentFinding {
 
-
-
   id: number;
-
-
 
   session_id: number;
 
-
-
   finding_type: 'ignore' | 'investigate' | 'action_required';
-
-
 
   subject: string;
 
-
-
   reason: string;
-
-
 
   pattern: string | null;
 
-
-
   action_type: 'close_notifications' | 'create_issue' | 'clone_repo' | 'assign_copilot' | 'none';
-
-
 
   action_data: Record<string, unknown> | null;
 
-
-
   approved: number | null; // null = pending; 1 = approved; 0 = rejected
-
-
 
   approved_at: string | null;
 
-
-
   executed_at: string | null;
-
-
 
   execution_error: string | null;
 
-
-
 }
-
-
-
-
-
-
 
 export interface CopilotAvailabilityResult {
   available: boolean;
   reason?: 'repo_not_found_or_no_access' | 'not_enabled_or_no_seat' | 'api_error' | 'not_authenticated';
   detail?: string;
 }
-
 export interface AgentSession {
-
-
 
   id: number;
 
-
-
   agent_id: number;
-
-
 
   agent_name: string;
 
-
-
   scope_type: 'repo' | 'org' | 'global';
-
-
 
   scope_value: string;
 
-
-
   status: 'pending' | 'running' | 'completed' | 'failed';
-
-
 
   started_at: string;
 
-
-
   completed_at: string | null;
-
-
 
   summary: string | null;
 
-
-
   findings: AgentFinding[];
 
-
-
   provider: string;
-
   model: string | null;
-
   parent_session_id: number | null;
-
 }
-
 // Raw finding shape as emitted by an analysis provider (Ollama JSON block or
 // the Claude Agent SDK's structured output) before it is persisted.
 export interface RawFinding {
@@ -1019,417 +489,188 @@ export interface RawFinding {
   action_type?: string;
   action_data?: Record<string, unknown>;
 }
-
 export interface AgentJsonResult {
   summary?: string;
   findings?: RawFinding[];
 }
 
-
-
-
-
-
-
 // ── Dashboard types ───────────────────────────────────────────────────────────
-
-
-
-
-
-
 
 export type HealthWarningKind =
 
-
-
   | 'branch-no-upstream'
-
-
 
   | 'no-remote'
 
-
-
   | 'has-notifications'
-
-
 
   | 'failed-workflows';
 
-
-
-
-
-
-
 export interface HealthWarning {
-
-
 
   kind: HealthWarningKind;
 
-
-
   message: string;
 
-
-
 }
-
-
-
-
-
-
 
 export interface RepoHealthStatus {
 
-
-
   localRepoId: number;
-
-
 
   localPath: string;
 
-
-
   repoName: string;
-
-
 
   currentBranch: string | null;
 
-
-
   hasUpstream: boolean;
-
-
 
   upstreamRef: string | null;
 
-
-
   noRemote: boolean;
-
-
 
   remoteCount: number;
 
-
-
   notificationCount: number;
-
-
 
   linkedGithubRepo: string | null;
 
-
-
   failedWorkflowRuns: number;
-
-
 
   exists: boolean;
 
-
-
   /** ISO timestamp of the most recent local commit (from .git/logs/HEAD) */
-
-
 
   lastCommitAt: string | null;
 
-
-
   /** ISO timestamp of the most recent push to GitHub (from github_repos.last_pushed_at) */
-
-
 
   lastPushedAt: string | null;
 
-
-
 }
-
-
-
-
-
-
 
 export interface DashboardSummary {
 
-
-
   repos: RepoHealthStatus[];
-
-
 
   warnings: { repoId: number; warnings: HealthWarning[] }[];
 
-
-
   totalRepos: number;
-
-
 
   reposWithWarnings: number;
 
-
-
   totalNotifications: number;
-
-
 
   totalFailedRuns: number;
 
-
-
   generatedAt: string;
 
-
-
 }
-
-
-
-
-
-
 
 export interface FailedWorkflowRun {
 
-
-
   id: string;
-
-
 
   repo_full_name: string;
 
-
-
   workflow_name: string;
-
-
 
   head_branch: string;
 
-
-
   conclusion: string;
-
-
 
   run_started_at: string;
 
-
-
   html_url: string;
 
-
-
 }
-
-
-
-
-
-
 
 // ── GitHub rate limit types ───────────────────────────────────────────────────
 
-
-
-
-
-
-
 export interface GitHubRateLimitResource {
-
-
 
   limit: number;
 
-
-
   remaining: number;
-
-
 
   reset: number; // unix timestamp
 
-
-
   used: number;
 
-
-
 }
-
-
-
-
-
-
 
 /** Per-token rate limit status. `configured: false` means the token is not set up. */
 
-
-
 export interface GitHubRateLimitSource {
-
-
 
   configured: boolean;
 
-
-
   resource: GitHubRateLimitResource | null;
 
-
-
   error?: string;
-
-
 
   /** Expiry date of the token, from the github-authentication-token-expiration response header (PAT only; null when the token does not expire) */
 
-
-
   tokenExpiresAt?: string | null;
-
-
 
   /** true when GitHub answered 401 — the token is expired or revoked */
 
-
-
   tokenExpired?: boolean;
 
-
-
 }
-
-
-
-
-
-
 
 export interface GitHubRateLimit {
 
-
-
   oauth: GitHubRateLimitSource;
-
-
 
   pat: GitHubRateLimitSource;
 
-
-
   fetchedAt: string; // ISO timestamp
 
-
-
 }
-
-
-
-
 
 // ── Claude (Claude Code OAuth) types ──────────────────────────────────────────
 
-
-
-
-
 /** Connection status of the Claude account link (via Claude Code credentials). */
-
-
 
 export interface ClaudeStatus {
 
-
-
   connected: boolean;
-
-
 
   /** e.g. "pro", "max" — as reported by the credentials file. */
 
-
-
   subscriptionType?: string;
-
-
 
   /** Access-token expiry in ms since epoch. */
 
-
-
   expiresAt?: number;
-
-
 
   /** Where the active token came from. */
 
-
-
   source?: 'claude-code' | 'stored';
-
-
 
   error?: string;
 
-
-
 }
-
-
-
-
 
 /** One unified rate-limit window (5-hour or 7-day). */
 
-
-
 export interface ClaudeRateLimitWindow {
-
-
 
   /** Fraction of the window consumed, 0..1 (null when not reported). */
 
-
-
   utilization: number | null;
-
-
 
   /** Unix timestamp (seconds) when the window resets. */
 
-
-
   reset: number | null;
-
-
 
   /** True when this window is currently exhausted. */
 
-
-
   limited: boolean;
 
-
-
 }
-
-
-
-
 
 /** Extra-usage (overage) spend for the billing period, from /api/oauth/usage. */
 export interface ClaudeExtraUsage {
@@ -1441,7 +682,6 @@ export interface ClaudeExtraUsage {
   utilization: number | null;
   currency: string;
 }
-
 /** Prepaid Claude Code cloud session credits, from /api/oauth/usage. */
 export interface ClaudeCloudCredits {
   /** Credits left, major currency units. */
@@ -1451,68 +691,38 @@ export interface ClaudeCloudCredits {
   /** Unix seconds when the credits expire. */
   expiresAt: number | null;
 }
-
 export interface ClaudeRateLimit {
-
-
 
   /** False when no Claude credentials are available at all. */
 
-
-
   configured: boolean;
-
-
 
   /** True when the account is currently rate limited (any window). */
 
-
-
   limited: boolean;
-
-
 
   /** Unix timestamp (seconds) when the binding limit lifts; null when not limited. */
 
-
-
   resetAt: number | null;
-
-
 
   retryAfterSec: number | null;
 
-
-
   fiveHour: ClaudeRateLimitWindow | null;
 
-
-
   sevenDay: ClaudeRateLimitWindow | null;
-
   extraUsage?: ClaudeExtraUsage | null;
-
   cloudCredits?: ClaudeCloudCredits | null;
-
-
 
   error?: string;
 
-
-
   fetchedAt: string; // ISO timestamp
 
-
-
 }
-
 // ── GitHub Copilot AI credit usage types ─────────────────────────────────────
-
 export interface CopilotModelUsage {
   model: string;
   credits: number;
 }
-
 /** Copilot AI credit usage for the current calendar month (UTC) vs the user's budget. */
 export interface CopilotUsage {
   /** False when no GitHub CLI login, OAuth token or PAT is available. */
@@ -1551,16 +761,11 @@ export interface CopilotUsage {
   fetchedAt: string; // ISO timestamp
 }
 
-
-
 // ── Active agent sessions + PR review readiness types ─────────────────────────
-
 /** Which AI coding agent drives a session. */
 export type AgentProvider = 'copilot' | 'claude';
-
 /** Where the session runs: on this machine, or in GitHub's cloud. */
 export type AgentSessionOrigin = 'local' | 'cloud';
-
 export type AgentActivity =
   | 'working'
   | 'idle'
@@ -1569,10 +774,8 @@ export type AgentActivity =
   | 'completed'
   | 'failed'
   | 'unknown';
-
 /** Traffic-light colour for a single readiness stage. */
 export type ReadinessLight = 'green' | 'amber' | 'red' | 'grey';
-
 export interface ActiveAgentSession {
   /** Stable key, unique across sources: `${origin}:${provider}:${sessionId}`. */
   key: string;
@@ -1594,7 +797,6 @@ export interface ActiveAgentSession {
   cloudSessions?: import('../services/copilot-agent-tasks').CloudTaskSession[];
   pid?: number | null;
 }
-
 export interface ReadinessStage {
   light: ReadinessLight;
   /** Short label rendered next to the light, e.g. "Running 2/7". */
@@ -1604,9 +806,7 @@ export interface ReadinessStage {
   /** True when this stage currently prevents the PR from being ready for human review. */
   blocking: boolean;
 }
-
 export type CopilotReviewStatus = 'not_requested' | 'requested' | 'in_progress' | 'completed' | 'errored' | 'stale';
-
 export interface PrReadiness {
   repoFullName: string;
   prNumber: number;
@@ -1623,9 +823,7 @@ export interface PrReadiness {
   waitingOn: Array<'checks' | 'copilot_review'>;
   checkedAt: string;
 }
-
 export type ActiveSessionVerdict = 'ready' | 'waiting' | 'no_pr' | 'closed';
-
 export interface ActiveSessionEntry {
   session: ActiveAgentSession;
   agent: ReadinessStage;
@@ -1634,7 +832,6 @@ export interface ActiveSessionEntry {
   verdict: ActiveSessionVerdict;
   verdictLabel: string;
 }
-
 export interface ActiveSessionSourceStatus {
   ok: boolean;
   count: number;
@@ -1643,7 +840,6 @@ export interface ActiveSessionSourceStatus {
   skipped?: boolean;
   error?: string;
 }
-
 export interface ActiveSessionsSnapshot {
   entries: ActiveSessionEntry[];
   sources: {
@@ -1655,254 +851,113 @@ export interface ActiveSessionsSnapshot {
   refreshedAt: string;
 }
 
-
-
-
-
-
-
 // ── Browser Companion types ───────────────────────────────────────────────────
-
-
-
-
-
-
 
 export interface BrowserSkill {
 
-
-
   id: number;
-
-
 
   name: string;
 
-
-
   description: string;
-
-
 
   start_url: string;
 
-
-
   instructions: string;
-
-
 
   extract_selector: string;
 
-
-
   created_at: string;
-
-
 
   updated_at: string;
 
-
-
 }
-
-
-
-
-
-
 
 export interface BrowserSkillRun {
 
-
-
   id: number;
-
-
 
   skill_id: number;
 
-
-
   skill_name: string;
-
-
 
   status: 'pending' | 'running' | 'completed' | 'failed';
 
-
-
   started_at: string;
-
-
 
   completed_at: string | null;
 
-
-
   extracted_data: unknown;
-
-
 
   error: string | null;
 
-
-
 }
-
-
-
-
-
-
 
 export interface BrowserCompanionStatus {
 
-
-
   running: boolean;
-
-
 
   port: number;
 
-
-
   connectedClients: number;
 
-
-
 }
-
-
-
-
-
-
 
 // ── OneNote types ─────────────────────────────────────────────────────────────
 
-
-
-
-
-
-
 export interface OneNotePageContent {
-
-
 
   /** 1-based page index within the section file. */
 
-
-
   pageIndex: number;
-
-
 
   /** Sub-page depth: 1 = top-level, 2 = sub-page, 3 = sub-sub-page. */
 
-
-
   pageLevel: number;
-
-
 
   /** Best-effort page title (may be empty for untitled pages). */
 
-
-
   title: string;
-
-
 
   /** Best-effort page date string (e.g. "Thursday, September 25, 2025"). */
 
-
-
   date: string;
-
-
 
   /** ISO 8601 last-modified, or YYYY-MM-DD from title. Empty if unknown. */
 
-
-
   lastModified: string;
-
-
 
   /** All body text found in this page, joined with spaces. */
 
-
-
   content: string;
 
-
-
 }
-
-
-
-
-
-
 
 export interface OneNoteSectionContent {
 
-
-
   /** Human-readable name derived from the filename (without extension). */
-
-
 
   sectionName: string;
 
-
-
   /** Absolute path of the source `.one` file. */
-
-
 
   filePath: string;
 
-
-
   /** Number of pages found in this section. */
-
-
 
   pageCount: number;
 
-
-
   /** Per-page content. */
-
-
 
   pages: OneNotePageContent[];
 
-
-
   /** Full concatenated text — convenient for whole-section RAG. */
-
-
 
   textContent: string;
 
-
-
 }
 
-
-
-
-
-
-
 // ── OneNote cache types ───────────────────────────────────────────────────────
-
 export interface OneNoteCachedPage {
   /** 1-based page index within the section file. */
   pageIndex: number;
@@ -1923,7 +978,6 @@ export interface OneNoteCachedPage {
   /** When this page was cached. */
   cachedAt: string;
 }
-
 export interface OneNoteCacheGroupResult {
   /** Number of files that were re-read and cached (stale or new). */
   filesProcessed: number;
@@ -1934,7 +988,6 @@ export interface OneNoteCacheGroupResult {
   /** Per-file errors (non-fatal — other files continue). */
   errors: Array<{ relativePath: string; error: string }>;
 }
-
 export interface OneNoteGroupCachePage {
   relativePath: string;
   sectionName: string;
@@ -1947,341 +1000,160 @@ export interface OneNoteGroupCachePage {
   readSource: 'com' | 'binary';
   cachedAt: string;
 }
-
 // ── URL shortcut types ────────────────────────────────────────────────────────
-
 
 export interface UrlShortcutInfo {
 
-
-
   /** Raw URL from the shortcut file. */
-
-
 
   url: string;
 
-
-
   /** True when the URL appears to be a OneNote notebook link. */
-
-
 
   isOneNote: boolean;
 
-
-
   /** True when the URL points to SharePoint (content requires Graph API). */
-
-
 
   isSharePoint: boolean;
 
-
-
 }
-
-
-
-
-
-
 
 // ── OneDrive types ────────────────────────────────────────────────────────────
 
-
-
-
-
-
-
 export interface OnedriveRoot {
-
-
 
   id: number;
 
-
-
   path: string;
-
-
 
   label: string;
 
-
-
   addedAt: string;
 
-
-
 }
-
-
-
-
-
-
 
 export interface OnedriveFolderInfo {
 
-
-
   id: number;
-
-
 
   groupId: number;
 
-
-
   rootId: number;
-
-
 
   rootLabel: string;
 
-
-
   rootPath: string;
-
-
 
   status: 'found' | 'not_found';
 
-
-
   folderPath: string | null;
 
-
-
   fileCount: number;
-
-
 
   lastScanned: string | null;
 
-
-
   discoveredAt: string;
 
-
-
 }
-
-
-
-
-
-
 
 export interface OnedriveFile {
 
-
-
   id: number;
-
-
 
   folderId: number;
 
-
-
   name: string;
-
-
 
   extension: string | null;
 
-
-
   relativePath: string;
-
-
 
   lastModified: string | null;
 
-
-
   sizeBytes: number | null;
-
-
 
   scannedAt: string;
 
-
-
 }
-
-
-
-
-
-
 
 // ── Groups types ──────────────────────────────────────────────────────────────
 
-
-
-
-
-
-
 export interface Group {
-
-
 
   id: number;
 
-
-
   name: string;
-
-
 
   createdAt: string;
 
-
-
   updatedAt: string;
-
-
 
   localRepoCount: number;
 
-
-
   githubRepoCount: number;
-
-
 
   fileCount: number;
 
-
-
   ruddrProjectNames: string[];
 
-
-
 }
-
-
-
-
-
-
 
 export interface RuddrBudget {
 
-
-
   ok: boolean;
-
-
 
   actualBillableHours?: string | null;
 
-
-
   actualNonBillableHours?: string | null;
-
-
 
   actualTotalHours?: string | null;
 
-
-
   budget?: string | null;
-
-
 
   budgetLeft?: string | null;
 
-
-
   projectUrl?: string;
-
-
 
   note?: string | null;
 
-
-
   cloudFolderUrl?: string | null;
-
-
 
   error?: string;
 
-
-
   /** ISO timestamp of the scrape this data came from (null when unknown). */
-
-
 
   fetchedAt?: string | null;
 
-
-
   /** True when the payload was served from the cache rather than a fresh scrape. */
-
-
 
   cached?: boolean;
 
-
-
   /** True when the cached data is older than the refresh window. */
-
-
 
   stale?: boolean;
 
-
-
   /** Set when cached data was returned because a refresh attempt failed. */
-
-
 
   refreshError?: string;
 
-
-
 }
-
-
-
-
-
-
 
 export interface RuddrProjectMatch {
 
-
-
   name: string;
-
-
 
   path: string;
 
-
-
   score: number;
 
-
-
 }
-
 export interface RuddrProjectInfo {
   name: string;
   path: string;
   note: string | null;
   cloudFolderUrl: string | null;
 }
-
 // ── Auto-dismiss types ────────────────────────────────────────────────────────
-
 export type AutoDismissReason =
   | 'recovered_workflow'
   | 'closed_pr_dependabot'
@@ -2291,7 +1163,6 @@ export type AutoDismissReason =
   | 'closed_issue_via_pr'
   | 'closed_issue_collab_pr'
   | 'deleted_branch';
-
 export interface AutoDismissLogInput {
   notification_id: string;
   reason: AutoDismissReason;
@@ -2299,7 +1170,6 @@ export interface AutoDismissLogInput {
   subject_title: string | null;
   subject_type: string | null;
 }
-
 export interface AutoDismissLogEntry {
   id: number;
   notification_id: string;
@@ -2309,7 +1179,6 @@ export interface AutoDismissLogEntry {
   subject_title: string | null;
   subject_type: string | null;
 }
-
 export interface AutoDismissStats {
   daily: { period: string; count: number }[];
   weekly: { period: string; count: number }[];
@@ -2318,186 +1187,86 @@ export interface AutoDismissStats {
   thisWeek: number;
 }
 
-
-
-
-
-
-
 export interface GroupLocalRepoMember {
 
-
-
   id: number;
-
-
 
   localPath: string;
 
-
-
   name: string;
-
-
 
   addedAt: string;
 
-
-
 }
-
-
-
-
-
-
 
 export interface GroupGithubRepoMember {
 
-
-
   id: number;
-
-
 
   fullName: string;
 
-
-
   name: string;
-
-
 
   addedAt: string;
 
-
-
 }
-
-
-
-
-
-
 
 export interface GroupDetail {
 
-
-
   id: number;
-
-
 
   name: string;
 
-
-
   createdAt: string;
-
-
 
   updatedAt: string;
 
-
-
   localRepos: GroupLocalRepoMember[];
-
-
 
   githubRepos: GroupGithubRepoMember[];
 
-
-
   onedriveFolders: OnedriveFolderInfo[];
-
-
 
 }
 
-
-
-
-
-
-
 // ── Jarvis preload API contract ───────────────────────────────────────────────
-
-
 
 // This augments the global Window type so all plugin components get full
 
-
-
 // type-checking on window.jarvis calls without re-declaring it everywhere.
-
-
 
 export type { OnboardingStatus } from '../agent/onboarding';
 
-
-
 import type {
-
-
 
   AgentSessionStartingPayload,
 
-
-
   AgentAnalysisCompletePayload,
-
-
 
   AgentPhase2ErrorPayload,
 
-
-
   AgentSessionCompletePayload,
 
-
-
   AgentSessionErrorPayload,
-
-
 
   AgentDebugContextPayload,
   NewRuddrProjectsPayload,
   BrowserExtensionConnectedPayload,
   UpdateState,
 
-
-
 } from '../types/ipc-payloads';
-
-
-
-
-
-
 
 export type {
 
-
-
   AgentSessionStartingPayload,
-
-
 
   AgentAnalysisCompletePayload,
 
-
-
   AgentPhase2ErrorPayload,
-
-
 
   AgentSessionCompletePayload,
 
-
-
   AgentSessionErrorPayload,
-
-
 
   AgentDebugContextPayload,
   BrowserExtensionEventPayload,
@@ -2505,19 +1274,9 @@ export type {
   BrowserExtensionConnectedPayload,
   UpdateState,
 
-
-
 } from '../types/ipc-payloads';
 
-
-
-
-
-
-
-
 export type BackgroundTaskRunStatus = 'success' | 'failed' | 'skipped';
-
 export interface BackgroundTaskRunRecord {
   taskId: string;
   status: BackgroundTaskRunStatus;
@@ -2527,7 +1286,6 @@ export interface BackgroundTaskRunRecord {
   result?: unknown;
   error?: string;
 }
-
 export interface BackgroundTaskStatus {
   id: string;
   label: string;
@@ -2542,185 +1300,96 @@ export interface BackgroundTaskStatus {
   lastError?: string;
   lastResult?: unknown;
 }
-
 export interface AutoDismissRunResult {
   steps: Array<{ id: string; label: string; dismissed: number }>;
   total: number;
 }
-
 export interface AutoDismissCompletePayload {
   result: AutoDismissRunResult;
   logEntries: AutoDismissLogInput[];
 }
-
 export interface JarvisApi {
-
-
 
   startPatDiscovery(): Promise<{ started?: boolean; error?: string } | IpcErrorResponse>;
 
-
-
   startOAuthDiscovery(): Promise<{ ok: boolean }>;
-
-
 
   savePat(pat: string): Promise<{ ok: boolean; error?: string }>;
 
-
-
   deletePat(): Promise<{ ok: boolean; error?: string }>;
-
-
 
   getPatStatus(): Promise<PatStatus | IpcErrorResponse>;
 
-
-
-
   openSettings(): Promise<void>;
-
-
-
 
   onPatExpired(cb: () => void): () => void;
 
-
-
-
   onPatStatusChanged(cb: () => void): () => void;
-
-
 
   logout(): Promise<{ ok: boolean; error?: string }>;
 
-
-
   checkOllama(): Promise<OllamaStatus>;
-
-
 
   getSelectedOllamaModel(): Promise<string | null | IpcErrorResponse>;
 
-
-
   setSelectedOllamaModel(modelName: string): Promise<{ ok: boolean }>;
-
-
 
   sendChatMessage(messages: Array<{ role: string; content: string }>): Promise<{ ok: boolean }>;
 
-
-
   abortChat(): Promise<{ ok: boolean }>;
-
-
 
   onChatToken(cb: (token: string) => void): () => void;
 
-
-
   onChatDone(cb: () => void): () => void;
-
-
 
   onChatError(cb: (err: string) => void): () => void;
 
-
-
   startGitHubOAuth(): Promise<OAuthResult>;
-
-
 
   getGitHubOAuthStatus(): Promise<OAuthStatus | IpcErrorResponse>;
 
-
-
   getDiscoveryStatus(): Promise<{ running: boolean; progress?: DiscoveryProgress }>;
-
-
 
   listOrgs(): Promise<OrgListResult | IpcErrorResponse>;
 
-
-
   setOrgEnabled(orgLogin: string, enabled: boolean): Promise<void>;
-
-
 
   searchRepos(query: string): Promise<Repo[] | IpcErrorResponse>;
 
-
-
   listReposForOrg(orgLogin: string | null): Promise<Repo[] | IpcErrorResponse>;
-
-
 
   listStarred(): Promise<Repo[] | IpcErrorResponse>;
 
-
-
   openUrl(url: string): Promise<void>;
-
-
 
   fetchNotifications(): Promise<NotificationCounts>;
 
-
-
   getNotificationCounts(): Promise<NotificationCounts | IpcErrorResponse>;
-
-
 
   fetchNotificationsForOwner(owner: string): Promise<NotificationCounts>;
 
-
-
   fetchNotificationsForRepo(repoFullName: string): Promise<NotificationCounts>;
-
-
 
   listNotificationsForRepo(repoFullName: string): Promise<StoredNotification[] | IpcErrorResponse>;
 
-
-
   listNotificationsForOwner(owner: string): Promise<StoredNotification[] | IpcErrorResponse>;
-
-
 
   listNotificationsForStarred(): Promise<StoredNotification[] | IpcErrorResponse>;
 
-
-
   dismissNotification(id: string): Promise<void>;
-
-
 
   getRunUrlForCheckSuite(checkSuiteApiUrl: string): Promise<string | null>;
 
-
-
   githubGetIssueState(subjectUrl: string): Promise<{ state: 'open' | 'closed'; closedByMe: boolean; closedViaMergedPr: boolean } | null>;
 
-
-
   getPreferences(): Promise<{
-
     sortByNotifications: boolean;
-
     localSortByNotifs: boolean;
-
     localRepoSortKey: 'name' | 'scanned' | 'notifs';
-
     dashboardDefaultFilter?: 'all' | 'healthy' | 'warnings' | 'notifications' | 'human-notifications' | 'failed-runs';
-
     dashboardSortMode?: 'attention' | 'local-activity' | 'remote-activity';
-
     dashboardNotifSort?: 'count' | 'name';
-
   }>;
-
-
 
   setPreferences(prefs: {
     sortByNotifications?: boolean;
@@ -2730,13 +1399,11 @@ export interface JarvisApi {
     dashboardSortMode?: 'attention' | 'local-activity' | 'remote-activity';
     dashboardNotifSort?: 'count' | 'name';
   }): Promise<{ ok: boolean }>;
-
   getStartupSettings(): Promise<{
     openAtLogin: boolean;
     startMinimized: boolean;
     canRegisterAtLogin: boolean;
   }>;
-
   getAboutInfo(): Promise<{
     displayVersion: string;
     appVersion: string;
@@ -2746,470 +1413,250 @@ export interface JarvisApi {
     releaseUrl: string | null;
     repoUrl: string;
   }>;
-
   setStartupSettings(settings: {
     openAtLogin: boolean;
     startMinimized: boolean;
   }): Promise<{ ok: boolean; canRegisterAtLogin?: boolean; error?: string }>;
 
-
-
   onOpenChat(cb: () => void): () => void;
-
-
 
   onOAuthComplete(cb: (result: OAuthResult) => void): () => void;
 
-
-
   onDiscoveryProgress(cb: (progress: DiscoveryProgress) => void): () => void;
-
-
 
   onDiscoveryComplete(cb: (progress: DiscoveryProgress) => void): () => void;
 
-
-
   // Local repos
-
-
 
   localGetFolders(): Promise<ScanFolder[] | IpcErrorResponse>;
 
-
-
   localAddFolder(folderPath?: string): Promise<{ ok?: boolean; path?: string; canceled?: boolean; error?: string }>;
 
-
-
   localRemoveFolder(folderPath: string): Promise<{ ok: boolean }>;
-
-
 
   localGetScanStatus(): Promise<{ running: boolean; progress: LocalScanProgress | null }>;
   localGetIndexStatus(): Promise<LocalIndexStatus>;
   mcpGetClientConfig(): Promise<McpClientConfig>;
   localStartIndex(): Promise<{ started: boolean }>;
 
-
-
   localStartScan(): Promise<{ started: boolean }>;
-
-
 
   localListRepos(): Promise<LocalRepo[] | IpcErrorResponse>;
 
-
-
   localListReposForFolder(folderPath: string): Promise<LocalRepo[] | IpcErrorResponse>;
-
-
 
   localOpenFolder(folderPath: string): Promise<void>;
 
-
-
   localOpenTerminal(folderPath: string): Promise<void>;
-
-
 
   // Secrets
 
-
-
   scanRepoSecrets(): Promise<SecretsScanResult>;
-
-
 
   listAllSecrets(): Promise<RepoSecret[] | IpcErrorResponse>;
 
-
-
   listSecretFavorites(): Promise<SecretFavorite[] | IpcErrorResponse>;
-
-
 
   addSecretFavorite(targetType: 'org' | 'repo', targetName: string): Promise<{ ok: boolean }>;
 
-
-
   removeSecretFavorite(targetName: string): Promise<{ ok: boolean }>;
-
-
 
   onSecretsProgress(cb: (progress: SecretsScanProgress) => void): () => void;
 
-
-
   onLocalScanProgress(cb: (progress: LocalScanProgress) => void): () => void;
-
-
 
   onLocalScanComplete(cb: (progress: LocalScanProgress) => void): () => void;
   onLocalIndexProgress(cb: (progress: LocalIndexProgress) => void): () => void;
   onLocalIndexComplete(cb: (progress: LocalIndexProgress) => void): () => void;
 
-
-
   // Agents
-
-
 
   agentsList(): Promise<AgentDefinition[] | IpcErrorResponse>;
 
-
-
   agentsUpdate(agentId: number, systemPrompt: string): Promise<{ ok: boolean; error?: string }>;
-
-
 
   agentsRun(agentId: number, scopeType: 'repo' | 'org' | 'global', scopeValue: string, workflowFilter?: string): Promise<{ sessionId: number; error?: string }>;
 
-
-
   agentsGetSession(sessionId: number): Promise<AgentSession | null | IpcErrorResponse>;
-
-
 
   agentsApproveFinding(findingId: number): Promise<{ ok: boolean }>;
 
-
-
   agentsRejectFinding(findingId: number): Promise<{ ok: boolean }>;
 
-
-
   agentsExecuteFinding(findingId: number): Promise<{ ok: boolean; error?: string; dismissedIds?: string[] }>;
-
   agentsCheckCopilotAvailability(repoFullName: string): Promise<CopilotAvailabilityResult | IpcErrorResponse>;
-
-
 
   agentsEscalationReadiness(repoFullName: string): Promise<{ ok: boolean; reason?: string; resetAt?: number | null } | IpcErrorResponse>;
 
-
-
   agentsEscalate(sourceSessionId: number): Promise<{ ok: boolean; sessionId?: number; error?: string }>;
-
-
 
   onAgentSessionStarting(cb: (data: AgentSessionStartingPayload) => void): () => void;
 
-
-
   onAgentDebugContext(cb: (data: AgentDebugContextPayload) => void): () => void;
-
-
 
   onAgentToken(cb: (token: string) => void): () => void;
 
-
-
   onAgentAnalysisComplete(cb: (data: AgentAnalysisCompletePayload) => void): () => void;
-
-
 
   onAgentPhase2Error(cb: (data: AgentPhase2ErrorPayload) => void): () => void;
 
-
-
   onAgentSessionComplete(cb: (result: AgentSessionCompletePayload) => void): () => void;
-
-
 
   onAgentSessionError(cb: (error: AgentSessionErrorPayload) => void): () => void;
 
-
-
   // Workflow data
-
-
 
   githubFetchWorkflowRuns(repoFullName: string): Promise<{ ok: boolean; count?: number; error?: string }>;
 
-
-
   githubGetWorkflowSummary(repoFullName: string): Promise<WorkflowRunSummary | IpcErrorResponse>;
-
-
 
   githubGetCachedWorkflowInfo(repoFullName: string): Promise<{ fetchedAt: string | null; runCount: number } | IpcErrorResponse>;
 
-
-
   // Dashboard
-
-
 
   dashboardGetSummary(): Promise<DashboardSummary>;
 
-
-
   dashboardPushBranchUpstream(repoPath: string, branch: string): Promise<{ ok: boolean; error?: string; output?: string }>;
-
-
 
   // Groups
 
-
-
   groupsList(): Promise<Group[] | IpcErrorResponse>;
-
-
 
   groupsCreate(name: string): Promise<{ ok: boolean; id?: number; error?: string }>;
 
-
-
   groupsRename(groupId: number, newName: string): Promise<{ ok: boolean; error?: string }>;
-
-
 
   groupsDelete(groupId: number): Promise<{ ok: boolean; error?: string }>;
 
-
-
   groupsGet(groupId: number): Promise<GroupDetail | null | IpcErrorResponse>;
-
-
 
   groupsAddLocalRepo(groupId: number, localRepoId: number): Promise<{ ok: boolean; error?: string }>;
 
-
-
   groupsRemoveLocalRepo(groupId: number, localRepoId: number): Promise<{ ok: boolean; error?: string }>;
-
-
 
   groupsRemoveGithubRepo(groupId: number, githubRepoId: number): Promise<{ ok: boolean; error?: string }>;
 
-
-
   groupsFindRuddrProjects(groupName: string): Promise<{ ok: boolean; allCount?: number; matches?: RuddrProjectMatch[]; error?: string }>;
-
-
 
   groupsSetRuddrProject(groupId: number, projectName: string | null): Promise<{ ok: boolean; error?: string }>;
 
-
-
   groupsRemoveRuddrProject(groupId: number, projectName: string): Promise<{ ok: boolean; error?: string }>;
-
-
 
   groupsRefreshRuddrCache(): Promise<{ ok: boolean }>;
 
-
-
   groupsSyncRuddrCacheNow(): Promise<{ ok: boolean; count?: number; error?: string }>;
-
   groupsGetRuddrCache(): Promise<{ ok: boolean; projects: string[] }>;
 
-
-
   groupsGetRuddrProjectInfo(projectName: string): Promise<{ ok: boolean; name?: string; path?: string; note?: string | null; cloudFolderUrl?: string | null; error?: string }>;
-
   groupsListRuddrProjects(): Promise<{ ok: boolean; projects: Array<{ name: string; path: string; discoveredAt: string | null }> }>;
-
 
   groupsGetRuddrWorkspace(): Promise<{ ok: boolean; workspace: string } | IpcErrorResponse>;
 
-
-
   groupsSetRuddrWorkspace(workspace: string): Promise<{ ok: boolean; error?: string }>;
-
-
 
   groupsGetRuddrBudget(projectName: string, options?: { force?: boolean }): Promise<RuddrBudget>;
 
-
-
   groupsGetRuddrBudgetCache(): Promise<{ ok: boolean; budgets: Record<string, RuddrBudget> }>;
 
-
-
   onNewRuddrProjects(callback: (payload: NewRuddrProjectsPayload) => void): () => void;
-
   onRuddrProjectDetailsRefreshed(callback: () => void): () => void;
-
-
 
   // OneDrive
 
-
-
   onedriveListRoots(): Promise<OnedriveRoot[] | IpcErrorResponse>;
-
-
 
   onedriveBrowseFolder(): Promise<{ canceled: boolean; folderPath?: string }>;
 
-
-
   onedriveAddRoot(label: string, folderPath?: string): Promise<{ ok: boolean; root?: OnedriveRoot; canceled?: boolean; error?: string }>;
-
-
 
   onedriveRemoveRoot(rootId: number): Promise<{ ok: boolean; error?: string }>;
 
-
-
   onedriveDiscoverForGroup(groupId: number): Promise<{ ok: boolean; folders?: OnedriveFolderInfo[]; error?: string }>;
-
-
 
   onedriveRescanFiles(folderId: number): Promise<{ ok: boolean; fileCount?: number; error?: string }>;
 
-
-
   onedriveListFilesForFolder(folderId: number): Promise<OnedriveFile[] | IpcErrorResponse>;
-
-
 
   onedriveReadOneNoteFile(filePath: string): Promise<{ ok: boolean; section?: OneNoteSectionContent; error?: string }>;
 
-
-
   onedriveReadUrlShortcut(filePath: string): Promise<{ ok: boolean; url?: string; isOneNote?: boolean; isSharePoint?: boolean; error?: string }>;
-
-
 
   onedriveCacheOneNoteFilesForGroup(groupId: number): Promise<OneNoteCacheGroupResult>;
 
-
-
   onedriveGetOneNoteCacheForGroup(groupId: number): Promise<{ pages: OneNoteGroupCachePage[] }>;
-
-
 
   shellOpenUrl(url: string): Promise<{ ok: boolean; error?: string }>;
 
-
-
   // Browser Companion
-
-
 
   browserStatus(): Promise<BrowserCompanionStatus | IpcErrorResponse>;
 
-
-
   browserGetToken(): Promise<{ token: string } | IpcErrorResponse>;
-
-
 
   browserRegenerateToken(): Promise<{ token: string } | IpcErrorResponse>;
 
-
-
   browserListSkills(): Promise<BrowserSkill[] | IpcErrorResponse>;
-
-
 
   browserCreateSkill(name: string, description: string, startUrl: string, instructions: string, extractSelector: string): Promise<{ ok: boolean; id?: number; error?: string }>;
 
-
-
   browserUpdateSkill(id: number, name: string, description: string, startUrl: string, instructions: string, extractSelector: string): Promise<{ ok: boolean; error?: string }>;
-
-
 
   browserDeleteSkill(id: number): Promise<{ ok: boolean; error?: string }>;
 
-
-
   browserListRuns(skillId?: number): Promise<BrowserSkillRun[] | IpcErrorResponse>;
-
-
 
   browserRunSkill(skillId: number, testMode?: boolean): Promise<{ ok: boolean; runId?: number | null; data?: unknown; error?: string; testMode?: boolean }>;
 
-
-
   browserFocusWindow(tabId?: number): Promise<{ ok: boolean; windowId?: number; error?: string }>;
-
-
 
   onBrowserExtensionConnected(cb: (data: BrowserExtensionConnectedPayload) => void): () => void;
 
-
-
   onBackgroundStatus(cb: (message: string) => void): () => void;
-
-
 
   // System locale
   getSystemLocale(): Promise<string>;
-
   // GitHub rate limit
 
-
-
   getGitHubRateLimit(): Promise<GitHubRateLimit | IpcErrorResponse>;
-
   // Claude (Claude Code OAuth) rate limit
   getClaudeStatus(): Promise<ClaudeStatus>;
   getClaudeRateLimit(): Promise<ClaudeRateLimit>;
   disconnectClaude(): Promise<{ ok: boolean }>;
   beginClaudeOAuth(): Promise<{ ok: boolean; authorizeUrl?: string; error?: string }>;
   completeClaudeOAuth(code: string): Promise<{ ok: boolean; error?: string }>;
-
   // GitHub Copilot AI credit usage
   getCopilotUsage(): Promise<CopilotUsage | IpcErrorResponse>;
   refreshCopilotUsage(): Promise<CopilotUsage | IpcErrorResponse>;
   getCopilotBudget(): Promise<{ ok: true; budgetCredits: number | null } | IpcErrorResponse>;
   setCopilotBudget(credits: number | null): Promise<{ ok: true; budgetCredits: number | null } | IpcErrorResponse>;
   onCopilotUsageUpdated(cb: (usage: CopilotUsage) => void): () => void;
-
   // Active agent sessions + PR review readiness
   getActiveSessions(): Promise<ActiveSessionsSnapshot | null | IpcErrorResponse>;
   refreshActiveSessions(): Promise<ActiveSessionsSnapshot | IpcErrorResponse>;
   onActiveSessionsUpdated(cb: (snapshot: ActiveSessionsSnapshot) => void): () => void;
-
   // Auto-dismiss log
   listAutoDismissLog(limit?: number): Promise<AutoDismissLogEntry[] | IpcErrorResponse>;
   getAutoDismissStats(): Promise<AutoDismissStats | IpcErrorResponse>;
-
   // Background tasks
   listBackgroundTasks(): Promise<BackgroundTaskStatus[] | IpcErrorResponse>;
   runBackgroundTaskNow(taskId: string): Promise<BackgroundTaskRunRecord | { ok: false; error: string }>;
   onBackgroundTaskComplete(cb: (record: BackgroundTaskRunRecord) => void): () => void;
   onNotificationCountsUpdated(cb: (counts: NotificationCounts) => void): () => void;
   onAutoDismissComplete(cb: (payload: AutoDismissCompletePayload) => void): () => void;
-
   // App updates
   getUpdateState(): Promise<UpdateState>;
   checkForUpdatesNow(): Promise<UpdateState>;
   installUpdate(): Promise<{ ok: boolean }>;
   onUpdateState(cb: (state: UpdateState) => void): () => void;
 
-
-
 }
-
-
-
-
-
-
 
 declare global {
 
-
-
   interface Window {
-
-
 
     jarvis: JarvisApi;
 
-
-
   }
 
-
-
 }
-
-
-

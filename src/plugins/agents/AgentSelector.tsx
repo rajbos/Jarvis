@@ -226,4 +226,3 @@ export function AgentSelector({ repoFullName, workflowFilter, onClose, onSession
     </div>
   );
 }
-

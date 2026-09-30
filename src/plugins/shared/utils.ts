@@ -307,4 +307,3 @@ export function renderChatMarkdown(text: string): string {
 export function describeIpcFailure(action: string, error: string): string {
   return `Failed to ${action}: ${error}`;
 }
-

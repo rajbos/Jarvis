@@ -85,8 +85,6 @@ function getLastPushedAt(db: SqlJsDatabase, repoFullName: string | null): string
   }
 }
 
-
-
 // ── IPC registration ──────────────────────────────────────────────────────────
 
 export function registerHandlers(

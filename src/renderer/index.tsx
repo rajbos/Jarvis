@@ -173,7 +173,6 @@ function App() {
     return window.jarvis.onActiveSessionsUpdated((s) => setAgentSessionsReady(s.readyCount));
   }, []);
 
-
   // Initial status check
   useEffect(() => {
     window.jarvis.getSystemLocale().then(setSystemLocale).catch(() => {/* use browser default */});
