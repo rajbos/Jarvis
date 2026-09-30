@@ -20,7 +20,7 @@ export function LocalFolderPanel({
         <span>Local Folders</span>
         <button
           class="repo-panel-close"
-          title="Configure folders"
+          title="Configure folders" aria-label="Configure folders"
           onClick={onConfigure}
         >
           &#9881;

@@ -42,7 +42,7 @@ export function LocalRepoPanelView({ title, repos, notifCounts, initialSortKey =
   return (
     <div class="repo-panel">
       <div class="repo-panel-header">
-        <button class="repo-panel-close" title="Back" onClick={onClose}>&#8249;</button>
+        <button class="repo-panel-close" title="Back" aria-label="Back" onClick={onClose}>&#8249;</button>
         <span class="repo-panel-title">{title}</span>
         <span class="local-panel-count">
           {formatNumber(deduped.length)} repo{deduped.length !== 1 ? 's' : ''}

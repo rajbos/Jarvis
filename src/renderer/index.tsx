@@ -993,7 +993,7 @@ function App() {
         <SearchBar />
         <UpdateButton />
         {!showChatPanel && selectedOllamaModel && (
-          <button class="chat-reopen-btn" title="Open Chat" onClick={handleOpenChat}>💬</button>
+          <button class="chat-reopen-btn" title="Open Chat" aria-label="Open Chat" onClick={handleOpenChat}>💬</button>
         )}
       </div>
 

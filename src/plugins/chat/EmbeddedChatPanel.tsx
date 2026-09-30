@@ -236,8 +236,8 @@ export function EmbeddedChatPanel({ visible, selectedModel, onClose, onAgentStar
       <div class="ec-header">
         <span class="ec-title">Chat</span>
         {selectedModel && <span class="ec-model-badge">{selectedModel.split(':')[0]}</span>}
-        <button class="ec-clear-btn" title="New chat" onClick={handleClear} disabled={streaming || messages.length === 0}>&#128459;</button>
-        <button class="ec-close-btn" title="Close chat" onClick={onClose}>&times;</button>
+        <button class="ec-clear-btn" title="New chat" aria-label="New chat" onClick={handleClear} disabled={streaming || messages.length === 0}>&#128459;</button>
+        <button class="ec-close-btn" title="Close chat" aria-label="Close chat" onClick={onClose}>&times;</button>
       </div>
 
       {/* Agent mode banner */}
