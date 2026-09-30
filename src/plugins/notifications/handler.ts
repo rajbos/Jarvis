@@ -57,7 +57,6 @@ async function fetchTokenRateLimitRemaining(token: string): Promise<number | nul
   }
 }
 
-
 export interface AutoDismissStepResult {
   id: string;
   label: string;

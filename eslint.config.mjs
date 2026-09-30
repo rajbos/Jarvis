@@ -12,6 +12,8 @@ export default tseslint.config(
       // Downgrade to warnings for rules that are noisy during early development
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
       '@typescript-eslint/no-explicit-any': 'warn',
+      // Guard against blank-line bloat (see issue #344)
+      'no-multiple-empty-lines': ['error', { max: 1, maxEOF: 0 }],
     },
   },
   {

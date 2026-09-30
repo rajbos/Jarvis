@@ -1,115 +1,57 @@
 // ── IPC handler registry ──────────────────────────────────────────────────────
-
 // This file is intentionally thin. All handler logic lives in the plugin
-
 // folders under src/plugins/. To add a new feature:
-
 //   1. Create src/plugins/<feature>/handler.ts with a registerHandlers() export
-
 //   2. Import and call it below — that's the only file you touch
-
 import type { Database as SqlJsDatabase } from 'sql.js';
-
 import type { BrowserWindow } from 'electron';
 
-
-
 import { registerHandlers as registerConfigHandlers } from '../plugins/config/handler';
-
 import { registerHandlers as registerOllamaHandlers } from '../plugins/ollama/handler';
-
 import { registerHandlers as registerChatHandlers } from '../plugins/chat/handler';
-
 import { registerHandlers as registerGitHubAuthHandlers } from '../plugins/github-auth/handler';
-
 import { registerHandlers as registerDiscoveryHandlers } from '../plugins/discovery/handler';
-
 import { registerHandlers as registerOrgsHandlers } from '../plugins/orgs/handler';
-
 import { registerHandlers as registerReposHandlers } from '../plugins/repos/handler';
-
 import { registerHandlers as registerNotificationsHandlers } from '../plugins/notifications/handler';
-
 import { registerHandlers as registerLocalReposHandlers } from '../plugins/local-repos/handler';
-
 import { registerHandlers as registerAgentsHandlers } from '../plugins/agents/handler';
-
 import { registerHandlers as registerSecretsHandlers } from '../plugins/secrets/handler';
-
 import { registerHandlers as registerDashboardHandlers } from '../plugins/dashboard/handler';
-
 import { registerHandlers as registerGroupsHandlers } from '../plugins/groups/handler';
-
 import { registerHandlers as registerOnedriveHandlers } from '../plugins/onedrive/handler';
-
 import { registerHandlers as registerBrowserCompanionHandlers } from '../plugins/browser-companion/handler';
-
 import { registerHandlers as registerClaudeHandlers } from '../plugins/claude/handler';
-
 import { registerHandlers as registerCopilotUsageHandlers } from '../plugins/copilot-usage/handler';
-
 import { registerHandlers as registerMcpServerHandlers } from '../plugins/mcp-server/handler';
-
 import { registerHandlers as registerActiveSessionsHandlers } from '../plugins/active-sessions/handler';
-
 import { registerTaskIpcHandlers } from './background-tasks';
 
-
-
 // Re-export startDiscoveryIfAuthed so src/main/index.ts can call it on startup
-
 export { startDiscoveryIfAuthed } from '../plugins/discovery/handler';
 
-
-
-
 export function registerIpcHandlers(
-
   db: SqlJsDatabase,
-
   getWindow: () => BrowserWindow | null,
-
 ): void {
-
   registerConfigHandlers(db, getWindow);
-
   registerOllamaHandlers(db, getWindow);
-
   registerChatHandlers(db, getWindow);
-
   registerGitHubAuthHandlers(db, getWindow);
-
   registerDiscoveryHandlers(db, getWindow);
-
   registerOrgsHandlers(db, getWindow);
-
   registerReposHandlers(db, getWindow);
-
   registerNotificationsHandlers(db, getWindow);
-
   registerLocalReposHandlers(db, getWindow);
-
   registerAgentsHandlers(db, getWindow);
-
   registerSecretsHandlers(db, getWindow);
-
   registerDashboardHandlers(db, getWindow);
-
   registerGroupsHandlers(db, getWindow);
-
   registerOnedriveHandlers(db, getWindow);
-
   registerBrowserCompanionHandlers(db, getWindow);
-
   registerClaudeHandlers(db, getWindow);
-
   registerCopilotUsageHandlers(db, getWindow);
-
   registerMcpServerHandlers(db, getWindow);
-
   registerActiveSessionsHandlers(db, getWindow);
-
   registerTaskIpcHandlers();
-
 }
-

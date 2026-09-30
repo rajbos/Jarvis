@@ -1,80 +1,47 @@
 import { app, BrowserWindow, Tray, Menu, session, Notification } from 'electron';
 import path from 'path';
-
 import { getDatabase, closeDatabase } from '../storage/database';
-
 import { loadConfig } from '../agent/config';
-
 import pkg from '../../package.json';
-
 import { createTray } from './tray';
-
 import { createOnboardingWindow, createSettingsWindow, createAboutWindow } from './windows';
-
 import { getOnboardingStatus, completeOnboardingStep } from '../agent/onboarding';
-
 import { registerIpcHandlers, startDiscoveryIfAuthed } from './ipc-handlers';
 import { startBackgroundTasks, stopBackgroundTasks } from './background-tasks';
 import { checkPatForExpiry } from '../plugins/github-auth/handler';
-
 import { checkOllama } from '../services/ollama';
-
 import { saveDatabase } from '../storage/database';
-
 import { stopBridgeServer } from '../plugins/browser-companion/server';
-
 import { logger, setLogLevel } from '../services/logger';
 import { checkForUpdates, registerUpdateIpcHandlers, startUpdateChecks, stopUpdateChecks } from './update-checker';
 import { safeHandle } from '../plugins/ipc-utils';
-
 if (process.env.JARVIS_CONFIG_DIR) {
   app.setPath('userData', path.join(process.env.JARVIS_CONFIG_DIR, 'electron'));
 }
-
 setLogLevel(app.isPackaged ? 'warn' : 'debug');
 
-
-
 let mainWindow: BrowserWindow | null = null;
-
 let settingsWindow: BrowserWindow | null = null;
-
 let aboutWindow: BrowserWindow | null = null;
-
  
-
 let _tray: Tray | null = null;
-
 let currentDb: Awaited<ReturnType<typeof getDatabase>> | null = null;
 
-
-
 async function initialize(): Promise<void> {
-
   const config = loadConfig();
 
-
-
   // Initialize the database (creates it if not present)
-
   const db = await getDatabase(config.storage.database);
-
   currentDb = db;
-
   logger.info('Database initialized at:', config.storage.database);
 
-
-
   // Register IPC handlers for renderer ↔ main communication
-
   registerIpcHandlers(db, () => mainWindow);
   registerUpdateIpcHandlers(() => mainWindow);
-
   // Let the renderer open the Settings window (e.g. from the "PAT expired" banner)
   safeHandle('app:open-settings', () => {
     showSettingsWindow();
   });
-
   // Validate the stored GitHub PAT on startup; warn clearly when it has
   // expired or been revoked instead of silently failing API calls later.
   checkPatForExpiry(db, () => mainWindow).then((expired) => {
@@ -89,286 +56,146 @@ async function initialize(): Promise<void> {
     logger.warn('[PAT] Startup validity check failed:', err);
   });
 
-
-
   // Check if Ollama is available and update onboarding step accordingly
-
   checkOllama().then((ollama) => {
-
     const currentStatus = getOnboardingStatus(db);
-
     if (ollama.available && currentStatus.ollama === 'pending') {
-
       completeOnboardingStep(db, 'ollama');
-
       saveDatabase();
-
       logger.info('[Ollama] Found with', ollama.models.length, 'model(s) — onboarding step marked complete');
-
     } else if (!ollama.available && currentStatus.ollama === 'pending') {
-
       logger.debug('[Ollama] Not found at startup:', ollama.error);
-
     }
-
   }).catch((err) => {
-
     logger.error('[Ollama] Startup check failed:', err);
-
   });
 
-
-
   // Check onboarding status
-
   const onboarding = getOnboardingStatus(db);
-
   const needsOnboarding = Object.values(onboarding).some((s) => s === 'pending');
-
-
 
   const openChat = () => { mainWindow?.webContents.send('chat:open'); };
 
-
-
   // Build native application menu
-
   const appMenu = Menu.buildFromTemplate([
-
     {
-
       label: pkg.name.charAt(0).toUpperCase() + pkg.name.slice(1),
-
       submenu: [
-
         { label: 'Open Chat', click: openChat },
-
         { label: 'Settings', click: () => showSettingsWindow() },
-
         { label: 'About', click: () => showAboutWindow() },
-
         { label: 'Check for Updates…', click: () => { void checkForUpdates(true); } },
-
         { type: 'separator' },
-
         {
-
           label: 'Toggle Developer Tools',
-
           accelerator: process.platform === 'darwin' ? 'Alt+Command+I' : 'Ctrl+Shift+I',
-
           click: () => { mainWindow?.webContents.toggleDevTools(); },
-
         },
-
         { type: 'separator' },
-
         { role: 'quit' },
-
       ],
-
     },
-
   ]);
-
   Menu.setApplicationMenu(appMenu);
 
-
-
   // Create system tray
-
   _tray = createTray(() => {
-
     showMainWindow();
-
   }, () => {
-
     showSettingsWindow();
-
   }, openChat);
-
-
 
   // Electron 44 removed wasOpenedAsHidden/openAsHidden; on Windows we detect a
   // hidden login launch via the --hidden arg we register in setLoginItemSettings.
   const startedHidden = process.argv.includes('--hidden') || config.electron.startMinimized;
 
-
-
   if (!startedHidden) {
-
     showMainWindow();
-
   }
-
-
 
   // If GitHub auth is already set up, start background discovery
-
   const githubReady = !needsOnboarding || onboarding.github_oauth === 'completed';
-
   if (githubReady) {
-
     startDiscoveryIfAuthed(db, () => mainWindow);
-
   }
-
-
 
   // Start centralized main-process background jobs. These continue to run even
-
   // when renderer panels are not mounted.
-
   startBackgroundTasks(db, () => mainWindow, { githubReady });
 
-
-
   // Register for startup on login (only when packaged — in dev mode the bare
-
   // electron.exe would be registered without the app path, causing the default
-
   // Electron splash screen to appear on every Windows boot)
-
   if (app.isPackaged) {
-
     app.setLoginItemSettings({
-
       openAtLogin: config.electron.openAtLogin,
-
       args: ['--hidden'],
-
     });
-
   }
-
   startUpdateChecks();
-
 }
-
-
 
 function showMainWindow(): void {
-
   if (mainWindow && !mainWindow.isDestroyed()) {
-
     mainWindow.show();
-
     mainWindow.focus();
-
     return;
-
   }
-
   mainWindow = createOnboardingWindow(currentDb!);
-
   mainWindow.once('ready-to-show', () => {
-
     mainWindow?.show();
-
     mainWindow?.focus();
-
   });
-
   mainWindow.on('closed', () => {
-
     mainWindow = null;
-
   });
-
 }
-
-
 
 function showSettingsWindow(): void {
-
   if (settingsWindow && !settingsWindow.isDestroyed()) {
-
     settingsWindow.show();
-
     settingsWindow.focus();
-
     return;
-
   }
-
   settingsWindow = createSettingsWindow();
-
   settingsWindow.on('closed', () => {
-
     settingsWindow = null;
-
   });
-
 }
-
 function showAboutWindow(): void {
-
   if (aboutWindow && !aboutWindow.isDestroyed()) {
-
     aboutWindow.show();
-
     aboutWindow.focus();
-
     return;
-
   }
-
   aboutWindow = createAboutWindow();
-
   aboutWindow.on('closed', () => {
-
     aboutWindow = null;
-
   });
-
 }
-
-
 
 // In packaged (production) builds, enforce a single instance so the user can't
-
 // accidentally open two Jarvis windows.  In development the watch-electron
-
 // watcher is already responsible for process lifecycle; skipping the lock
-
 // prevents races where a fast restart tries to acquire the lock before the
-
 // previous process has fully released it.
-
 if (app.isPackaged) {
-
   const gotLock = app.requestSingleInstanceLock();
-
   if (!gotLock) {
-
     logger.info('[Main] Another instance is already running — quitting.');
-
     app.quit();
-
   } else {
-
     app.on('second-instance', () => {
-
       if (mainWindow && !mainWindow.isDestroyed()) {
-
         if (mainWindow.isMinimized()) mainWindow.restore();
-
         mainWindow.show();
-
         mainWindow.focus();
-
       }
-
     });
-
   }
-
 }
 
-
-
 app.whenReady().then(() => {
-
   // Content Security Policy: prevent inline scripts, eval(), and
   // unauthorized resource loads even if the renderer is compromised.
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
@@ -381,42 +208,24 @@ app.whenReady().then(() => {
       },
     });
   });
-
   // Deny all Chromium permission requests (camera, mic, geo,
   // notifications, etc.) — Jarvis is a local desktop app.
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
     callback(false);
   });
-
   initialize().catch((err) => {
-
     logger.error('[Main] Fatal initialization error:', err);
-
     app.quit();
-
   });
-
 });
-
-
 
 app.on('window-all-closed', () => {
-
   // Don't quit on window close — keep running in tray
-
 });
-
-
 
 app.on('before-quit', () => {
-
   stopUpdateChecks();
-
   stopBackgroundTasks();
-
   stopBridgeServer();
-
   closeDatabase();
-
 });
-

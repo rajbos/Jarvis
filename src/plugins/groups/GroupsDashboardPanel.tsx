@@ -134,18 +134,6 @@ export function GroupsDashboardPanel() {
     );
   };
 
-
-
-
-
-
-
-
-
-
-
-
-
   return (
     <div class="groups-dashboard-panel">
       <div class="groups-dash-header">

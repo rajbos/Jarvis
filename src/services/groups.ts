@@ -362,4 +362,3 @@ export function removeGithubRepoFromGroup(db: SqlJsDatabase, groupId: number, gi
   );
   db.run(`UPDATE groups SET updated_at = datetime('now') WHERE id = ?`, [groupId]);
 }
-
