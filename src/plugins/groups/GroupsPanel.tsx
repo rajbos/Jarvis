@@ -306,7 +306,7 @@ export function GroupsPanel({ onClose, onOpenOneNote, onOpenOneNoteCache }: Grou
     <div class="org-panel groups-panel">
       <div class="org-panel-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <span>Source Groups</span>
-        <button class="repo-panel-close" title="Close" onClick={onClose}>&times;</button>
+        <button class="repo-panel-close" title="Close" aria-label="Close" onClick={onClose}>&times;</button>
       </div>
 
       <p style={{ fontSize: '0.82rem', color: '#c8c8c8', marginBottom: '0.75rem' }}>
@@ -370,7 +370,7 @@ export function GroupsPanel({ onClose, onOpenOneNote, onOpenOneNoteCache }: Grou
                       <button class="btn-save" onClick={() => void handleRename(g.id)} disabled={renaming} style={{ padding: '0.1rem 0.4rem', fontSize: '0.78rem' }}>
                         {renaming ? '…' : 'Save'}
                       </button>
-                      <button class="btn-secondary" onClick={() => setRenamingId(null)} style={{ padding: '0.1rem 0.4rem', fontSize: '0.78rem' }}>
+                      <button class="btn-secondary" title="Cancel rename" aria-label="Cancel rename" onClick={() => setRenamingId(null)} style={{ padding: '0.1rem 0.4rem', fontSize: '0.78rem' }}>
                         ✕
                       </button>
                     </div>
@@ -384,14 +384,14 @@ export function GroupsPanel({ onClose, onOpenOneNote, onOpenOneNoteCache }: Grou
                       </div>
                       <div style={{ display: 'flex', gap: '0.15rem', flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
                         <button
-                          title="Rename"
+                          title="Rename" aria-label="Rename"
                           onClick={() => handleStartRename(g)}
                           style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#99a', fontSize: '0.8rem', padding: '0.1rem 0.25rem' }}
                         >
                           ✏️
                         </button>
                         <button
-                          title="Delete"
+                          title="Delete" aria-label="Delete"
                           onClick={() => void handleDelete(g.id, g.name)}
                           style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#f88', fontSize: '0.8rem', padding: '0.1rem 0.25rem' }}
                         >
@@ -432,7 +432,7 @@ export function GroupsPanel({ onClose, onOpenOneNote, onOpenOneNoteCache }: Grou
                     <span style={{ fontSize: '0.73rem', color: '#778', marginLeft: '0.4rem', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.localPath}</span>
                   </div>
                   <button
-                    title="Remove from group"
+                    title="Remove from group" aria-label="Remove from group"
                     onClick={() => void handleRemoveLocalRepo(r.id)}
                     style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#f88', fontSize: '0.8rem', padding: '0.1rem 0.3rem', flexShrink: 0 }}
                   >
@@ -452,7 +452,7 @@ export function GroupsPanel({ onClose, onOpenOneNote, onOpenOneNoteCache }: Grou
                 <div key={r.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.2rem 0.4rem', marginBottom: '0.2rem', background: '#1a1a26', borderRadius: '4px' }}>
                   <span style={{ fontSize: '0.83rem', color: '#ccc', fontFamily: 'monospace' }}>{r.fullName}</span>
                   <button
-                    title="Remove from group"
+                    title="Remove from group" aria-label="Remove from group"
                     onClick={() => void handleRemoveGithubRepo(r.id)}
                     style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#f88', fontSize: '0.8rem', padding: '0.1rem 0.3rem', flexShrink: 0 }}
                   >
@@ -491,7 +491,7 @@ export function GroupsPanel({ onClose, onOpenOneNote, onOpenOneNoteCache }: Grou
                       <button
                         class="btn-secondary"
                         style={{ padding: '0.15rem 0.5rem', fontSize: '0.75rem' }}
-                        title="View cached OneNote pages for this group"
+                        title="View cached OneNote pages for this group" aria-label="View cached OneNote pages for this group"
                         onClick={() => onOpenOneNoteCache(selectedGroup.id, selectedGroup.name)}
                       >
                         📋
@@ -612,7 +612,7 @@ export function GroupsPanel({ onClose, onOpenOneNote, onOpenOneNoteCache }: Grou
                                   </span>
                                   {isOneNote && fullPath && onOpenOneNote && (
                                     <button
-                                      title="View note content"
+                                      title="View note content" aria-label="View note content"
                                       class="btn-secondary"
                                       style={{ padding: '0.05rem 0.3rem', fontSize: '0.7rem' }}
                                       onClick={() => onOpenOneNote(fullPath)}
@@ -622,7 +622,7 @@ export function GroupsPanel({ onClose, onOpenOneNote, onOpenOneNoteCache }: Grou
                                   )}
                                   {isUrlShortcut && shortcutInfo?.url && (
                                     <button
-                                      title={`Open in ${shortcutInfo.isOneNote ? 'OneNote' : 'browser'}: ${shortcutInfo.url}`}
+                                      title={`Open in ${shortcutInfo.isOneNote ? 'OneNote' : 'browser'}: ${shortcutInfo.url}`} aria-label={`Open in ${shortcutInfo.isOneNote ? 'OneNote' : 'browser'}: ${shortcutInfo.url}`}
                                       class="btn-secondary"
                                       style={{ padding: '0.05rem 0.3rem', fontSize: '0.7rem' }}
                                       onClick={() => void window.jarvis.shellOpenUrl(shortcutInfo.url)}

@@ -184,7 +184,7 @@ export function GroupsDashboardPanel() {
                     <button
                       class="groups-dash-new-project-dismiss"
                       onClick={() => setNewRuddrProjects((prev) => prev.filter((x) => x.path !== p.path))}
-                      title="Dismiss"
+                      title="Dismiss" aria-label="Dismiss"
                     >✕</button>
                   </div>
                 );
@@ -441,7 +441,7 @@ function GroupCard(props: {
                     <button
                       class="groups-dash-ruddr-open-btn"
                       onClick={() => void window.jarvis.shellOpenUrl(budgetData[name].projectUrl!)}
-                      title="Open in Ruddr"
+                      title="Open in Ruddr" aria-label="Open in Ruddr"
                     >↗️</button>
                   )}
                   {projectInfo[name]?.path && (() => {
@@ -450,7 +450,7 @@ function GroupCard(props: {
                       <button
                         class="groups-dash-ruddr-edit-btn"
                         onClick={() => void window.jarvis.shellOpenUrl(editUrl)}
-                        title="Edit project in Ruddr"
+                        title="Edit project in Ruddr" aria-label="Edit project in Ruddr"
                       >✏️</button>
                     );
                   })()}
@@ -458,10 +458,10 @@ function GroupCard(props: {
                     <button
                       class="groups-dash-ruddr-edit-btn"
                       onClick={() => void window.jarvis.shellOpenUrl(projectInfo[name].cloudFolderUrl!)}
-                      title="Open cloud folder"
+                      title="Open cloud folder" aria-label="Open cloud folder"
                     >☁️</button>
                   )}
-                  <button class="groups-dash-ruddr-unlink" onClick={() => void handleUnlinkOne(name)} title="Remove Ruddr link">✕</button>
+                  <button class="groups-dash-ruddr-unlink" onClick={() => void handleUnlinkOne(name)} title="Remove Ruddr link" aria-label="Remove Ruddr link">✕</button>
                 </div>
                 {budgetData[name] && (
                   <div class="groups-dash-budget-section">
@@ -612,7 +612,7 @@ function GroupCard(props: {
               <button
                 class="groups-dash-ruddr-manual-close"
                 onClick={() => setRuddrManualOpen(false)}
-                title="Close"
+                title="Close" aria-label="Close"
               >✕</button>
             </div>
             <input

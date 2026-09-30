@@ -12,7 +12,7 @@ export function OllamaPanel({ ollama, selectedModel, onSelectModel, onClose }: O
     <div class="org-panel ollama-panel">
       <div class="org-panel-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <span>Ollama</span>
-        <button class="repo-panel-close" title="Close" onClick={onClose}>&times;</button>
+        <button class="repo-panel-close" title="Close" aria-label="Close" onClick={onClose}>&times;</button>
       </div>
       <div style={{ fontSize: '0.82rem', color: '#99aabb', marginBottom: '0.75rem' }}>
         <code style={{ background: '#0f3460', padding: '0.1rem 0.4rem', borderRadius: '3px' }}>

@@ -1,5 +1,6 @@
 import type { ScanFolder } from '../types';
 import { formatNumber } from '../shared/utils';
+import { IconButton } from '../shared/IconButton';
 
 interface LocalFolderPanelProps {
   folders: ScanFolder[];
@@ -18,13 +19,7 @@ export function LocalFolderPanel({
     <div class="org-panel">
       <div class="org-panel-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <span>Local Folders</span>
-        <button
-          class="repo-panel-close"
-          title="Configure folders" aria-label="Configure folders"
-          onClick={onConfigure}
-        >
-          &#9881;
-        </button>
+        <IconButton icon={<>&#9881;</>} label="Configure folders" onClick={onConfigure} />
       </div>
       <div class="org-list">
         {folders.map((folder) => {

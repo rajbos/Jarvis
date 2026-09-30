@@ -136,7 +136,7 @@ export function OrgNotifPanel({ title, notifications, loading, onClose, onRefres
             onClick={refreshing ? undefined : onRefresh}
           >{'\u21BB'}</span>
         )}
-        <button class="repo-panel-close" title="Close" onClick={onClose}>&times;</button>
+        <button class="repo-panel-close" title="Close" aria-label="Close" onClick={onClose}>&times;</button>
       </div>
 
       {loading && (

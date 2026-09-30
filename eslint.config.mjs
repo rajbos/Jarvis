@@ -55,6 +55,23 @@ export default tseslint.config(
     },
   },
   {
+    // Icon-only buttons (a single glyph/emoji/entity as the only child) need an accessible
+    // name: `title` alone is not reliably exposed to screen readers. Use aria-label, or the
+    // shared <IconButton> (src/plugins/shared/IconButton.tsx). Scoped to .tsx so it does not
+    // clash with the ipcMain rule above, which applies to .ts files only.
+    files: ['src/**/*.tsx'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            "JSXElement[openingElement.name.name='button'][children.length=1][children.0.type='JSXText'][children.0.value=/^\\s*[^A-Za-z0-9\\s]{1,4}\\s*$/]:not(:has(JSXAttribute[name.name=/^aria-label(ledby)?$/]))",
+          message: 'Icon-only <button> needs aria-label (or aria-labelledby). Prefer <IconButton> from src/plugins/shared/IconButton.tsx.',
+        },
+      ],
+    },
+  },
+  {
     // Ignore build output and test compiled output and browser extension plain JS
     ignores: ['dist/**', 'node_modules/**', 'tests/**', 'src/browser-extension/**'],
   },

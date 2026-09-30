@@ -144,7 +144,7 @@ export function RuddrProjectsPanel(props: { onGroupCreated?: () => void }) {
                 <button
                   class="ruddr-projects-panel__create-btn"
                   onClick={() => creatingFor === p.name ? cancelCreate() : openCreate(p.name)}
-                  title="Create a new group linked to this project"
+                  title="Create a new group linked to this project" aria-label="Create a new group linked to this project"
                 >+</button>
               </div>
               {p.discoveredAt && (

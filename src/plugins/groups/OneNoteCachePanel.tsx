@@ -38,7 +38,7 @@ export function OneNoteCachePanel({ groupId, groupName, onClose }: Props) {
     <div class="org-panel onenote-cache-panel">
       <div class="org-panel-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <span>📋 OneNote cache — {groupName}</span>
-        <button class="repo-panel-close" title="Close" onClick={onClose}>&times;</button>
+        <button class="repo-panel-close" title="Close" aria-label="Close" onClick={onClose}>&times;</button>
       </div>
 
       {loading && (
