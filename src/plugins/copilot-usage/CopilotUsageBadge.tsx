@@ -64,15 +64,18 @@ export function CopilotUsageBadge({ usage, onOpenSettings, onRefresh }: CopilotU
         </div>
         {!usage.error && (
           <>
-            <div class="bg-status-claude-row">
-              <span class="bg-status-claude-label">Budget</span>
-              <span class="bg-status-claude-state">
-                {budget ? `${credits(Math.max(0, budget - usage.creditsUsed))} AIC left` : 'Not set'}
-              </span>
-              <span class="bg-status-claude-reset">
-                {budget ? `$${(budget * 0.01).toFixed(2)} / month` : 'Set it in Settings'}
-              </span>
-            </div>
+            {/* With a detected plan entitlement and no budget of our own, the Budget row is just noise. */}
+            {(budget || !entitlement) && (
+              <div class="bg-status-claude-row">
+                <span class="bg-status-claude-label">Budget</span>
+                <span class="bg-status-claude-state">
+                  {budget ? `${credits(Math.max(0, budget - usage.creditsUsed))} AIC left` : 'Not set'}
+                </span>
+                <span class="bg-status-claude-reset">
+                  {budget ? `$${(budget * 0.01).toFixed(2)} / month` : 'Set it in Settings'}
+                </span>
+              </div>
+            )}
             <div class="bg-status-claude-row">
               <span class="bg-status-claude-label">Included</span>
               <span class="bg-status-claude-state">
