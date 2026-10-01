@@ -4501,6 +4501,19 @@ h5.ec-heading { font-size: 0.9375rem; }
   transition: border-color 0.12s;
 }
 
+.bg-status-tasks-fail-badge {
+  display: inline-block;
+  min-width: 1rem;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  background: #f44336;
+  color: #fff;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1rem;
+  text-align: center;
+}
+
 .bg-status-tasks:hover .bg-status-tasks-btn {
   border-color: #1e3a5a;
 }
