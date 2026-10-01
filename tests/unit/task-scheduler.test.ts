@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { TaskScheduler } from '../../src/main/task-scheduler';
+import { logger } from '../../src/services/logger';
 
 describe('TaskScheduler', () => {
   beforeEach(() => {
@@ -30,6 +31,28 @@ describe('TaskScheduler', () => {
       lastStatus: 'success',
       lastResult: { ok: true, count: 2 },
     });
+  });
+
+  it('logs a warning when a task run fails', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    const scheduler = new TaskScheduler();
+    scheduler.register({ id: 'failing', label: 'Failing task', run: async () => { throw new Error('boom'); } });
+
+    await scheduler.runNow('failing');
+
+    expect(warn).toHaveBeenCalledWith('[Tasks] Task failed:', 'failing', 'boom');
+    warn.mockRestore();
+  });
+
+  it('does not log a warning when a task succeeds', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    const scheduler = new TaskScheduler();
+    scheduler.register({ id: 'ok', label: 'Ok task', run: async () => 1 });
+
+    await scheduler.runNow('ok');
+
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it('records failed runs without throwing from runNow', async () => {

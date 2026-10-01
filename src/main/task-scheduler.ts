@@ -1,3 +1,5 @@
+import { logger } from '../services/logger';
+
 export type TaskRunStatus = 'success' | 'failed' | 'skipped';
 
 export interface TaskRunRecord {
@@ -161,6 +163,7 @@ export class TaskScheduler {
         error: errorMessage(err),
       };
       task.lastRun = record;
+      logger.warn('[Tasks] Task failed:', task.id, record.error);
       this.onRunComplete?.(record);
       return record;
     } finally {

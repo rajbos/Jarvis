@@ -1445,6 +1445,7 @@ function BackgroundStatusBar({
   }, [loadTasks]);
 
   const runningCount = backgroundTasks.filter((t) => t.running).length;
+  const failedCount = backgroundTasks.filter((t) => !t.running && t.lastStatus === 'failed').length;
 
   // Derive a message from App state — IPC message takes priority when active
   let derivedMessage: string | null = null;
@@ -1543,8 +1544,17 @@ function BackgroundStatusBar({
         <div class="bg-status-right">
           {backgroundTasks.length > 0 && (
             <div class="bg-status-tasks">
-              <span class="bg-status-tasks-btn" title="Background tasks">
+              <span
+                class="bg-status-tasks-btn"
+                title="Background tasks"
+                aria-label={failedCount > 0
+                  ? `Background tasks, ${failedCount} failed`
+                  : 'Background tasks'}
+              >
                 ⚙ {runningCount > 0 ? `${runningCount}/${backgroundTasks.length}` : backgroundTasks.length}
+                {failedCount > 0 && (
+                  <span class="bg-status-tasks-fail-badge" aria-hidden="true">{failedCount}</span>
+                )}
               </span>
               <div class="bg-status-tasks-pop">
                 {backgroundTasks.map((task) => (
