@@ -306,7 +306,7 @@ function buildBatchQuery(lookups: PrLookup[]): { query: string; variables: Recor
       varDefs.push(`$b${i}: String!`);
       variables[`b${i}`] = lookup.branch;
       fields.push(
-        `${alias}: repository(owner: $o${i}, name: $r${i}) { pullRequests(headRefName: $b${i}, states: [OPEN], first: 5, orderBy: { field: UPDATED_AT, direction: DESC }) { nodes { ${PR_FIELDS} } } }`,
+        `${alias}: repository(owner: $o${i}, name: $r${i}) { pullRequests(headRefName: $b${i}, states: [OPEN, MERGED, CLOSED], first: 10, orderBy: { field: UPDATED_AT, direction: DESC }) { nodes { ${PR_FIELDS} } } }`,
       );
     }
   });
@@ -325,7 +325,9 @@ function extractPr(lookup: PrLookup, value: unknown): RawPullRequest | null {
   }
   const nodes = (value as { pullRequests?: { nodes?: RawPullRequest[] } }).pullRequests?.nodes ?? [];
   const owner = lookup.headOwner?.toLowerCase();
-  return nodes.find((n) => !owner || n.headRepositoryOwner?.login.toLowerCase() === owner) ?? null;
+  const matching = nodes.filter((n) => !owner || n.headRepositoryOwner?.login.toLowerCase() === owner);
+  // Prefer a live PR; otherwise the most recently updated merged/closed one (nodes are UPDATED_AT desc).
+  return matching.find((n) => n.state === 'OPEN') ?? matching[0] ?? null;
 }
 
 /**

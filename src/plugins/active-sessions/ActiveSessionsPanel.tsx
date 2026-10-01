@@ -51,6 +51,19 @@ function formatCredits(usage: CloudTaskSession['usage']): string | null {
   return `${usage.amount >= 10 ? usage.amount.toFixed(0) : usage.amount.toFixed(2)} credits`;
 }
 
+/** "14:32" for today, "Yesterday 14:32" / "Mon 14:32" / "12 Sep 14:32" otherwise. */
+function formatLastActive(iso: string, now: Date = new Date()): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const dayStart = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const days = Math.round((dayStart(now) - dayStart(d)) / 86_400_000);
+  if (days <= 0) return time;
+  if (days === 1) return `Yesterday ${time}`;
+  if (days < 7) return `${d.toLocaleDateString([], { weekday: 'short' })} ${time}`;
+  return `${d.toLocaleDateString([], { day: 'numeric', month: 'short' })} ${time}`;
+}
+
 function openUrl(url: string) {
   void window.jarvis.openUrl(url);
 }
@@ -70,6 +83,11 @@ function SessionRow({ entry }: { entry: ActiveSessionEntry }) {
           <span class="as-row-client">{session.client}</span>
           {session.repoFullName && <span class="as-row-repo">{session.repoFullName}</span>}
           {session.branch && <span class="as-row-branch" title="Branch">⎇ {session.branch}</span>}
+          {session.branch && session.branchPushed === false && !pr && (
+            <span class="as-chip as-chip--unpushed" title="This branch only exists locally — it has not been pushed to any remote yet.">
+              ⚠ Not pushed
+            </span>
+          )}
           {(session.cloudSessions ?? []).slice(0, 3).map((cs, i) => (
             <span key={i} class="as-chip as-chip--model" title={`Copilot cloud agent session: ${cs.model ?? 'unknown model'}`}>
               {cs.model ?? 'session'}{formatCredits(cs.usage) ? ` · ${formatCredits(cs.usage)}` : ''}
@@ -78,6 +96,11 @@ function SessionRow({ entry }: { entry: ActiveSessionEntry }) {
           {(session.cloudSessions?.length ?? 0) > 3 && (
             <span class="as-chip as-chip--model" title={`${session.cloudSessions!.length} Copilot cloud agent sessions`}>
               +{session.cloudSessions!.length - 3} more
+            </span>
+          )}
+          {session.updatedAt && (
+            <span class="as-row-active" title={`Last active ${new Date(session.updatedAt).toLocaleString()}`}>
+              🕒 {formatLastActive(session.updatedAt)}
             </span>
           )}
           {pr && (

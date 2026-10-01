@@ -24,6 +24,11 @@ export interface GitContext {
    * usually lives in the `upstream` repo.
    */
   repoCandidates: string[];
+  /**
+   * Whether a remote-tracking ref with the branch's name exists on any remote
+   * (i.e. the branch was pushed at some point). Null when HEAD is detached.
+   */
+  branchPushed: boolean | null;
 }
 
 interface GitConfigSection {
@@ -96,6 +101,21 @@ function resolveGitDirs(repoRoot: string): { gitDir: string; commonDir: string }
   return { gitDir, commonDir };
 }
 
+function hasRemoteBranch(commonDir: string, remotes: string[], branch: string): boolean {
+  for (const remote of remotes) {
+    if (fs.existsSync(path.join(commonDir, 'refs', 'remotes', remote, ...branch.split('/')))) return true;
+  }
+  const packed = readFileSafe(path.join(commonDir, 'packed-refs'));
+  if (packed) {
+    const refs = new Set(remotes.map((r) => `refs/remotes/${r}/${branch}`));
+    for (const line of packed.split(/\r?\n/)) {
+      const ref = line.split(' ')[1];
+      if (ref && refs.has(ref.trim())) return true;
+    }
+  }
+  return false;
+}
+
 export function resolveGitContext(cwd: string): GitContext | null {
   if (!cwd) return null;
   const repoRoot = findRepoRoot(cwd);
@@ -135,5 +155,6 @@ export function resolveGitContext(cwd: string): GitContext | null {
     upstreamRemote,
     repoFullName: repoCandidates[0] ?? null,
     repoCandidates,
+    branchPushed: branch ? hasRemoteBranch(dirs.commonDir, [...remotes.keys()], branch) : null,
   };
 }
