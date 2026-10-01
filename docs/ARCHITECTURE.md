@@ -1,6 +1,7 @@
 # Jarvis Agent — Architecture Specification
 
-> **Status**: Draft — exploring options before implementation  
+> **Status**: Living document — describes the shipped architecture. Sections marked **Not implemented** (§9, §10) are deferred ideas, not current behaviour. Where this document and the source disagree, the source wins.  
+> **Last verified against source**: 2026-10-01 (storage, encryption, GitHub client, container isolation and task-queue claims; `LATEST_SCHEMA_VERSION = 31`)  
 > **Goal**: A locally-hosted personal assistant agent that runs on Windows, integrates with a local Ollama instance for natural-language understanding, is easy to extend via MCP (Model Context Protocol), and starts with GitHub repository maintenance capabilities.
 
 ---
@@ -44,11 +45,11 @@
 | R11 | Local repo discovery | Scan local directories, correlate with GitHub remotes |
 | R12 | Fast/small unit & integration tests | TypeScript/Node.js for easy test workflow |
 | R13 | Advanced GitHub queries | Secrets scanning, fork analysis, upstream sync checks |
-| R14 | Container isolation | Run tasks in containers to prevent access to local services |
-| R15 | Async actor pattern | Background async checks (rate limits, scheduled tasks) |
+| R14 | Container isolation | **Not implemented** (deferred, see §9) |
+| R15 | Async actor pattern | **Not implemented** (deferred, see §10) |
 | R16 | Cross-repo activity summaries | Find latest PRs/issues across orgs, generate weekly summaries |
 | R17 | Work journal / thought capture | Track things the user has been thinking about or working on |
-| R18 | Full SQLite encryption | Encrypt sensitive data at rest to prevent exfiltration |
+| R18 | Encrypt sensitive data at rest | Field-level AES-256-GCM for tokens/credentials; the database file itself is not encrypted (see §8) |
 | R19 | Claude rate limit awareness | Reuse local Claude Code OAuth credentials to track Pro/Max subscription usage limits, with a status-bar countdown when limited |
 | R20 | Copilot AI credit budget tracking | Show this month's GitHub Copilot AI credit usage against a user-set monthly budget |
 | R21 | Active agent sessions & PR review readiness | List running Copilot / Claude sessions (local + cloud), link them to their PRs and signal when a PR is ready for human review |
@@ -89,7 +90,7 @@
 │  │                         └──────────────────────────────────┘  ││
 │  │                                                              ││
 │  │  ┌────────────────────────────────────────────────────────┐  ││
-│  │  │       Local Storage (SQLite — encrypted via sqleet)    │  ││
+│  │  │       Local Storage (sql.js, AES-256-GCM fields)      │  ││
 │  │  │  ┌────────┐ ┌────────┐ ┌──────────┐ ┌─────────────┐  │  ││
 │  │  │  │ Config │ │Indexes │ │ Local    │ │Conversation │  │  ││
 │  │  │  │        │ │        │ │ Repos    │ │    Log      │  │  ││
@@ -128,6 +129,8 @@
 6. **Async Tasks** — Background actor processes run scheduled tasks (rate-limit checks, weekly summaries, periodic indexing) without blocking the main agent.
 7. **Response** — Results are optionally summarized by Ollama and returned to the user.
 
+> **Not implemented:** the `Async Tasks` box and the Container Runtime (Docker) block in this diagram are deferred designs (§9, §10). Neither exists in `src/`.
+
 ---
 
 ## 3. Runtime & Language implementation in TypeScript / Node.js
@@ -136,8 +139,8 @@
 |--------|---------|
 | **Ollama SDK** | [`ollama-js`](https://github.com/ollama/ollama-js) — official |
 | **MCP SDK** | [`@modelcontextprotocol/sdk`](https://www.npmjs.com/package/@modelcontextprotocol/sdk) — official |
-| **GitHub SDK** | [`octokit`](https://github.com/octokit/octokit.js) |
-| **Storage** | `better-sqlite3`, `sql.js`, or `lowdb` |
+| **GitHub client** | Native `fetch` against the GitHub REST API plus a hand-written OAuth Device Flow (`src/services/github-oauth.ts`, `src/services/github-discovery.ts`); no `octokit` dependency |
+| **Storage** | [`sql.js`](https://github.com/sql-js/sql.js) (SQLite compiled to WASM, persisted to `jarvis.db`) |
 | **Windows startup** | `node-windows` service, Task Scheduler, or bundled with `pkg` |
 | **Plugin model** | MCP servers as subprocesses; dynamic `import()` |
 | **Pros** | Strong MCP SDK support; good async model; easy to bundle |
@@ -319,9 +322,10 @@ new Notification({
 const token = await pollForToken(clientId, device_code);
 await db.saveGitHubToken(token); // encrypted with AES-256-GCM before storage
 
-// Now discover orgs and repos
-const orgs = await octokit.orgs.listForAuthenticatedUser();
-const repos = await octokit.repos.listForAuthenticatedUser({ per_page: 100 });
+// Now discover orgs and repos with plain fetch calls (see src/services/github-discovery.ts)
+const headers = { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' };
+const orgs = await (await fetch('https://api.github.com/user/orgs', { headers })).json();
+const repos = await (await fetch('https://api.github.com/user/repos?per_page=100', { headers })).json();
 ```
 
 ### Onboarding State Machine
@@ -462,264 +466,64 @@ The agent automatically discovers the new tools and makes them available for Oll
 ### Requirements
 
 - Store agent configuration and preferences.
-- Store indexed data (repos, orgs, maintenance schedules).
+- Store indexed data (repos, orgs, notifications, workflow runs, agent sessions, and so on).
 - Store conversation history for context.
-- Support querying and updating from both the agent and MCP servers.
+- Protect secrets (OAuth tokens, PATs, Claude credentials) at rest.
 
-### Option A: SQLite
+### Implementation: sql.js
 
-| Aspect | Details |
-|--------|---------|
-| **Format** | Single file database |
-| **Location** | `%APPDATA%/jarvis/jarvis.db` |
-| **Query support** | Full SQL |
-| **Concurrency** | WAL mode supports concurrent reads |
-| **Pros** | Battle-tested; zero-config; queryable; single file backup |
-| **Cons** | Needs a library (but available in all languages) |
-
-**Suggested schema (initial)**:
-
-```sql
--- Agent configuration
-CREATE TABLE config (
-    key   TEXT PRIMARY KEY,
-    value TEXT NOT NULL
-);
-
--- Onboarding state
-CREATE TABLE onboarding (
-    step         TEXT PRIMARY KEY,  -- 'ollama', 'local_repos', 'github_oauth'
-    status       TEXT DEFAULT 'pending',  -- 'pending', 'completed', 'skipped'
-    completed_at DATETIME
-);
-
--- GitHub OAuth session
--- Tokens are encrypted at the application layer using AES-256-GCM
--- with a key derived from JARVIS_ENCRYPTION_KEY (see Configuration section)
-CREATE TABLE github_auth (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    login         TEXT NOT NULL UNIQUE,
-    access_token  TEXT NOT NULL,  -- AES-256-GCM encrypted
-    refresh_token TEXT,           -- AES-256-GCM encrypted
-    scopes        TEXT,
-    created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
-    expires_at    DATETIME
-);
-
--- GitHub organizations being tracked
-CREATE TABLE github_orgs (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    login      TEXT NOT NULL UNIQUE,
-    name       TEXT,
-    indexed_at DATETIME,
-    metadata   TEXT  -- JSON blob for flexible fields
-);
-
--- GitHub repositories index (remote)
-CREATE TABLE github_repos (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    org_id          INTEGER REFERENCES github_orgs(id),
-    full_name       TEXT NOT NULL UNIQUE,
-    name            TEXT NOT NULL,
-    description     TEXT,
-    default_branch  TEXT,
-    language        TEXT,
-    archived        INTEGER DEFAULT 0,
-    fork            INTEGER DEFAULT 0,
-    parent_full_name TEXT,           -- upstream repo if this is a fork
-    private         INTEGER DEFAULT 0,
-    last_pushed_at  DATETIME,
-    last_updated_at DATETIME,
-    indexed_at      DATETIME,
-    metadata        TEXT  -- JSON blob for flexible fields
-);
-
--- Local repository clones
-CREATE TABLE local_repos (
-    id             INTEGER PRIMARY KEY AUTOINCREMENT,
-    local_path     TEXT NOT NULL UNIQUE,
-    remote_url     TEXT,
-    github_repo_id INTEGER REFERENCES github_repos(id),
-    discovered_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
-    last_scanned   DATETIME
-);
-CREATE INDEX idx_local_repos_github_repo_id ON local_repos(github_repo_id);
-
--- Conversation / interaction log
-CREATE TABLE conversations (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    timestamp  DATETIME DEFAULT CURRENT_TIMESTAMP,
-    role       TEXT NOT NULL,  -- 'user' or 'assistant'
-    content    TEXT NOT NULL,
-    tool_calls TEXT  -- JSON blob of any tool calls made
-);
-
--- Task history
-CREATE TABLE task_history (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    timestamp   DATETIME DEFAULT CURRENT_TIMESTAMP,
-    task_type   TEXT NOT NULL,
-    description TEXT,
-    status      TEXT DEFAULT 'pending',  -- pending, running, completed, failed
-    result      TEXT  -- JSON blob
-);
-
--- Activity log (PRs, issues, commits, reviews across all repos)
-CREATE TABLE activity_log (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    github_user TEXT NOT NULL,
-    activity_type TEXT NOT NULL,  -- 'pr_opened', 'pr_merged', 'issue_opened', 'issue_closed', 'review', 'commit'
-    repo_full_name TEXT NOT NULL,
-    org_login   TEXT,
-    title       TEXT,
-    url         TEXT NOT NULL,
-    state       TEXT,            -- 'open', 'closed', 'merged'
-    created_at  DATETIME,
-    updated_at  DATETIME,
-    fetched_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
-    metadata    TEXT             -- JSON blob for extra fields
-);
-CREATE INDEX idx_activity_log_type ON activity_log(activity_type);
-CREATE INDEX idx_activity_log_created ON activity_log(created_at);
-CREATE INDEX idx_activity_log_repo ON activity_log(repo_full_name);
-
--- Work journal (manual or captured thoughts, notes, topics)
-CREATE TABLE work_journal (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    timestamp   DATETIME DEFAULT CURRENT_TIMESTAMP,
-    content     TEXT NOT NULL,
-    source      TEXT DEFAULT 'manual',  -- 'manual', 'auto_captured', 'pr_context', 'conversation'
-    tags        TEXT,                    -- JSON array of tags
-    week_number INTEGER,                -- ISO week number for easy weekly grouping
-    year        INTEGER
-);
-
--- Weekly summaries (generated)
-CREATE TABLE weekly_summaries (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    week_number INTEGER NOT NULL,
-    year        INTEGER NOT NULL,
-    generated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    summary     TEXT NOT NULL,         -- Markdown-formatted summary
-    pr_count    INTEGER DEFAULT 0,
-    issue_count INTEGER DEFAULT 0,
-    repos_touched INTEGER DEFAULT 0,
-    metadata    TEXT,                   -- JSON blob for detailed stats
-    UNIQUE(week_number, year)
-);
-
--- Async task queue
-CREATE TABLE async_tasks (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    task_type    TEXT NOT NULL,          -- 'rate_limit_check', 'secrets_scan', 'weekly_summary', 'index_repos'
-    schedule     TEXT,                   -- cron expression or 'once'
-    status       TEXT DEFAULT 'pending', -- 'pending', 'running', 'completed', 'failed', 'scheduled'
-    priority     INTEGER DEFAULT 0,
-    payload      TEXT,                   -- JSON blob with task parameters
-    result       TEXT,                   -- JSON blob with task output
-    error        TEXT,
-    created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
-    started_at   DATETIME,
-    completed_at DATETIME,
-    next_run_at  DATETIME
-);
-CREATE INDEX idx_async_tasks_status ON async_tasks(status);
-CREATE INDEX idx_async_tasks_next_run ON async_tasks(next_run_at);
-
--- Secrets scan results
-CREATE TABLE secrets_scan_results (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    repo_full_name  TEXT NOT NULL,
-    secret_type     TEXT NOT NULL,       -- 'pat', 'api_key', 'password', 'token', etc.
-    secret_name     TEXT,
-    location        TEXT,               -- file path or secret name
-    alert_state     TEXT,               -- 'open', 'resolved', 'dismissed'
-    alert_url       TEXT,
-    scanned_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
-    metadata        TEXT                -- JSON blob
-);
-CREATE INDEX idx_secrets_scan_repo ON secrets_scan_results(repo_full_name);
-```
-
-### Option B: JSON File Storage
+Jarvis uses [`sql.js`](https://github.com/sql-js/sql.js) (SQLite compiled to WebAssembly), not `better-sqlite3`. This avoids native module rebuilds for Electron. The whole database is held in memory and written back to disk as a single file by `saveDatabase()` (`src/storage/database.ts`).
 
 | Aspect | Details |
 |--------|---------|
-| **Format** | JSON files in a directory |
-| **Location** | `%APPDATA%/jarvis/data/` |
-| **Query support** | Manual parsing |
-| **Pros** | Human-readable; no dependencies; easy to edit manually |
-| **Cons** | No query language; poor performance at scale; no concurrency control |
+| **Engine** | `sql.js` (in-memory SQLite, serialized to a file) |
+| **Location** | `%APPDATA%\Jarvis\jarvis.db` (config directory overridable with `JARVIS_CONFIG_DIR`) |
+| **Schema** | Base schema in `src/storage/schema.ts` (`getSchema()`); forward-only migrations in `initializeSchema()` in `src/storage/database.ts`, tracked with `PRAGMA user_version` |
+| **Current version** | `LATEST_SCHEMA_VERSION = 31` |
+| **Tests** | `createMemoryDatabase()` provides an in-memory database |
 
-### Option C: SQLite + MCP Memory Server
+The database is **not** encrypted as a whole: there is no sqleet or SQLCipher. Anyone with read access to `jarvis.db` can read non-secret data such as repo metadata and conversation history.
 
-Use SQLite for structured data (repos, config) **and** the MCP Memory server for knowledge-graph style memory (learned preferences, entity relationships).
+### Schema
 
-This hybrid approach gives the best of both worlds:
-- SQLite for queryable, structured indexes.
-- Memory MCP server for flexible, evolving knowledge.
+The schema in `src/storage/schema.ts` is the source of truth; do not copy table definitions into this document. The main table groups are:
 
-### Recommendation
+| Area | Tables |
+|------|--------|
+| Core | `config`, `onboarding`, `conversations`, `task_history` |
+| GitHub | `github_auth`, `github_orgs`, `github_repos`, `github_notifications`, `github_workflow_runs`, `github_workflow_jobs` |
+| Local repos | `local_scan_folders`, `local_repos`, `local_repo_remotes` |
+| Agents and sessions | `agent_definitions`, `agent_sessions`, `agent_findings`, `pr_readiness` |
+| Secrets | `repo_secrets`, `secret_scan_favorites` |
+| Groups | `groups`, `group_local_repos`, `group_github_repos` |
+| OneDrive / OneNote | `onedrive_roots`, `onedrive_customer_folders`, `onedrive_files`, `onedrive_onenote_cache` |
+| Other | `ruddr_projects`, `ruddr_budgets`, `browser_skills`, `browser_skill_runs`, `auto_dismiss_log` |
 
-**Start with SQLite** (Option A) for all storage. It is simple, requires no external services, and supports the query patterns needed for repo indexing. Consider adding the **MCP Memory server** (Option C) later for more advanced knowledge management.
+There is no `async_tasks`, `activity_log` or weekly-summary table; those designs (§10, §11) were not built.
 
-### Full-Database Encryption
+### Field-Level Encryption (AES-256-GCM)
 
-To prevent exfiltration or misuse of the SQLite database (which contains OAuth tokens, repo metadata, activity data, and conversation history), the entire database should be encrypted at rest.
+Sensitive values are encrypted by the application before they are written to a column or to `config` (`src/storage/encryption.ts`):
 
-#### Option A: sqleet (recommended)
-
-[`sqleet`](https://github.com/nickolasburr/sqleet) is a transparent encryption layer for SQLite using ChaCha20-Poly1305. The `better-sqlite3` package can be compiled against sqleet to enable transparent encryption:
-
-```typescript
-import Database from 'better-sqlite3';
-
-// Open encrypted database — all data is encrypted/decrypted transparently
-const db = new Database('%APPDATA%/jarvis/jarvis.db', {
-  // better-sqlite3 compiled with sqleet support
-});
-db.pragma(`key='${encryptionKey}'`);
-```
-
-#### Option B: SQLCipher
-
-[SQLCipher](https://www.zetetic.net/sqlcipher/) is the most widely-used SQLite encryption extension, using AES-256-CBC. Available via [`better-sqlite3-sqlcipher`](https://www.npmjs.com/package/@journeyapps/sqlcipher) or similar forks.
-
-```typescript
-import Database from 'better-sqlite3';
-
-const db = new Database('%APPDATA%/jarvis/jarvis.db');
-db.pragma(`key='${encryptionKey}'`);  // AES-256 encryption
-```
-
-#### Comparison
-
-| | sqleet | SQLCipher |
-|--|--------|-----------|
-| Algorithm | ChaCha20-Poly1305 | AES-256-CBC |
-| License | Public domain | BSD (community) / Commercial |
-| Performance | Faster on systems without AES-NI | Faster with hardware AES |
-| npm integration | Requires custom build | `@journeyapps/sqlcipher` available |
-| Maturity | ⭐⭐ | ⭐⭐⭐ |
-
-#### Key Management
-
-The database encryption key is derived from the master key stored in **Windows Credential Manager** (same key used for OAuth token encryption — see [Configuration](#13-configuration)). If no key exists on first run, the agent generates a 256-bit random key and stores it in Credential Manager automatically.
+- `encrypt(plaintext, key)` uses AES-256-GCM with a random 16-byte IV and returns base64 of `IV + ciphertext + auth tag`; `decrypt()` reverses it.
+- Encrypted values today: GitHub OAuth access token (`github_auth.access_token`), GitHub PAT (`github_auth.pat`), and Claude OAuth credentials (stored in `config`; `src/plugins/claude/handler.ts`).
+- If decryption fails (for example the key changed), the loaders return `null` and the user is asked to re-authenticate.
+- The key comes from `getEncryptionKey()`; see [Encryption Key Management](#encryption-key-management) in §13.
 
 ### Storage Location
 
-Use the Windows standard application data directory:
-
 ```
-%APPDATA%/jarvis/
-├── jarvis.db          # SQLite database
-├── config.json        # MCP server configuration
-└── logs/              # Application logs
+%APPDATA%\Jarvis\
+├── jarvis.db               # sql.js database file
+├── keystore.bin            # Encryption key, protected by Electron safeStorage
+└── keystore.fallback.bin   # CSPRNG key used when safeStorage is unavailable
 ```
 
 ---
 
 ## 9. Container Isolation
+
+> **Not implemented — deferred.** There is no Dockerfile, container manager or sandbox code in this repository. Everything below is a design idea, kept for reference only. Do not plan work as if any of it exists.
 
 ### Motivation
 
@@ -813,6 +617,8 @@ Start with **all tasks running locally** (Phase 1-8). Add container isolation as
 
 ## 10. Async Actor Pattern
 
+> **Not implemented — deferred.** There is no task queue, scheduler, worker pool or `async_tasks` table. Periodic work today is done by individual plugins using their own timers (for example the rate-limit, Copilot usage and PR readiness checks). Everything below is a design idea, kept for reference only.
+
 ### Motivation
 
 Many tasks are long-running, periodic, or should not block the main agent loop:
@@ -880,7 +686,7 @@ interface RateLimitState {
 }
 
 // Before making GitHub API calls
-const rateLimits = await checkRateLimits(octokit);
+const rateLimits = await checkRateLimits(token); // wraps GET /rate_limit via fetch
 if (rateLimits.core.remaining < 100) {
   await pauseUntil(rateLimits.core.resetAt);
   notify('GitHub API rate limit low — pausing operations until reset.');
@@ -895,8 +701,10 @@ For users with GitHub App installations (higher rate limits), the agent can use 
 // GitHub App installation tokens: 5000 req/hr (or 15000 for GitHub Enterprise Cloud)
 // OAuth user tokens: 5000 req/hr — but App tokens can access org-level resources
 // the user's OAuth token may not have scope for
-const appOctokit = new Octokit({ auth: installationToken });
-const rateLimit = await appOctokit.rest.rateLimit.get();
+const res = await fetch('https://api.github.com/rate_limit', {
+  headers: { Authorization: `Bearer ${installationToken}` },
+});
+const rateLimit = await res.json();
 ```
 
 ### Task Lifecycle
@@ -935,29 +743,19 @@ The user wants to:
 The agent periodically fetches activity from GitHub using the Events API and Search API:
 
 ```typescript
+// Illustrative helper: GET https://api.github.com/search/issues?... via fetch
+// (there is no octokit dependency)
+const search = (q: string, sort: string) =>
+  githubGet(`/search/issues?${new URLSearchParams({ q, sort, order: 'desc', per_page: '100' })}`);
+
 // Fetch recent PRs authored by the user across all repos
-const prs = await octokit.search.issuesAndPullRequests({
-  q: `author:${username} type:pr created:>=${oneWeekAgo}`,
-  sort: 'created',
-  order: 'desc',
-  per_page: 100,
-});
+const prs = await search(`author:${username} type:pr created:>=${oneWeekAgo}`, 'created');
 
 // Fetch recent issues
-const issues = await octokit.search.issuesAndPullRequests({
-  q: `author:${username} type:issue created:>=${oneWeekAgo}`,
-  sort: 'created',
-  order: 'desc',
-  per_page: 100,
-});
+const issues = await search(`author:${username} type:issue created:>=${oneWeekAgo}`, 'created');
 
 // Fetch reviews the user participated in
-const reviews = await octokit.search.issuesAndPullRequests({
-  q: `reviewed-by:${username} type:pr updated:>=${oneWeekAgo}`,
-  sort: 'updated',
-  order: 'desc',
-  per_page: 100,
-});
+const reviews = await search(`reviewed-by:${username} type:pr updated:>=${oneWeekAgo}`, 'updated');
 ```
 
 ### Work Journal
@@ -1109,16 +907,14 @@ async function analyzeStaleForksWithUpstream(username: string, staleDays: number
   const forks = await db.getForkedRepos(username, { staleDays });
 
   for (const fork of forks) {
-    const parent = await octokit.repos.get({ owner: fork.owner, repo: fork.name });
+    const parent = await githubGet(`/repos/${fork.owner}/${fork.name}`); // illustrative fetch wrapper
     if (!parent.data.parent) continue;
 
     const upstream = parent.data.parent;
-    const comparison = await octokit.repos.compareCommits({
-      owner: upstream.owner.login,
-      repo: upstream.name,
-      base: `${fork.owner}:${fork.default_branch}`,
-      head: `${upstream.owner.login}:${upstream.default_branch}`,
-    });
+    const comparison = await githubGet(
+      `/repos/${upstream.owner.login}/${upstream.name}/compare/` +
+      `${fork.owner}:${fork.default_branch}...${upstream.owner.login}:${upstream.default_branch}`,
+    );
 
     await db.updateForkAnalysis(fork.id, {
       upstreamFullName: upstream.full_name,
@@ -1285,11 +1081,17 @@ Sensitive values (tokens, keys) should come from environment variables, never st
 | `GITHUB_TOKEN` | GitHub access token (fallback if OAuth not used) |
 | `JARVIS_CONFIG_DIR` | Override default config directory |
 | `OLLAMA_HOST` | Override Ollama URL |
-| `JARVIS_ENCRYPTION_KEY` | Master key for encrypting the SQLite database and OAuth tokens at rest |
+| `JARVIS_ENCRYPTION_KEY` | Optional override for the field-encryption key (used by tests and CI); a scrypt-derived 256-bit key |
 
 #### Encryption Key Management
 
-`JARVIS_ENCRYPTION_KEY` is used as the master key for full SQLite database encryption (via sqleet/SQLCipher — see [Section 8](#8-local-storage)) and for application-layer encryption of especially sensitive fields. On first run, if no key is set, the agent generates a 256-bit (32-byte) random key and stores it in **Windows Credential Manager** (via `keytar` or `node-keychain`) so the user never has to manage it manually. This keeps the key out of environment variables and config files for most users while allowing advanced users to override via the environment variable.
+Sensitive fields (OAuth tokens, PAT, Claude credentials) are encrypted with AES-256-GCM at the application layer; the database file itself is not encrypted (see [Section 8](#8-local-storage)). `getEncryptionKey()` in `src/storage/encryption.ts` resolves the 32-byte key in this order:
+
+1. **`JARVIS_ENCRYPTION_KEY` environment variable**: if set, the key is derived from it with scrypt. Intended for tests and CI.
+2. **Electron `safeStorage`**: when `safeStorage.isEncryptionAvailable()` is true, a random key is generated once, encrypted by the OS credential store (DPAPI on Windows, Keychain on macOS, libsecret on Linux) and persisted as `keystore.bin` in the config directory.
+3. **File fallback**: outside Electron, or when `safeStorage` is unavailable, a CSPRNG key is persisted unencrypted as `keystore.fallback.bin` (mode `0o600`). This is weaker, because protection relies on file permissions only.
+
+If a key file is unreadable or corrupted, a new key is generated and previously encrypted values fail to decrypt, so the user must re-authenticate. There is no `keytar` or `node-keychain` dependency and Windows Credential Manager is not used.
 
 ---
 
@@ -1302,8 +1104,8 @@ Sensitive values (tokens, keys) should come from environment variables, never st
 | **GUI shell** | Electron | System tray, notifications, startup on boot, web UI |
 | **LLM** | Ollama (local) via `ollama` package | Official SDK, tool calling support |
 | **MCP** | `@modelcontextprotocol/sdk` | Official SDK, act as MCP client |
-| **Storage** | SQLite via `better-sqlite3` | Synchronous API, fast, reliable |
-| **GitHub API** | `octokit` + GitHub OAuth Device Flow | Official SDK, frictionless auth |
+| **Storage** | SQLite via `sql.js` (WASM) | No native module rebuilds for Electron; persisted to a single file |
+| **GitHub API** | Native `fetch` + hand-written GitHub OAuth Device Flow | No SDK dependency, frictionless auth |
 | **Testing** | Vitest | Fast, TypeScript-native, good DX |
 | **Packaging** | `electron-builder` | Installers, auto-update, code signing |
 | **Config** | JSON files | Human-readable, easy to edit |
@@ -1333,10 +1135,10 @@ jarvis/
 │   ├── mcp/
 │   │   └── client.ts                # MCP client hub
 │   ├── storage/
-│   │   ├── database.ts              # SQLite operations (encrypted)
+│   │   ├── database.ts              # sql.js database, migrations
 │   │   ├── schema.ts                # Table definitions & migrations
-│   │   └── encryption.ts            # Key management (Credential Manager)
-│   ├── tasks/                       # Async actor task runner
+│   │   └── encryption.ts            # AES-256-GCM + key management (safeStorage)
+│   ├── tasks/                       # NOT IMPLEMENTED (deferred, §10)
 │   │   ├── runner.ts                # Task queue & worker pool
 │   │   ├── scheduler.ts             # Cron-based scheduling
 │   │   ├── rate-limit-monitor.ts    # GitHub API rate limit tracking
@@ -1348,7 +1150,7 @@ jarvis/
 │   │   ├── secrets-scanner.ts       # Secrets/PAT scanning
 │   │   ├── fork-analyzer.ts         # Fork analysis & upstream sync
 │   │   └── activity-tracker.ts      # PR/issue/review tracking
-│   └── container/                   # Container isolation
+│   └── container/                   # NOT IMPLEMENTED (deferred, §9)
 │       ├── docker-manager.ts        # Docker container lifecycle
 │       └── sandbox-entry.ts         # Entry point for sandboxed tasks
 ├── tests/
@@ -1374,7 +1176,7 @@ jarvis/
 │   └── default.json                 # Default configuration
 ├── docs/
 │   └── ARCHITECTURE.md              # This document
-├── Dockerfile                       # Sandbox container image
+├── Dockerfile                       # NOT IMPLEMENTED (deferred, §9)
 ├── package.json
 ├── tsconfig.json
 ├── vitest.config.ts
@@ -1388,16 +1190,16 @@ jarvis/
 | Phase | Scope | Outcome |
 |-------|-------|---------|
 | **Phase 1** | Electron shell + system tray + startup on boot | App launches silently on login with tray icon |
-| **Phase 2** | SQLite storage (encrypted) + config loading | Persistent encrypted state, onboarding tracking |
+| **Phase 2** | sql.js storage + field-level encryption + config loading | Persistent state, encrypted secrets, onboarding tracking |
 | **Phase 3** | Ollama discovery + model selection | Detects Ollama, user selects model, notification-driven |
 | **Phase 4** | Local repo scanning | Scans directories for `.git` repos, indexes into SQLite |
 | **Phase 5** | GitHub OAuth + org/repo indexing | Device Flow login, discover orgs/repos, correlate with local |
 | **Phase 6** | MCP client integration | Can connect to MCP servers, expose tools to Ollama |
 | **Phase 7** | Chat / prompt UI + Ollama routing | Natural-language prompts dispatched to MCP tools |
-| **Phase 8** | Async task runner + scheduling | Background task queue with cron scheduling |
+| **Phase 8** | Async task runner + scheduling (**not implemented**) | Background task queue with cron scheduling |
 | **Phase 9** | Activity tracking + weekly summaries | Cross-repo PR/issue tracking, work journal, generated summaries |
 | **Phase 10** | Secrets scanning + fork analysis | Scan for exposed secrets, analyze fork upstream divergence |
-| **Phase 11** | Container isolation | Optional sandboxed execution for security-sensitive tasks |
+| **Phase 11** | Container isolation (**not implemented**) | Optional sandboxed execution for security-sensitive tasks |
 | **Phase 12** | Advanced maintenance tasks | Stale repo detection, dependency audits, branch cleanup |
 
 ---
@@ -1509,14 +1311,18 @@ The `active-sessions-readiness` background task (`src/main/background-tasks.ts`)
 | Language/runtime | **TypeScript / Node.js** | Easy unit/integration tests, mature SDKs |
 | GUI host | **Electron** | System tray, notifications, startup on boot, web UI |
 | Windows startup method | **Electron `openAtLogin`** | Registry-based, no Task Scheduler needed |
-| Storage engine | **SQLite** (`better-sqlite3`) | Battle-tested, zero config, queryable |
-| Database encryption | **sqleet or SQLCipher** | Full-database encryption to prevent exfiltration |
-| GitHub authentication | **OAuth Device Flow** | Frictionless browser-based login |
+| Storage engine | **SQLite via `sql.js`** | Zero config, queryable, no native rebuilds |
+| Secret encryption | **AES-256-GCM field encryption, key in Electron `safeStorage`** | Protects tokens at rest; whole-database encryption was not adopted |
+| GitHub authentication | **OAuth Device Flow** (native `fetch`, no `octokit`) | Frictionless browser-based login |
 | MCP server approach | **Pre-built server first** | Quick start, move to hybrid later |
 | Ollama model | **User selects at onboarding** | Detected from local Ollama installation |
 | Testing framework | **Vitest** | Fast, TypeScript-native |
-| Async task execution | **Actor-style task runner** | Background queue with cron scheduling, rate-limit aware |
-| Container isolation | **Docker (opt-in)** | Sandboxed execution for security-sensitive tasks |
+| Async task execution | **Deferred (not implemented)** | Actor-style task runner idea, see §10 |
+| Container isolation | **Deferred (not implemented)** | Docker sandboxing idea, see §9 |
 | Activity summaries | **Weekly generated summaries** | Cross-repo PR/issue/review aggregation + work journal |
 | Agent session discovery | **Read local session stores directly** | ai-engineering-fluency npm package has no per-session/liveness output yet; swap in when it does |
 | PR review readiness | **Checks completed + Copilot review on head commit** | Failed checks don't block; stale Copilot review does; agent activity is informational |
+
+---
+
+_Last verified against source: 2026-10-01 (origin/main 4056acc)._
