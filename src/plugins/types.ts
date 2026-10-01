@@ -796,6 +796,10 @@ export interface ActiveAgentSession {
   /** Individual cloud-agent sessions inside the cloud task (usage per session). */
   cloudSessions?: import('../services/copilot-agent-tasks').CloudTaskSession[];
   pid?: number | null;
+  /** PR the agent itself reported creating/opening (e.g. Claude Code `pr-link` transcript entries). */
+  /** False when the session's local branch exists on no remote (never pushed) — a signal the work is not on GitHub yet. */
+  branchPushed?: boolean | null;
+  linkedPr?: { repoFullName: string; number: number } | null;
 }
 export interface ReadinessStage {
   light: ReadinessLight;

@@ -60,7 +60,23 @@ describe('resolveGitContext', () => {
       upstreamRemote: 'origin',
       repoFullName: 'me/repo',
       repoCandidates: ['me/repo', 'org/repo'],
+      branchPushed: false,
     });
+  });
+
+  it('reports a branch as pushed when a remote-tracking ref exists (loose or packed)', () => {
+    const repo = path.join(root, 'pushed');
+    fs.mkdirSync(path.join(repo, '.git', 'refs', 'remotes', 'origin'), { recursive: true });
+    fs.writeFileSync(path.join(repo, '.git', 'HEAD'), 'ref: refs/heads/fix-bug\n');
+    fs.writeFileSync(path.join(repo, '.git', 'config'), CONFIG);
+    expect(resolveGitContext(repo)?.branchPushed).toBe(false);
+
+    fs.writeFileSync(path.join(repo, '.git', 'refs', 'remotes', 'origin', 'fix-bug'), 'abc\n');
+    expect(resolveGitContext(repo)?.branchPushed).toBe(true);
+
+    fs.rmSync(path.join(repo, '.git', 'refs', 'remotes', 'origin', 'fix-bug'));
+    fs.writeFileSync(path.join(repo, '.git', 'packed-refs'), '# pack-refs\nabc refs/remotes/origin/fix-bug\n');
+    expect(resolveGitContext(repo)?.branchPushed).toBe(true);
   });
 
   it('follows a linked worktree .git file to its gitdir and common config', () => {

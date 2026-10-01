@@ -8,6 +8,8 @@ import {
   discoverClaudeLocalSessions,
   discoverCopilotLocalSessions,
   encodeClaudeProjectDir,
+  findCopilotPrLinkInText,
+  findPrLinkInText,
   parseWorkspaceYaml,
   readTail,
   readTailEntries,
@@ -310,5 +312,41 @@ describe('readTail', () => {
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('findPrLinkInText', () => {
+  it('returns the latest pr-link entry and ignores other lines', () => {
+    const text = [
+      JSON.stringify({ type: 'user', message: { content: 'hi' } }),
+      JSON.stringify({ type: 'pr-link', prNumber: 1, prRepository: 'a/b', prUrl: 'u' }),
+      '{"type":"pr-link","partial',
+      JSON.stringify({ type: 'pr-link', prNumber: 2, prRepository: 'a/b', prUrl: 'u' }),
+    ].join('\n');
+    expect(findPrLinkInText(text)).toEqual({ repoFullName: 'a/b', number: 2 });
+  });
+
+  it('returns null when there is none', () => {
+    expect(findPrLinkInText('{"type":"user"}\n')).toBeNull();
+  });
+});
+
+describe('findCopilotPrLinkInText', () => {
+  const start = (id: string, command: string) => JSON.stringify({ type: 'tool.execution_start', data: { toolCallId: id, arguments: { command } } });
+  const done = (id: string, content: string, success = true) => JSON.stringify({ type: 'tool.execution_complete', data: { toolCallId: id, success, result: { content } } });
+
+  it('takes the PR url printed by a successful gh pr create', () => {
+    const text = [
+      start('a', 'gh pr comment 5 --body x'),
+      done('a', 'https://github.com/o/r/pull/5#issuecomment-1'),
+      start('b', 'git push; gh pr create --title t'),
+      done('b', 'Warning: 1 uncommitted change\nhttps://github.com/o/r/pull/39\n<shellId: 3 completed with exit code 0>'),
+    ].join('\n');
+    expect(findCopilotPrLinkInText(text)).toEqual({ repoFullName: 'o/r', number: 39 });
+  });
+
+  it('ignores failed creates and PR urls from other commands', () => {
+    const text = [start('b', 'gh pr create'), done('b', 'https://github.com/o/r/pull/9', false), start('c', 'gh pr view 3'), done('c', 'https://github.com/o/r/pull/3')].join('\n');
+    expect(findCopilotPrLinkInText(text)).toBeNull();
   });
 });

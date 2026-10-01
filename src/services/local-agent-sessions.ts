@@ -356,6 +356,11 @@ export async function discoverCopilotLocalSessions(options: LocalSessionDiscover
       ? readTailEntries(path.join(dir, 'events.jsonl'), (evs) => deriveCopilotActivity(evs, now) !== 'unknown')
       : [];
     const sessionId = ws.id || dirName;
+    const eventsMtime = files.includes('events.jsonl') ? mtimeOf(path.join(dir, 'events.jsonl')) : null;
+    const wsUpdated = toIso(ws.updated_at);
+    const updatedAt = eventsMtime !== null && eventsMtime > (Date.parse(wsUpdated ?? '') || 0)
+      ? new Date(eventsMtime).toISOString()
+      : wsUpdated;
 
     sessions.push({
       key: `local:copilot:${sessionId}`,
@@ -369,13 +374,66 @@ export async function discoverCopilotLocalSessions(options: LocalSessionDiscover
       branch: null,
       activity: deriveCopilotActivity(events, now),
       startedAt: toIso(ws.created_at),
-      updatedAt: toIso(ws.updated_at),
+      updatedAt,
       cloudTaskId: ws.mc_task_id || null,
       pid,
+      linkedPr: files.includes('events.jsonl') ? findCopilotPrLink(path.join(dir, 'events.jsonl')) : null,
     });
   }
 
   return { sessions, mirroredTasks };
+}
+
+const eventsPrCache = new Map<string, { mtimeMs: number; size: number; pr: ActiveAgentSession['linkedPr'] }>();
+
+/**
+ * Latest PR a Copilot session created: the output of a successful `gh pr create`
+ * shell call is the new PR's URL on its own line. Other PR URLs in the log
+ * (reviews, comments on someone else's PR) are deliberately ignored. Exported for tests.
+ */
+export function findCopilotPrLinkInText(text: string): ActiveAgentSession['linkedPr'] {
+  const createCalls = new Set<string>();
+  let found: ActiveAgentSession['linkedPr'] = null;
+  for (const line of text.split('\n')) {
+    const isStart = line.includes('gh pr create');
+    const isComplete = !isStart && line.includes('/pull/') && createCalls.size > 0;
+    if (!isStart && !isComplete) continue;
+    let ev: Record<string, unknown>;
+    try {
+      ev = JSON.parse(line) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    const data = (ev.data ?? {}) as Record<string, unknown>;
+    const id = data.toolCallId;
+    if (typeof id !== 'string') continue;
+    if (ev.type === 'tool.execution_start') {
+      const command = (data.arguments as Record<string, unknown> | undefined)?.command;
+      if (typeof command === 'string' && /\bgh\s+pr\s+create\b/.test(command)) createCalls.add(id);
+    } else if (ev.type === 'tool.execution_complete' && createCalls.has(id) && data.success !== false) {
+      const content = (data.result as Record<string, unknown> | undefined)?.content;
+      const m = typeof content === 'string'
+        ? content.match(/^https:\/\/github\.com\/([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\/pull\/(\d+)\s*$/m)
+        : null;
+      if (m) found = { repoFullName: m[1], number: Number(m[2]) };
+    }
+  }
+  return found;
+}
+
+function findCopilotPrLink(eventsPath: string): ActiveAgentSession['linkedPr'] {
+  let stat: fs.Stats;
+  try {
+    stat = fs.statSync(eventsPath);
+  } catch {
+    return null;
+  }
+  const cached = eventsPrCache.get(eventsPath);
+  if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) return cached.pr;
+  const text = readFileText(eventsPath);
+  const pr = text ? findCopilotPrLinkInText(text) : null;
+  eventsPrCache.set(eventsPath, { mtimeMs: stat.mtimeMs, size: stat.size, pr });
+  return pr;
 }
 
 function readFileText(filePath: string): string | null {
@@ -419,6 +477,37 @@ export function extractClaudeTitle(entries: Array<Record<string, unknown>>): str
     return text.length > 80 ? `${text.slice(0, 79)}…` : text;
   }
   return null;
+}
+
+/**
+ * Latest PR the session reported via a `pr-link` transcript entry. These can
+ * sit anywhere in the file, so unlike the activity tail this scans line by line
+ * (cheap string pre-filter before parsing). Exported for tests.
+ */
+export function findClaudePrLink(transcript: string): ActiveAgentSession['linkedPr'] {
+  let text: string;
+  try {
+    text = fs.readFileSync(transcript, 'utf-8');
+  } catch {
+    return null;
+  }
+  return findPrLinkInText(text);
+}
+
+export function findPrLinkInText(text: string): ActiveAgentSession['linkedPr'] {
+  let found: ActiveAgentSession['linkedPr'] = null;
+  for (const line of text.split('\n')) {
+    if (!line.includes('"pr-link"')) continue;
+    try {
+      const e = JSON.parse(line) as Record<string, unknown>;
+      if (e.type === 'pr-link' && typeof e.prNumber === 'number' && typeof e.prRepository === 'string') {
+        found = { repoFullName: e.prRepository, number: e.prNumber };
+      }
+    } catch {
+      // partial line — skip
+    }
+  }
+  return found;
 }
 
 /** Exported for tests. */
@@ -477,6 +566,8 @@ export async function discoverClaudeLocalSessions(options: LocalSessionDiscovery
 
     let activity: AgentActivity = 'unknown';
     let title: string | null = null;
+    let linkedPr: ActiveAgentSession['linkedPr'] = null;
+    let lastActiveMs: number | null = null;
     if (cwd) {
       const transcript = path.join(home, '.claude', 'projects', encodeClaudeProjectDir(cwd), `${sessionId}.jsonl`);
       const mtime = mtimeOf(transcript);
@@ -490,8 +581,15 @@ export async function discoverClaudeLocalSessions(options: LocalSessionDiscovery
         );
         activity = deriveClaudeActivity(entries, mtime, now);
         title = extractClaudeTitle(entries);
+        lastActiveMs = mtime;
+        linkedPr = findClaudePrLink(transcript);
       }
     }
+    // sessions/<pid>.json is only rewritten on some state changes; the transcript mtime is the real last write.
+    const metaUpdated = toIso(meta.updatedAt as string | number | undefined);
+    const updatedAt = lastActiveMs !== null && lastActiveMs > (Date.parse(metaUpdated ?? '') || 0)
+      ? new Date(lastActiveMs).toISOString()
+      : metaUpdated;
 
     sessions.push({
       key: `local:claude:${sessionId}`,
@@ -505,9 +603,10 @@ export async function discoverClaudeLocalSessions(options: LocalSessionDiscovery
       branch: null,
       activity,
       startedAt: toIso(meta.startedAt as string | number | undefined),
-      updatedAt: toIso(meta.updatedAt as string | number | undefined),
+      updatedAt,
       cloudTaskId: null,
       pid,
+      linkedPr,
     });
   }
   return sessions;

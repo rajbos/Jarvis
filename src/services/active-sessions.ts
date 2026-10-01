@@ -187,7 +187,12 @@ export async function collectActiveSessions(options: CollectActiveSessionsOption
     const git = session.cwd ? resolveGitContext(session.cwd) : null;
     session.repoFullName = git?.repoFullName ?? null;
     session.branch = git?.branch ?? null;
+    session.branchPushed = git?.branchPushed ?? null;
     const lookups: PrLookup[] = [];
+    // A PR the agent reported itself is the most reliable link.
+    if (session.linkedPr) {
+      lookups.push({ kind: 'number', repoFullName: session.linkedPr.repoFullName, number: session.linkedPr.number });
+    }
     // Match on the local branch name: a worktree created from origin/main tracks
     // `main` as its upstream, and stacked branches track their parent branch.
     const branch = git?.branch ?? null;
