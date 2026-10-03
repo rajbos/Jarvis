@@ -4463,6 +4463,34 @@ h5.ec-heading { font-size: 0.9375rem; }
   background: rgba(255, 255, 255, 0.12);
 }
 
+.bg-status-claude-account {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.bg-status-claude-account-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* Same side padding as the rows below, so the dot lines up with their labels */
+  padding: 0.25rem 0.85rem 0;
+  font-weight: 600;
+}
+
+.bg-status-claude-account-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.bg-status-claude-account-host {
+  font-weight: 400;
+  opacity: 0.7;
+  font-size: 0.9em;
+}
+
 .bg-status-claude-checked {
   margin-top: 0.15rem;
   padding: 0.45rem 0.85rem 0.2rem;

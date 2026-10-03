@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'preact/hooks';
 import type { Repo } from '../types';
 import { isIpcError } from '../types';
+import { repoWebUrl } from '../shared/github-urls';
 
 export function SearchBar() {
   const [query, setQuery] = useState('');
@@ -85,7 +86,7 @@ export function SearchBar() {
                   key={repo.full_name}
                   class="search-result-item"
                   onClick={() => {
-                    window.jarvis.openUrl('https://github.com/' + repo.full_name);
+                    window.jarvis.openUrl(repoWebUrl(repo.full_name, repo.host));
                     setShowResults(false);
                   }}
                 >

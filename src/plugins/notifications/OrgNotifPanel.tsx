@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'preact/hooks';
 import { relativeAge, notifDescription, isDirect } from '../shared/utils';
 import type { StoredNotification } from '../types';
+import { apiUrlToWebUrl, repoWebUrl } from '../shared/github-urls';
 
 const TYPE_ICON: Record<string, string> = {
   Issue: '\uD83D\uDC1B',
@@ -15,17 +16,16 @@ const TYPE_ICON: Record<string, string> = {
 async function openNotifUrl(n: StoredNotification): Promise<void> {
   if (n.subject_type === 'CheckSuite' && n.subject_url) {
     const runUrl = await window.jarvis.getRunUrlForCheckSuite(n.subject_url);
-    window.jarvis.openUrl(runUrl ?? `https://github.com/${n.repo_full_name}/actions`);
+    window.jarvis.openUrl(runUrl ?? `${repoWebUrl(n.repo_full_name, n.host)}/actions`);
     return;
   }
   const url = n.subject_url
-    ? n.subject_url
-        .replace('https://api.github.com/repos/', 'https://github.com/')
+    ? apiUrlToWebUrl(n.subject_url)
         .replace(/\/pulls\/(\d+)$/, '/pull/$1')
         .replace(/\/issues\/(\d+)$/, '/issues/$1')
         .replace(/\/commits\/([a-f0-9]+)$/, '/commit/$1')
         .replace(/\/releases\/(\d+)$/, '/releases')
-    : `https://github.com/${n.repo_full_name}`;
+    : repoWebUrl(n.repo_full_name, n.host);
   window.jarvis.openUrl(url);
 }
 
@@ -172,7 +172,7 @@ export function OrgNotifPanel({ title, notifications, loading, onClose, onRefres
           <div
             class="org-item"
             style={{ borderRadius: '6px 6px 0 0', marginBottom: 0, cursor: 'pointer' }}
-            onClick={() => window.jarvis.openUrl('https://github.com/' + repoFullName)}
+            onClick={() => window.jarvis.openUrl(repoWebUrl(repoFullName, items[0]?.host))}
           >
             <span class="org-label">{repoFullName.split('/')[1]}</span>
             <span class="notif-badge">{items.length}</span>

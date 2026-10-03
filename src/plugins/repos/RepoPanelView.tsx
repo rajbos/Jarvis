@@ -2,6 +2,7 @@ import { useState } from 'preact/hooks';
 import { RepoCard } from './RepoCard';
 import { IpcErrorBanner } from '../shared/IpcErrorBanner';
 import type { Repo, NotificationCounts } from '../types';
+import { repoWebUrl } from '../shared/github-urls';
 
 interface RepoPanelViewProps {
   title: string;
@@ -124,7 +125,7 @@ export function RepoPanelView({
                 favorited={favoritedRepos?.has(repo.full_name)}
                 onClick={nc > 0
                   ? () => void onOpenRepoNotif(repo.full_name)
-                  : () => window.jarvis.openUrl('https://github.com/' + repo.full_name)}
+                  : () => window.jarvis.openUrl(repoWebUrl(repo.full_name, repo.host))}
                 onNotifClick={nc > 0 ? (e: MouseEvent) => { e.stopPropagation(); void onOpenRepoNotif(repo.full_name); } : undefined}
                 onToggleFavorite={onToggleFavoriteRepo
                   ? (e: MouseEvent) => { e.stopPropagation(); onToggleFavoriteRepo(repo.full_name); }

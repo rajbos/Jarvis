@@ -3,9 +3,8 @@ import { Notification, BrowserWindow } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import { safeHandle } from '../ipc-utils';
 import { logger } from '../../services/logger';
-import { fetchGitHubUser, loadGitHubAuth, loadGitHubPat } from '../../services/github-oauth';
+import { fetchGitHubUser, getPrimaryGitHubLogin, loadGitHubAuth, loadGitHubPat } from '../../services/github-oauth';
 import {
-  AI_CREDIT_USD,
   currentBillingMonth,
   fetchAiCreditUsage,
   fetchCopilotQuota,
@@ -13,6 +12,7 @@ import {
   projectMonthEndUsage,
   type AiCreditFetchResult,
 } from '../../services/copilot-usage';
+import { quotaToUsage } from './account-usage';
 import { getConfigValue, setConfigValue, saveDatabase } from '../../storage/database';
 import type { CopilotUsage } from '../types';
 
@@ -118,28 +118,15 @@ export async function checkCopilotUsage(
 
   let usage: CopilotUsage | null = null;
 
-  const ghToken = await getGhCliToken();
+  // The primary account's CLI token — not whichever account `gh` has active, or the
+  // flyout would show that account twice and miss the primary. Without a Jarvis
+  // sign-in there is no primary, so the active CLI account is used.
+  const primaryLogin = getPrimaryGitHubLogin(db);
+  const ghToken = await getGhCliToken(primaryLogin ?? undefined);
   if (ghToken) {
     const quotaResult = await fetchCopilotQuota(ghToken);
     if (quotaResult.ok) {
-      const q = quotaResult.quota;
-      const included = q.entitlementCredits === null ? q.creditsUsed : Math.min(q.creditsUsed, q.entitlementCredits);
-      const billed = q.creditsUsed - included;
-      usage = {
-        ...base,
-        resetsAt: q.resetsAt ?? base.resetsAt,
-        configured: true,
-        source: 'gh-cli',
-        login: q.login || auth?.login,
-        plan: q.plan,
-        entitlementCredits: q.entitlementCredits,
-        creditsUsed: q.creditsUsed,
-        includedCreditsUsed: included,
-        billedCredits: billed,
-        billedAmountUsd: Math.round(billed * AI_CREDIT_USD * 100) / 100,
-        byModel: [],
-        projectedCredits: projectMonthEndUsage(q.creditsUsed, period, now),
-      };
+      usage = quotaToUsage(base, quotaResult.quota, period, now, auth?.login ?? primaryLogin ?? undefined);
     } else {
       logger.debug(`[copilot-usage] GitHub CLI quota lookup failed (${quotaResult.error}); falling back to billing report`);
     }

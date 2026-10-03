@@ -4,6 +4,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import type { Page } from 'playwright';
+import type { CopilotUsage, GitHubAccountInfo, GitHubAccountUsage } from '../../src/plugins/types';
 import { useViewHarness, type OpenedView } from './harness/view-harness';
 import {
   GROUP_ACME,
@@ -120,6 +121,149 @@ describe('main window — Setup tab panels', () => {
     await view.page.locator('#claude-step').click();
     await expect.poll(async () => (await view.calls('getClaudeRateLimit')).length).toBeGreaterThan(1);
     await expectCleanRender(view);
+  });
+});
+
+describe('main window — Copilot flyout', () => {
+  it('stacks the other accounts below the primary one', async () => {
+    const view = await harness.open('index');
+    const flyout = view.page.locator('.bg-status-copilot .bg-status-claude-pop');
+    await expect.poll(() => flyout.textContent()).toContain('@test-user-work');
+
+    const text = (await flyout.textContent()) ?? '';
+    // Primary first, then the other accounts with their own usage and budget.
+    expect(text.indexOf('@test-user')).toBeLessThan(text.indexOf('@test-user-work'));
+    expect(text).toContain('4,200 / 5,000 AIC');
+    expect(text).toContain('@fixture-bob');
+    expect(text).toContain('fixture.ghe.com');
+    // The badge says how many more accounts it covers.
+    expect(await view.page.locator('.bg-status-copilot .bg-status-rate-limit').innerText()).toContain('+2');
+    await expectCleanRender(view);
+  });
+
+  it('keeps the single-account flyout unchanged when there are no other accounts', async () => {
+    const view = await harness.open('index', { responses: { getGitHubAccountsUsage: { ok: true, usage: [] } } });
+    const flyout = view.page.locator('.bg-status-copilot .bg-status-claude-pop');
+    await expect.poll(() => flyout.textContent()).toContain('AIC');
+    expect(await flyout.textContent()).not.toContain('@');
+    expect(await view.page.locator('.bg-status-copilot .bg-status-rate-limit').innerText()).not.toContain('+');
+    await expectCleanRender(view);
+  });
+});
+
+/** A tracked account plus a usage result for it, shaped like `getGitHubAccountsUsage` entries. */
+function accountUsage(
+  login: string,
+  usage: Partial<CopilotUsage>,
+  account: Partial<GitHubAccountInfo> = {},
+): GitHubAccountUsage {
+  const d = new Date();
+  return {
+    account: {
+      id: login, host: 'github.com', login, avatarUrl: null, isPrimary: false, sources: ['gh-cli'], ghActive: false, ...account,
+    },
+    usage: {
+      configured: true, source: 'gh-cli', login, plan: 'business', entitlementCredits: 1000,
+      year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, resetsAt: Math.floor(Date.now() / 1000) + 86_400 * 10,
+      creditsUsed: 100, includedCreditsUsed: 100, billedCredits: 0, billedAmountUsd: 0, byModel: [],
+      budgetCredits: null, projectedCredits: null, fetchedAt: d.toISOString(),
+      ...usage,
+    },
+  };
+}
+
+describe('main window — Copilot flyout content', () => {
+  async function openFlyout(others: GitHubAccountUsage[]) {
+    const view = await harness.open('index', { responses: { getGitHubAccountsUsage: { ok: true, usage: others } } });
+    const flyout = view.page.locator('.bg-status-copilot .bg-status-claude-pop');
+    const badge = view.page.locator('.bg-status-copilot .bg-status-rate-limit');
+    return { view, flyout, badge };
+  }
+  const headers = (flyout: ReturnType<Page['locator']>) => flyout.locator('.bg-status-claude-account-head').allInnerTexts();
+
+  it('lists every account once, primary first', async () => {
+    const { view, flyout } = await openFlyout([
+      accountUsage('work-account', {}),
+      accountUsage('guest-account', {}),
+    ]);
+    await expect.poll(async () => (await headers(flyout)).length).toBe(3);
+    expect((await headers(flyout)).map((h) => h.trim())).toEqual(['@test-user', '@work-account', '@guest-account']);
+    await expectCleanRender(view);
+  });
+
+  it('does not repeat the account the main block already shows', async () => {
+    // Same login, different case and as a "other" entry: must not be stacked a second time.
+    const { view, flyout, badge } = await openFlyout([
+      accountUsage('Test-User', {}),
+      accountUsage('work-account', {}),
+    ]);
+    await expect.poll(async () => (await headers(flyout)).length).toBe(2);
+    expect((await headers(flyout)).map((h) => h.trim())).toEqual(['@test-user', '@work-account']);
+    expect(await badge.innerText()).toContain('+1');
+    await expectCleanRender(view);
+  });
+
+  it('leaves out accounts without credentials', async () => {
+    const { flyout, badge } = await openFlyout([
+      accountUsage('no-credentials', { configured: false }),
+      accountUsage('work-account', {}),
+    ]);
+    await expect.poll(() => flyout.textContent()).toContain('@work-account');
+    expect(await flyout.textContent()).not.toContain('no-credentials');
+    expect(await badge.innerText()).toContain('+1');
+  });
+
+  it('shows each account its own numbers: usage, budget left, plan and projection', async () => {
+    const { flyout } = await openFlyout([
+      accountUsage('work-account', {
+        plan: 'enterprise', entitlementCredits: 175_000, creditsUsed: 4_200, includedCreditsUsed: 4_200,
+        budgetCredits: 5_000, projectedCredits: 6_300,
+      }),
+    ]);
+    const block = flyout.locator('.bg-status-claude-account').first();
+    await expect.poll(() => block.textContent()).toContain('@work-account');
+    const text = (await block.textContent()) ?? '';
+    expect(text).toContain('4,200 / 5,000 AIC · 84%'); // the budget is the ceiling
+    expect(text).toContain('800 AIC left'); // 5,000 - 4,200
+    expect(text).toContain('4,200 / 175,000 AIC'); // included vs the plan
+    expect(text).toContain('170,800 left on enterprise');
+    expect(text).toContain('6,300 AIC'); // projection
+    // The primary's numbers must not leak into this block.
+    expect(text).not.toContain('120');
+  });
+
+  it('colours each account by its own level and the badge by the worst one', async () => {
+    const { flyout, badge } = await openFlyout([
+      accountUsage('over-budget', { creditsUsed: 1_200, includedCreditsUsed: 1_000, billedCredits: 200, budgetCredits: 1_000 }),
+      accountUsage('fine', { creditsUsed: 10 }),
+    ]);
+    const over = flyout.locator('.bg-status-claude-account', { hasText: '@over-budget' });
+    const fine = flyout.locator('.bg-status-claude-account', { hasText: '@fine' });
+    await expect.poll(() => over.locator('.bg-status-claude-state--limited').count()).toBe(1);
+    expect(await fine.locator('.bg-status-claude-state--available').count()).toBe(1);
+    // Red: the worst account decides, although the primary itself is healthy.
+    expect(await badge.evaluate((el) => getComputedStyle(el).color)).toBe('rgb(244, 67, 54)');
+  });
+
+  it('shows a failing account as such without hiding the others', async () => {
+    const { flyout } = await openFlyout([
+      accountUsage('broken', { error: 'HTTP 403: nope', creditsUsed: 0 }),
+      accountUsage('work-account', { creditsUsed: 55 }),
+    ]);
+    const broken = flyout.locator('.bg-status-claude-account', { hasText: '@broken' });
+    await expect.poll(() => broken.textContent()).toContain('Check failed: HTTP 403: nope');
+    expect(await broken.textContent()).toContain('No data');
+    expect(await flyout.locator('.bg-status-claude-account', { hasText: '@work-account' }).textContent()).toContain('55 / 1,000 AIC');
+  });
+
+  it('names the host of accounts that are not on github.com', async () => {
+    const { flyout } = await openFlyout([
+      accountUsage('bob', {}, { id: 'bob@corp.ghe.com', host: 'corp.ghe.com', sources: ['pat'] }),
+      accountUsage('work-account', {}),
+    ]);
+    const ghe = flyout.locator('.bg-status-claude-account', { hasText: '@bob' });
+    await expect.poll(() => ghe.textContent()).toContain('corp.ghe.com');
+    expect(await flyout.locator('.bg-status-claude-account', { hasText: '@work-account' }).textContent()).not.toContain('.ghe.com');
   });
 });
 

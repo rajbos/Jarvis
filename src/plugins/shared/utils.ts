@@ -205,14 +205,16 @@ export function hasDeepRepos(parentPath: string, repos: LocalRepo[]): boolean {
 }
 
 /**
- * Parse a git remote URL and extract `owner/repo` for GitHub remotes.
- * Works in the renderer (no node builtins). Returns null for non-GitHub URLs.
+ * Parse a git remote URL and extract `owner/repo` for GitHub remotes on
+ * github.com or a GHE.com host. Works in the renderer (no node builtins).
+ * Returns null for non-GitHub URLs.
  */
 export function normalizeGitHubUrl(url: string): string | null {
   if (!url) return null;
-  const https = url.match(/https?:\/\/(?:[^@]+@)?github\.com\/([^/]+\/[^/]+?)(?:\.git)?\/?$/);
+  const host = '(?:github\\.com|[a-z0-9-]+\\.ghe\\.com)';
+  const https = url.match(new RegExp(`https?://(?:[^@]+@)?${host}/([^/]+/[^/]+?)(?:\\.git)?/?$`, 'i'));
   if (https) return https[1];
-  const ssh = url.match(/git@github\.com:([^/]+\/[^/]+?)(?:\.git)?\/?$/);
+  const ssh = url.match(new RegExp(`git@${host}:([^/]+/[^/]+?)(?:\\.git)?/?$`, 'i'));
   if (ssh) return ssh[1];
   return null;
 }

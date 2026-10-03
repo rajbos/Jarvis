@@ -2,7 +2,8 @@ import type { Database as SqlJsDatabase } from 'sql.js';
 import { saveDatabase } from '../storage/database';
 import { logger } from './logger';
 
-const GITHUB_API_BASE = 'https://api.github.com';
+import { currentApiBase, currentHostContext, hostKey } from './github-host';
+import { recordRepoVisibility } from './github-repo-visibility';
 const PER_PAGE = 100;
 const CALLS_PER_BATCH = 500;
 const BATCH_PAUSE_MS = 10_000; // 10 seconds between batches
@@ -26,6 +27,12 @@ export interface DiscoveryProgress {
   orgsFound: number;
   reposFound: number;
   currentOrg?: string;
+}
+
+/** Options for running discovery as an additional (non-primary) account. */
+export interface DiscoveryOptions {
+  /** Stars belong to the primary account only — don't let another account overwrite them. */
+  skipStarred?: boolean;
 }
 
 export interface OrgInfo {
@@ -134,7 +141,7 @@ async function githubGet<T>(
     ? ` — ${pageNum}/${totalPages} pages`
     : '';
   logger.debug(
-    `[Discovery] ${url.replace(GITHUB_API_BASE, '')}${pageInfo} — ` +
+    `[Discovery] ${url.replace(currentApiBase(), '')}${pageInfo} — ` +
       `rate limit: ${state.lastRateLimit.remaining}/${state.lastRateLimit.limit}`,
   );
 
@@ -251,8 +258,8 @@ export function upsertOrg(
   org: { login: string; name?: string | null; description?: string | null },
 ): number {
   db.run(
-    `INSERT INTO github_orgs (login, name, indexed_at, metadata)
-     VALUES (?, ?, datetime('now'), ?)
+    `INSERT INTO github_orgs (login, name, indexed_at, metadata, host)
+     VALUES (?, ?, datetime('now'), ?, ?)
      ON CONFLICT(login) DO UPDATE SET
        name = excluded.name,
        indexed_at = excluded.indexed_at,
@@ -261,6 +268,7 @@ export function upsertOrg(
       org.login,
       org.name || null,
       org.description ? JSON.stringify({ description: org.description }) : null,
+      currentHostContext().host,
     ],
   );
 
@@ -345,12 +353,13 @@ export function upsertRepo(
   orgId: number | null,
   collaborationReason?: string | null,
 ): void {
+  const ctx = currentHostContext();
   db.run(
     `INSERT INTO github_repos
        (org_id, full_name, name, description, default_branch, language,
         archived, fork, parent_full_name, private,
-        last_pushed_at, last_updated_at, indexed_at, collaboration_reason)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)
+        last_pushed_at, last_updated_at, indexed_at, collaboration_reason, host)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, ?)
      ON CONFLICT(full_name) DO UPDATE SET
        org_id          = excluded.org_id,
        name            = excluded.name,
@@ -379,8 +388,12 @@ export function upsertRepo(
       repo.pushed_at || null,
       repo.updated_at || null,
       collaborationReason || null,
+      ctx.host,
     ],
   );
+  // Discovery runs as an account: remember it can see this repo, so work on the
+  // repo can later pick an account that actually has access.
+  if (ctx.account) recordRepoVisibility(db, hostKey(ctx.host, repo.full_name), ctx.account);
 }
 
 // ─── Org-id resolution for Phase 3 repos ───────────────────────────
@@ -420,6 +433,7 @@ export async function runDiscovery(
   onProgress?: (progress: DiscoveryProgress) => void,
   pat?: string | null,
   userLogin?: string | null,
+  opts: DiscoveryOptions = {},
 ): Promise<DiscoveryState> {
   const state: DiscoveryState = {
     callsSinceLastPause: 0,
@@ -440,7 +454,7 @@ export async function runDiscovery(
 
     const orgs = await fetchAllPages<{ login: string; description?: string | null }>(
       accessToken,
-      `${GITHUB_API_BASE}/user/orgs?per_page=${PER_PAGE}`,
+      `${currentApiBase()}/user/orgs?per_page=${PER_PAGE}`,
       state,
     );
 
@@ -466,7 +480,7 @@ export async function runDiscovery(
       try {
         const patOrgs = await fetchAllPages<{ login: string; description?: string | null }>(
           pat,
-          `${GITHUB_API_BASE}/user/orgs?per_page=${PER_PAGE}`,
+          `${currentApiBase()}/user/orgs?per_page=${PER_PAGE}`,
           state,
         );
         patOnlyOrgs = patOrgs.filter((o) => !oauthOrgLogins.has(o.login.toLowerCase()));
@@ -509,7 +523,7 @@ export async function runDiscovery(
 
       const repos = await fetchAllPages<GitHubRepo>(
         accessToken,
-        `${GITHUB_API_BASE}/orgs/${encodeURIComponent(org.login)}/repos?type=all&per_page=${PER_PAGE}`,
+        `${currentApiBase()}/orgs/${encodeURIComponent(org.login)}/repos?type=all&per_page=${PER_PAGE}`,
         state,
       );
 
@@ -541,7 +555,7 @@ export async function runDiscovery(
       try {
         const repos = await fetchAllPages<GitHubRepo>(
           pat!,
-          `${GITHUB_API_BASE}/orgs/${encodeURIComponent(org.login)}/repos?type=all&per_page=${PER_PAGE}`,
+          `${currentApiBase()}/orgs/${encodeURIComponent(org.login)}/repos?type=all&per_page=${PER_PAGE}`,
           state,
         );
 
@@ -569,7 +583,7 @@ export async function runDiscovery(
 
       const directRepos = await fetchAllPages<GitHubRepo>(
         accessToken,
-        `${GITHUB_API_BASE}/user/repos?affiliation=owner,collaborator,organization_member&per_page=${PER_PAGE}`,
+        `${currentApiBase()}/user/repos?affiliation=owner,collaborator,organization_member&per_page=${PER_PAGE}`,
         state,
       );
 
@@ -625,7 +639,7 @@ export async function runDiscovery(
     }
 
     // ── Phase 4: Starred repos ────────────────────────────────────────
-    if (!state.aborted) {
+    if (!state.aborted && !opts.skipStarred) {
       await fetchStarredRepos(db, accessToken, state, progress, onProgress);
     }
 
@@ -665,6 +679,7 @@ export async function runLightweightRefresh(
   onProgress?: (progress: DiscoveryProgress) => void,
   pat?: string | null,
   userLogin?: string | null,
+  opts: DiscoveryOptions = {},
 ): Promise<void> {
   const state: DiscoveryState = {
     callsSinceLastPause: 0,
@@ -685,7 +700,7 @@ export async function runLightweightRefresh(
 
     const orgs = await fetchAllPages<{ login: string; description?: string | null }>(
       accessToken,
-      `${GITHUB_API_BASE}/user/orgs?per_page=${PER_PAGE}`,
+      `${currentApiBase()}/user/orgs?per_page=${PER_PAGE}`,
       state,
     );
 
@@ -716,7 +731,7 @@ export async function runLightweightRefresh(
 
     const directRepos = await fetchPagesSortedSince(
       accessToken,
-      `${GITHUB_API_BASE}/user/repos?affiliation=owner,collaborator,organization_member&per_page=${PER_PAGE}&sort=updated&direction=desc`,
+      `${currentApiBase()}/user/repos?affiliation=owner,collaborator,organization_member&per_page=${PER_PAGE}&sort=updated&direction=desc`,
       state,
       sinceDate,
     );
@@ -771,7 +786,7 @@ export async function runLightweightRefresh(
     logger.debug(`[LightRefresh] ${directRepos.length} personal + collaborator + org-member repo(s) synced`);
 
     // Fetch starred repos
-    await fetchStarredRepos(db, accessToken, state, progress, onProgress);
+    if (!opts.skipStarred) await fetchStarredRepos(db, accessToken, state, progress, onProgress);
 
     // PAT supplemental pass
     if (pat) {
@@ -814,7 +829,7 @@ export async function fetchStarredRepos(
 
   const starred = await fetchAllPages<GitHubRepo>(
     accessToken,
-    `${GITHUB_API_BASE}/user/starred?per_page=${PER_PAGE}`,
+    `${currentApiBase()}/user/starred?per_page=${PER_PAGE}`,
     state,
   );
 
@@ -873,7 +888,7 @@ export async function resolveCollaborationReason(
     const q = encodeURIComponent(`author:${userLogin} repo:${repoFullName}`);
     const { data } = await githubGet<GitHubSearchResult>(
       accessToken,
-      `${GITHUB_API_BASE}/search/issues?q=${q}&per_page=30`,
+      `${currentApiBase()}/search/issues?q=${q}&per_page=30`,
       state,
     );
 
@@ -1008,7 +1023,7 @@ export async function runPatDiscovery(
   // ── Step 1: Discover orgs via PAT ──────────────────────────────
   const patOrgs = await fetchAllPages<{ login: string; description?: string | null }>(
     pat,
-    `${GITHUB_API_BASE}/user/orgs?per_page=${PER_PAGE}`,
+    `${currentApiBase()}/user/orgs?per_page=${PER_PAGE}`,
     st,
   );
 
@@ -1056,7 +1071,7 @@ export async function runPatDiscovery(
     try {
       const repos = await fetchAllPages<GitHubRepo>(
         pat,
-        `${GITHUB_API_BASE}/orgs/${encodeURIComponent(org.login)}/repos?type=all&per_page=${PER_PAGE}`,
+        `${currentApiBase()}/orgs/${encodeURIComponent(org.login)}/repos?type=all&per_page=${PER_PAGE}`,
         st,
       );
 
@@ -1084,7 +1099,7 @@ export async function runPatDiscovery(
 
     const collabRepos = await fetchAllPages<GitHubRepo>(
       pat,
-      `${GITHUB_API_BASE}/user/repos?affiliation=collaborator&per_page=${PER_PAGE}`,
+      `${currentApiBase()}/user/repos?affiliation=collaborator&per_page=${PER_PAGE}`,
       st,
     );
 

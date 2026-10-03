@@ -18,7 +18,7 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
     const firstPattern = `%${words[0]}%`;
     bindParams.push(firstPattern);
 
-    const sql = `SELECT r.full_name, r.name, r.description, r.language, r.private, r.fork, r.archived, r.collaboration_reason
+    const sql = `SELECT r.full_name, r.name, r.description, r.language, r.private, r.fork, r.archived, r.collaboration_reason, r.host
        FROM github_repos r
        LEFT JOIN github_orgs o ON o.id = r.org_id
        WHERE (${conditions})
@@ -29,7 +29,7 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
        LIMIT 50`;
 
     const stmt = db.prepare(sql);
-    const rows: { full_name: string; name: string; description: string | null; language: string | null; private: number; fork: number; archived: number; collaboration_reason: string | null }[] = [];
+    const rows: { full_name: string; name: string; description: string | null; language: string | null; private: number; fork: number; archived: number; collaboration_reason: string | null; host: string }[] = [];
     try {
       stmt.bind(bindParams);
       while (stmt.step()) rows.push(stmt.getAsObject() as typeof rows[0]);
@@ -49,7 +49,7 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
       stmt = db.prepare(
         `SELECT r.full_name, r.name, r.description, r.language, r.private, r.fork, r.archived,
                 r.default_branch, r.parent_full_name, r.last_pushed_at, r.last_updated_at,
-                r.collaboration_reason
+                r.collaboration_reason, r.host
          FROM github_repos r
          WHERE r.org_id IS NULL
          ORDER BY r.last_pushed_at DESC`,
@@ -59,7 +59,7 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
       stmt = db.prepare(
         `SELECT r.full_name, r.name, r.description, r.language, r.private, r.fork, r.archived,
                 r.default_branch, r.parent_full_name, r.last_pushed_at, r.last_updated_at,
-                r.collaboration_reason
+                r.collaboration_reason, r.host
          FROM github_repos r
          JOIN github_orgs o ON o.id = r.org_id
          WHERE o.login = ?
@@ -79,7 +79,7 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
   safeHandle('github:list-starred', () => {
     const stmt = db.prepare(
       `SELECT full_name, name, description, language, private, fork, archived,
-              default_branch, parent_full_name, last_pushed_at, collaboration_reason
+              default_branch, parent_full_name, last_pushed_at, collaboration_reason, host
        FROM github_repos
        WHERE starred = 1
        ORDER BY last_pushed_at DESC`,

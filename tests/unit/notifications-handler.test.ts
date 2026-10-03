@@ -31,13 +31,21 @@ vi.mock('../../src/storage/database', async (importOriginal) => {
 });
 
 vi.mock('../../src/services/github-oauth', () => ({
-  loadGitHubAuth: vi.fn(() => null),
+  getPrimaryGitHubLogin: vi.fn(() => null),
+}));
+
+vi.mock('../../src/services/github-repo-access', () => ({
+  listAccountsWithAccess: vi.fn(async () => []),
+  accessForRepo: vi.fn(async () => null),
+  accessForOwner: vi.fn(async () => null),
+  accessForAccount: vi.fn(async () => null),
 }));
 
 vi.mock('../../src/services/github-notifications', () => ({
   fetchNotifications: vi.fn().mockResolvedValue([]),
   fetchNotificationsForRepo: vi.fn().mockResolvedValue([]),
-  storeNotifications: vi.fn(),
+  storeNotificationsForAccount: vi.fn(),
+  deleteNotificationsOfUntrackedAccounts: vi.fn(),
   storeNotificationsForOwner: vi.fn(),
   storeNotificationsForRepo: vi.fn(),
   getNotificationCounts: vi.fn().mockReturnValue({ total: 0, perOrg: {}, perRepo: {}, starredTotal: 0, fetchedAt: null }),
@@ -61,7 +69,12 @@ vi.mock('../../src/plugins/notifications/workflow-cache', () => ({
 }));
 
 import { registerHandlers } from '../../src/plugins/notifications/handler';
-import { loadGitHubAuth } from '../../src/services/github-oauth';
+import {
+  listAccountsWithAccess,
+  accessForRepo,
+  accessForOwner,
+  accessForAccount,
+} from '../../src/services/github-repo-access';
 import {
   markNotificationRead,
   deleteNotification,
@@ -80,7 +93,16 @@ function callHandler(channel: string, ...args: unknown[]): unknown {
   return handler(fakeEvent, ...args);
 }
 
-type AuthStub = { accessToken: string; login: string };
+/** Make the (single) tracked account `login` usable with `token`, or none at all. */
+function setAccess(account: { token: string; login: string } | null): void {
+  const access = account
+    ? { id: account.login, host: 'github.com', login: account.login, token: account.token, source: 'oauth' as const, isPrimary: true }
+    : null;
+  vi.mocked(listAccountsWithAccess).mockResolvedValue(access ? [access] : []);
+  vi.mocked(accessForRepo).mockResolvedValue(access);
+  vi.mocked(accessForOwner).mockResolvedValue(access);
+  vi.mocked(accessForAccount).mockResolvedValue(access);
+}
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
@@ -98,7 +120,7 @@ describe('Notifications plugin — IPC handlers', () => {
 
     registerHandlers(db, () => null);
 
-    vi.mocked(loadGitHubAuth).mockReturnValue(null);
+    setAccess(null);
   });
 
   afterEach(() => {
@@ -116,7 +138,7 @@ describe('Notifications plugin — IPC handlers', () => {
     });
 
     it('returns notification counts when authenticated', async () => {
-      vi.mocked(loadGitHubAuth).mockReturnValue({ accessToken: 'tok', login: 'user' } as AuthStub);
+      setAccess({ token: 'tok', login: 'user' });
       const result = await callHandler('github:fetch-notifications');
       expect(getNotificationCounts).toHaveBeenCalled();
       expect(result).toMatchObject({ total: 0 });
@@ -233,7 +255,7 @@ describe('Notifications plugin — IPC handlers', () => {
     });
 
     it('calls markNotificationRead (not delete) when authenticated', async () => {
-      vi.mocked(loadGitHubAuth).mockReturnValue({ accessToken: 'tok', login: 'user' } as AuthStub);
+      setAccess({ token: 'tok', login: 'user' });
       await callHandler('github:dismiss-notification', 'notif-123');
 
       // Must use PATCH (markNotificationRead), never DELETE
@@ -241,13 +263,13 @@ describe('Notifications plugin — IPC handlers', () => {
     });
 
     it('deletes the notification from DB', async () => {
-      vi.mocked(loadGitHubAuth).mockReturnValue({ accessToken: 'tok', login: 'user' } as AuthStub);
+      setAccess({ token: 'tok', login: 'user' });
       await callHandler('github:dismiss-notification', 'notif-123');
       expect(deleteNotification).toHaveBeenCalledWith(db, 'notif-123');
     });
 
     it('still deletes the local notification when markNotificationRead fails', async () => {
-      vi.mocked(loadGitHubAuth).mockReturnValue({ accessToken: 'tok', login: 'user' } as AuthStub);
+      setAccess({ token: 'tok', login: 'user' });
       vi.mocked(markNotificationRead).mockRejectedValueOnce(new Error('network error'));
 
       await callHandler('github:dismiss-notification', 'notif-456');
@@ -257,7 +279,7 @@ describe('Notifications plugin — IPC handlers', () => {
     });
 
     it('deletes the local notification even when not authenticated', async () => {
-      vi.mocked(loadGitHubAuth).mockReturnValue(null);
+      setAccess(null);
       await callHandler('github:dismiss-notification', 'notif-789');
 
       expect(markNotificationRead).not.toHaveBeenCalled();
@@ -365,7 +387,7 @@ describe('Notifications plugin — IPC handlers', () => {
     }
 
     it('dismisses the notification when the user committed on the merged PR that closed the issue', async () => {
-      vi.mocked(loadGitHubAuth).mockReturnValue({ accessToken: 'token', login: 'rajbos' } as unknown as ReturnType<typeof loadGitHubAuth>);
+      setAccess({ token: 'token', login: 'rajbos' });
       vi.mocked(listIssueNotifications).mockReturnValue([issueNotif] as unknown as ReturnType<typeof listIssueNotifications>);
       stubFetch({ commitAuthors: ['teammate', 'rajbos'] });
 
@@ -379,7 +401,7 @@ describe('Notifications plugin — IPC handlers', () => {
     });
 
     it('keeps the notification when the user did not collaborate on the closing PR', async () => {
-      vi.mocked(loadGitHubAuth).mockReturnValue({ accessToken: 'token', login: 'rajbos' } as unknown as ReturnType<typeof loadGitHubAuth>);
+      setAccess({ token: 'token', login: 'rajbos' });
       vi.mocked(listIssueNotifications).mockReturnValue([issueNotif] as unknown as ReturnType<typeof listIssueNotifications>);
       stubFetch({ commitAuthors: ['teammate', 'other-dev'] });
 

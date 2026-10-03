@@ -10,6 +10,8 @@ import {
   loadGitHubAuth,
   saveGitHubPat,
   loadGitHubPat,
+  getPrimaryGitHubLogin,
+  setPrimaryGitHubLogin,
   deleteGitHubPat,
   deleteGitHubAuth,
 } from '../../services/github-oauth';
@@ -20,6 +22,8 @@ import { startDiscoveryIfAuthed } from '../discovery/handler';
 import { safeHandle } from '../ipc-utils';
 import { logger } from '../../services/logger';
 import { checkCopilotUsage } from '../copilot-usage/handler';
+import { DEFAULT_HOST, apiBaseForHost, hostOfUrl, webBaseForHost } from '../../services/github-host';
+import { accessForRepo } from '../../services/github-repo-access';
 
 /**
  * Sign-in can be started from the main window or the Settings window, so the
@@ -44,6 +48,8 @@ let activeDeviceFlow: {
   clientId: string;
   intervalMs: number;
   aborted: boolean;
+  /** Adding a further account: the current primary account stays primary. */
+  additional: boolean;
 } | null = null;
 
 export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWindow | null): void {
@@ -70,7 +76,7 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
   });
 
   safeHandle('github:open-url', (_event, url: string) => {
-    if (typeof url === 'string' && url.startsWith('https://github.com/')) {
+    if (typeof url === 'string' && /^https:\/\/(?:github\.com|[a-z0-9-]+\.ghe\.com)\//.test(url)) {
       shell.openExternal(url);
     }
   });
@@ -78,20 +84,23 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
   safeHandle('github:get-run-url-for-check-suite', async (_event, checkSuiteApiUrl: string) => {
     if (typeof checkSuiteApiUrl !== 'string') return null;
     const match = checkSuiteApiUrl.match(
-      /^https:\/\/api\.github\.com\/repos\/([^/]+)\/([^/]+)\/check-suites\/(\d+)$/,
+      /^https:\/\/api\.(?:github\.com|[a-z0-9-]+\.ghe\.com)\/repos\/([^/]+)\/([^/]+)\/check-suites\/(\d+)$/,
     );
     if (!match) return null;
     const [, owner, repo, checkSuiteId] = match;
-    const auth = loadGitHubAuth(db);
-    if (!auth) return null;
+    // Use the account that serves this repo, on the repo's own host.
+    const host = hostOfUrl(checkSuiteApiUrl) ?? DEFAULT_HOST;
+    const access = await accessForRepo(db, `${owner}/${repo}`, host);
+    if (!access) return null;
+    const apiBase = apiBaseForHost(host);
     const headers = {
-      Authorization: `Bearer ${auth.accessToken}`,
+      Authorization: `Bearer ${access.token}`,
       Accept: 'application/vnd.github+json',
       'X-GitHub-Api-Version': '2022-11-28',
     };
     try {
       const runsRes = await fetch(
-        `https://api.github.com/repos/${owner}/${repo}/actions/runs?check_suite_id=${checkSuiteId}&per_page=10`,
+        `${apiBase}/repos/${owner}/${repo}/actions/runs?check_suite_id=${checkSuiteId}&per_page=10`,
         { headers },
       );
       if (runsRes.ok) {
@@ -108,7 +117,7 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
       if (suiteRes.ok) {
         const suite = (await suiteRes.json()) as { head_branch: string | null };
         if (suite.head_branch) {
-          return `https://github.com/${owner}/${repo}/actions?query=branch%3A${encodeURIComponent(suite.head_branch)}`;
+          return `${webBaseForHost(host)}/${owner}/${repo}/actions?query=branch%3A${encodeURIComponent(suite.head_branch)}`;
         }
       }
     } catch { /* fall through */ }
@@ -117,11 +126,12 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
 
   safeHandle('github:get-issue-state', async (_event, subjectUrl: string) => {
     if (typeof subjectUrl !== 'string') return null;
-    if (!/^https:\/\/api\.github\.com\/repos\/[^/]+\/[^/]+\/issues\/\d+$/.test(subjectUrl)) return null;
-    const auth = loadGitHubAuth(db);
-    if (!auth) return null;
+    const issueUrl = subjectUrl.match(/^https:\/\/api\.(?:github\.com|[a-z0-9-]+\.ghe\.com)\/repos\/([^/]+)\/([^/]+)\/issues\/\d+$/);
+    if (!issueUrl) return null;
+    const access = await accessForRepo(db, `${issueUrl[1]}/${issueUrl[2]}`, hostOfUrl(subjectUrl) ?? DEFAULT_HOST);
+    if (!access) return null;
     const headers = {
-      Authorization: `Bearer ${auth.accessToken}`,
+      Authorization: `Bearer ${access.token}`,
       Accept: 'application/vnd.github+json',
       'X-GitHub-Api-Version': '2022-11-28',
     };
@@ -144,7 +154,7 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
         // Find the most recent 'closed' event
         const closedEvent = [...events].reverse().find((e) => e.event === 'closed');
         if (closedEvent) {
-          closedByMe = (closedEvent.actor?.login ?? '').toLowerCase() === auth.login.toLowerCase();
+          closedByMe = (closedEvent.actor?.login ?? '').toLowerCase() === access.login.toLowerCase();
           // commit_id is set when the issue was closed by a commit (e.g. merging a PR with a closing keyword)
           closedViaMergedPr = closedEvent.commit_id !== null && closedEvent.commit_id !== '';
         }
@@ -210,7 +220,7 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
     return { ok: true };
   });
 
-  safeHandle('github:start-oauth', async () => {
+  safeHandle('github:start-oauth', async (_event, opts?: { additional?: boolean }) => {
     logger.debug('[IPC] github:start-oauth called');
     if (activeDeviceFlow) {
       activeDeviceFlow.aborted = true;
@@ -230,6 +240,7 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
         clientId,
         intervalMs: deviceCode.interval * 1000,
         aborted: false,
+        additional: opts?.additional === true,
       };
       activeDeviceFlow = flow;
       shell.openExternal(deviceCode.verification_uri);
@@ -305,7 +316,7 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
 }
 
 async function startPollingLoop(
-  flow: { deviceCode: string; clientId: string; intervalMs: number; aborted: boolean },
+  flow: { deviceCode: string; clientId: string; intervalMs: number; aborted: boolean; additional: boolean },
   db: SqlJsDatabase,
   getWindow: () => BrowserWindow | null,
 ): Promise<void> {
@@ -321,7 +332,11 @@ async function startPollingLoop(
 
       activeDeviceFlow = null;
       const user = await fetchGitHubUser(result.access_token);
+      // Pin the current primary before the new sign-in becomes the "latest" one,
+      // so adding an account never silently switches the one everything else uses.
+      const previousPrimary = flow.additional ? getPrimaryGitHubLogin(db) : null;
       saveGitHubAuth(db, user.login, result.access_token, result.scope, user.avatar_url);
+      if (previousPrimary) setPrimaryGitHubLogin(db, previousPrimary);
       completeOnboardingStep(db, 'github_oauth');
       saveDatabase();
 

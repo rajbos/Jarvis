@@ -31,6 +31,7 @@ vi.mock('../../src/services/github-oauth', () => ({
   loadGitHubAuth: vi.fn(() => null),
   loadGitHubPat: vi.fn(() => null),
   fetchGitHubUser: vi.fn(),
+  getPrimaryGitHubLogin: vi.fn(() => null),
 }));
 
 vi.mock('../../src/services/copilot-usage', async (importOriginal) => {
@@ -39,13 +40,14 @@ vi.mock('../../src/services/copilot-usage', async (importOriginal) => {
 });
 
 import { registerHandlers, checkCopilotUsage, _resetCopilotUsageState } from '../../src/plugins/copilot-usage/handler';
-import { loadGitHubAuth, loadGitHubPat, fetchGitHubUser } from '../../src/services/github-oauth';
+import { loadGitHubAuth, loadGitHubPat, fetchGitHubUser, getPrimaryGitHubLogin } from '../../src/services/github-oauth';
 import { fetchAiCreditUsage, fetchCopilotQuota, getGhCliToken } from '../../src/services/copilot-usage';
 import type { CopilotUsage } from '../../src/plugins/types';
 
 const mockAuth = vi.mocked(loadGitHubAuth);
 const mockPat = vi.mocked(loadGitHubPat);
 const mockUser = vi.mocked(fetchGitHubUser);
+const mockPrimary = vi.mocked(getPrimaryGitHubLogin);
 const mockFetch = vi.mocked(fetchAiCreditUsage);
 const mockQuota = vi.mocked(fetchCopilotQuota);
 const mockGhToken = vi.mocked(getGhCliToken);
@@ -78,6 +80,7 @@ describe('Copilot usage plugin', () => {
     db.run(getSchema());
     mockAuth.mockReturnValue(null);
     mockPat.mockReturnValue(null);
+    mockPrimary.mockReturnValue(null);
     mockGhToken.mockResolvedValue(null);
     registerHandlers(db, () => null);
   });
@@ -97,6 +100,34 @@ describe('Copilot usage plugin', () => {
       resetsAt: Date.UTC(2026, 9, 1) / 1000, byModel: [],
     });
     expect(usage.projectedCredits).toBeGreaterThan(121320);
+  });
+
+  it('asks the GitHub CLI for the primary account, not whichever account is active', async () => {
+    mockPrimary.mockReturnValue('rajbos');
+    mockGhToken.mockResolvedValue('gho_primary');
+    mockQuota.mockResolvedValue({ ok: true, quota: { ...enterpriseQuota, login: 'rajbos' } });
+
+    const usage = await checkCopilotUsage(db, () => null, now);
+
+    expect(mockGhToken).toHaveBeenCalledWith('rajbos');
+    expect(usage.login).toBe('rajbos');
+  });
+
+  it('falls back to the active CLI account when there is no Jarvis primary account', async () => {
+    mockGhToken.mockResolvedValue('gho_active');
+    mockQuota.mockResolvedValue({ ok: true, quota: enterpriseQuota });
+
+    await checkCopilotUsage(db, () => null, now);
+
+    expect(mockGhToken).toHaveBeenCalledWith(undefined);
+  });
+
+  it('labels the usage with the primary login when the quota answer carries none', async () => {
+    mockPrimary.mockReturnValue('rajbos');
+    mockGhToken.mockResolvedValue('gho_primary');
+    mockQuota.mockResolvedValue({ ok: true, quota: { ...enterpriseQuota, login: '' } });
+
+    expect((await checkCopilotUsage(db, () => null, now)).login).toBe('rajbos');
   });
 
   it('counts credits beyond the entitlement as billed overage', async () => {

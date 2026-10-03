@@ -61,6 +61,7 @@ label {
 }
 
 input[type="password"],
+input[type="text"],
 input[type="number"] {
   width: 100%;
   max-width: 280px;
@@ -278,4 +279,43 @@ code {
 .btn-link:hover {
   background: transparent;
   color: #9cc4ff;
+}
+
+/* ── GitHub accounts ── */
+.account-row {
+  border: 1px solid #0f3460;
+  border-radius: 6px;
+  padding: 0.6rem 0.75rem;
+  margin-bottom: 0.5rem;
+}
+.account-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.account-head .user-avatar { width: 24px; height: 24px; border-radius: 50%; }
+.account-usage { margin: 0.35rem 0 0; }
+.account-tag {
+  font-size: 0.75rem;
+  padding: 0.05rem 0.45rem;
+  border: 1px solid #556;
+  border-radius: 999px;
+  color: #aab;
+}
+.account-tag.primary { border-color: #e94560; color: #ff8fa3; }
+.assignment-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.35rem;
+}
+.assignment-row select {
+  background: #1a1a2e;
+  color: #e0e0e0;
+  border: 1px solid #444;
+  border-radius: 4px;
+  padding: 0.25rem 0.4rem;
+  font-size: 0.9375rem;
 }

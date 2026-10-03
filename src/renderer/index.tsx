@@ -64,6 +64,7 @@ import type {
   ClaudeStatus,
   ClaudeRateLimit,
   CopilotUsage,
+  GitHubAccountUsage,
   BackgroundTaskStatus,
 } from '../plugins/types';
 import { isIpcError } from '../plugins/types';
@@ -158,6 +159,8 @@ function App() {
   const [claudeRefreshing, setClaudeRefreshing] = useState(false);
   // Copilot AI credit usage (refreshed by the main-process background task)
   const [copilotUsage, setCopilotUsage] = useState<CopilotUsage | null>(null);
+  // Usage of the other tracked GitHub accounts, stacked in the Copilot flyout
+  const [otherAccountsUsage, setOtherAccountsUsage] = useState<GitHubAccountUsage[]>([]);
 
   const currentUserLogin = oauthStatus?.login ?? null;
 
@@ -285,6 +288,19 @@ function App() {
       .catch((err: unknown) => console.error('[Jarvis] Copilot usage check failed:', err));
     return window.jarvis.onCopilotUsageUpdated(setCopilotUsage);
   }, []);
+
+  // Other accounts: loaded on start and again whenever the primary usage refreshes (every 30 min).
+  const reloadAccountsUsage = useCallback(() => {
+    window.jarvis.getGitHubAccountsUsage()
+      .then((res) => {
+        if (!isIpcError(res)) setOtherAccountsUsage(res.usage.filter((u) => !u.account.isPrimary));
+      })
+      .catch((err: unknown) => console.error('[Jarvis] Account usage check failed:', err));
+  }, []);
+  useEffect(() => {
+    reloadAccountsUsage();
+    return window.jarvis.onCopilotUsageUpdated(() => reloadAccountsUsage());
+  }, [reloadAccountsUsage]);
 
   // Ollama status + selected model check on mount
   useEffect(() => {
@@ -1376,6 +1392,8 @@ function App() {
         rateLimit={rateLimit}
         claudeRateLimit={claudeRateLimit}
         copilotUsage={copilotUsage}
+        otherAccountsUsage={otherAccountsUsage}
+        onRefreshAccountsUsage={reloadAccountsUsage}
       />
     </div>
   );
@@ -1392,6 +1410,8 @@ interface BackgroundStatusBarProps {
   rateLimit: GitHubRateLimit | null;
   claudeRateLimit: ClaudeRateLimit | null;
   copilotUsage: CopilotUsage | null;
+  otherAccountsUsage: GitHubAccountUsage[];
+  onRefreshAccountsUsage: () => void;
 }
 
 function BackgroundStatusBar({
@@ -1403,6 +1423,8 @@ function BackgroundStatusBar({
   rateLimit,
   claudeRateLimit,
   copilotUsage,
+  otherAccountsUsage,
+  onRefreshAccountsUsage,
 }: BackgroundStatusBarProps) {
   const [ipcMessage, setIpcMessage] = useState<string | null>(null);
   const fadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1579,11 +1601,13 @@ function BackgroundStatusBar({
           {copilotBadge && (
             <CopilotUsageBadge
               usage={copilotBadge}
+              otherAccounts={otherAccountsUsage}
               onOpenSettings={() => void window.jarvis.openSettings()}
               onRefresh={() => {
                 window.jarvis.refreshCopilotUsage()
                   .then((res) => { if (!isIpcError(res)) setCopilotUsage(res); })
                   .catch(() => { /* non-fatal */ });
+                onRefreshAccountsUsage();
               }}
             />
           )}

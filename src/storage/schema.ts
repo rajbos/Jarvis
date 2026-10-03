@@ -31,12 +31,45 @@ export function getSchema(): string {
         expires_at    DATETIME
     );
 
+    -- Which GitHub account (login) to use per owner or per repo.
+    -- scope: 'owner' | 'repo'; key: lowercase owner or owner/repo
+    -- (prefixed with the host on GHE.com, e.g. 'corp.ghe.com/acme');
+    -- login: an account id (bare login on github.com, 'login@host' elsewhere);
+    -- source: 'manual' (user choice, wins) | 'git-config' (imported)
+    CREATE TABLE IF NOT EXISTS github_account_assignments (
+        scope      TEXT NOT NULL,
+        key        TEXT NOT NULL,
+        login      TEXT NOT NULL,
+        source     TEXT NOT NULL DEFAULT 'manual',
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (scope, key)
+    );
+
+    -- PAT accounts on hosts other than github.com (GHE.com has no Jarvis OAuth app)
+    CREATE TABLE IF NOT EXISTS github_host_accounts (
+        id         TEXT PRIMARY KEY,
+        host       TEXT NOT NULL,
+        login      TEXT NOT NULL,
+        pat        TEXT,
+        avatar_url TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Which accounts can see which discovered repo (repo_ref: owner/repo, or host/owner/repo off github.com)
+    CREATE TABLE IF NOT EXISTS github_repo_accounts (
+        repo_ref TEXT NOT NULL,
+        account  TEXT NOT NULL,
+        seen_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (repo_ref, account)
+    );
+
     -- GitHub organizations being tracked
     CREATE TABLE IF NOT EXISTS github_orgs (
         id                INTEGER PRIMARY KEY AUTOINCREMENT,
         login             TEXT NOT NULL UNIQUE,
         name              TEXT,
         discovery_enabled INTEGER DEFAULT 1,
+        host              TEXT NOT NULL DEFAULT 'github.com',
         indexed_at        DATETIME,
         metadata          TEXT
     );
@@ -56,6 +89,7 @@ export function getSchema(): string {
         private         INTEGER DEFAULT 0,
         starred         INTEGER DEFAULT 0,
         collaboration_reason TEXT,
+        host            TEXT NOT NULL DEFAULT 'github.com',
         last_pushed_at  DATETIME,
         last_updated_at DATETIME,
         indexed_at      DATETIME,
@@ -124,7 +158,9 @@ export function getSchema(): string {
         reason         TEXT,
         unread         INTEGER DEFAULT 1,
         updated_at     TEXT,
-        fetched_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+        fetched_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+        host           TEXT NOT NULL DEFAULT 'github.com',
+        account        TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_notif_repo ON github_notifications(repo_full_name);
     CREATE INDEX IF NOT EXISTS idx_notif_owner ON github_notifications(repo_owner);
