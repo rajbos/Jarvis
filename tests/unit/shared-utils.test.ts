@@ -204,7 +204,15 @@ import {
 import type { LocalRepo } from '../../src/plugins/types';
 
 function makeRepo(localPath: string): LocalRepo {
-  return { id: 0, localPath, remoteUrl: null, fullName: null, scannedAt: '' };
+  return {
+    id: 0,
+    localPath,
+    name: localPath.split('/').pop() ?? localPath,
+    remotes: [],
+    discoveredAt: '',
+    lastScanned: null,
+    linkedGithubRepoId: null,
+  };
 }
 
 describe('getReposUnder', () => {

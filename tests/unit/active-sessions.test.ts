@@ -23,7 +23,7 @@ vi.mock('../../src/services/pr-readiness', async (importOriginal) => {
 
 import { collectActiveSessions, describeAgentActivity, resetCloudTaskCache } from '../../src/services/active-sessions';
 import { discoverClaudeLocalSessions, discoverCopilotLocalSessions } from '../../src/services/local-agent-sessions';
-import { resolveGitContext } from '../../src/services/git-context';
+import { resolveGitContext, type GitContext } from '../../src/services/git-context';
 import { fetchCopilotTaskSessions, fetchRepoFullNameById, listCopilotAgentTasks } from '../../src/services/copilot-agent-tasks';
 import { fetchPullRequests, prLookupKey, type PrLookup, type PrLookupResult } from '../../src/services/pr-readiness';
 
@@ -82,13 +82,14 @@ function rawPr(overrides: Partial<RawPullRequest> & { pending?: boolean } = {}):
   };
 }
 
-const gitCtx = (branch: string, candidates = ['me/repo']) => ({
+const gitCtx = (branch: string, candidates = ['me/repo']): GitContext => ({
   repoRoot: 'C:\\src\\repo',
   branch,
   upstreamBranch: null,
   upstreamRemote: null,
   repoFullName: candidates[0],
   repoCandidates: candidates,
+  branchPushed: true,
 });
 
 function stubPrResults(entries: Array<[PrLookup, PrLookupResult]>) {

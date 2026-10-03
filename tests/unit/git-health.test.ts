@@ -206,6 +206,8 @@ describe('deriveWarnings', () => {
       linkedGithubRepo: null,
       failedWorkflowRuns: 0,
       exists: true,
+      lastCommitAt: null,
+      lastPushedAt: null,
     });
     expect(warnings).toHaveLength(1);
     expect(warnings[0].kind).toBe('branch-no-upstream');
@@ -225,6 +227,8 @@ describe('deriveWarnings', () => {
       linkedGithubRepo: null,
       failedWorkflowRuns: 0,
       exists: true,
+      lastCommitAt: null,
+      lastPushedAt: null,
     });
     expect(warnings).toHaveLength(1);
     expect(warnings[0].kind).toBe('no-remote');
@@ -244,6 +248,8 @@ describe('deriveWarnings', () => {
       linkedGithubRepo: null,
       failedWorkflowRuns: 0,
       exists: true,
+      lastCommitAt: null,
+      lastPushedAt: null,
     });
     expect(warnings.map((w) => w.kind)).not.toContain('branch-no-upstream');
     expect(warnings.map((w) => w.kind)).toContain('no-remote');
@@ -263,6 +269,8 @@ describe('deriveWarnings', () => {
       linkedGithubRepo: 'owner/repo',
       failedWorkflowRuns: 2,
       exists: true,
+      lastCommitAt: null,
+      lastPushedAt: null,
     });
     const kinds = warnings.map((w) => w.kind);
     expect(kinds).toContain('has-notifications');
@@ -283,6 +291,8 @@ describe('deriveWarnings', () => {
       linkedGithubRepo: 'owner/repo',
       failedWorkflowRuns: 0,
       exists: true,
+      lastCommitAt: null,
+      lastPushedAt: null,
     });
     expect(warnings).toHaveLength(0);
   });
@@ -301,6 +311,8 @@ describe('deriveWarnings', () => {
       linkedGithubRepo: null,
       failedWorkflowRuns: 0,
       exists: false,
+      lastCommitAt: null,
+      lastPushedAt: null,
     });
     // non-existing repos don't produce branch/remote warnings
     // but DO produce notification warnings

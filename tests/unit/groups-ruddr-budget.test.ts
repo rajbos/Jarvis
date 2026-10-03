@@ -79,10 +79,10 @@ describe('Groups plugin — Ruddr budget cache', () => {
 
     bridge = await import('../../src/plugins/browser-companion/server');
     vi.mocked(bridge.getBridgeStatus).mockReturnValue({ running: true, port: 35789, connectedClients: 1 });
-    vi.mocked(bridge.sendCommand).mockImplementation(async (command: { type: string }) => {
-      if (command.type === 'navigate') return { ok: true, data: { url: 'https://www.ruddr.io/overview', tabId: 7 } };
-      if (command.type === 'scrape-stats') return { ok: true, data: SCRAPED_STATS };
-      return { ok: true, data: null };
+    vi.mocked(bridge.sendCommand).mockImplementation(async (command) => {
+      if (command.type === 'navigate') return { id: 'cmd-1', ok: true, data: { url: 'https://www.ruddr.io/overview', tabId: 7 } };
+      if (command.type === 'scrape-stats') return { id: 'cmd-1', ok: true, data: SCRAPED_STATS };
+      return { id: 'cmd-1', ok: true, data: null };
     });
   });
 

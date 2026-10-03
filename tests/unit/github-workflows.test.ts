@@ -26,6 +26,7 @@ function makeRun(id: number, opts: {
   return {
     id,
     name: opts.workflowName ?? 'CI',
+    path: '.github/workflows/ci.yml',
     workflow_id: opts.workflowId ?? 42,
     head_branch: opts.branch ?? 'main',
     head_sha: 'abc123',
