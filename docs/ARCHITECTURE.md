@@ -1100,7 +1100,7 @@ If a key file is unreadable or corrupted, a new key is generated and previously 
 
 | Component | Choice | Rationale |
 |-----------|--------|-----------|
-| **Runtime** | Node.js 20 LTS (bundled with Electron) | Stable, long-term support |
+| **Runtime** | Node.js bundled with Electron (tooling and CI use Node.js 24 LTS, see `.nvmrc`) | Stable, long-term support |
 | **Language** | TypeScript 5.x | Type safety, better DX, refactoring support |
 | **GUI shell** | Electron | System tray, notifications, startup on boot, web UI |
 | **LLM** | Ollama (local) via `ollama` package | Official SDK, tool calling support |
