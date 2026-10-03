@@ -159,6 +159,61 @@ function scoreMatch(query: string, candidate: string): number {
   return 0;
 }
 
+type RuddrListScrape =
+  | {
+      ok: true;
+      items: Array<{ text: string; href?: string }>;
+      /** Tab visibility during the scrape; undefined for extension builds that don't report it. */
+      hidden?: boolean;
+      scrollable?: boolean;
+      grewOnScroll?: boolean;
+    }
+  | { ok: false; error: string };
+
+/** Scrolls through the Ruddr project list in the given tab and collects every row. */
+async function scrapeRuddrProjectList(tabId: number | undefined): Promise<RuddrListScrape> {
+  const extractResp = await sendCommand({
+    type: 'scroll-extract',
+    tabId,
+    payload: { selector: RUDDR_PROJECT_SELECTOR, maxScrolls: 80, waitMs: 1500, includeHref: true, debug: true },
+  }, 180_000).catch((err) => {
+    logger.warn(`[Groups] scroll-extract failed: ${err instanceof Error ? err.message : String(err)}`);
+    return { ok: false, error: err instanceof Error ? err.message : String(err) } as { ok: false; error: string };
+  });
+  if (!extractResp.ok) return { ok: false, error: extractResp.error ?? 'unknown' };
+
+  type Item = { text: string; href?: string };
+  const rawData = extractResp.data as
+    | { items: Item[]; debugLog?: string[]; hidden?: boolean; scrollable?: boolean; grewOnScroll?: boolean }
+    | Item[]
+    | null;
+  // Handle both old format (array) and new format (object with items + debugLog)
+  if (Array.isArray(rawData)) return { ok: true, items: rawData };
+  if (rawData?.debugLog && rawData.debugLog.length > 0) {
+    logger.debug(`[Groups] Ruddr scroll debug:\n  ${rawData.debugLog.join('\n  ')}`);
+  }
+  return {
+    ok: true,
+    items: rawData?.items ?? [],
+    hidden: rawData?.hidden,
+    scrollable: rawData?.scrollable,
+    grewOnScroll: rawData?.grewOnScroll,
+  };
+}
+
+/**
+ * True when an unfocused scrape looks like the hidden tab stalled the virtual
+ * list: nothing found, far fewer rows than the last run, or a scrollable list
+ * that never produced a new row. A scrape of a visible tab is taken as is.
+ */
+function scrapeLooksThrottled(scrape: RuddrListScrape & { ok: true }, oldLen: number): boolean {
+  if (scrape.hidden === false) return false;
+  const count = scrape.items.length;
+  if (count === 0) return true;
+  if (oldLen > 0 && count < oldLen * 0.75) return true;
+  return scrape.scrollable === true && scrape.grewOnScroll === false;
+}
+
 /**
  * Ensures ruddrProjectsCache is populated. Returns an error string on
  * failure, or null on success (cache is guaranteed non-null after null return).
@@ -217,35 +272,27 @@ async function ensureRuddrCache(
     scrapeTabId = session?.tabId ?? fallbackData?.tabId ?? scrapeTabId;
   }
 
-  // Focus the tab before scraping — Chrome aggressively throttles background tabs
-  // (setTimeout clamped to 1s+, IntersectionObservers paused), which breaks the
-  // virtual list scroll-and-load mechanism on Ruddr.
-  if (scrapeTabId !== undefined) {
+  const oldLen = ruddrProjectsCache?.length ?? 0;
+
+  // Scrape without taking focus first. Chrome does not render hidden tabs
+  // (no native scroll events, IntersectionObservers paused), which can stall
+  // Ruddr's virtual list — so if the quiet attempt comes up short, bring the
+  // tab to the front and scrape again.
+  let scrape = await scrapeRuddrProjectList(scrapeTabId);
+  if (scrape.ok && scrapeLooksThrottled(scrape, oldLen)) {
+    logger.debug(`[Groups] Background Ruddr scrape returned ${scrape.items.length} projects — retrying with the tab focused`);
     await sendCommand({ type: 'focus-window', tabId: scrapeTabId, payload: {} }).catch(() => { /* non-fatal */ });
+    // Reload for a clean (unscrolled) list before the second pass.
+    const reloadResp = await sendCommand({ type: 'navigate', tabId: scrapeTabId, payload: { url: finalUrl } });
+    if (!reloadResp.ok) return `Navigation failed: ${reloadResp.error ?? 'unknown'}`;
+    scrape = await scrapeRuddrProjectList(scrapeTabId);
   }
+  if (!scrape.ok) return `Extract failed: ${scrape.error}`;
 
-  const extractResp = await sendCommand({
-    type: 'scroll-extract',
-    tabId: scrapeTabId,
-    payload: { selector: RUDDR_PROJECT_SELECTOR, maxScrolls: 80, waitMs: 1500, includeHref: true, debug: true },
-  }, 180_000).catch((err) => {
-    logger.warn(`[Groups] scroll-extract failed: ${err instanceof Error ? err.message : String(err)}`);
-    return { ok: false, error: err instanceof Error ? err.message : String(err) } as { ok: false; error: string };
-  });
-  if (!extractResp.ok) return `Extract failed: ${extractResp.error ?? 'unknown'}`;
-
-  const rawData = extractResp.data as { items: Array<{ text: string; href?: string }>; debugLog?: string[] } | Array<{ text: string; href?: string }> | null;
-  // Handle both old format (array) and new format (object with items + debugLog)
-  const items = Array.isArray(rawData) ? rawData : (rawData?.items ?? []);
-  const debugLog = Array.isArray(rawData) ? null : rawData?.debugLog;
-  if (debugLog && debugLog.length > 0) {
-    logger.debug(`[Groups] Ruddr scroll debug:\n  ${debugLog.join('\n  ')}`);
-  }
-  const freshProjects = (items ?? [])
+  const freshProjects = scrape.items
     .map((i) => ({ name: (i.text ?? '').trim(), path: (i.href ?? '').split('?')[0].split('#')[0] }))
     .filter((e) => e.name);
 
-  const oldLen = ruddrProjectsCache?.length ?? 0;
   if (freshProjects.length === 0) {
     if (oldLen === 0) {
       logger.warn(`[Groups] Ruddr scroll returned 0 projects and cache is empty — scrape may have failed.`);

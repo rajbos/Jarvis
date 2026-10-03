@@ -30,7 +30,7 @@ beforeEach(() => {
 
 describe('navigatePayload', () => {
   it('requests a new tab for the first navigation of a session', () => {
-    expect(navigatePayload(createTabSession())).toEqual({ newTab: true });
+    expect(navigatePayload(createTabSession())).toEqual({ newTab: true, background: true });
   });
 
   it('requests nothing once the session has a tab', () => {

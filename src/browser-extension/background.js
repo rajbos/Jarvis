@@ -258,7 +258,7 @@ async function getTargetTabId(preferredTabId) {
 // ── Command implementations ───────────────────────────────────────────────────
 
 async function cmdNavigate(tabId, payload) {
-  const { url, newTab } = payload;
+  const { url, newTab, background } = payload;
   if (!url) throw new Error('url is required');
 
   // Defense-in-depth: validate URL scheme (server also validates, but this is a local guard)
@@ -275,8 +275,10 @@ async function cmdNavigate(tabId, payload) {
   // user is looking at. The response flags it with createdTab so Jarvis knows the
   // tab is its own and may close it when the run finishes (an explicit tabId always
   // wins — that means the caller is continuing in a tab it already has).
+  // `background` opens that tab without switching to it, so the user's current
+  // tab and window focus are left alone.
   if (newTab === true && typeof tabId !== 'number') {
-    const created = await chrome.tabs.create({ url, active: true });
+    const created = await chrome.tabs.create({ url, active: background !== true });
     if (typeof created.id !== 'number') throw new Error('Failed to create tab');
     await waitForTabLoaded(created.id, { acceptAlreadyComplete: true });
     const openedTab = await chrome.tabs.get(created.id);
@@ -366,7 +368,9 @@ async function cmdScrapeStats(tabId, payload) {
 // Uses a poll-then-scroll strategy to handle SPAs that render their lists
 // asynchronously after navigation (e.g. Ruddr's React virtual table).
 // When includeHref is true each result includes the href of the closest <a> ancestor.
-// When debug is true, returns { items, debugLog } instead of just items.
+// When debug is true, returns { items, debugLog, hidden, scrollable, grewOnScroll }
+// instead of just items — the last three let the caller judge whether a scrape
+// of a hidden (background) tab actually got the virtual list to load more rows.
 async function scrollAndExtract(selector, maxScrolls, waitMs, includeHref, debug = false) {
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const debugLog = [];
@@ -444,7 +448,9 @@ async function scrollAndExtract(selector, maxScrolls, waitMs, includeHref, debug
   }
 
   const collected = new Map(getItems());
-  log(`scrollAndExtract start — selector="${selector}", initial=${collected.size}, url=${window.location.href}`);
+  const initialCount = collected.size;
+  const hidden = document.visibilityState === 'hidden';
+  log(`scrollAndExtract start — selector="${selector}", initial=${collected.size}, hidden=${hidden}, url=${window.location.href}`);
 
   // Try to find the virtual list's scroll container
   let scrollContainer = firstEl ? findScrollContainer(firstEl) : null;
@@ -461,6 +467,17 @@ async function scrollAndExtract(selector, maxScrolls, waitMs, includeHref, debug
   } else {
     log(`No scroll container found, will use window.scrollBy`);
   }
+  const scrollable = Math.max(docScrollRange, containerScrollRange) > 0;
+
+  // A hidden tab does not run the rendering steps that fire native scroll
+  // events, so the virtual list would never notice the new scroll position.
+  // Dispatching the event ourselves lets it re-window without the tab having
+  // to be brought to the front.
+  const notifyScrolled = () => {
+    if (!hidden) return;
+    if (scrollContainer) scrollContainer.dispatchEvent(new Event('scroll'));
+    document.dispatchEvent(new Event('scroll', { bubbles: true }));
+  };
 
   // Ruddr (and many SPAs) use a VIRTUAL list — only visible rows exist in the
   // DOM at any time.  We scroll the container directly by manipulating scrollTop.
@@ -513,6 +530,8 @@ async function scrollAndExtract(selector, maxScrolls, waitMs, includeHref, debug
       }
     }
 
+    notifyScrolled();
+
     await wait(waitMs);
     getItems().forEach((item, text) => {
       if (!collected.has(text)) collected.set(text, item);
@@ -530,7 +549,9 @@ async function scrollAndExtract(selector, maxScrolls, waitMs, includeHref, debug
 
   log(`scrollAndExtract done — total=${collected.size}`);
   const items = Array.from(collected.values());
-  return debug ? { items, debugLog } : items;
+  return debug
+    ? { items, debugLog, hidden, scrollable, grewOnScroll: collected.size > initialCount }
+    : items;
 }
 
 // Runs inside the page — finds <small> label elements and pairs them with the
@@ -670,6 +691,8 @@ async function cmdFocusWindow(tabId) {
   if (typeof tabId === 'number') {
     const tab = await chrome.tabs.get(tabId);
     windowId = tab.windowId;
+    // The tab may have been opened in the background — switch to it as well.
+    if (!tab.active) await chrome.tabs.update(tabId, { active: true });
   } else {
     const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
     windowId = tab?.windowId;
