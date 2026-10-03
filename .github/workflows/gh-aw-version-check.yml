@@ -71,7 +71,7 @@ jobs:
 
           # Determine the compiler version label for the issue title
           # Use the single version if all affected files share one; otherwise "various"
-          UNIQUE_VERSIONS=($(printf '%s\n' "${OUTDATED_VERSIONS[@]}" | sort -u))
+          mapfile -t UNIQUE_VERSIONS < <(printf '%s\n' "${OUTDATED_VERSIONS[@]}" | sort -u)
           if [ ${#UNIQUE_VERSIONS[@]} -eq 1 ]; then
             COMPILER_LABEL="${UNIQUE_VERSIONS[0]}"
           else

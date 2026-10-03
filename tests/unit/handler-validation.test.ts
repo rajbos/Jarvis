@@ -31,7 +31,7 @@ const spawnMock = vi.hoisted(() => vi.fn(() => ({
   unref: vi.fn(),
 })));
 
-const statSyncMock = vi.hoisted(() => vi.fn(() => ({ isDirectory: () => true })));
+const statSyncMock = vi.hoisted(() => vi.fn((): { isDirectory: () => boolean } => ({ isDirectory: () => true })));
 
 // ── Track registered handlers so we can invoke them directly ──────────────────
 const handlers = new Map<string, (...args: unknown[]) => unknown>();
@@ -156,7 +156,7 @@ describe('IPC handler input validation', () => {
     });
 
     it('does nothing when the resolved path is not a directory', () => {
-      statSyncMock.mockReturnValueOnce({ isDirectory: () => false } as ReturnType<typeof statSyncMock>);
+      statSyncMock.mockReturnValueOnce({ isDirectory: () => false });
       callHandler('local:open-terminal', 'C:/Users/example/not-a-folder.txt');
       expect(spawnMock).not.toHaveBeenCalled();
     });

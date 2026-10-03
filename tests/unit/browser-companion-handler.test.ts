@@ -76,7 +76,7 @@ describe('Browser-companion plugin — IPC handlers', () => {
     vi.mocked(getBridgeStatus).mockReturnValue({ running: true, port: 35789, connectedClients: 0 });
     vi.mocked(getBridgeToken).mockReturnValue('test-token-abc');
     vi.mocked(regenerateBridgeToken).mockReturnValue('new-token-xyz');
-    vi.mocked(sendCommand).mockResolvedValue({ ok: true, data: null });
+    vi.mocked(sendCommand).mockResolvedValue({ id: 'cmd-1', ok: true, data: null });
 
     registerHandlers(db, () => null);
   });
@@ -300,8 +300,8 @@ describe('Browser-companion plugin — IPC handlers', () => {
       );
       vi.mocked(getBridgeStatus).mockReturnValue({ running: true, port: 35789, connectedClients: 1 });
       vi.mocked(sendCommand)
-        .mockResolvedValueOnce({ ok: true, data: { url: 'https://example.com' } })  // navigate
-        .mockResolvedValueOnce({ ok: true, data: 'done' });                          // evaluate
+        .mockResolvedValueOnce({ id: 'cmd-1', ok: true, data: { url: 'https://example.com' } })  // navigate
+        .mockResolvedValueOnce({ id: 'cmd-1', ok: true, data: 'done' });                          // evaluate
 
       const result = (await callHandler('browser:run-skill', 1, true)) as Record<string, unknown>;
       expect(result.ok).toBe(true);
@@ -318,8 +318,8 @@ describe('Browser-companion plugin — IPC handlers', () => {
       );
       vi.mocked(getBridgeStatus).mockReturnValue({ running: true, port: 35789, connectedClients: 1 });
       vi.mocked(sendCommand)
-        .mockResolvedValueOnce({ ok: true, data: {} })    // navigate
-        .mockResolvedValueOnce({ ok: true, data: null }); // evaluate
+        .mockResolvedValueOnce({ id: 'cmd-1', ok: true, data: {} })    // navigate
+        .mockResolvedValueOnce({ id: 'cmd-1', ok: true, data: null }); // evaluate
 
       const result = (await callHandler('browser:run-skill', 1, false)) as Record<string, unknown>;
       expect(result.ok).toBe(true);

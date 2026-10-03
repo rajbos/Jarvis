@@ -589,7 +589,7 @@ function OneDriveSection() {
     setError('');
     const result = await window.jarvis.onedriveBrowseFolder();
     setBrowsing(false);
-    if (result.canceled) return;
+    if (result.canceled || !result.folderPath) return;
     setFolderPath(result.folderPath);
   };
 

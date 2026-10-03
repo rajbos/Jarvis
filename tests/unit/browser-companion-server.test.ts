@@ -26,7 +26,7 @@ import * as os from 'os';
 // when handler-validation.test.ts also starts the server in its own worker.
 
 const mockRegistry = vi.hoisted(() => ({
-  serverEmitter: null as null | (ReturnType<typeof import('events').EventEmitter> & { close: () => void }),
+  serverEmitter: null as null | (InstanceType<typeof import('events').EventEmitter> & { close: () => void }),
   createSocket: null as null | ((remoteAddr?: string) => {
     emit: (event: string, ...args: unknown[]) => void;
     send: ReturnType<typeof vi.fn>;
