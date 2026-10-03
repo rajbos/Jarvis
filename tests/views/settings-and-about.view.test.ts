@@ -20,6 +20,9 @@ describe('settings window', () => {
     for (const text of [
       'Windows Startup',
       `@${FIXTURE_USER}`,
+      'GitHub Accounts',
+      '@test-user-work',
+      '4,200 AI credits used this month of 5,000 budget',
       'GitHub Copilot AI Credits',
       'C:\\fixtures\\OneDrive - Acme Labs',
       'ruddr.io/app/fixture-workspace/',
@@ -39,6 +42,51 @@ describe('settings window', () => {
     await page.getByRole('button', { name: 'Save Startup Settings' }).click();
     await expect.poll(async () => (await view.calls('setStartupSettings')).map((c) => c.args[0])).toEqual([
       { openAtLogin: true, startMinimized: false },
+    ]);
+    await expectCleanRender(view);
+  });
+});
+
+describe('settings window — GitHub accounts', () => {
+  it('shows each account with its usage and the owner → account mapping', async () => {
+    const view = await harness.open('settings');
+    const { page } = view;
+    await expect.poll(() => page.locator('body').innerText()).toContain('acme-labs');
+    await expect.poll(() => page.getByLabel('Account for acme-labs').inputValue()).toBe('test-user-work');
+    await expectCleanRender(view);
+  });
+
+  it('lists a GHE.com account with its host and adds one with a PAT', async () => {
+    const view = await harness.open('settings');
+    const { page } = view;
+    await expect.poll(() => page.locator('body').innerText()).toContain('fixture.ghe.com');
+    await expect.poll(() => page.locator('body').innerText()).toContain('@fixture-bob');
+
+    await page.getByLabel('GHE.com host').fill('new.ghe.com');
+    await page.getByLabel('GHE.com personal access token').fill('fixture-token-not-real');
+    await page.getByRole('button', { name: 'Add GHE.com account' }).click();
+    await expect.poll(async () => (await view.calls('addGitHubHostAccount')).map((c) => c.args)).toEqual([
+      ['new.ghe.com', 'fixture-token-not-real'],
+    ]);
+    await expectCleanRender(view);
+  });
+
+  it('adds another account through the device flow without replacing the primary', async () => {
+    const view = await harness.open('settings');
+    await view.page.getByRole('button', { name: 'Add GitHub account' }).click();
+    await expect.poll(async () => (await view.calls('startGitHubOAuth')).map((c) => c.args[0])).toEqual([
+      { additional: true },
+    ]);
+    await expectCleanRender(view);
+  });
+
+  it('saves a per-account Copilot budget', async () => {
+    const view = await harness.open('settings');
+    const input = view.page.getByLabel('Monthly Copilot budget for test-user-work');
+    await input.fill('7500');
+    await input.locator('xpath=following-sibling::button').click();
+    await expect.poll(async () => (await view.calls('setGitHubAccountBudget')).map((c) => c.args)).toEqual([
+      ['test-user-work', 7500],
     ]);
     await expectCleanRender(view);
   });

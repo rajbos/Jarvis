@@ -139,9 +139,10 @@ export async function fetchAiCreditUsage(
   token: string,
   login: string,
   period: BillingMonth,
+  apiBase = 'https://api.github.com',
 ): Promise<AiCreditFetchResult> {
   const url =
-    `https://api.github.com/users/${encodeURIComponent(login)}/settings/billing/ai_credit/usage` +
+    `${apiBase}/users/${encodeURIComponent(login)}/settings/billing/ai_credit/usage` +
     `?year=${period.year}&month=${period.month}`;
   try {
     const res = await fetch(url, {
@@ -194,13 +195,15 @@ export type CopilotQuotaFetchResult =
   | { ok: false; status: number; error: string };
 
 /**
- * Resolve the GitHub CLI's OAuth token via `gh auth token`. Resolves null when
- * `gh` is missing, not logged in, or slow to answer.
+ * Resolve a GitHub CLI OAuth token via `gh auth token` — the active account's,
+ * or `login`'s on `host` when given. Resolves null when `gh` is missing, not logged in,
+ * or slow to answer.
  */
-export function getGhCliToken(): Promise<string | null> {
+export function getGhCliToken(login?: string, host = 'github.com'): Promise<string | null> {
+  const args = login ? ['auth', 'token', '--hostname', host, '--user', login] : ['auth', 'token'];
   return new Promise((resolve) => {
     try {
-      execFile('gh', ['auth', 'token'], { timeout: 10_000, windowsHide: true }, (err, stdout) => {
+      execFile('gh', args, { timeout: 10_000, windowsHide: true }, (err, stdout) => {
         if (err) {
           resolve(null);
           return;
@@ -251,9 +254,9 @@ export function parseCopilotQuota(data: CopilotInternalUser): CopilotQuota | nul
 }
 
 /** Fetch the current-period premium quota the way VS Code does. */
-export async function fetchCopilotQuota(token: string): Promise<CopilotQuotaFetchResult> {
+export async function fetchCopilotQuota(token: string, apiBase = 'https://api.github.com'): Promise<CopilotQuotaFetchResult> {
   try {
-    const res = await fetch('https://api.github.com/copilot_internal/user', {
+    const res = await fetch(`${apiBase}/copilot_internal/user`, {
       headers: {
         Authorization: `Bearer ${token}`,
         Accept: 'application/json',

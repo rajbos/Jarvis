@@ -25,6 +25,7 @@
 15. [Claude Rate Limit Awareness](#15-claude-rate-limit-awareness)
 16. [Copilot AI Credit Budget Tracking](#16-copilot-ai-credit-budget-tracking)
 17. [Active Agent Sessions & PR Review Readiness](#17-active-agent-sessions--pr-review-readiness)
+18. [Multiple GitHub Accounts & GHE.com](#18-multiple-github-accounts--ghecom)
 
 ---
 
@@ -491,7 +492,7 @@ The schema in `src/storage/schema.ts` is the source of truth; do not copy table 
 | Area | Tables |
 |------|--------|
 | Core | `config`, `onboarding`, `conversations`, `task_history` |
-| GitHub | `github_auth`, `github_orgs`, `github_repos`, `github_notifications`, `github_workflow_runs`, `github_workflow_jobs` |
+| GitHub | `github_auth`, `github_host_accounts`, `github_account_assignments`, `github_repo_accounts`, `github_orgs`, `github_repos`, `github_notifications`, `github_workflow_runs`, `github_workflow_jobs` |
 | Local repos | `local_scan_folders`, `local_repos`, `local_repo_remotes` |
 | Agents and sessions | `agent_definitions`, `agent_sessions`, `agent_findings`, `pr_readiness` |
 | Secrets | `repo_secrets`, `secret_scan_favorites` |
@@ -1326,3 +1327,49 @@ The `active-sessions-readiness` background task (`src/main/background-tasks.ts`)
 ---
 
 _Last verified against source: 2026-10-01 (origin/main 4056acc)._
+
+---
+
+## 18. Multiple GitHub Accounts & GHE.com
+
+Jarvis can act as several GitHub accounts at once — for example a personal account, a client's guest account and an account on a GHE.com enterprise.
+
+### Accounts and hosts
+
+An **account id** identifies an account everywhere (config keys, assignments, UI): the bare login on github.com (so data from single-account days stays valid) and `login@host` elsewhere (`src/services/github-host.ts`). Supported hosts are github.com and **GHE.com** (`<subdomain>.ghe.com`, API at `https://api.<subdomain>.ghe.com`); every other host is refused before a token is sent. Self-hosted GHES is not supported.
+
+Accounts come from three places, merged by `listAccounts()` (`src/services/github-accounts.ts`):
+
+| Source | Notes |
+|---|---|
+| Jarvis sign-in (`github_auth`) | OAuth device flow and/or PAT, github.com only — the Jarvis OAuth app does not exist on GHE.com. Several rows are allowed; the **primary** account (`config.github_primary_login`) is the one all single-account features use, and adding an account never changes it. |
+| PAT on another host (`github_host_accounts`) | Added under **Settings → GitHub Accounts → GHE.com account**; the PAT is validated against `GET /user` of that host and stored encrypted. |
+| GitHub CLI | Every account `gh auth status` lists on a supported host; `gh auth token --hostname <host> --user <login>` yields its token. Only these tokens can read the Copilot quota endpoint, so org/enterprise-billed seats need `gh auth login` (`gh auth login --hostname corp.ghe.com` for GHE.com). |
+
+`resolveAccountToken()` picks a token per account: Jarvis OAuth → PAT → GitHub CLI.
+
+### Which account serves which repo
+
+`resolveAccountForRepo()` decides, first match wins:
+
+1. a **repo assignment** (`github_account_assignments`, scope `repo`),
+2. an **owner assignment** (scope `owner`),
+3. an account that **discovered** the repo while the primary account cannot see it (`github_repo_accounts`),
+4. the primary account.
+
+Keys are lowercase `owner` / `owner/repo`, prefixed with the host off github.com (`corp.ghe.com/acme`). Assignments are set in Settings or imported from git: `credential.https://<host>/<owner>.username` in `~/.gitconfig` (plus `include.path` targets) and the same sections in a local clone's `.git/config` become `git-config` assignments; a manual assignment is never overwritten.
+
+### What uses it
+
+- **Discovery** — the primary account is discovered as before; afterwards every other account is indexed (`src/plugins/discovery/accounts.ts`, full pass first, lightweight refresh later, stars stay the primary's). `upsertRepo` records the discovering account in `github_repo_accounts` and the host in `github_repos.host`.
+- **Notifications** — every account syncs its own inbox. An account keeps only the notifications of repos it serves (primary first, so shared repos stay with it), stored with `account` and `host`. A failing account keeps its previous rows. Actions on a notification (mark read, auto-dismiss, workflow lookups) run as the account it belongs to. Thread ids restart per GitHub instance, so GHE.com ones are stored as `host|threadId`.
+- **Copilot usage** — **Settings → GitHub Accounts** shows month-to-date usage per account against that account's own budget (`config.copilot_aic_monthly_budget:<account id>`; the primary account's budget is mirrored to the single-account key that drives the status-bar badge and alerts).
+
+The host reaches the deep API helpers through an `AsyncLocalStorage` context (`runWithHost(host, fn, accountId)` / `currentApiBase()`), not through extra parameters.
+
+### Known limits
+
+- Repo and org names are unique per database (`github_repos.full_name`), so the same `owner/repo` on two hosts collides; the last discovery wins.
+- Agents, secrets, the chat tools and the active-sessions view still use the primary account only.
+- Budget alerts (80% / 100% notifications) and the status-bar badge cover the primary account only.
+- Opening a repo from places that only know its name (some dashboard buttons) links to github.com.

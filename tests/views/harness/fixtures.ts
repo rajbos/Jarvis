@@ -296,6 +296,32 @@ export function createFixtures(now: number) {
     fetchedAt: iso(now, 0),
   };
 
+  const accountMain = {
+    id: FIXTURE_USER, host: 'github.com', login: FIXTURE_USER, avatarUrl: null, isPrimary: true,
+    sources: ['oauth' as const, 'gh-cli' as const], ghActive: true,
+  };
+  const accountWork = {
+    id: 'test-user-work', host: 'github.com', login: 'test-user-work', avatarUrl: null, isPrimary: false,
+    sources: ['gh-cli' as const], ghActive: false,
+  };
+  const accountGhe = {
+    id: 'fixture-bob@fixture.ghe.com', host: 'fixture.ghe.com', login: 'fixture-bob', avatarUrl: null, isPrimary: false,
+    sources: ['pat' as const], ghActive: false,
+  };
+  const githubAccounts = {
+    ok: true as const,
+    accounts: [accountMain, accountWork, accountGhe],
+    assignments: [{ scope: 'owner' as const, key: 'acme-labs', login: 'test-user-work', source: 'git-config' as const }],
+  };
+  const githubAccountsUsage = {
+    ok: true as const,
+    usage: [
+      { account: accountMain, usage: copilotUsage },
+      { account: accountWork, usage: { ...copilotUsage, login: 'test-user-work', source: 'gh-cli' as const, plan: 'enterprise', creditsUsed: 4200, budgetCredits: 5000 } },
+      { account: accountGhe, usage: { ...copilotUsage, login: 'fixture-bob', source: 'pat' as const, plan: 'business', creditsUsed: 15, budgetCredits: null } },
+    ],
+  };
+
   const activeSessions: ActiveSessionsSnapshot = {
     entries: [{
       session: {
@@ -379,7 +405,7 @@ export function createFixtures(now: number) {
   return {
     localRepos, notifications, notificationCounts, orgs, reposByOrg, scanFolders, dashboard,
     workflowSummary, groups, groupDetails, ruddrBudget, secrets, ollama, rateLimit, claudeStatus,
-    claudeRateLimit, copilotUsage, activeSessions, autoDismissLog, autoDismissStats, backgroundTasks,
+    claudeRateLimit, copilotUsage, githubAccounts, githubAccountsUsage, activeSessions, autoDismissLog, autoDismissStats, backgroundTasks,
     browserSkills, browserRuns, agents, onedriveRoots, localIndexStatus, mcpConfig,
   };
 }

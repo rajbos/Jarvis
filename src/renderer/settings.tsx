@@ -2,6 +2,7 @@ import { render } from 'preact';
 import { useState, useEffect, useRef } from 'preact/hooks';
 import './settings.css';
 import { ErrorBoundary, installGlobalErrorHandlers } from '../plugins/shared/ErrorBoundary';
+import { GitHubAccountsSection } from './github-accounts-section';
 import { McpServerSection, type McpSectionApi } from './mcp-settings-section';
 import { isIpcError, type IpcErrorResponse, type CopilotUsage } from '../plugins/types';
 
@@ -863,6 +864,7 @@ function App() {
       <StartupSection />
       <OAuthSection />
       <PatSection />
+      <GitHubAccountsSection />
       <CopilotUsageSection />
       <OneDriveSection />
       <RuddrSection />

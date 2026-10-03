@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import type { Database as SqlJsDatabase } from 'sql.js';
+import { isSupportedHost, normalizeHost } from './github-host';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -74,22 +75,27 @@ export function parseGitRemotes(repoPath: string): { name: string; url: string }
 }
 
 /**
- * Normalise a git remote URL to `owner/repo` format for GitHub repos.
- * Handles HTTPS, SSH (git@github.com:...) and bare-path variants.
- * Returns null for non-GitHub remotes.
+ * Normalise a git remote URL to `owner/repo` format for GitHub repos on
+ * github.com or a GHE.com host. Handles HTTPS and SSH (git@host:...) variants.
+ * Returns null for other remotes. Use {@link parseGitHubRemote} when the host matters.
  */
 export function normalizeGitHubUrl(url: string): string | null {
+  return parseGitHubRemote(url)?.fullName ?? null;
+}
+
+/**
+ * Parse a git remote URL on any supported host (github.com or GHE.com) into
+ * its host and `owner/repo`. Handles HTTPS, `git@host:owner/repo` and
+ * `ssh://git@host/owner/repo`. Null for other hosts.
+ */
+export function parseGitHubRemote(url: string): { host: string; fullName: string } | null {
   if (!url) return null;
-
-  // HTTPS:  https://github.com/owner/repo[.git]
-  const httpsMatch = url.match(/https?:\/\/(?:[^@]+@)?github\.com\/([^/]+\/[^/]+?)(?:\.git)?\/?$/);
-  if (httpsMatch) return httpsMatch[1];
-
-  // SSH:    git@github.com:owner/repo[.git]
-  const sshMatch = url.match(/git@github\.com:([^/]+\/[^/]+?)(?:\.git)?\/?$/);
-  if (sshMatch) return sshMatch[1];
-
-  return null;
+  const match =
+    url.match(/^https?:\/\/(?:[^@/]+@)?([^/]+)\/([^/]+\/[^/]+?)(?:\.git)?\/?$/) ??
+    url.match(/^(?:ssh:\/\/)?git@([^:/]+)[:/]([^/]+\/[^/]+?)(?:\.git)?\/?$/);
+  if (!match) return null;
+  const host = normalizeHost(match[1]);
+  return host && isSupportedHost(host) ? { host, fullName: match[2] } : null;
 }
 
 // ── File-system scanning ──────────────────────────────────────────────────────
@@ -250,11 +256,12 @@ export function autoLinkLocalRepos(db: SqlJsDatabase): void {
   for (const row of rows) {
     if (row.github_repo_id) continue;
 
-    const fullName = normalizeGitHubUrl(row.url);
-    if (!fullName) continue;
+    const remote = parseGitHubRemote(row.url);
+    if (!remote) continue;
 
-    const ghStmt = db.prepare('SELECT id FROM github_repos WHERE full_name = ?');
-    ghStmt.bind([fullName]);
+    // Same owner/repo name on another host is a different repo.
+    const ghStmt = db.prepare('SELECT id FROM github_repos WHERE full_name = ? AND host = ?');
+    ghStmt.bind([remote.fullName, remote.host]);
     const found = ghStmt.step() ? (ghStmt.getAsObject() as { id: number }) : null;
     ghStmt.free();
 

@@ -20,6 +20,8 @@ import {
   setLastDiscoveryProgress,
 } from './state';
 import { safeHandle } from '../ipc-utils';
+import { DEFAULT_HOST, runWithHost } from '../../services/github-host';
+import { discoverAdditionalAccounts } from './accounts';
 import { logger } from '../../services/logger';
 
 export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWindow | null): void {
@@ -75,7 +77,17 @@ export function startDiscoveryIfAuthed(
 ): void {
   const auth = loadGitHubAuth(db);
   if (!auth) return;
+  // Run as the primary account so every repo it discovers is recorded as visible to it;
+  // the context also follows the .then() callbacks below.
+  runWithHost(DEFAULT_HOST, () => startPrimaryDiscovery(db, getWindow, force, auth), auth.login);
+}
 
+function startPrimaryDiscovery(
+  db: SqlJsDatabase,
+  getWindow: () => BrowserWindow | null,
+  force: boolean,
+  auth: NonNullable<ReturnType<typeof loadGitHubAuth>>,
+): void {
   const sendStatus = (msg: string) => getWindow()?.webContents.send('app:background-status', msg);
 
   if (activeDiscovery && !activeDiscovery.aborted) {
@@ -146,6 +158,7 @@ export function startDiscoveryIfAuthed(
           logger.info('[Discovery] Lightweight refresh finished');
           sendStatus('Repos synced.');
           getWindow()?.webContents.send('github:discovery-complete', lastDiscoveryProgress);
+          return discoverAdditionalAccounts(db, getWindow, false);
         }).catch((err) => {
           logger.error('[Discovery] Lightweight refresh failed:', err);
         });
@@ -183,6 +196,7 @@ export function startDiscoveryIfAuthed(
     logger.info('[Discovery] Finished');
     sendStatus('Discovery finished — ' + (lastDiscoveryProgress?.reposFound ?? 0) + ' repos found.');
     getWindow()?.webContents.send('github:discovery-complete', lastDiscoveryProgress);
+    return discoverAdditionalAccounts(db, getWindow, force);
   }).catch((err) => {
     setActiveDiscovery(null);
     logger.error('[Discovery] Failed:', err);

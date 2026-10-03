@@ -161,6 +161,9 @@ export interface StoredNotification {
 
   subject_actor_type: string | null;
 
+  /** Web host the notification came from; absent or `github.com` for github.com. */
+  host?: string;
+
   reason: string;
 
   unread: number;
@@ -192,6 +195,9 @@ export interface Repo {
   parent_full_name?: string;
 
   collaboration_reason?: string;
+
+  /** Web host the repo lives on; absent or `github.com` for github.com. */
+  host?: string;
 
 }
 
@@ -759,6 +765,39 @@ export interface CopilotUsage {
   oauthHasUserScope?: boolean;
   error?: string;
   fetchedAt: string; // ISO timestamp
+}
+
+// ── Multiple GitHub accounts ──────────────────────────────────────────────────
+/** A GitHub account Jarvis can act as. */
+export interface GitHubAccountInfo {
+  /** Account id used everywhere: the bare login on github.com, `login@host` on GHE.com. */
+  id: string;
+  /** Web host the account lives on: `github.com` or `<subdomain>.ghe.com`. */
+  host: string;
+  login: string;
+  avatarUrl: string | null;
+  /** The account every single-account feature (notifications, agents, status bar) uses. Always on github.com. */
+  isPrimary: boolean;
+  /** How Jarvis can authenticate as it: Jarvis OAuth sign-in, PAT, and/or the GitHub CLI. */
+  sources: Array<'oauth' | 'pat' | 'gh-cli'>;
+  /** The account `gh` currently uses by default on its host. */
+  ghActive: boolean;
+}
+
+export interface GitHubAccountUsage {
+  account: GitHubAccountInfo;
+  usage: CopilotUsage;
+}
+
+/** Which account serves an owner (`scope: 'owner'`) or one repository (`'repo'`). */
+export interface GitHubAccountAssignment {
+  scope: 'owner' | 'repo';
+  /** Lowercase owner, or lowercase owner/repo; prefixed with the host off github.com (`corp.ghe.com/acme`). */
+  key: string;
+  /** Account id. */
+  login: string;
+  /** `manual` is the user's choice; `git-config` was imported from git's credential settings. */
+  source: 'manual' | 'git-config';
 }
 
 // ── Active agent sessions + PR review readiness types ─────────────────────────
@@ -1348,7 +1387,7 @@ export interface JarvisApi {
 
   onChatError(cb: (err: string) => void): () => void;
 
-  startGitHubOAuth(): Promise<OAuthResult>;
+  startGitHubOAuth(opts?: { additional?: boolean }): Promise<OAuthResult>;
 
   getGitHubOAuthStatus(): Promise<OAuthStatus | IpcErrorResponse>;
 
@@ -1634,6 +1673,16 @@ export interface JarvisApi {
   getCopilotBudget(): Promise<{ ok: true; budgetCredits: number | null } | IpcErrorResponse>;
   setCopilotBudget(credits: number | null): Promise<{ ok: true; budgetCredits: number | null } | IpcErrorResponse>;
   onCopilotUsageUpdated(cb: (usage: CopilotUsage) => void): () => void;
+  // Multiple GitHub accounts
+  listGitHubAccounts(): Promise<{ ok: true; accounts: GitHubAccountInfo[]; assignments: GitHubAccountAssignment[] } | IpcErrorResponse>;
+  getGitHubAccountsUsage(): Promise<{ ok: true; usage: GitHubAccountUsage[] } | IpcErrorResponse>;
+  setGitHubAccountBudget(accountId: string, credits: number | null): Promise<{ ok: true; budgetCredits: number | null } | IpcErrorResponse>;
+  addGitHubHostAccount(host: string, pat: string): Promise<{ ok: true; account: string; login: string } | IpcErrorResponse>;
+  setPrimaryGitHubAccount(login: string): Promise<{ ok: true } | IpcErrorResponse>;
+  removeGitHubAccount(accountId: string): Promise<{ ok: true } | IpcErrorResponse>;
+  setGitHubAccountAssignment(scope: 'owner' | 'repo', key: string, login: string | null): Promise<{ ok: true; assignments: GitHubAccountAssignment[] } | IpcErrorResponse>;
+  syncGitHubAccountsFromGitConfig(): Promise<{ ok: true; imported: number; keptManual: number; assignments: GitHubAccountAssignment[] } | IpcErrorResponse>;
+  resolveGitHubAccountForRepo(repoFullName: string, host?: string): Promise<{ ok: true; resolved: { login: string; via: 'repo' | 'owner' | 'discovered' | 'default'; source: 'manual' | 'git-config' | null } | null } | IpcErrorResponse>;
   // Active agent sessions + PR review readiness
   getActiveSessions(): Promise<ActiveSessionsSnapshot | null | IpcErrorResponse>;
   refreshActiveSessions(): Promise<ActiveSessionsSnapshot | IpcErrorResponse>;

@@ -2,7 +2,7 @@
 import type { Database as SqlJsDatabase } from 'sql.js';
 import type { WorkflowRun, WorkflowJob, WorkflowRunSummary } from '../plugins/types';
 
-const GITHUB_API_BASE = 'https://api.github.com';
+import { currentApiBase } from './github-host';
 
 // Max log bytes to store per job — keeps the DB size manageable
 const MAX_LOG_BYTES = 10000;
@@ -158,7 +158,7 @@ async function fetchJobLogExcerpt(
   repoFullName: string,
   job: GitHubWorkflowJob,
 ): Promise<LogExtractionResult | null> {
-  const logUrl = `${GITHUB_API_BASE}/repos/${repoFullName}/actions/jobs/${job.id}/logs`;
+  const logUrl = `${currentApiBase()}/repos/${repoFullName}/actions/jobs/${job.id}/logs`;
   const response = await fetch(logUrl, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -186,7 +186,7 @@ export async function fetchWorkflowRuns(
 ): Promise<GitHubWorkflowRun[]> {
   const runs: GitHubWorkflowRun[] = [];
   let url: string | null =
-    `${GITHUB_API_BASE}/repos/${repoFullName}/actions/runs?per_page=50&created=>${since}`;
+    `${currentApiBase()}/repos/${repoFullName}/actions/runs?per_page=50&created=>${since}`;
   let pages = 0;
 
   while (url !== null && pages < 2) {
@@ -218,7 +218,7 @@ export async function fetchWorkflowRunJobs(
   repoFullName: string,
   runId: string,
 ): Promise<GitHubWorkflowJob[]> {
-  const url = `${GITHUB_API_BASE}/repos/${repoFullName}/actions/runs/${runId}/jobs?per_page=30&filter=all`;
+  const url = `${currentApiBase()}/repos/${repoFullName}/actions/runs/${runId}/jobs?per_page=30&filter=all`;
   const data = await githubGet<{ jobs: GitHubWorkflowJob[] }>(url, accessToken);
   // Return ALL jobs so the LLM can see which steps passed vs failed in each run
   return data.jobs;
@@ -404,7 +404,7 @@ export async function createGitHubIssue(
   body: string,
   labels: string[],
 ): Promise<{ url: string; number: number; node_id: string }> {
-  const response = await fetch(`${GITHUB_API_BASE}/repos/${repoFullName}/issues`, {
+  const response = await fetch(`${currentApiBase()}/repos/${repoFullName}/issues`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,

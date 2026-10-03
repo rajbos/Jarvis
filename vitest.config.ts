@@ -1,9 +1,19 @@
+import os from 'os';
+import path from 'path';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
+    // Keep the suite away from the real %APPDATA%\Jarvis: without these, code that
+    // needs an encryption key writes keystore.fallback.bin next to the user's
+    // real database (and parallel workers race to create it). Tests that probe
+    // the key lookup or config directory set their own values.
+    env: {
+      JARVIS_ENCRYPTION_KEY: 'vitest-only-encryption-key',
+      JARVIS_CONFIG_DIR: path.join(os.tmpdir(), 'jarvis-vitest-config'),
+    },
     include: ['tests/**/*.test.ts'],
     // Headless-browser view tests run separately via `npm run test:views`.
     exclude: ['tests/views/**', 'node_modules/**'],

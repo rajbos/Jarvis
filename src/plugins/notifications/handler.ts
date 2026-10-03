@@ -5,7 +5,9 @@ import type { AutoDismissLogInput } from '../types';
 import {
   fetchNotifications,
   fetchNotificationsForRepo,
-  storeNotifications,
+  storeNotificationsForAccount,
+  deleteNotificationsOfUntrackedAccounts,
+  type AccountScope,
   storeNotificationsForOwner,
   storeNotificationsForRepo,
   getNotificationCounts,
@@ -18,7 +20,17 @@ import {
   markNotificationRead,
   listDeletedBranchNotifications,
 } from '../../services/github-notifications';
-import { loadGitHubAuth } from '../../services/github-oauth';
+import { getPrimaryGitHubLogin } from '../../services/github-oauth';
+import { resolveAccountForRepo } from '../../services/github-accounts';
+import { recordRepoVisibility } from '../../services/github-repo-visibility';
+import { currentApiBase, hostKey, runWithHost } from '../../services/github-host';
+import {
+  accessForAccount,
+  accessForOwner,
+  accessForRepo,
+  listAccountsWithAccess,
+  type AccountAccess,
+} from '../../services/github-repo-access';
 import { saveDatabase } from '../../storage/database';
 import { fetchAndStoreWorkflowData, getWorkflowSummaryForRepo } from '../../services/github-workflows';
 import { isWorkflowDataFresh } from './workflow-cache';
@@ -42,7 +54,7 @@ const BOOT_CHECK_ESTIMATED_CALLS_PER_REPO = 10;
  */
 async function fetchTokenRateLimitRemaining(token: string): Promise<number | null> {
   try {
-    const res = await fetch('https://api.github.com/rate_limit', {
+    const res = await fetch(`${currentApiBase()}/rate_limit`, {
       headers: {
         Authorization: `Bearer ${token}`,
         Accept: 'application/vnd.github+json',
@@ -77,14 +89,41 @@ export interface AutoDismissSweepResult {
   logEntries?: AutoDismissLogInput[];
 }
 
+/**
+ * Sync the notification inbox of every account Jarvis can act as. An account only
+ * keeps the notifications of repos it serves (see resolveAccountForRepo), so a repo
+ * visible to several accounts shows up once — under the account assigned to it.
+ * The primary account goes first: repos it can see stay with it unless assigned elsewhere.
+ */
 export async function syncGitHubNotifications(
   db: SqlJsDatabase,
   getWindow: () => BrowserWindow | null,
 ): Promise<{ ok: boolean; skipped?: boolean; error?: string; counts?: ReturnType<typeof getNotificationCounts> }> {
-  const auth = loadGitHubAuth(db);
-  if (!auth) return { ok: true, skipped: true, error: 'Not authenticated' };
-  const notifications = await fetchNotifications(auth.accessToken);
-  storeNotifications(db, notifications);
+  const accounts = await listAccountsWithAccess(db);
+  if (accounts.length === 0) return { ok: true, skipped: true, error: 'Not authenticated' };
+
+  const primaryId = getPrimaryGitHubLogin(db);
+  let failures = 0;
+  let lastError: unknown = null;
+  for (const account of accounts) {
+    try {
+      const fetched = await runWithHost(account.host, () => fetchNotifications(account.token), account.id);
+      const mine = fetched.filter((n) => {
+        const ref = hostKey(account.host, n.repository.full_name);
+        recordRepoVisibility(db, ref, account.id);
+        const serving = resolveAccountForRepo(db, ref, primaryId)?.login ?? account.id;
+        return serving.toLowerCase() === account.id.toLowerCase();
+      });
+      runWithHost(account.host, () => storeNotificationsForAccount(db, account.id, account.isPrimary, mine), account.id);
+    } catch (err) {
+      // Keep this account's previous notifications; the others still sync.
+      failures++;
+      lastError = err;
+      logger.warn(`[Notifications] Sync failed for @${account.id}:`, err instanceof Error ? err.message : String(err));
+    }
+  }
+  if (failures === accounts.length) throw lastError;
+  deleteNotificationsOfUntrackedAccounts(db, accounts.map((a) => a.id));
   saveDatabase();
   const counts = getNotificationCounts(db);
   const win = getWindow();
@@ -94,12 +133,15 @@ export async function syncGitHubNotifications(
   return { ok: true, counts };
 }
 
+const PULL_API_URL_RE = /^https:\/\/api\.(?:github\.com|[a-z0-9-]+\.ghe\.com)\/repos\/[^/]+\/[^/]+\/pulls\/\d+$/;
+const ISSUE_API_URL_RE = /^https:\/\/api\.(?:github\.com|[a-z0-9-]+\.ghe\.com)\/repos\/[^/]+\/[^/]+\/issues\/\d+$/;
+
 async function fetchPrState(
   accessToken: string,
   currentLogin: string,
   subjectUrl: string,
 ): Promise<{ state: 'open' | 'closed' | 'merged'; isDependabot: boolean; closedByMe: boolean } | null> {
-  if (!/^https:\/\/api\.github\.com\/repos\/[^/]+\/[^/]+\/pulls\/\d+$/.test(subjectUrl)) return null;
+  if (!PULL_API_URL_RE.test(subjectUrl)) return null;
   try {
     const res = await fetch(subjectUrl, {
       headers: {
@@ -135,7 +177,7 @@ async function fetchIssueState(
   currentLogin: string,
   subjectUrl: string,
 ): Promise<{ state: 'open' | 'closed'; closedByMe: boolean; closedViaMergedPr: boolean; closedViaCollabPr: boolean } | null> {
-  if (!/^https:\/\/api\.github\.com\/repos\/[^/]+\/[^/]+\/issues\/\d+$/.test(subjectUrl)) return null;
+  if (!ISSUE_API_URL_RE.test(subjectUrl)) return null;
   const headers = {
     Authorization: `Bearer ${accessToken}`,
     Accept: 'application/vnd.github+json',
@@ -315,11 +357,11 @@ async function runRecoverableStep(db: SqlJsDatabase, accessToken: string, repoFu
   return { dismissed, logEntries };
 }
 
-async function runClosedPrStep(db: SqlJsDatabase, accessToken: string, currentLogin: string): Promise<{ dismissed: number; logEntries: AutoDismissLogInput[] }> {
+async function runClosedPrStep(db: SqlJsDatabase, accessToken: string, currentLogin: string, scope: AccountScope): Promise<{ dismissed: number; logEntries: AutoDismissLogInput[] }> {
   const logEntries: AutoDismissLogInput[] = [];
   let dismissed = 0;
   const byUrl = new Map<string, ReturnType<typeof listPrNotifications>>();
-  for (const n of listPrNotifications(db)) {
+  for (const n of listPrNotifications(db, scope)) {
     if (!n.subject_url) continue;
     if (!byUrl.has(n.subject_url)) byUrl.set(n.subject_url, []);
     byUrl.get(n.subject_url)!.push(n);
@@ -340,11 +382,11 @@ async function runClosedPrStep(db: SqlJsDatabase, accessToken: string, currentLo
   return { dismissed, logEntries };
 }
 
-async function runClosedIssueStep(db: SqlJsDatabase, accessToken: string, currentLogin: string): Promise<{ dismissed: number; logEntries: AutoDismissLogInput[] }> {
+async function runClosedIssueStep(db: SqlJsDatabase, accessToken: string, currentLogin: string, scope: AccountScope): Promise<{ dismissed: number; logEntries: AutoDismissLogInput[] }> {
   const logEntries: AutoDismissLogInput[] = [];
   let dismissed = 0;
   const byUrl = new Map<string, ReturnType<typeof listIssueNotifications>>();
-  for (const n of listIssueNotifications(db)) {
+  for (const n of listIssueNotifications(db, scope)) {
     if (!n.subject_url) continue;
     if (!byUrl.has(n.subject_url)) byUrl.set(n.subject_url, []);
     byUrl.get(n.subject_url)!.push(n);
@@ -369,10 +411,10 @@ async function runClosedIssueStep(db: SqlJsDatabase, accessToken: string, curren
   return { dismissed, logEntries };
 }
 
-async function runDeletedBranchStep(db: SqlJsDatabase, accessToken: string): Promise<{ dismissed: number; logEntries: AutoDismissLogInput[] }> {
+async function runDeletedBranchStep(db: SqlJsDatabase, accessToken: string, scope: AccountScope): Promise<{ dismissed: number; logEntries: AutoDismissLogInput[] }> {
   const logEntries: AutoDismissLogInput[] = [];
   let dismissed = 0;
-  const notifs = await listDeletedBranchNotifications(db, accessToken);
+  const notifs = await listDeletedBranchNotifications(db, accessToken, scope);
   for (const n of notifs) {
     if (await dismissStoredNotification(db, accessToken, n)) {
       logEntries.push({ notification_id: n.id, reason: 'deleted_branch', repo_full_name: n.repo_full_name, subject_title: n.subject_title, subject_type: n.subject_type });
@@ -382,24 +424,59 @@ async function runDeletedBranchStep(db: SqlJsDatabase, accessToken: string): Pro
   return { dismissed, logEntries };
 }
 
+/** Repos with unread notifications stored for one account. */
+function reposWithUnread(db: SqlJsDatabase, scope: AccountScope): string[] {
+  const stmt = db.prepare(
+    `SELECT DISTINCT repo_full_name FROM github_notifications
+     WHERE unread = 1 AND ${scope.isPrimary ? '(account = ? OR account IS NULL)' : 'account = ?'}`,
+  );
+  stmt.bind([scope.account]);
+  const repos: string[] = [];
+  while (stmt.step()) repos.push((stmt.getAsObject() as { repo_full_name: string }).repo_full_name);
+  stmt.free();
+  return repos;
+}
+
+/** Run the four auto-dismiss steps over one account's notifications, as that account. */
+async function sweepAccount(db: SqlJsDatabase, account: AccountAccess) {
+  const scope: AccountScope = { account: account.id, isPrimary: account.isPrimary };
+  return runWithHost(account.host, async () => {
+    const [rec, pr, issue, delBranch] = await Promise.all([
+      runRecoverableStep(db, account.token, reposWithUnread(db, scope)),
+      runClosedPrStep(db, account.token, account.login, scope),
+      runClosedIssueStep(db, account.token, account.login, scope),
+      runDeletedBranchStep(db, account.token, scope),
+    ]);
+    return { rec, pr, issue, delBranch };
+  }, account.id);
+}
+
 export async function runAutoDismissSweep(
   db: SqlJsDatabase,
   getWindow: () => BrowserWindow | null,
 ): Promise<AutoDismissSweepResult> {
-  const auth = loadGitHubAuth(db);
-  if (!auth) return { ok: true, skipped: true, reason: 'Not authenticated' };
+  const accounts = await listAccountsWithAccess(db);
+  if (accounts.length === 0) return { ok: true, skipped: true, reason: 'Not authenticated' };
 
   const counts = getNotificationCounts(db);
-  const repoFullNames = Object.entries(counts.perRepo)
-    .filter(([, count]) => count > 0)
-    .map(([repo]) => repo);
-
-  const [rec, pr, issue, delBranch] = await Promise.all([
-    runRecoverableStep(db, auth.accessToken, repoFullNames),
-    runClosedPrStep(db, auth.accessToken, auth.login),
-    runClosedIssueStep(db, auth.accessToken, auth.login),
-    runDeletedBranchStep(db, auth.accessToken),
-  ]);
+  const totals = {
+    rec: { dismissed: 0, logEntries: [] as AutoDismissLogInput[] },
+    pr: { dismissed: 0, logEntries: [] as AutoDismissLogInput[] },
+    issue: { dismissed: 0, logEntries: [] as AutoDismissLogInput[] },
+    delBranch: { dismissed: 0, logEntries: [] as AutoDismissLogInput[] },
+  };
+  for (const account of accounts) {
+    try {
+      const result = await sweepAccount(db, account);
+      for (const key of Object.keys(totals) as Array<keyof typeof totals>) {
+        totals[key].dismissed += result[key].dismissed;
+        totals[key].logEntries.push(...result[key].logEntries);
+      }
+    } catch (err) {
+      logger.warn(`[AutoDismiss] Sweep failed for @${account.id}:`, err instanceof Error ? err.message : String(err));
+    }
+  }
+  const { rec, pr, issue, delBranch } = totals;
 
   const steps: AutoDismissStepResult[] = [
     { id: 'recovered-workflows', label: 'Recovered workflows', dismissed: rec.dismissed },
@@ -433,20 +510,24 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
 
   safeHandle('github:fetch-notifications-for-owner', async (_event, owner: string) => {
     if (typeof owner !== 'string' || owner.length === 0) return { ok: false, error: 'Invalid owner' };
-    const auth = loadGitHubAuth(db);
-    if (!auth) return { ok: false, error: 'Not authenticated' };
-    const notifications = await fetchNotifications(auth.accessToken);
-    storeNotificationsForOwner(db, owner, notifications);
+    const access = await accessForOwner(db, owner);
+    if (!access) return { ok: false, error: 'Not authenticated' };
+    await runWithHost(access.host, async () => {
+      const notifications = await fetchNotifications(access.token);
+      storeNotificationsForOwner(db, owner, notifications);
+    }, access.id);
     saveDatabase();
     return getNotificationCounts(db);
   });
 
   safeHandle('github:fetch-notifications-for-repo', async (_event, repoFullName: string) => {
     if (typeof repoFullName !== 'string' || !repoFullName.includes('/')) return { ok: false, error: 'Invalid repo' };
-    const auth = loadGitHubAuth(db);
-    if (!auth) return { ok: false, error: 'Not authenticated' };
-    const notifications = await fetchNotificationsForRepo(auth.accessToken, repoFullName);
-    storeNotificationsForRepo(db, repoFullName, notifications);
+    const access = await accessForRepo(db, repoFullName);
+    if (!access) return { ok: false, error: 'Not authenticated' };
+    await runWithHost(access.host, async () => {
+      const notifications = await fetchNotificationsForRepo(access.token, repoFullName);
+      storeNotificationsForRepo(db, repoFullName, notifications);
+    }, access.id);
     saveDatabase();
     return getNotificationCounts(db);
   });
@@ -467,10 +548,14 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
 
   safeHandle('github:dismiss-notification', async (_event, id: string) => {
     if (typeof id !== 'string' || id.length === 0) return;
-    const auth = loadGitHubAuth(db);
-    if (auth) {
+    // Mark it read as the account the notification belongs to.
+    const row = db.exec('SELECT account, host, repo_full_name FROM github_notifications WHERE id = ?', [id])[0]?.values[0];
+    const access = row
+      ? (row[0] ? await accessForAccount(db, row[0] as string) : null) ?? await accessForRepo(db, row[2] as string, row[1] as string)
+      : (await listAccountsWithAccess(db)).find((a) => a.isPrimary) ?? null;
+    if (access) {
       try {
-        await markNotificationRead(auth.accessToken, id);
+        await runWithHost(access.host, () => markNotificationRead(access.token, id), access.id);
       } catch (err) {
         logger.warn('[Jarvis] Could not mark notification as read on GitHub:', err);
       }
@@ -538,8 +623,7 @@ export async function runBootWorkflowCheck(
   db: SqlJsDatabase,
   getWindow: () => BrowserWindow | null,
 ): Promise<void> {
-  const auth = loadGitHubAuth(db);
-  if (!auth) return;
+  if ((await listAccountsWithAccess(db)).length === 0) return;
 
   // Find distinct repos with CheckSuite or WorkflowRun notifications
   const result = db.exec(
@@ -562,7 +646,8 @@ export async function runBootWorkflowCheck(
   // budget is below BOOT_CHECK_RATE_LIMIT_THRESHOLD, skip the pre-warm entirely.
   const estimatedCalls = staleRepos.length * BOOT_CHECK_ESTIMATED_CALLS_PER_REPO;
   if (estimatedCalls > BOOT_CHECK_MAX_ESTIMATED_CALLS) {
-    const remaining = await fetchTokenRateLimitRemaining(auth.accessToken);
+    const primary = (await listAccountsWithAccess(db)).find((a) => a.isPrimary);
+    const remaining = primary ? await runWithHost(primary.host, () => fetchTokenRateLimitRemaining(primary.token), primary.id) : null;
     if (remaining !== null && remaining < BOOT_CHECK_RATE_LIMIT_THRESHOLD) {
       logger.debug(
         `[Boot] Skipping workflow pre-warm: rate limit low (${remaining} remaining, ` +
@@ -581,7 +666,9 @@ export async function runBootWorkflowCheck(
   for (const repo of staleRepos) {
     try {
       sendStatus(`Loading workflow runs: ${repo.split('/')[1]}…`);
-      const { runsStored } = await fetchAndStoreWorkflowData(db, auth.accessToken, repo);
+      const access = await accessForRepo(db, repo);
+      if (!access) continue;
+      const { runsStored } = await runWithHost(access.host, () => fetchAndStoreWorkflowData(db, access.token, repo), access.id);
       logger.debug(`[Boot] Cached ${runsStored} workflow run(s) for ${repo}`);
     } catch (err) {
       // Non-fatal — the UI will fall back to fetching on demand

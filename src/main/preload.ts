@@ -48,7 +48,7 @@ contextBridge.exposeInMainWorld('jarvis', {
     ipcRenderer.on('chat:error', listener);
     return () => { ipcRenderer.removeListener('chat:error', listener); };
   },
-  startGitHubOAuth: () => ipcRenderer.invoke('github:start-oauth'),
+  startGitHubOAuth: (opts?: { additional?: boolean }) => ipcRenderer.invoke('github:start-oauth', opts),
   getGitHubOAuthStatus: () => ipcRenderer.invoke('github:oauth-status'),
   getDiscoveryStatus: () => ipcRenderer.invoke('github:discovery-status'),
   startPatDiscovery: () => ipcRenderer.invoke('github:start-pat-discovery'),
@@ -325,6 +325,17 @@ contextBridge.exposeInMainWorld('jarvis', {
   refreshCopilotUsage: () => ipcRenderer.invoke('copilot-usage:refresh'),
   getCopilotBudget: () => ipcRenderer.invoke('copilot-usage:get-budget'),
   setCopilotBudget: (credits: number | null) => ipcRenderer.invoke('copilot-usage:set-budget', credits),
+  // Multiple GitHub accounts
+  listGitHubAccounts: () => ipcRenderer.invoke('github-accounts:list'),
+  getGitHubAccountsUsage: () => ipcRenderer.invoke('github-accounts:usage'),
+  setGitHubAccountBudget: (login: string, credits: number | null) => ipcRenderer.invoke('github-accounts:set-budget', login, credits),
+  addGitHubHostAccount: (host: string, pat: string) => ipcRenderer.invoke('github-accounts:add-host-account', host, pat),
+  setPrimaryGitHubAccount: (login: string) => ipcRenderer.invoke('github-accounts:set-primary', login),
+  removeGitHubAccount: (login: string) => ipcRenderer.invoke('github-accounts:remove', login),
+  setGitHubAccountAssignment: (scope: 'owner' | 'repo', key: string, login: string | null) =>
+    ipcRenderer.invoke('github-accounts:set-assignment', scope, key, login),
+  syncGitHubAccountsFromGitConfig: () => ipcRenderer.invoke('github-accounts:sync-git-config'),
+  resolveGitHubAccountForRepo: (repoFullName: string, host?: string) => ipcRenderer.invoke('github-accounts:resolve-repo', repoFullName, host),
   onCopilotUsageUpdated: (callback: (usage: unknown) => void) => {
     const listener = (_event: unknown, usage: unknown) => callback(usage);
     ipcRenderer.on('copilot-usage:updated', listener);

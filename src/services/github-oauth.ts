@@ -1,5 +1,6 @@
 import type { Database as SqlJsDatabase } from 'sql.js';
 import { encrypt, decrypt, getEncryptionKey } from '../storage/encryption';
+import { getConfigValue, setConfigValue } from '../storage/database';
 import { logger } from './logger';
 
 const GITHUB_DEVICE_CODE_URL = 'https://github.com/login/device/code';
@@ -195,20 +196,45 @@ export function saveGitHubAuth(
   );
 }
 
+const KEY_PRIMARY_LOGIN = 'github_primary_login';
+
+interface AuthRow {
+  login: string;
+  access_token: string;
+  scopes: string;
+  avatar_url: string | null;
+  pat: string | null;
+}
+
 /**
- * Load the GitHub OAuth token from the database (decrypted).
+ * Pick the stored sign-in a caller means: the named `login`, else the primary
+ * account (see {@link setPrimaryGitHubLogin}), else the most recent sign-in.
  */
-export function loadGitHubAuth(db: SqlJsDatabase): { login: string; accessToken: string; scopes: string; avatarUrl: string | null } | null {
-  const stmt = db.prepare('SELECT login, access_token, scopes, avatar_url FROM github_auth ORDER BY created_at DESC LIMIT 1');
-
-  if (!stmt.step()) {
+function selectAuthRow(db: SqlJsDatabase, login?: string): AuthRow | null {
+  const wanted = login ?? getConfigValue(db, KEY_PRIMARY_LOGIN) ?? undefined;
+  const run = (sql: string, params: string[]): AuthRow | null => {
+    const stmt = db.prepare(sql);
+    stmt.bind(params);
+    const row = stmt.step() ? (stmt.getAsObject() as unknown as AuthRow) : null;
     stmt.free();
-    return null;
+    return row;
+  };
+  const columns = 'SELECT login, access_token, scopes, avatar_url, pat FROM github_auth';
+  if (wanted) {
+    const row = run(`${columns} WHERE login = ? COLLATE NOCASE`, [wanted]);
+    if (row || login) return row;
   }
+  return run(`${columns} ORDER BY created_at DESC, id DESC LIMIT 1`, []);
+}
 
-  const row = stmt.getAsObject() as { login: string; access_token: string; scopes: string; avatar_url: string | null };
-  stmt.free();
+export interface StoredGitHubAuth {
+  login: string;
+  accessToken: string;
+  scopes: string;
+  avatarUrl: string | null;
+}
 
+function decryptAuthRow(row: AuthRow): StoredGitHubAuth | null {
   const key = getEncryptionKey();
   try {
     return {
@@ -226,6 +252,40 @@ export function loadGitHubAuth(db: SqlJsDatabase): { login: string; accessToken:
 }
 
 /**
+ * Load the GitHub OAuth token from the database (decrypted): the named
+ * `login`'s, or the primary account's when omitted.
+ */
+export function loadGitHubAuth(db: SqlJsDatabase, login?: string): StoredGitHubAuth | null {
+  const row = selectAuthRow(db, login);
+  return row ? decryptAuthRow(row) : null;
+}
+
+/** Login of the primary account — the one every single-account feature uses. */
+export function getPrimaryGitHubLogin(db: SqlJsDatabase): string | null {
+  return selectAuthRow(db)?.login ?? null;
+}
+
+/** Make `login` (must already be signed in) the primary account. */
+export function setPrimaryGitHubLogin(db: SqlJsDatabase, login: string): boolean {
+  const row = selectAuthRow(db, login);
+  if (!row) return false;
+  setConfigValue(db, KEY_PRIMARY_LOGIN, row.login);
+  return true;
+}
+
+/** Every account signed in through Jarvis (OAuth and/or PAT), without tokens. */
+export function listGitHubAuths(db: SqlJsDatabase): Array<{ login: string; scopes: string; avatarUrl: string | null; hasPat: boolean }> {
+  const stmt = db.prepare('SELECT login, scopes, avatar_url, pat FROM github_auth ORDER BY id ASC');
+  const rows: Array<{ login: string; scopes: string; avatarUrl: string | null; hasPat: boolean }> = [];
+  while (stmt.step()) {
+    const r = stmt.getAsObject() as unknown as AuthRow;
+    rows.push({ login: r.login, scopes: r.scopes ?? '', avatarUrl: r.avatar_url, hasPat: !!r.pat });
+  }
+  stmt.free();
+  return rows;
+}
+
+/**
  * Save an encrypted Personal Access Token for the authenticated user.
  */
 export function saveGitHubPat(db: SqlJsDatabase, login: string, pat: string): void {
@@ -235,20 +295,18 @@ export function saveGitHubPat(db: SqlJsDatabase, login: string, pat: string): vo
 }
 
 /**
- * Load the decrypted Personal Access Token (if any).
+ * Load the decrypted Personal Access Token (if any): the named `login`'s, or
+ * the primary account's when omitted.
  */
-export function loadGitHubPat(db: SqlJsDatabase): string | null {
-  const stmt = db.prepare('SELECT pat FROM github_auth ORDER BY created_at DESC LIMIT 1');
-  if (!stmt.step()) { stmt.free(); return null; }
-  const row = stmt.getAsObject() as { pat: string | null };
-  stmt.free();
-  if (!row.pat) return null;
+export function loadGitHubPat(db: SqlJsDatabase, login?: string): string | null {
+  const row = selectAuthRow(db, login);
+  if (!row?.pat) return null;
   const key = getEncryptionKey();
   try {
     return decrypt(row.pat, key);
   } catch {
     // Clear the undecryptable PAT so the warning does not repeat on every startup
-    try { db.run('UPDATE github_auth SET pat = NULL WHERE rowid IN (SELECT rowid FROM github_auth ORDER BY created_at DESC LIMIT 1)'); } catch { /* best-effort */ }
+    try { db.run('UPDATE github_auth SET pat = NULL WHERE login = ?', [row.login]); } catch { /* best-effort */ }
     logger.warn('[OAuth] Failed to decrypt stored PAT — it has been cleared and will need to be re-entered');
     return null;
   }
@@ -266,4 +324,14 @@ export function deleteGitHubPat(db: SqlJsDatabase, login: string): void {
  */
 export function deleteGitHubAuth(db: SqlJsDatabase): void {
   db.run('DELETE FROM github_auth');
+  db.run('DELETE FROM config WHERE key = ?', [KEY_PRIMARY_LOGIN]);
+}
+
+/**
+ * Remove one account's sign-in (and PAT). When it was the primary account the
+ * primary setting is cleared, so the most recent remaining sign-in takes over.
+ */
+export function deleteGitHubAuthFor(db: SqlJsDatabase, login: string): void {
+  db.run('DELETE FROM github_auth WHERE login = ? COLLATE NOCASE', [login]);
+  db.run('DELETE FROM config WHERE key = ? AND value = ? COLLATE NOCASE', [KEY_PRIMARY_LOGIN, login]);
 }

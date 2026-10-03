@@ -85,7 +85,7 @@ export async function createMemoryDatabase(): Promise<SqlJsDatabase> {
 // of the chain in initializeSchema(). Used only to warn if a database fails to
 // reach the latest schema after migration (e.g. a gap in the version chain).
 // A unit test fails if this drifts from the version a fresh database reaches.
-export const LATEST_SCHEMA_VERSION = 31;
+export const LATEST_SCHEMA_VERSION = 32;
 
 export function initializeSchema(database: SqlJsDatabase): void {
   const result = database.exec("PRAGMA user_version");
@@ -94,7 +94,7 @@ export function initializeSchema(database: SqlJsDatabase): void {
   if (userVersion === 0) {
     database.run(getSchema());
     seedBuiltInAgents(database);
-    database.run('PRAGMA user_version = 31');
+    database.run('PRAGMA user_version = 32');
   }
 
   if (userVersion === 1) {
@@ -616,6 +616,49 @@ export function initializeSchema(database: SqlJsDatabase): void {
       [WORKFLOW_FAILURE_ANALYST_PROMPT],
     );
     database.run('PRAGMA user_version = 31');
+  }
+
+  if (userVersion === 31) {
+    // Migration v31 → v32: multi-account + GHE.com support.
+    //  - which GitHub account to use per owner / per repo
+    //  - which accounts can see which discovered repo
+    //  - PAT accounts on non-github.com hosts
+    //  - host (and owning account) on discovered repos, orgs and notifications
+    // Not split over several versions: the chain advances one version per
+    // launch, so every table the new code reads must arrive in a single step.
+    database.run("ALTER TABLE github_repos ADD COLUMN host TEXT NOT NULL DEFAULT 'github.com'");
+    database.run("ALTER TABLE github_orgs ADD COLUMN host TEXT NOT NULL DEFAULT 'github.com'");
+    database.run("ALTER TABLE github_notifications ADD COLUMN host TEXT NOT NULL DEFAULT 'github.com'");
+    database.run('ALTER TABLE github_notifications ADD COLUMN account TEXT');
+    database.run(`
+      CREATE TABLE IF NOT EXISTS github_host_accounts (
+        id         TEXT PRIMARY KEY,
+        host       TEXT NOT NULL,
+        login      TEXT NOT NULL,
+        pat        TEXT,
+        avatar_url TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    database.run(`
+      CREATE TABLE IF NOT EXISTS github_repo_accounts (
+        repo_ref TEXT NOT NULL,
+        account  TEXT NOT NULL,
+        seen_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (repo_ref, account)
+      )
+    `);
+    database.run(`
+      CREATE TABLE IF NOT EXISTS github_account_assignments (
+        scope      TEXT NOT NULL,
+        key        TEXT NOT NULL,
+        login      TEXT NOT NULL,
+        source     TEXT NOT NULL DEFAULT 'manual',
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (scope, key)
+      )
+    `);
+    database.run('PRAGMA user_version = 32');
   }
 
   const finalResult = database.exec('PRAGMA user_version');

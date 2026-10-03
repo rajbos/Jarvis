@@ -1,6 +1,6 @@
 import type { Database as SqlJsDatabase } from 'sql.js';
 
-const GITHUB_API_BASE = 'https://api.github.com';
+import { currentApiBase, currentHostContext, DEFAULT_HOST } from './github-host';
 
 export interface GitHubNotification {
   id: string;
@@ -43,6 +43,7 @@ export interface StoredNotification {
   unread: number;
   updated_at: string;
   fetched_at: string;
+  host?: string;
 }
 
 async function fetchPage(
@@ -99,7 +100,7 @@ async function fetchSubjectActor(
   accessToken: string,
   subjectUrl: string | null,
 ): Promise<{ login: string | null; type: string | null }> {
-  if (!subjectUrl?.startsWith(`${GITHUB_API_BASE}/repos/`)) return { login: null, type: null };
+  if (!subjectUrl?.startsWith(`${currentApiBase()}/repos/`)) return { login: null, type: null };
 
   try {
     const response = await fetch(subjectUrl, {
@@ -142,13 +143,28 @@ async function enrichNotificationActors(
   return enriched;
 }
 
+/**
+ * Thread ids are only unique per GitHub instance, so notifications from other
+ * hosts are stored as `host|threadId` (github.com keeps the bare id).
+ */
+export function storedNotificationId(host: string, threadId: string): string {
+  return host === DEFAULT_HOST ? threadId : `${host}|${threadId}`;
+}
+
+/** The GitHub thread id of a stored notification id. */
+export function notificationThreadId(storedId: string): string {
+  const bar = storedId.indexOf('|');
+  return bar === -1 ? storedId : storedId.slice(bar + 1);
+}
+
 function insertNotification(db: SqlJsDatabase, n: GitHubNotification): void {
+  const ctx = currentHostContext();
   db.run(
     `INSERT INTO github_notifications
-      (id, repo_full_name, repo_owner, subject_type, subject_title, subject_url, subject_actor_login, subject_actor_type, reason, unread, updated_at, fetched_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+      (id, repo_full_name, repo_owner, subject_type, subject_title, subject_url, subject_actor_login, subject_actor_type, reason, unread, updated_at, fetched_at, host, account)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, ?)`,
     [
-      n.id,
+      storedNotificationId(ctx.host, n.id),
       n.repository.full_name,
       n.repository.owner.login,
       n.subject.type,
@@ -159,8 +175,45 @@ function insertNotification(db: SqlJsDatabase, n: GitHubNotification): void {
       n.reason,
       n.unread ? 1 : 0,
       n.updated_at,
+      ctx.host,
+      ctx.account ?? null,
     ],
   );
+}
+
+/**
+ * Replace the stored notifications of one account with a fresh set. Rows that
+ * predate multi-account support carry no account and belong to the primary one.
+ */
+export function storeNotificationsForAccount(
+  db: SqlJsDatabase,
+  accountId: string,
+  isPrimary: boolean,
+  notifications: GitHubNotification[],
+): void {
+  if (isPrimary) db.run('DELETE FROM github_notifications WHERE account = ? OR account IS NULL', [accountId]);
+  else db.run('DELETE FROM github_notifications WHERE account = ?', [accountId]);
+  for (const n of notifications) insertNotification(db, n);
+}
+
+/** Drop notifications whose account is no longer tracked. */
+export function deleteNotificationsOfUntrackedAccounts(db: SqlJsDatabase, trackedIds: string[]): void {
+  if (trackedIds.length === 0) return;
+  const marks = trackedIds.map(() => '?').join(',');
+  db.run(`DELETE FROM github_notifications WHERE account IS NOT NULL AND account NOT IN (${marks})`, trackedIds);
+}
+
+/** Scope a stored-notification query to one account (NULL rows count as the primary account's). */
+export interface AccountScope {
+  account: string;
+  isPrimary: boolean;
+}
+
+function scopeSql(scope: AccountScope | undefined): { sql: string; params: string[] } {
+  if (!scope) return { sql: '', params: [] };
+  return scope.isPrimary
+    ? { sql: ' AND (account = ? OR account IS NULL)', params: [scope.account] }
+    : { sql: ' AND account = ?', params: [scope.account] };
 }
 
 /**
@@ -173,7 +226,7 @@ export async function fetchNotifications(
 ): Promise<GitHubNotification[]> {
   const all: GitHubNotification[] = [];
   let url: string | null =
-    `${GITHUB_API_BASE}/notifications?all=false&per_page=50`;
+    `${currentApiBase()}/notifications?all=false&per_page=50`;
 
   while (url) {
     const { items, nextUrl } = await fetchPage(url, accessToken);
@@ -264,7 +317,7 @@ export async function fetchNotificationsForRepo(
   const [owner, repo] = repoFullName.split('/');
   const all: GitHubNotification[] = [];
   let url: string | null =
-    `${GITHUB_API_BASE}/repos/${owner}/${repo}/notifications?all=false&per_page=50`;
+    `${currentApiBase()}/repos/${owner}/${repo}/notifications?all=false&per_page=50`;
 
   while (url) {
     const { items, nextUrl } = await fetchPage(url, accessToken);
@@ -315,7 +368,7 @@ export function listNotificationsForRepo(
   repoFullName: string,
 ): StoredNotification[] {
   const stmt = db.prepare(`
-    SELECT id, repo_full_name, repo_owner, subject_type, subject_title, subject_url, subject_actor_login, subject_actor_type, reason, unread, updated_at, fetched_at
+    SELECT id, repo_full_name, repo_owner, subject_type, subject_title, subject_url, subject_actor_login, subject_actor_type, reason, unread, updated_at, fetched_at, host
     FROM github_notifications
     WHERE repo_full_name = ? AND unread = 1
     ORDER BY updated_at DESC
@@ -336,7 +389,7 @@ export function listNotificationsForOwner(
   owner: string,
 ): StoredNotification[] {
   const stmt = db.prepare(`
-    SELECT id, repo_full_name, repo_owner, subject_type, subject_title, subject_url, subject_actor_login, subject_actor_type, reason, unread, updated_at, fetched_at
+    SELECT id, repo_full_name, repo_owner, subject_type, subject_title, subject_url, subject_actor_login, subject_actor_type, reason, unread, updated_at, fetched_at, host
     FROM github_notifications
     WHERE repo_owner = ? AND unread = 1
     ORDER BY repo_full_name, updated_at DESC
@@ -355,7 +408,7 @@ export function listNotificationsForStarred(
   db: SqlJsDatabase,
 ): StoredNotification[] {
   const stmt = db.prepare(`
-    SELECT n.id, n.repo_full_name, n.repo_owner, n.subject_type, n.subject_title, n.subject_url, n.subject_actor_login, n.subject_actor_type, n.reason, n.unread, n.updated_at, n.fetched_at
+    SELECT n.id, n.repo_full_name, n.repo_owner, n.subject_type, n.subject_title, n.subject_url, n.subject_actor_login, n.subject_actor_type, n.reason, n.unread, n.updated_at, n.fetched_at, n.host
     FROM github_notifications n
     WHERE n.unread = 1
       AND n.repo_full_name IN (SELECT full_name FROM github_repos WHERE starred = 1)
@@ -372,13 +425,16 @@ export function listNotificationsForStarred(
  */
 export function listPrNotifications(
   db: SqlJsDatabase,
+  scope?: AccountScope,
 ): StoredNotification[] {
+  const { sql, params } = scopeSql(scope);
   const stmt = db.prepare(`
-    SELECT id, repo_full_name, repo_owner, subject_type, subject_title, subject_url, subject_actor_login, subject_actor_type, reason, unread, updated_at, fetched_at
+    SELECT id, repo_full_name, repo_owner, subject_type, subject_title, subject_url, subject_actor_login, subject_actor_type, reason, unread, updated_at, fetched_at, host
     FROM github_notifications
-    WHERE subject_type = 'PullRequest' AND unread = 1 AND subject_url IS NOT NULL
+    WHERE subject_type = 'PullRequest' AND unread = 1 AND subject_url IS NOT NULL${sql}
     ORDER BY updated_at DESC
   `);
+  stmt.bind(params);
   const rows: StoredNotification[] = [];
   while (stmt.step()) rows.push(stmt.getAsObject() as unknown as StoredNotification);
   stmt.free();
@@ -390,13 +446,16 @@ export function listPrNotifications(
  */
 export function listIssueNotifications(
   db: SqlJsDatabase,
+  scope?: AccountScope,
 ): StoredNotification[] {
+  const { sql, params } = scopeSql(scope);
   const stmt = db.prepare(`
-    SELECT id, repo_full_name, repo_owner, subject_type, subject_title, subject_url, subject_actor_login, subject_actor_type, reason, unread, updated_at, fetched_at
+    SELECT id, repo_full_name, repo_owner, subject_type, subject_title, subject_url, subject_actor_login, subject_actor_type, reason, unread, updated_at, fetched_at, host
     FROM github_notifications
-    WHERE subject_type = 'Issue' AND unread = 1 AND subject_url IS NOT NULL
+    WHERE subject_type = 'Issue' AND unread = 1 AND subject_url IS NOT NULL${sql}
     ORDER BY updated_at DESC
   `);
+  stmt.bind(params);
   const rows: StoredNotification[] = [];
   while (stmt.step()) rows.push(stmt.getAsObject() as unknown as StoredNotification);
   stmt.free();
@@ -412,7 +471,7 @@ export function deleteNotification(db: SqlJsDatabase, id: string): void {
 
 // ── Dependabot merged PR detection ───────────────────────────────────────────
 
-const DEPENDABOT_PR_URL_RE = /^https:\/\/api\.github\.com\/repos\/[^/]+\/[^/]+\/pulls\/\d+$/;
+const DEPENDABOT_PR_URL_RE = /^https:\/\/api\.(?:github\.com|[a-z0-9-]+\.ghe\.com)\/repos\/[^/]+\/[^/]+\/pulls\/\d+$/;
 
 function isDependabotPRNotification(n: StoredNotification): boolean {
   if (n.subject_type !== 'PullRequest') return false;
@@ -456,7 +515,7 @@ export async function listMergedDependabotPRNotifications(
 ): Promise<StoredNotification[]> {
   const stmt = db.prepare(`
     SELECT id, repo_full_name, repo_owner, subject_type, subject_title, subject_url,
-           subject_actor_login, subject_actor_type, reason, unread, updated_at, fetched_at
+           subject_actor_login, subject_actor_type, reason, unread, updated_at, fetched_at, host
     FROM github_notifications
     WHERE unread = 1 AND subject_type = 'PullRequest'
     ORDER BY updated_at DESC
@@ -523,7 +582,7 @@ async function fetchLiveBranchNames(
 ): Promise<Set<string>> {
   const [owner, repo] = repoFullName.split('/');
   const branchNames = new Set<string>();
-  let url: string | null = `${GITHUB_API_BASE}/repos/${owner}/${repo}/branches?per_page=100`;
+  let url: string | null = `${currentApiBase()}/repos/${owner}/${repo}/branches?per_page=100`;
 
   for (let page = 0; url !== null && page < 3; page++) {
     const pageData = await fetchOneBranchPage(accessToken, url);
@@ -543,14 +602,17 @@ async function fetchLiveBranchNames(
 export async function listDeletedBranchNotifications(
   db: SqlJsDatabase,
   accessToken: string,
+  scope?: AccountScope,
 ): Promise<StoredNotification[]> {
+  const { sql, params } = scopeSql(scope);
   const stmt = db.prepare(`
     SELECT id, repo_full_name, repo_owner, subject_type, subject_title, subject_url,
-           subject_actor_login, subject_actor_type, reason, unread, updated_at, fetched_at
+           subject_actor_login, subject_actor_type, reason, unread, updated_at, fetched_at, host
     FROM github_notifications
-    WHERE unread = 1 AND subject_type IN ('CheckSuite', 'WorkflowRun')
+    WHERE unread = 1 AND subject_type IN ('CheckSuite', 'WorkflowRun')${sql}
     ORDER BY repo_full_name, updated_at DESC
   `);
+  stmt.bind(params);
   const rows: StoredNotification[] = [];
   while (stmt.step()) rows.push(stmt.getAsObject() as unknown as StoredNotification);
   stmt.free();
@@ -600,7 +662,7 @@ export async function markNotificationRead(
   threadId: string,
 ): Promise<void> {
   const response = await fetch(
-    `${GITHUB_API_BASE}/notifications/threads/${encodeURIComponent(threadId)}`,
+    `${currentApiBase()}/notifications/threads/${encodeURIComponent(notificationThreadId(threadId))}`,
     {
       method: 'PATCH',
       headers: {

@@ -78,6 +78,16 @@ const EXPECTED_CHANNELS = [
   'copilot-usage:refresh',
   'copilot-usage:get-budget',
   'copilot-usage:set-budget',
+  // github-accounts plugin
+  'github-accounts:list',
+  'github-accounts:usage',
+  'github-accounts:set-budget',
+  'github-accounts:add-host-account',
+  'github-accounts:set-primary',
+  'github-accounts:remove',
+  'github-accounts:set-assignment',
+  'github-accounts:sync-git-config',
+  'github-accounts:resolve-repo',
   // discovery plugin
   'github:discovery-status',
   'github:start-pat-discovery',
