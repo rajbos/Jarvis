@@ -32,10 +32,10 @@ Each command is a JSON message `{ id, type, tabId?, payload }`; the extension an
 
 | Type | Payload | Returns |
 |---|---|---|
-| `navigate` | `{ url, newTab? }` | `{ url, title, tabId, createdTab }` |
+| `navigate` | `{ url, newTab?, background? }` | `{ url, title, tabId, createdTab }` |
 | `evaluate` | `{ instructions, testMode? }` | Step results |
 | `extract` | `{ selector }` | Matching elements |
-| `scroll-extract` | `{ selector, maxScrolls?, waitMs?, includeHref?, debug? }` | `{ items, debugLog? }` |
+| `scroll-extract` | `{ selector, maxScrolls?, waitMs?, includeHref?, debug? }` | `{ items, debugLog?, hidden?, scrollable?, grewOnScroll? }` |
 | `scrape-stats` | `{ waitMs? }` | Label → value map |
 | `read-form-fields` | `{ selectors, waitMs? }` | Selector → value map |
 | `click` / `fill` | `{ selector }` / `{ selector, value }` | `{ ok }` |
@@ -51,6 +51,12 @@ Long-running scrapes (the Ruddr project + group refresh, for example) shouldn't 
 whatever the user is reading. Passing `newTab: true` on the first `navigate` of a run opens a
 dedicated tab; the response carries `createdTab: true` and its `tabId`. Jarvis reuses that
 `tabId` for the rest of the run and sends `close-tab` for it when the run finishes.
+
+Adding `background: true` opens that tab without switching to it, so neither the active tab
+nor window focus changes. Chrome does not render hidden tabs, so `scroll-extract` dispatches
+the scroll events itself there and reports `hidden`, `scrollable` and `grewOnScroll`; when a
+background scrape looks stalled, Jarvis sends `focus-window` (which also activates the tab)
+and scrapes again.
 
 Jarvis only closes a tab it was told it created, so a run that reused an existing tab —
 including one against an older extension build that ignores `newTab` — leaves the user's tab

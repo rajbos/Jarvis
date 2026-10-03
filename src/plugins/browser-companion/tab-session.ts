@@ -26,10 +26,13 @@ export function createTabSession(): BrowserTabSession {
 /**
  * Payload extras for a `navigate` command: requests a fresh tab for the first
  * navigation of a session, and nothing afterwards (the tab id is passed as
- * `tabId` on the command itself from then on).
+ * `tabId` on the command itself from then on). The tab is opened in the
+ * background so the run does not pull the user away from what they are doing.
  */
-export function navigatePayload(session: BrowserTabSession | undefined): { newTab?: true } {
-  return session && session.tabId === undefined ? { newTab: true } : {};
+export function navigatePayload(
+  session: BrowserTabSession | undefined,
+): { newTab?: true; background?: true } {
+  return session && session.tabId === undefined ? { newTab: true, background: true } : {};
 }
 
 /** Records the tab a `navigate` response landed on, and whether we own it. */
