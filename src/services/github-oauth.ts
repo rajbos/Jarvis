@@ -1,6 +1,6 @@
 import type { Database as SqlJsDatabase } from 'sql.js';
-import { encrypt, decrypt, getEncryptionKey } from '../storage/encryption';
-import { getConfigValue, setConfigValue } from '../storage/database';
+import { encrypt, decryptSecret, getEncryptionKey } from '../storage/encryption';
+import { getConfigValue, setConfigValue, saveDatabase } from '../storage/database';
 import { logger } from './logger';
 
 const GITHUB_DEVICE_CODE_URL = 'https://github.com/login/device/code';
@@ -234,21 +234,41 @@ export interface StoredGitHubAuth {
   avatarUrl: string | null;
 }
 
-function decryptAuthRow(row: AuthRow): StoredGitHubAuth | null {
-  const key = getEncryptionKey();
+// Logins already warned about this process, so polling callers don't repeat it.
+const warnedUndecryptable = new Set<string>();
+
+function warnOnce(id: string, message: string): void {
+  if (warnedUndecryptable.has(id)) return;
+  warnedUndecryptable.add(id);
+  logger.warn(message);
+}
+
+/**
+ * Decrypt a `github_auth` column, re-encrypting it under the current key when
+ * an archived key was needed. Returns null (and keeps the ciphertext, so a
+ * later recovery can still read it) when no available key works.
+ */
+function decryptAuthColumn(db: SqlJsDatabase, login: string, column: 'access_token' | 'pat', value: string): string | null {
   try {
-    return {
-      login: row.login,
-      accessToken: decrypt(row.access_token, key),
-      scopes: row.scopes,
-      avatarUrl: row.avatar_url,
-    };
+    const { value: plaintext, stale } = decryptSecret(value);
+    if (stale) {
+      db.run(`UPDATE github_auth SET ${column} = ? WHERE login = ?`, [encrypt(plaintext, getEncryptionKey()), login]);
+      saveDatabase();
+      logger.info(`[OAuth] Recovered ${column} for ${login} with an archived key`);
+    }
+    return plaintext;
   } catch {
-    // Decryption failed — the key changed (e.g. first run after upgrading to
-    // safeStorage). Return null so the caller prompts re-authentication.
-    logger.warn('[OAuth] Failed to decrypt stored token — re-authentication required');
     return null;
   }
+}
+
+function decryptAuthRow(db: SqlJsDatabase, row: AuthRow): StoredGitHubAuth | null {
+  const accessToken = decryptAuthColumn(db, row.login, 'access_token', row.access_token);
+  if (accessToken === null) {
+    warnOnce(`token:${row.login}`, `[OAuth] Failed to decrypt stored token for ${row.login} — re-authentication required`);
+    return null;
+  }
+  return { login: row.login, accessToken, scopes: row.scopes, avatarUrl: row.avatar_url };
 }
 
 /**
@@ -257,7 +277,7 @@ function decryptAuthRow(row: AuthRow): StoredGitHubAuth | null {
  */
 export function loadGitHubAuth(db: SqlJsDatabase, login?: string): StoredGitHubAuth | null {
   const row = selectAuthRow(db, login);
-  return row ? decryptAuthRow(row) : null;
+  return row ? decryptAuthRow(db, row) : null;
 }
 
 /** Login of the primary account — the one every single-account feature uses. */
@@ -301,15 +321,11 @@ export function saveGitHubPat(db: SqlJsDatabase, login: string, pat: string): vo
 export function loadGitHubPat(db: SqlJsDatabase, login?: string): string | null {
   const row = selectAuthRow(db, login);
   if (!row?.pat) return null;
-  const key = getEncryptionKey();
-  try {
-    return decrypt(row.pat, key);
-  } catch {
-    // Clear the undecryptable PAT so the warning does not repeat on every startup
-    try { db.run('UPDATE github_auth SET pat = NULL WHERE login = ?', [row.login]); } catch { /* best-effort */ }
-    logger.warn('[OAuth] Failed to decrypt stored PAT — it has been cleared and will need to be re-entered');
-    return null;
+  const pat = decryptAuthColumn(db, row.login, 'pat', row.pat);
+  if (pat === null) {
+    warnOnce(`pat:${row.login}`, `[OAuth] Failed to decrypt stored PAT for ${row.login} — re-enter it to restore access`);
   }
+  return pat;
 }
 
 /**

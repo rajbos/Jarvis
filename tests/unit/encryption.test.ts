@@ -2,8 +2,10 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { createRequire } from 'module';
-import { describe, it, expect } from 'vitest';
-import { encrypt, decrypt, deriveKey, generateKey, getEncryptionKey } from '../../src/storage/encryption';
+import { describe, it, expect, beforeEach } from 'vitest';
+import {
+  encrypt, decrypt, decryptSecret, deriveKey, generateKey, getEncryptionKey, resetEncryptionKeyCache,
+} from '../../src/storage/encryption';
 
 const nodeRequire = createRequire(import.meta.url);
 
@@ -31,6 +33,8 @@ function withMockedElectron<T>(exportsObj: unknown, run: () => T): T {
 }
 
 describe('Encryption', () => {
+  beforeEach(() => resetEncryptionKeyCache());
+
   it('should encrypt and decrypt a string correctly', () => {
     const key = generateKey();
     const plaintext = 'ghp_test_token_12345';
@@ -202,5 +206,83 @@ describe('Encryption', () => {
       if (originalComputerName === undefined) delete process.env.COMPUTERNAME;
       else process.env.COMPUTERNAME = originalComputerName;
     }
+  });
+
+  describe('key recovery', () => {
+    let originalEnvKey: string | undefined;
+    let originalConfigDir: string | undefined;
+    let configDir: string;
+
+    beforeEach(() => {
+      originalEnvKey = process.env.JARVIS_ENCRYPTION_KEY;
+      originalConfigDir = process.env.JARVIS_CONFIG_DIR;
+      delete process.env.JARVIS_ENCRYPTION_KEY;
+      configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jarvis-encryption-recovery-'));
+      process.env.JARVIS_CONFIG_DIR = configDir;
+      return () => {
+        if (originalEnvKey === undefined) delete process.env.JARVIS_ENCRYPTION_KEY;
+        else process.env.JARVIS_ENCRYPTION_KEY = originalEnvKey;
+        if (originalConfigDir === undefined) delete process.env.JARVIS_CONFIG_DIR;
+        else process.env.JARVIS_CONFIG_DIR = originalConfigDir;
+      };
+    });
+
+    /** A safeStorage stand-in whose OS key is `label`: it can only read what it wrote. */
+    function osKey(label: string) {
+      const prefix = `${label}:`;
+      return {
+        safeStorage: {
+          isEncryptionAvailable: () => true,
+          encryptString: (value: string) => Buffer.from(prefix + value, 'utf8'),
+          decryptString: (value: Buffer) => {
+            const text = value.toString('utf8');
+            if (!text.startsWith(prefix)) throw new Error('Error while decrypting the ciphertext');
+            return text.slice(prefix.length);
+          },
+        },
+      };
+    }
+
+    const archived = () => fs.readdirSync(configDir).filter((n) => n.startsWith('keystore.bin.') && n.endsWith('.bak'));
+
+    it('archives a keystore it cannot read instead of overwriting it', () => {
+      withMockedElectron(osKey('installed'), () => getEncryptionKey());
+      resetEncryptionKeyCache();
+      withMockedElectron(osKey('dev'), () => getEncryptionKey());
+
+      expect(archived()).toHaveLength(1);
+      const kept = fs.readFileSync(path.join(configDir, archived()[0]), 'utf8');
+      expect(kept.startsWith('installed:')).toBe(true);
+    });
+
+    it('recovers secrets written under an archived key and flags them as stale', () => {
+      const secret = withMockedElectron(osKey('installed'), () => encrypt('gho_token', getEncryptionKey()));
+
+      // Another instance with a different OS key takes over keystore.bin…
+      resetEncryptionKeyCache();
+      withMockedElectron(osKey('dev'), () => getEncryptionKey());
+
+      // …then the installed app starts again.
+      resetEncryptionKeyCache();
+      const result = withMockedElectron(osKey('installed'), () => decryptSecret(secret));
+      expect(result).toEqual({ value: 'gho_token', stale: true });
+
+      const rewritten = withMockedElectron(osKey('installed'), () => encrypt(result.value, getEncryptionKey()));
+      expect(withMockedElectron(osKey('installed'), () => decryptSecret(rewritten))).toEqual({ value: 'gho_token', stale: false });
+    });
+
+    it('throws when no available key can decrypt a secret', () => {
+      const foreign = encrypt('secret', generateKey());
+      expect(() => withMockedElectron(osKey('installed'), () => decryptSecret(foreign))).toThrow();
+    });
+
+    it('keeps using the loaded key when keystore.bin is rewritten by another process', () => {
+      const key1 = withMockedElectron(osKey('installed'), () => getEncryptionKey());
+      fs.writeFileSync(path.join(configDir, 'keystore.bin'), 'dev:' + generateKey().toString('hex'));
+      const key2 = withMockedElectron(osKey('installed'), () => getEncryptionKey());
+
+      expect(key2.toString('hex')).toBe(key1.toString('hex'));
+      expect(archived()).toHaveLength(0);
+    });
   });
 });

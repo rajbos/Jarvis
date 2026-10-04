@@ -18,7 +18,7 @@ import {
   type PkcePair,
 } from '../../services/claude';
 import { getConfigValue, setConfigValue, saveDatabase } from '../../storage/database';
-import { encrypt, decrypt, getEncryptionKey } from '../../storage/encryption';
+import { encrypt, decryptSecret, getEncryptionKey } from '../../storage/encryption';
 
 // Config keys for the cached (encrypted) copy of refreshed OAuth tokens.
 // We never write back to Claude Code's credentials file; refreshed tokens
@@ -28,22 +28,39 @@ const KEY_REFRESH = 'claude_refresh_token_enc';
 const KEY_EXPIRES = 'claude_expires_at';
 const KEY_SUBSCRIPTION = 'claude_subscription_type';
 
+// Logged once per process: the poll loop would otherwise repeat it every minute.
+let warnedUndecryptable = false;
+
 function loadStoredCredentials(db: SqlJsDatabase): ClaudeCredentials | null {
   const encAccess = getConfigValue(db, KEY_ACCESS);
   if (!encAccess) return null;
-  const key = getEncryptionKey();
   try {
     const encRefresh = getConfigValue(db, KEY_REFRESH);
     const expiresRaw = getConfigValue(db, KEY_EXPIRES);
-    return {
-      accessToken: decrypt(encAccess, key),
-      refreshToken: encRefresh ? decrypt(encRefresh, key) : undefined,
+    const access = decryptSecret(encAccess);
+    // A refresh token left over from an older key must not hide a newer access token
+    let refresh: { value: string; stale: boolean } | undefined;
+    try {
+      refresh = encRefresh ? decryptSecret(encRefresh) : undefined;
+    } catch {
+      refresh = undefined;
+    }
+    const creds: ClaudeCredentials = {
+      accessToken: access.value,
+      refreshToken: refresh?.value,
       expiresAt: expiresRaw !== null ? Number(expiresRaw) : undefined,
       subscriptionType: getConfigValue(db, KEY_SUBSCRIPTION) ?? undefined,
     };
+    // Recovered with an archived key — move it to the current one
+    if (access.stale || refresh?.stale) storeCredentials(db, creds);
+    return creds;
   } catch {
-    logger.warn('[Claude] Failed to decrypt stored token — clearing it');
-    clearStoredCredentials(db);
+    // Keep the ciphertext: it becomes readable again if the key that wrote it
+    // turns up (see decryptSecret). Signing in again overwrites it.
+    if (!warnedUndecryptable) {
+      logger.warn('[Claude] Failed to decrypt stored token — sign in again to reconnect');
+      warnedUndecryptable = true;
+    }
     return null;
   }
 }
