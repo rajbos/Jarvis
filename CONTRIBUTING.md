@@ -5,7 +5,7 @@ GitHub repository maintenance, built with Electron and TypeScript.
 
 ## Prerequisites
 
-- **Node.js 20** (the version CI builds against)
+- **Node.js 24** (the version CI builds against; pinned in `.nvmrc`)
 - **Windows** — the app is Windows-first; cross-platform support is not guaranteed
 - **[Ollama](https://ollama.com/)** running locally, for the natural-language features
 
