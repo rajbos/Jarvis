@@ -103,6 +103,13 @@ jobs:
       - name: Test
         run: npm run test
 
+      # The Windows runner image ships the system libraries Chromium needs, so no --with-deps
+      - name: Install headless Chromium for view tests
+        run: npx playwright install chromium
+
+      - name: View tests (headless browser)
+        run: npm run test:views
+
       - name: Package (unpacked, no installer)
         run: npx electron-builder --win --dir --publish never
 
