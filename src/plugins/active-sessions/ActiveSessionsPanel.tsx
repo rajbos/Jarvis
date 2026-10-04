@@ -109,6 +109,11 @@ function SessionRow({ entry }: { entry: ActiveSessionEntry }) {
             </button>
           )}
           {pr?.isDraft && <span class="as-chip as-chip--draft">Draft</span>}
+          {entry.prAccount && (
+            <span class="as-chip as-chip--account" title={`PR checked as @${entry.prAccount} — the account assigned to this repo or its owner (Settings → GitHub Accounts)`}>
+              as @{entry.prAccount}
+            </span>
+          )}
         </div>
         {entry.prError && <div class="as-row-error" title={entry.prError}>PR lookup failed: {entry.prError}</div>}
       </div>

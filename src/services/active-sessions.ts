@@ -29,9 +29,23 @@ import {
 } from './copilot-agent-tasks';
 import { evaluatePrReadiness, fetchPullRequests, prLookupKey, type PrLookup, type PrLookupResult } from './pr-readiness';
 
+/** A token for a repo and the account it belongs to. */
+export interface RepoAccess {
+  token: string;
+  /** Account id, shown next to the PR so it is clear which account checked it. */
+  account: string;
+}
+
 export interface CollectActiveSessionsOptions extends LocalSessionDiscoveryOptions {
-  /** GitHub user token; without it only local sessions are listed (no PR data). */
+  /** Primary account's token, for the Copilot cloud agent tasks; without it cloud tasks are skipped. */
   accessToken: string | null;
+  /** Account id behind `accessToken`. */
+  accessAccount?: string | null;
+  /**
+   * Token for a repo's PR lookups — each repo uses the account assigned to it
+   * (see github-repo-access.ts). Defaults to `accessToken` for every repo.
+   */
+  accessForRepo?: (repoFullName: string) => Promise<RepoAccess | null>;
   /** How long a finished cloud task with a PR stays listed. */
   cloudFinishedWindowMs?: number;
   /** Max per-task detail calls per refresh; keeps the sweep inside the rate limit. */
@@ -148,6 +162,50 @@ interface PendingLink {
   session: ActiveAgentSession;
   /** Lookups to try in order; the first that finds a PR wins. */
   lookups: PrLookup[];
+  /** Label to show when there is nothing to look up. */
+  noLookupLabel?: string;
+}
+
+function noLookupLabel(git: ReturnType<typeof resolveGitContext>): string {
+  if (!git) return 'Not a git repo';
+  if (!git.repoFullName) return 'No GitHub remote';
+  if (!git.branch) return 'No PR (detached HEAD)';
+  if (DEFAULT_BRANCHES.has(git.branch)) return `No PR (on ${git.branch})`;
+  return 'No PR yet';
+}
+
+/**
+ * Resolve PR lookups, each with the token of the account serving its repo
+ * (cloud task node ids use the cloud token). One batched fetch per account.
+ */
+async function fetchWithAccounts(
+  lookups: PrLookup[],
+  cloud: RepoAccess | null,
+  accessForRepo: (repoFullName: string) => Promise<RepoAccess | null>,
+): Promise<{ results: Map<string, PrLookupResult>; accountOf: Map<string, string> }> {
+  const byRepo = new Map<string, Promise<RepoAccess | null>>();
+  const groups = new Map<string, { access: RepoAccess; lookups: PrLookup[] }>();
+  const accountOf = new Map<string, string>();
+  for (const lookup of lookups) {
+    let access: RepoAccess | null;
+    if (lookup.kind === 'node') {
+      access = cloud;
+    } else {
+      const repo = lookup.repoFullName.toLowerCase();
+      if (!byRepo.has(repo)) byRepo.set(repo, accessForRepo(lookup.repoFullName).catch(() => null));
+      access = await byRepo.get(repo)!;
+    }
+    if (!access) continue;
+    accountOf.set(prLookupKey(lookup), access.account);
+    const group = groups.get(access.token) ?? { access, lookups: [] };
+    group.lookups.push(lookup);
+    groups.set(access.token, group);
+  }
+  const results = new Map<string, PrLookupResult>();
+  for (const { access, lookups: batch } of groups.values()) {
+    for (const [key, result] of await fetchPullRequests(access.token, batch)) results.set(key, result);
+  }
+  return { results, accountOf };
 }
 
 export async function collectActiveSessions(options: CollectActiveSessionsOptions): Promise<ActiveSessionsSnapshot> {
@@ -203,7 +261,7 @@ export async function collectActiveSessions(options: CollectActiveSessionsOption
         lookups.push({ kind: 'branch', repoFullName: repo, branch, headOwner: isPushRepo ? undefined : pushOwner });
       }
     }
-    links.push({ session, lookups });
+    links.push({ session, lookups, noLookupLabel: noLookupLabel(git) });
   }
 
   // ── Cloud sessions ──────────────────────────────────────────────────────────
@@ -265,25 +323,35 @@ export async function collectActiveSessions(options: CollectActiveSessionsOption
   }
 
   // ── PR linking + readiness ──────────────────────────────────────────────────
-  const results: Map<string, PrLookupResult> = token
-    ? await fetchPullRequests(token, links.flatMap((l) => l.lookups))
-    : new Map();
+  const cloudAccess: RepoAccess | null = token ? { token, account: options.accessAccount ?? '' } : null;
+  const { results, accountOf } = await fetchWithAccounts(
+    links.flatMap((l) => l.lookups),
+    cloudAccess,
+    options.accessForRepo ?? (async () => cloudAccess),
+  );
   const checkedAt = new Date(now).toISOString();
 
   const entries: ActiveSessionEntry[] = [];
   let hiddenCloud = 0;
-  for (const { session, lookups } of links) {
+  for (const { session, lookups, noLookupLabel: emptyLabel } of links) {
     let pr: PrReadiness | null = null;
     let prError: string | null = null;
+    let prAccount: string | null = null;
+    let checked = false;
     for (const lookup of lookups) {
-      const result = results.get(prLookupKey(lookup));
+      const key = prLookupKey(lookup);
+      const result = results.get(key);
       if (!result) continue;
+      checked = true;
+      prAccount ??= accountOf.get(key) || null;
       if (!result.ok) {
-        prError = result.error;
+        const account = accountOf.get(key);
+        prError = account ? `${result.error} (checked as @${account})` : result.error;
         continue;
       }
       if (result.pr) {
         pr = evaluatePrReadiness(result.pr, checkedAt);
+        prAccount = accountOf.get(key) || null;
         prError = null;
         break;
       }
@@ -303,10 +371,13 @@ export async function collectActiveSessions(options: CollectActiveSessionsOption
       session,
       agent: describeAgentActivity(session.activity),
       pr,
-      prError: token ? prError : null,
-      ...(!token && lookups.length > 0
-        ? { verdict: 'no_pr' as const, verdictLabel: 'Sign in to GitHub to check PR' }
-        : verdictFor(pr)),
+      prError,
+      prAccount,
+      ...(lookups.length > 0 && !checked
+        ? { verdict: 'no_pr' as const, verdictLabel: 'Add a GitHub account to check PR' }
+        : lookups.length === 0 && emptyLabel
+          ? { verdict: 'no_pr' as const, verdictLabel: emptyLabel }
+          : verdictFor(pr)),
     });
   }
 

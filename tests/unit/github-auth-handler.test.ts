@@ -55,6 +55,16 @@ vi.mock('../../src/services/github-oauth', async (importOriginal) => {
   };
 });
 
+// No GitHub CLI accounts — never spawn the real `gh`.
+vi.mock('../../src/services/copilot-usage', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/services/copilot-usage')>();
+  return { ...actual, getGhCliToken: vi.fn(async () => null) };
+});
+vi.mock('../../src/services/github-accounts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/services/github-accounts')>();
+  return { ...actual, listGhCliAccounts: vi.fn(async () => []), listGhCliAccountsCached: vi.fn(async () => []) };
+});
+
 vi.mock('../../src/agent/config', () => ({
   loadConfig: vi.fn(() => ({
     preferences: {},
@@ -132,7 +142,7 @@ describe('GitHub Auth plugin — IPC handlers', () => {
   describe('github:oauth-status', () => {
     it('returns { authenticated: false } when no auth is stored', async () => {
       const result = await callHandler('github:oauth-status');
-      expect(result).toEqual({ authenticated: false });
+      expect(result).toEqual({ authenticated: false, unreadableLogin: null, fallback: null });
     });
 
     it('returns { authenticated: true } with login when auth is stored', async () => {
@@ -140,6 +150,13 @@ describe('GitHub Auth plugin — IPC handlers', () => {
       const result = (await callHandler('github:oauth-status')) as Record<string, unknown>;
       expect(result.authenticated).toBe(true);
       expect(result.login).toBe('octocat');
+    });
+
+    it('names a stored sign-in whose token can no longer be decrypted', async () => {
+      saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo read:user');
+      db.run("UPDATE github_auth SET access_token = 'not-decryptable'");
+      const result = (await callHandler('github:oauth-status')) as Record<string, unknown>;
+      expect(result).toMatchObject({ authenticated: false, unreadableLogin: 'octocat', fallback: null });
     });
 
     it('resolves { ok: false, error } via safeHandle when loadGitHubAuth throws synchronously', async () => {

@@ -782,6 +782,12 @@ export interface GitHubAccountInfo {
   sources: Array<'oauth' | 'pat' | 'gh-cli'>;
   /** The account `gh` currently uses by default on its host. */
   ghActive: boolean;
+  /**
+   * The Jarvis sign-in is stored but its token can't be decrypted (the encryption
+   * key changed). Jarvis falls back to the account's PAT or GitHub CLI token
+   * until the user signs in again.
+   */
+  signInUnreadable?: boolean;
 }
 
 export interface GitHubAccountUsage {
@@ -872,6 +878,8 @@ export interface ActiveSessionEntry {
   agent: ReadinessStage;
   pr: PrReadiness | null;
   prError?: string | null;
+  /** Account id the PR was looked up with (each repo uses the account assigned to it). */
+  prAccount?: string | null;
   verdict: ActiveSessionVerdict;
   verdictLabel: string;
 }

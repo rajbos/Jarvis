@@ -59,6 +59,19 @@ export async function accessForAccount(db: SqlJsDatabase, id: string): Promise<A
 }
 
 /**
+ * The primary account with a usable token: its Jarvis sign-in, else its PAT or
+ * GitHub CLI token — so a sign-in whose token can't be decrypted any more does
+ * not switch off every single-account feature. Without a Jarvis sign-in the
+ * primary is the GitHub CLI's active github.com account.
+ */
+export async function accessForPrimary(db: SqlJsDatabase): Promise<AccountAccess | null> {
+  const primary = listAccounts(db, await listGhCliAccountsCached()).find((a) => a.isPrimary);
+  if (!primary) return null;
+  const token = await resolveAccountToken(db, primary.id);
+  return token ? { ...token, isPrimary: true } : null;
+}
+
+/**
  * The account to use for a repo: its repo/owner assignment, else an account
  * that can see it, else the primary account. Falls back to the next candidate
  * when the preferred account has no credential. On another host than github.com
@@ -81,8 +94,10 @@ export async function accessForRepo(
   if (host !== DEFAULT_HOST) {
     const onHost = (await listAccountsWithAccess(db)).find((a) => a.host === host);
     if (onHost) return onHost;
+    return null;
   }
-  return null;
+  // No Jarvis sign-in: the primary is the GitHub CLI's active account.
+  return primary ? null : accessForPrimary(db);
 }
 
 /** The account for an owner (org or user): its owner assignment, else the primary account (or any account of its host). */

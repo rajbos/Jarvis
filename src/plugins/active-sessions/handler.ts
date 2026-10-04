@@ -10,7 +10,8 @@ import type { BrowserWindow } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import { safeHandle } from '../ipc-utils';
 import { logger } from '../../services/logger';
-import { loadGitHubAuth } from '../../services/github-oauth';
+import { accessForPrimary, accessForRepo } from '../../services/github-repo-access';
+import { DEFAULT_HOST } from '../../services/github-host';
 import { collectActiveSessions } from '../../services/active-sessions';
 import { saveDatabase } from '../../storage/database';
 import type { ActiveSessionsSnapshot, PrReadiness } from '../types';
@@ -95,8 +96,18 @@ export async function refreshActiveSessions(
 ): Promise<ActiveSessionsSnapshot> {
   if (inFlight) return inFlight;
   inFlight = (async () => {
-    const auth = loadGitHubAuth(db);
-    const snapshot = await collectActiveSessions({ accessToken: auth?.accessToken ?? null });
+    // Cloud agent tasks belong to the primary account; each local session's PR is
+    // looked up with the account that serves its repo (assignment, git config,
+    // discovery), so org repos are checked with the org account.
+    const primary = await accessForPrimary(db);
+    const snapshot = await collectActiveSessions({
+      accessToken: primary?.token ?? null,
+      accessAccount: primary?.id ?? null,
+      accessForRepo: async (repoFullName) => {
+        const access = await accessForRepo(db, repoFullName, DEFAULT_HOST);
+        return access ? { token: access.token, account: access.id } : null;
+      },
+    });
 
     const openPrs = new Map<string, PrReadiness>();
     const holdNotify = new Set<string>();

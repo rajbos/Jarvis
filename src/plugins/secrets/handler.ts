@@ -1,7 +1,8 @@
 // ── Secrets IPC handlers ──────────────────────────────────────────────────────
 import type { Database as SqlJsDatabase } from 'sql.js';
 import type { BrowserWindow } from 'electron';
-import { loadGitHubAuth, loadGitHubPat } from '../../services/github-oauth';
+import { loadGitHubPat } from '../../services/github-oauth';
+import { accessForPrimary } from '../../services/github-repo-access';
 import {
   scanUserRepoSecrets,
   searchSecrets,
@@ -15,7 +16,7 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
   // Intentionally kept custom catch/early-return shape (`{ error }`, not `{ ok: false, error }`):
   // the renderer's secrets scan UI checks `result.error` directly.
   safeHandle('secrets:scan', async () => {
-    const auth = loadGitHubAuth(db);
+    const auth = await accessForPrimary(db);
     if (!auth) return { error: 'Not authenticated with GitHub' };
 
     const pat = loadGitHubPat(db);
@@ -23,7 +24,7 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
     try {
       const result = await scanUserRepoSecrets(
         db,
-        auth.accessToken,
+        auth.token,
         auth.login,
         (done, total, secretsFound) => {
           _getWindow()?.webContents.send('secrets:scan-progress', { done, total, secretsFound });

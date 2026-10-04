@@ -293,16 +293,28 @@ export function setPrimaryGitHubLogin(db: SqlJsDatabase, login: string): boolean
   return true;
 }
 
+export interface GitHubAuthSummary {
+  login: string;
+  scopes: string;
+  avatarUrl: string | null;
+  hasPat: boolean;
+  /** False when the stored sign-in token can't be decrypted (the encryption key changed) — sign in again. */
+  tokenReadable: boolean;
+}
+
 /** Every account signed in through Jarvis (OAuth and/or PAT), without tokens. */
-export function listGitHubAuths(db: SqlJsDatabase): Array<{ login: string; scopes: string; avatarUrl: string | null; hasPat: boolean }> {
-  const stmt = db.prepare('SELECT login, scopes, avatar_url, pat FROM github_auth ORDER BY id ASC');
-  const rows: Array<{ login: string; scopes: string; avatarUrl: string | null; hasPat: boolean }> = [];
-  while (stmt.step()) {
-    const r = stmt.getAsObject() as unknown as AuthRow;
-    rows.push({ login: r.login, scopes: r.scopes ?? '', avatarUrl: r.avatar_url, hasPat: !!r.pat });
-  }
+export function listGitHubAuths(db: SqlJsDatabase): GitHubAuthSummary[] {
+  const stmt = db.prepare('SELECT login, access_token, scopes, avatar_url, pat FROM github_auth ORDER BY id ASC');
+  const rows: AuthRow[] = [];
+  while (stmt.step()) rows.push(stmt.getAsObject() as unknown as AuthRow);
   stmt.free();
-  return rows;
+  return rows.map((r) => ({
+    login: r.login,
+    scopes: r.scopes ?? '',
+    avatarUrl: r.avatar_url,
+    hasPat: !!r.pat,
+    tokenReadable: decryptAuthColumn(db, r.login, 'access_token', r.access_token) !== null,
+  }));
 }
 
 /**

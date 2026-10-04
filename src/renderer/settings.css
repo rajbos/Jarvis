@@ -304,6 +304,7 @@ code {
   color: #aab;
 }
 .account-tag.primary { border-color: #e94560; color: #ff8fa3; }
+.account-tag.warning { border-color: #ffb74d; color: #ffb74d; }
 .assignment-row {
   display: flex;
   align-items: center;

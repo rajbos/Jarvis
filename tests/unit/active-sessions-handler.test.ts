@@ -23,8 +23,10 @@ vi.mock('../../src/storage/database', async (importOriginal) => {
   return { ...actual, saveDatabase: vi.fn() };
 });
 
-vi.mock('../../src/services/github-oauth', () => ({
-  loadGitHubAuth: vi.fn(() => ({ accessToken: 'tok', login: 'me' })),
+vi.mock('../../src/services/github-repo-access', () => ({
+  accessForPrimary: vi.fn(async () => ({ id: 'me', host: 'github.com', login: 'me', token: 'tok', source: 'oauth', isPrimary: true })),
+  // An org repo resolves to the org account.
+  accessForRepo: vi.fn(async () => ({ id: 'me-org', host: 'github.com', login: 'me-org', token: 'tok-org', source: 'gh-cli', isPrimary: false })),
 }));
 
 vi.mock('../../src/services/active-sessions', () => ({
@@ -128,7 +130,9 @@ describe('refreshActiveSessions', () => {
 
     const snap = await refreshActiveSessions(db, () => win as never);
 
-    expect(collectActiveSessions).toHaveBeenCalledWith({ accessToken: 'tok' });
+    const opts = vi.mocked(collectActiveSessions).mock.calls[0][0];
+    expect(opts).toMatchObject({ accessToken: 'tok', accessAccount: 'me' });
+    await expect(opts.accessForRepo!('org/app')).resolves.toEqual({ token: 'tok-org', account: 'me-org' });
     expect(saveDatabase).toHaveBeenCalled();
     expect(Notification).toHaveBeenCalledTimes(1);
     expect(vi.mocked(Notification).mock.calls[0][0]).toMatchObject({ title: 'PR ready for your review' });

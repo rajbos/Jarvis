@@ -464,6 +464,7 @@ export function listAccounts(db: SqlJsDatabase, ghAccounts: GhCliAccount[]): Git
     info.avatarUrl = auth.avatarUrl;
     info.sources.push('oauth');
     if (auth.hasPat) info.sources.push('pat');
+    if (!auth.tokenReadable) info.signInUnreadable = true;
   }
   for (const acct of listHostAccounts(db)) {
     const info = entry(acct.host, acct.login);
