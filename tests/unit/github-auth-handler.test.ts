@@ -136,7 +136,7 @@ describe('GitHub Auth plugin — IPC handlers', () => {
     });
 
     it('returns { authenticated: true } with login when auth is stored', async () => {
-      saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo read:user', null);
+      saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo read:user');
       const result = (await callHandler('github:oauth-status')) as Record<string, unknown>;
       expect(result.authenticated).toBe(true);
       expect(result.login).toBe('octocat');
@@ -161,7 +161,7 @@ describe('GitHub Auth plugin — IPC handlers', () => {
     });
 
     it('returns { hasPat: true } with login when PAT is stored and valid', async () => {
-      saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo', null);
+      saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo');
       saveGitHubPat(db, 'octocat', 'ghp_test_token');
 
       const result = (await callHandler('github:pat-status')) as Record<string, unknown>;
@@ -171,7 +171,7 @@ describe('GitHub Auth plugin — IPC handlers', () => {
     });
 
     it('returns { hasPat: true, expired: false } without user info when validity is unknown', async () => {
-      saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo', null);
+      saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo');
       saveGitHubPat(db, 'octocat', 'ghp_test_token');
       vi.mocked(validateGitHubPat).mockResolvedValueOnce({ status: 'unknown', error: 'Network error' });
 
@@ -182,7 +182,7 @@ describe('GitHub Auth plugin — IPC handlers', () => {
     });
 
     it('returns { hasPat: true, expired: true } when GitHub rejects the stored PAT', async () => {
-      saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo', null);
+      saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo');
       saveGitHubPat(db, 'octocat', 'ghp_expired_token');
       vi.mocked(validateGitHubPat).mockResolvedValueOnce({ status: 'expired' });
 
@@ -205,7 +205,7 @@ describe('GitHub Auth plugin — IPC handlers', () => {
     });
 
     it('returns error when PAT belongs to a different user', async () => {
-      saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo', null);
+      saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo');
       vi.mocked(fetchGitHubUser).mockResolvedValueOnce({
         login: 'other-user',
         name: 'Other User',
@@ -221,7 +221,7 @@ describe('GitHub Auth plugin — IPC handlers', () => {
     });
 
     it('returns error when PAT is invalid (fetchGitHubUser throws)', async () => {
-      saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo', null);
+      saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo');
       vi.mocked(fetchGitHubUser).mockRejectedValueOnce(new Error('bad credentials'));
 
       const result = (await callHandler('github:save-pat', 'ghp_bad')) as Record<string, unknown>;
@@ -229,7 +229,7 @@ describe('GitHub Auth plugin — IPC handlers', () => {
     });
 
     it('returns ok:true when PAT is valid and matches authenticated user', async () => {
-      saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo', null);
+      saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo');
       vi.mocked(fetchGitHubUser).mockResolvedValueOnce({
         login: 'octocat',
         name: 'Octocat',
@@ -253,7 +253,7 @@ describe('GitHub Auth plugin — IPC handlers', () => {
     });
 
     it('returns { ok: true } when authenticated and PAT is deleted', () => {
-      saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo', null);
+      saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo');
       saveGitHubPat(db, 'octocat', 'ghp_test_token');
 
       const result = callHandler('github:delete-pat') as Record<string, unknown>;
@@ -265,7 +265,7 @@ describe('GitHub Auth plugin — IPC handlers', () => {
 
   describe('github:logout', () => {
     it('returns { ok: true } and removes auth from DB', () => {
-      saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo', null);
+      saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo');
 
       const result = callHandler('github:logout') as Record<string, unknown>;
       expect(result.ok).toBe(true);
@@ -323,7 +323,7 @@ describe('GitHub Auth plugin — IPC handlers', () => {
     });
 
     it('returns oauth rate limit data when authenticated and fetch succeeds', async () => {
-      saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo', null);
+      saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo');
       const mockRateLimit = {
         resources: { core: { limit: 5000, remaining: 4321, reset: 1700000000, used: 679 } },
       };
@@ -346,7 +346,7 @@ describe('GitHub Auth plugin — IPC handlers', () => {
     });
 
     it('shows both oauth and pat rate limits when both tokens exist', async () => {
-      saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo', null);
+      saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo');
       saveGitHubPat(db, 'octocat', 'ghp_pat_token');
       const mockRateLimit = {
         resources: { core: { limit: 5000, remaining: 4000, reset: 1700000000, used: 1000 } },
@@ -375,7 +375,7 @@ describe('GitHub Auth plugin — IPC handlers', () => {
     });
 
     it('marks the PAT as expired when the rate-limit call answers 401', async () => {
-      saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo', null);
+      saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo');
       saveGitHubPat(db, 'octocat', 'ghp_expired_token');
       const mockRateLimit = {
         resources: { core: { limit: 5000, remaining: 4000, reset: 1700000000, used: 1000 } },
@@ -397,7 +397,7 @@ describe('GitHub Auth plugin — IPC handlers', () => {
     });
 
     it('sets error on oauth source when fetch fails', async () => {
-      saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo', null);
+      saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo');
       global.fetch = vi.fn().mockRejectedValueOnce(new Error('Network error'));
 
       const result = (await callHandler('github:get-rate-limit')) as Record<string, unknown>;
@@ -408,7 +408,7 @@ describe('GitHub Auth plugin — IPC handlers', () => {
     });
 
     it('sets error on oauth source when API returns non-ok status', async () => {
-      saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo', null);
+      saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo');
       global.fetch = vi.fn().mockResolvedValueOnce({
         ok: false, status: 401,
         headers: { get: () => null },

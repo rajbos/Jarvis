@@ -107,7 +107,7 @@ describe('Local-repos plugin — IPC handlers', () => {
 
     it('returns folders from service', () => {
       vi.mocked(getScanFolders).mockReturnValueOnce([
-        { id: 1, path: '/home/user/repos', added_at: '' },
+        { id: 1, path: '/home/user/repos', addedAt: '' },
       ]);
       const result = callHandler('local:get-folders') as unknown[];
       expect(result).toHaveLength(1);

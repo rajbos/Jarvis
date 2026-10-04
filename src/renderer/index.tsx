@@ -1392,6 +1392,7 @@ function App() {
         rateLimit={rateLimit}
         claudeRateLimit={claudeRateLimit}
         copilotUsage={copilotUsage}
+        onCopilotUsageRefreshed={setCopilotUsage}
         otherAccountsUsage={otherAccountsUsage}
         onRefreshAccountsUsage={reloadAccountsUsage}
       />
@@ -1410,6 +1411,7 @@ interface BackgroundStatusBarProps {
   rateLimit: GitHubRateLimit | null;
   claudeRateLimit: ClaudeRateLimit | null;
   copilotUsage: CopilotUsage | null;
+  onCopilotUsageRefreshed: (usage: CopilotUsage) => void;
   otherAccountsUsage: GitHubAccountUsage[];
   onRefreshAccountsUsage: () => void;
 }
@@ -1423,6 +1425,7 @@ function BackgroundStatusBar({
   rateLimit,
   claudeRateLimit,
   copilotUsage,
+  onCopilotUsageRefreshed,
   otherAccountsUsage,
   onRefreshAccountsUsage,
 }: BackgroundStatusBarProps) {
@@ -1605,7 +1608,7 @@ function BackgroundStatusBar({
               onOpenSettings={() => void window.jarvis.openSettings()}
               onRefresh={() => {
                 window.jarvis.refreshCopilotUsage()
-                  .then((res) => { if (!isIpcError(res)) setCopilotUsage(res); })
+                  .then((res) => { if (!isIpcError(res)) onCopilotUsageRefreshed(res); })
                   .catch(() => { /* non-fatal */ });
                 onRefreshAccountsUsage();
               }}

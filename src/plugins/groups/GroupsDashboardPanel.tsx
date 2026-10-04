@@ -111,6 +111,9 @@ export function GroupsDashboardPanel() {
     return () => { unsub(); };
   }, []);
 
+  // Clear the note/cloud folder fetching indicator once the background scrape finishes
+  useEffect(() => window.jarvis.onRuddrProjectDetailsRefreshed(() => setDetailsLoading(false)), []);
+
   const handleRefresh = async () => {
     // Sync the Ruddr project list first (detect new projects, persist to DB).
     // Also triggers refreshLinkedProjectDetails in the background for any projects
@@ -292,7 +295,6 @@ function GroupCard(props: {
   // Re-fetch project info when the background refresh updates note/cloud folder data
   useEffect(() => {
     const unsub = window.jarvis.onRuddrProjectDetailsRefreshed(() => {
-      setDetailsLoading(false);
       const names = group.ruddrProjectNames ?? [];
       for (const name of names) {
         window.jarvis.groupsGetRuddrProjectInfo(name)

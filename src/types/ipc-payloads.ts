@@ -44,9 +44,8 @@ export interface BrowserExtensionEventPayload {
   data?: unknown;
 }
 
-export interface NewRuddrProjectsPayload {
-  projects: Array<{ name: string; path: string }>;
-}
+/** Sent as a bare array by refreshRuddrProjectsInBackground (src/plugins/groups/handler.ts). */
+export type NewRuddrProjectsPayload = Array<{ name: string; path: string }>;
 
 export interface BrowserExtensionConnectedPayload {
   count: number;

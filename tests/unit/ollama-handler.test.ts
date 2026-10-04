@@ -37,9 +37,13 @@ vi.mock('../../src/services/ollama', () => ({
 }));
 
 import { registerHandlers } from '../../src/plugins/ollama/handler';
-import { checkOllama } from '../../src/services/ollama';
+import { checkOllama, type OllamaModel } from '../../src/services/ollama';
 
 // ── Helper ────────────────────────────────────────────────────────────────────
+
+function makeModel(name: string): OllamaModel {
+  return { name, model: name, size: 0, digest: `sha256:${name}`, modified_at: '' };
+}
 
 function callHandler(channel: string, ...args: unknown[]): unknown {
   const handler = handlers.get(channel);
@@ -67,7 +71,8 @@ describe('Ollama plugin — IPC handlers', () => {
     // Reset default mock
     vi.mocked(checkOllama).mockResolvedValue({
       available: true,
-      models: ['llama3', 'mistral'],
+      baseUrl: 'http://localhost:11434',
+      models: [makeModel('llama3'), makeModel('mistral')],
       error: undefined,
     });
   });
