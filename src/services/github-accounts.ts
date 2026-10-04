@@ -25,7 +25,7 @@ import path from 'path';
 import { execFile } from 'child_process';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import { parseGitHubRemote } from './local-discovery';
-import { encrypt, decrypt, getEncryptionKey } from '../storage/encryption';
+import { encrypt, decryptSecret, getEncryptionKey } from '../storage/encryption';
 import { getGhCliToken } from './copilot-usage';
 import { listRepoViewers, recordRepoVisibility } from './github-repo-visibility';
 import { getPrimaryGitHubLogin, listGitHubAuths, loadGitHubAuth, loadGitHubPat } from './github-oauth';
@@ -404,7 +404,10 @@ export function loadHostAccountPat(db: SqlJsDatabase, id: string): string | null
   stmt.free();
   if (!row?.pat) return null;
   try {
-    return decrypt(row.pat, getEncryptionKey());
+    const { value, stale } = decryptSecret(row.pat);
+    // Recovered with an archived key — move it to the current one
+    if (stale) db.run('UPDATE github_host_accounts SET pat = ? WHERE id = ? COLLATE NOCASE', [encrypt(value, getEncryptionKey()), id]);
+    return value;
   } catch {
     return null;
   }

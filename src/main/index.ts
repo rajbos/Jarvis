@@ -17,6 +17,13 @@ import { checkForUpdates, registerUpdateIpcHandlers, startUpdateChecks, stopUpda
 import { safeHandle } from '../plugins/ipc-utils';
 if (process.env.JARVIS_CONFIG_DIR) {
   app.setPath('userData', path.join(process.env.JARVIS_CONFIG_DIR, 'electron'));
+} else if (!app.isPackaged) {
+  // `electron dist/main/index.js` finds no package.json, so the dev build is
+  // named "Electron" and would use %APPDATA%\Electron. safeStorage's OS key
+  // lives in userData, so the dev build could not decrypt keystore.bin in
+  // %APPDATA%\Jarvis and replaced it, locking the installed app out of every
+  // stored token. Use the installed app's folder so both share one key.
+  app.setPath('userData', path.join(app.getPath('appData'), 'Jarvis'));
 }
 setLogLevel(app.isPackaged ? 'warn' : 'debug');
 

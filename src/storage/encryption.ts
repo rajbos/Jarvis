@@ -7,6 +7,11 @@ const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 16;
 const TAG_LENGTH = 16;
 
+// The key is loaded once per key file, so a running instance keeps working
+// even if another process rewrites the file underneath it.
+let currentKeyCache: { file: string; key: Buffer } | null = null;
+let retiredKeysCache: { dir: string; keys: Buffer[] } | null = null;
+
 /**
  * Encrypts a plaintext string using AES-256-GCM.
  * Returns a base64-encoded string containing IV + ciphertext + auth tag.
@@ -72,6 +77,25 @@ function getKeyFilePath(): string {
 }
 
 /**
+ * Moves an unreadable key file aside as `<name>.<timestamp>-<random>.bak` instead of
+ * overwriting it, so the secrets it protects can still be recovered once
+ * whatever broke it (e.g. another instance with a different OS key) is gone.
+ */
+function archiveKeyFile(keyFile: string): void {
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  // Random suffix: two archives in the same millisecond must not collide, and
+  // on POSIX renameSync would silently replace the earlier archive.
+  const target = `${keyFile}.${stamp}-${crypto.randomBytes(4).toString('hex')}.bak`;
+  try {
+    fs.renameSync(keyFile, target);
+    logger.warn(`[Encryption] Moved unreadable ${path.basename(keyFile)} to ${path.basename(target)}`);
+  } catch (err) {
+    logger.error(`[Encryption] Failed to archive ${path.basename(keyFile)}:`, err);
+  }
+  retiredKeysCache = null;
+}
+
+/**
  * Loads or creates the encryption key using Electron's safeStorage API.
  * safeStorage encrypts the key material with OS-level credential protection
  * (DPAPI on Windows, Keychain on macOS, libsecret on Linux).
@@ -80,7 +104,8 @@ function getKeyFilePath(): string {
  * with safeStorage, and persists the encrypted blob to keystore.bin.
  *
  * On subsequent calls: reads keystore.bin, decrypts with safeStorage, and
- * returns the key. If the file is unreadable or corrupted, generates a new key.
+ * returns the key. If the file is unreadable or corrupted, it is archived (see
+ * {@link archiveKeyFile}) and a new key is generated.
  */
 function getOrCreateKeyWithSafeStorage(
   safeStorage: Electron.SafeStorage,
@@ -93,11 +118,11 @@ function getOrCreateKeyWithSafeStorage(
       const hexKey = safeStorage.decryptString(encrypted);
       const key = Buffer.from(hexKey, 'hex');
       if (key.length === 32) return key;
-      // Key length mismatch — fall through to regenerate
+      logger.warn('[Encryption] keystore.bin has unexpected length — regenerating key');
     } catch {
-      // Corrupted or stale file — fall through to regenerate
       logger.warn('[Encryption] Failed to decrypt keystore.bin — regenerating key');
     }
+    archiveKeyFile(keyFile);
   }
 
   // Generate and persist a new key
@@ -127,9 +152,8 @@ function getFallbackKeyFilePath(): string {
  * file-system access to read (file permissions 0o600).
  *
  * If the file doesn't exist, a new key is generated and persisted.
- * If the file is unreadable/corrupted, a warning is logged and a new key
- * is generated (existing encrypted data becomes undecryptable, forcing the
- * caller through the try/catch re-auth path in github-oauth.ts).
+ * If the file is unreadable/corrupted, it is archived and a new key is
+ * generated; secrets under the old key stay recoverable via {@link decryptSecret}.
  */
 function getOrCreateFallbackKey(): Buffer {
   const keyFile = getFallbackKeyFilePath();
@@ -142,6 +166,7 @@ function getOrCreateFallbackKey(): Buffer {
     } catch {
       logger.warn('[Encryption] Failed to read keystore.fallback.bin — regenerating');
     }
+    archiveKeyFile(keyFile);
   }
 
   const key = crypto.randomBytes(32);
@@ -156,6 +181,29 @@ function getOrCreateFallbackKey(): Buffer {
   return key;
 }
 
+/** Electron's safeStorage when it can encrypt here, otherwise null. */
+function loadSafeStorage(): Electron.SafeStorage | null {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { safeStorage } = require('electron') as typeof import('electron');
+    if (safeStorage.isEncryptionAvailable()) return safeStorage;
+    logger.warn(
+      '[Encryption] Electron safeStorage is available but isEncryptionAvailable() ' +
+      'returned false. Falling back to file-based key store. ' +
+      'Set JARVIS_ENCRYPTION_KEY to avoid this weaker fallback.',
+    );
+  } catch {
+    // Not in an Electron context (e.g. unit tests running in plain Node.js)
+  }
+  return null;
+}
+
+/** Forget cached keys (tests switch JARVIS_CONFIG_DIR between cases). */
+export function resetEncryptionKeyCache(): void {
+  currentKeyCache = null;
+  retiredKeysCache = null;
+}
+
 /**
  * Gets the encryption key used to protect sensitive data at rest.
  *
@@ -166,11 +214,6 @@ function getOrCreateFallbackKey(): Buffer {
  *    credential store (DPAPI on Windows, Keychain on macOS). Uses keystore.bin.
  * 3. File-based fallback — a CSPRNG 32-byte key persisted to keystore.fallback.bin
  *    with 0o600 permissions. Used outside Electron (e.g. dev, CI).
- *
- * NOTE: The previous COMPUTERNAME-derived fallback has been removed. Existing
- * encrypted tokens (OAuth / PAT) will fail decryption with the new key, which
- * is handled gracefully by the try/catch in loadGitHubAuth / loadGitHubPat —
- * they return null and the user is prompted to re-authenticate.
  */
 export function getEncryptionKey(): Buffer {
   const envKey = process.env.JARVIS_ENCRYPTION_KEY;
@@ -178,22 +221,65 @@ export function getEncryptionKey(): Buffer {
     return deriveKey(envKey);
   }
 
-  // Try Electron safeStorage (only available in the main process)
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { safeStorage } = require('electron') as typeof import('electron');
-    if (safeStorage.isEncryptionAvailable()) {
-      return getOrCreateKeyWithSafeStorage(safeStorage);
-    }
-    logger.warn(
-      '[Encryption] Electron safeStorage is available but isEncryptionAvailable() ' +
-      'returned false. Falling back to file-based key store. ' +
-      'Set JARVIS_ENCRYPTION_KEY to avoid this weaker fallback.',
-    );
-  } catch {
-    // Not in an Electron context (e.g. unit tests running in plain Node.js)
-  }
+  const safeStorage = loadSafeStorage();
+  const file = safeStorage ? getKeyFilePath() : getFallbackKeyFilePath();
+  if (currentKeyCache?.file === file) return currentKeyCache.key;
+  const key = safeStorage ? getOrCreateKeyWithSafeStorage(safeStorage) : getOrCreateFallbackKey();
+  currentKeyCache = { file, key };
+  return key;
+}
 
-  // Fallback: generate/persist/load a random 32-byte key from disk
-  return getOrCreateFallbackKey();
+/**
+ * Keys from archived key files (see {@link archiveKeyFile}) that can still be
+ * unlocked here, newest first.
+ */
+function getRetiredKeys(): Buffer[] {
+  if (process.env.JARVIS_ENCRYPTION_KEY) return [];
+  const dir = getConfigDirPath();
+  if (retiredKeysCache?.dir === dir) return retiredKeysCache.keys;
+
+  const keys: Buffer[] = [];
+  let names: string[] = [];
+  try {
+    names = fs.readdirSync(dir).filter((n) => /^keystore(\.fallback)?\.bin\..+\.bak$/.test(n)).sort().reverse();
+  } catch {
+    // No config dir yet — nothing archived
+  }
+  const safeStorage = names.some((n) => n.startsWith('keystore.bin.')) ? loadSafeStorage() : null;
+  for (const name of names) {
+    try {
+      const data = fs.readFileSync(path.join(dir, name));
+      const key = name.startsWith('keystore.fallback.bin.')
+        ? data
+        : safeStorage
+          ? Buffer.from(safeStorage.decryptString(data), 'hex')
+          : null;
+      if (key?.length === 32) keys.push(key);
+    } catch {
+      // Protected by an OS key this process can't use — skip it
+    }
+  }
+  retiredKeysCache = { dir, keys };
+  return keys;
+}
+
+/**
+ * Decrypts a secret with the current key, falling back to archived keys.
+ * `stale` is true when an archived key was needed: the caller should store
+ * `encrypt(value, getEncryptionKey())` so the secret moves to the current key.
+ * Throws when no available key can decrypt it.
+ */
+export function decryptSecret(encryptedBase64: string): { value: string; stale: boolean } {
+  try {
+    return { value: decrypt(encryptedBase64, getEncryptionKey()), stale: false };
+  } catch (err) {
+    for (const key of getRetiredKeys()) {
+      try {
+        return { value: decrypt(encryptedBase64, key), stale: true };
+      } catch {
+        // Try the next archived key
+      }
+    }
+    throw err;
+  }
 }
