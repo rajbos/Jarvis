@@ -6,6 +6,7 @@ import {
   type GitHubAccountInfo,
   type GitHubAccountUsage,
 } from '../plugins/types';
+import { DeviceCodePrompt } from './device-code-prompt';
 
 const SOURCE_LABEL: Record<GitHubAccountInfo['sources'][number], string> = {
   oauth: 'Jarvis sign-in',
@@ -138,7 +139,7 @@ export function GitHubAccountsSection() {
   const [usage, setUsage] = useState<GitHubAccountUsage[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [checking, setChecking] = useState(false);
-  const [signIn, setSignIn] = useState<{ userCode?: string; verificationUri?: string; error?: string } | null>(null);
+  const [signIn, setSignIn] = useState<{ userCode?: string; verificationUri?: string; copied?: boolean; error?: string } | null>(null);
   const [syncMsg, setSyncMsg] = useState('');
   const [newOwner, setNewOwner] = useState('');
   const [gheHost, setGheHost] = useState('');
@@ -179,7 +180,7 @@ export function GitHubAccountsSection() {
   const addAccount = async () => {
     setSignIn({});
     const res = await window.jarvis.startGitHubOAuth({ additional: true });
-    setSignIn(res.error ? { error: res.error } : { userCode: res.userCode, verificationUri: res.verificationUri });
+    setSignIn(res.error ? { error: res.error } : { userCode: res.userCode, verificationUri: res.verificationUri, copied: res.copied });
   };
 
   const addHostAccount = async () => {
@@ -289,16 +290,19 @@ export function GitHubAccountsSection() {
         </p>
       )}
 
-      {signIn && (
-        <p class="hint" style={{ marginTop: '0.4rem' }}>
-          {signIn.error
-            ? <span style={{ color: '#ff8080' }}>Sign-in failed: {signIn.error}</span>
-            : signIn.userCode
-              ? <>A browser tab was opened at <code>{signIn.verificationUri}</code> — sign in to the account you want to add,
-                  enter code <strong><code>{signIn.userCode}</code></strong> and click <strong>Authorize</strong>.</>
+      {signIn && (signIn.userCode && !signIn.error
+        ? (
+          <DeviceCodePrompt key={signIn.userCode} userCode={signIn.userCode} verificationUri={signIn.verificationUri} copied={signIn.copied}>
+            Sign in there as the account you want to add.
+          </DeviceCodePrompt>
+        )
+        : (
+          <p class="hint" style={{ marginTop: '0.4rem' }}>
+            {signIn.error
+              ? <span style={{ color: '#ff8080' }}>Sign-in failed: {signIn.error}</span>
               : 'Starting GitHub sign-in…'}
-        </p>
-      )}
+          </p>
+        ))}
 
       <h2 style={{ marginTop: '1rem' }}>Account per owner / repo</h2>
       <p class="hint">
