@@ -70,6 +70,16 @@ The workflow builds with `electron-builder --publish never` and uploads assets i
 
 The installer is currently unsigned, so Windows SmartScreen may warn until a code-signing certificate is configured.
 
+### Verifying an installer
+
+The release workflow records a [build provenance attestation](https://docs.github.com/actions/security-for-github-actions/using-artifact-attestations) for every `Jarvis-Setup-<version>.exe` it builds. To confirm a downloaded installer was built by this repository's release workflow and has not been altered, run (with the [GitHub CLI](https://cli.github.com/) signed in):
+
+```bash
+gh attestation verify Jarvis-Setup-0.1.13.exe --repo rajbos/Jarvis
+```
+
+The command fails if the file's SHA-256 does not match an attestation from `rajbos/Jarvis`. Installers from releases published before attestations were added have no attestation and fail this check.
+
 # Jarvis
 
 Rob's personal assistant agent — a locally-hosted AI agent built with Electron and TypeScript that runs on Windows, uses [Ollama](https://ollama.com/) for natural-language understanding, and is extensible via [MCP (Model Context Protocol)](https://modelcontextprotocol.io/).
