@@ -5,8 +5,7 @@ on:
     tags:
       - 'v*'
 
-permissions:
-  contents: write
+permissions: {}
 
 defaults:
   run:
@@ -14,6 +13,9 @@ defaults:
 
 jobs:
   release:
+    # Needed to create the GitHub release and upload installer assets
+    permissions:
+      contents: write
     runs-on: windows-latest
 
     steps:
