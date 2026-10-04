@@ -33,6 +33,9 @@ export interface OAuthResult {
 
   verificationUri?: string;
 
+  /** The main process already put `userCode` on the clipboard. */
+  copied?: boolean;
+
 }
 
 export interface DiscoveryProgress {

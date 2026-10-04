@@ -1,5 +1,5 @@
 // ── GitHub OAuth + PAT IPC handlers ──────────────────────────────────────────
-import { shell, Notification, BrowserWindow } from 'electron';
+import { shell, clipboard, Notification, BrowserWindow } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import {
   requestDeviceCode,
@@ -251,6 +251,15 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
         additional: opts?.additional === true,
       };
       activeDeviceFlow = flow;
+      // Copy the code before the browser takes focus: a renderer can't write the
+      // clipboard once its window is in the background.
+      let copied = false;
+      try {
+        clipboard.writeText(deviceCode.user_code);
+        copied = true;
+      } catch (err) {
+        logger.warn('[IPC] Could not copy device code to clipboard:', err instanceof Error ? err.message : String(err));
+      }
       shell.openExternal(deviceCode.verification_uri);
       startPollingLoop(flow, db, getWindow);
       return {
@@ -258,6 +267,7 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
         userCode: deviceCode.user_code,
         verificationUri: deviceCode.verification_uri,
         expiresIn: deviceCode.expires_in,
+        copied,
       };
     } catch (err) {
       return { error: String(err) };
