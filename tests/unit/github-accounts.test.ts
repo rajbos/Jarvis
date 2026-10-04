@@ -18,6 +18,7 @@ import {
   listHostAccounts,
   loadHostAccountPat,
   deleteHostAccount,
+  listAccounts,
 } from '../../src/services/github-accounts';
 import {
   saveGitHubAuth,
@@ -266,9 +267,17 @@ describe('multiple stored GitHub sign-ins', () => {
 
   it('lists accounts without exposing tokens', () => {
     expect(listGitHubAuths(db)).toEqual([
-      { login: 'alice', scopes: 'repo', avatarUrl: 'a.png', hasPat: false },
-      { login: 'alice-work', scopes: 'repo,user', avatarUrl: null, hasPat: true },
+      { login: 'alice', scopes: 'repo', avatarUrl: 'a.png', hasPat: false, tokenReadable: true },
+      { login: 'alice-work', scopes: 'repo,user', avatarUrl: null, hasPat: true, tokenReadable: true },
     ]);
+  });
+
+  it('flags a sign-in whose token can no longer be decrypted, in the account list too', () => {
+    db.run("UPDATE github_auth SET access_token = 'not-decryptable' WHERE login = 'alice'");
+    expect(listGitHubAuths(db).map((a) => [a.login, a.tokenReadable])).toEqual([['alice', false], ['alice-work', true]]);
+    const accounts = listAccounts(db, []);
+    expect(accounts.find((a) => a.login === 'alice')?.signInUnreadable).toBe(true);
+    expect(accounts.find((a) => a.login === 'alice-work')?.signInUnreadable).toBeUndefined();
   });
 
   it('keeps the chosen primary account for the single-account loaders', () => {

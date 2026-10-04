@@ -5,8 +5,7 @@ on:
     tags:
       - 'v*'
 
-permissions:
-  contents: write
+permissions: {}
 
 defaults:
   run:
@@ -19,6 +18,9 @@ concurrency:
 
 jobs:
   release:
+    # Needed to create the GitHub release and upload installer assets
+    permissions:
+      contents: write
     runs-on: windows-latest
     timeout-minutes: 30
 

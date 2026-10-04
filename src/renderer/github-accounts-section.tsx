@@ -6,6 +6,7 @@ import {
   type GitHubAccountInfo,
   type GitHubAccountUsage,
 } from '../plugins/types';
+import { DeviceCodePrompt } from './device-code-prompt';
 
 const SOURCE_LABEL: Record<GitHubAccountInfo['sources'][number], string> = {
   oauth: 'Jarvis sign-in',
@@ -26,9 +27,24 @@ function usageLine(entry: GitHubAccountUsage | undefined): string {
   return `${used} AI credits used this month${of}${plan}`;
 }
 
+/** What a row's credentials let Jarvis do while its Jarvis sign-in can't be read. */
+function unreadableHint(account: GitHubAccountInfo): string {
+  const using = account.sources.includes('pat') ? 'its PAT'
+    : account.sources.includes('gh-cli') ? 'its GitHub CLI token'
+      : null;
+  return `The saved Jarvis sign-in for @${account.login} can't be decrypted any more (the encryption key changed). ` +
+    (using ? `Jarvis uses ${using} until you sign in again.` : 'Sign in again — nothing else can act as this account.');
+}
+
 function AccountRow({
-  usage, account, onChanged,
-}: { account: GitHubAccountInfo; usage: GitHubAccountUsage | undefined; onChanged: () => void }) {
+  usage, account, onChanged, onSignInAgain, signingIn,
+}: {
+  account: GitHubAccountInfo;
+  usage: GitHubAccountUsage | undefined;
+  onChanged: () => void;
+  onSignInAgain: (account: GitHubAccountInfo) => void;
+  signingIn: boolean;
+}) {
   const [draft, setDraft] = useState('');
   const [saving, setSaving] = useState(false);
   const budget = usage?.usage.budgetCredits ?? null;
@@ -56,8 +72,15 @@ function AccountRow({
         <strong>@{account.login}</strong>
         {account.host !== 'github.com' && <span class="account-tag">{account.host}</span>}
         {account.isPrimary && <span class="account-tag primary">primary</span>}
-        {account.sources.map((s) => <span key={s} class="account-tag">{SOURCE_LABEL[s]}</span>)}
+        {account.sources.map((s) => s === 'oauth' && account.signInUnreadable
+          ? <span key={s} class="account-tag warning" title={unreadableHint(account)}>⚠ Jarvis sign-in unreadable</span>
+          : <span key={s} class="account-tag">{SOURCE_LABEL[s]}</span>)}
         <div style={{ flex: 1 }} />
+        {account.signInUnreadable && (
+          <button class="btn-save" disabled={signingIn} onClick={() => onSignInAgain(account)}>
+            Sign in again
+          </button>
+        )}
         {!account.isPrimary && account.sources.includes('oauth') && (
           <button
             class="btn-secondary"
@@ -85,6 +108,7 @@ function AccountRow({
           </button>
         )}
       </div>
+      {account.signInUnreadable && <p class="hint" style={{ color: '#ffb74d', margin: '0.2rem 0' }}>{unreadableHint(account)}</p>}
       <p class="hint account-usage" style={usage?.usage.error ? { color: '#ffb74d' } : undefined}>{usageLine(usage)}</p>
       <div class="btn-row" style={{ alignItems: 'center', gap: '0.5rem', marginTop: '0.25rem' }}>
         <input
@@ -138,7 +162,7 @@ export function GitHubAccountsSection() {
   const [usage, setUsage] = useState<GitHubAccountUsage[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [checking, setChecking] = useState(false);
-  const [signIn, setSignIn] = useState<{ userCode?: string; verificationUri?: string; error?: string } | null>(null);
+  const [signIn, setSignIn] = useState<{ userCode?: string; verificationUri?: string; copied?: boolean; error?: string } | null>(null);
   const [syncMsg, setSyncMsg] = useState('');
   const [newOwner, setNewOwner] = useState('');
   const [gheHost, setGheHost] = useState('');
@@ -176,10 +200,11 @@ export function GitHubAccountsSection() {
     });
   }, []);
 
-  const addAccount = async () => {
+  // Re-signing the primary account keeps it primary; any other account is signed in as an additional one.
+  const addAccount = async (additional = true) => {
     setSignIn({});
-    const res = await window.jarvis.startGitHubOAuth({ additional: true });
-    setSignIn(res.error ? { error: res.error } : { userCode: res.userCode, verificationUri: res.verificationUri });
+    const res = await window.jarvis.startGitHubOAuth({ additional });
+    setSignIn(res.error ? { error: res.error } : { userCode: res.userCode, verificationUri: res.verificationUri, copied: res.copied });
   };
 
   const addHostAccount = async () => {
@@ -234,7 +259,9 @@ export function GitHubAccountsSection() {
       <p class="hint">
         Track several GitHub accounts and check each one's Copilot usage against its own monthly budget. Accounts come from
         Jarvis sign-ins and from the GitHub CLI (<code>gh auth login</code> — also what lets Jarvis read org-billed Copilot
-        quota). The primary account is used by everything that works with a single account.
+        quota). The primary account (the Jarvis sign-in you made primary, else the GitHub CLI's active account) is used by
+        everything that works with a single account; per-repo work such as PR checks in Agent Sessions uses the account
+        assigned to that owner or repo below.
       </p>
 
       {loading && <p class="hint">Loading accounts…</p>}
@@ -247,6 +274,8 @@ export function GitHubAccountsSection() {
           account={account}
           usage={usage?.find((u) => u.account.id === account.id)}
           onChanged={reload}
+          onSignInAgain={(a) => void addAccount(!a.isPrimary)}
+          signingIn={signIn !== null && !signIn.error}
         />
       ))}
 
@@ -289,16 +318,19 @@ export function GitHubAccountsSection() {
         </p>
       )}
 
-      {signIn && (
-        <p class="hint" style={{ marginTop: '0.4rem' }}>
-          {signIn.error
-            ? <span style={{ color: '#ff8080' }}>Sign-in failed: {signIn.error}</span>
-            : signIn.userCode
-              ? <>A browser tab was opened at <code>{signIn.verificationUri}</code> — sign in to the account you want to add,
-                  enter code <strong><code>{signIn.userCode}</code></strong> and click <strong>Authorize</strong>.</>
+      {signIn && (signIn.userCode && !signIn.error
+        ? (
+          <DeviceCodePrompt key={signIn.userCode} userCode={signIn.userCode} verificationUri={signIn.verificationUri} copied={signIn.copied}>
+            Sign in there as the account you want to add.
+          </DeviceCodePrompt>
+        )
+        : (
+          <p class="hint" style={{ marginTop: '0.4rem' }}>
+            {signIn.error
+              ? <span style={{ color: '#ff8080' }}>Sign-in failed: {signIn.error}</span>
               : 'Starting GitHub sign-in…'}
-        </p>
-      )}
+          </p>
+        ))}
 
       <h2 style={{ marginTop: '1rem' }}>Account per owner / repo</h2>
       <p class="hint">

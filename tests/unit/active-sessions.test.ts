@@ -127,7 +127,7 @@ describe('collectActiveSessions', () => {
     expect(snap.sources.copilotCloud).toMatchObject({ skipped: true });
     expect(snap.entries).toHaveLength(1);
     expect(snap.entries[0].session).toMatchObject({ repoFullName: 'me/repo', branch: 'feature' });
-    expect(snap.entries[0].verdictLabel).toBe('Sign in to GitHub to check PR');
+    expect(snap.entries[0].verdictLabel).toBe('Add a GitHub account to check PR');
   });
 
   it('links a local session to the open PR on its branch and evaluates readiness', async () => {
@@ -166,8 +166,42 @@ describe('collectActiveSessions', () => {
 
     const snap = await collectActiveSessions({ accessToken: 'tok', now: () => NOW });
 
-    expect(vi.mocked(fetchPullRequests).mock.calls[0][1]).toEqual([]);
-    expect(snap.entries[0].verdictLabel).toBe('No PR yet');
+    expect(fetchPullRequests).not.toHaveBeenCalled();
+    expect(snap.entries[0].verdictLabel).toBe('No PR (on main)');
+  });
+
+  it('says why there is nothing to look up for a folder without a GitHub remote', async () => {
+    vi.mocked(discoverCopilotLocalSessions).mockResolvedValue({ sessions: [localSession({})], mirroredTasks: new Map() });
+    vi.mocked(resolveGitContext).mockReturnValue({ ...gitCtx('feature'), repoFullName: null, repoCandidates: [] });
+
+    const snap = await collectActiveSessions({ accessToken: 'tok', now: () => NOW });
+
+    expect(snap.entries[0].verdictLabel).toBe('No GitHub remote');
+  });
+
+  it('looks up each repo with the account that serves it and reports that account', async () => {
+    vi.mocked(discoverCopilotLocalSessions).mockResolvedValue({
+      sessions: [localSession({}), localSession({ key: 'local:copilot:s2', sessionId: 's2', cwd: 'C:\src\org' })],
+      mirroredTasks: new Map(),
+    });
+    vi.mocked(resolveGitContext).mockImplementation((cwd) => (cwd.endsWith('org') ? gitCtx('feature', ['org/app']) : gitCtx('feature')));
+    const accessForRepo = vi.fn(async (repo: string) => (repo.startsWith('org/')
+      ? { token: 'tok-org', account: 'me-org' }
+      : { token: 'tok', account: 'me' }));
+    vi.mocked(fetchPullRequests).mockImplementation(async (token, lookups) => new Map(lookups.map((l) => [
+      prLookupKey(l),
+      token === 'tok-org'
+        ? { ok: false as const, error: 'Could not resolve to a Repository' }
+        : { ok: true as const, pr: rawPr() },
+    ])));
+
+    const snap = await collectActiveSessions({ accessToken: 'tok', accessAccount: 'me', accessForRepo, now: () => NOW });
+
+    expect(vi.mocked(fetchPullRequests).mock.calls.map((c) => c[0]).sort()).toEqual(['tok', 'tok-org']);
+    const mine = snap.entries.find((e) => e.session.key === 'local:copilot:s1')!;
+    const org = snap.entries.find((e) => e.session.key === 'local:copilot:s2')!;
+    expect(mine).toMatchObject({ prAccount: 'me', verdict: 'ready' });
+    expect(org).toMatchObject({ prAccount: 'me-org', prError: 'Could not resolve to a Repository (checked as @me-org)' });
   });
 
   it('matches the PR on the local branch name, not the tracked upstream branch', async () => {

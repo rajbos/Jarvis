@@ -5175,6 +5175,10 @@ h5.ec-heading { font-size: 0.9375rem; }
   border-color: #3a5a9a;
 }
 
+.as-chip--account {
+  border-color: #3a4a6e;
+  color: #a9bce6;
+}
 .as-chip--model {
   border-color: #2e6e4f;
   color: #9fd8b4;

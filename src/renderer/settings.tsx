@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'preact/hooks';
 import './settings.css';
 import { ErrorBoundary, installGlobalErrorHandlers } from '../plugins/shared/ErrorBoundary';
 import { GitHubAccountsSection } from './github-accounts-section';
+import { DeviceCodePrompt } from './device-code-prompt';
 import { McpServerSection, type McpSectionApi } from './mcp-settings-section';
 import { isIpcError, type IpcErrorResponse, type CopilotUsage } from '../plugins/types';
 
@@ -12,6 +13,30 @@ interface OAuthStatus {
   authenticated: boolean;
   login?: string;
   avatarUrl?: string;
+  /** Not authenticated: the stored sign-in whose token can't be decrypted any more. */
+  unreadableLogin?: string | null;
+  /** Not authenticated: the credential single-account features use instead. */
+  fallback?: { login: string; source: 'oauth' | 'pat' | 'gh-cli' } | null;
+}
+
+const FALLBACK_SOURCE: Record<'oauth' | 'pat' | 'gh-cli', string> = {
+  oauth: 'Jarvis sign-in',
+  pat: 'personal access token',
+  'gh-cli': 'GitHub CLI token',
+};
+
+/** Why there is no usable Jarvis sign-in, and what Jarvis uses meanwhile. */
+function signInStatusText(status: OAuthStatus | null): string {
+  if (!status) return 'Checking…';
+  const using = status.fallback
+    ? ` Meanwhile Jarvis uses @${status.fallback.login}'s ${FALLBACK_SOURCE[status.fallback.source]}.`
+    : '';
+  if (status.unreadableLogin) {
+    return `The saved sign-in for @${status.unreadableLogin} can't be read any more (the encryption key changed) — sign in again to restore it.${using}`;
+  }
+  return status.fallback
+    ? `No Jarvis sign-in — features that work with one account use @${status.fallback.login}'s ${FALLBACK_SOURCE[status.fallback.source]}.`
+    : 'Not signed in.';
 }
 
 interface PatStatus {
@@ -92,7 +117,7 @@ function OAuthSection() {
     }
   };
 
-  const [signIn, setSignIn] = useState<{ userCode?: string; verificationUri?: string; error?: string } | null>(null);
+  const [signIn, setSignIn] = useState<{ userCode?: string; verificationUri?: string; copied?: boolean; error?: string } | null>(null);
   useEffect(() => {
     refresh();
     // Sign-in may be started here, from the Copilot section or from the main window.
@@ -107,7 +132,7 @@ function OAuthSection() {
     const result = await window.jarvis.startGitHubOAuth();
     setSignIn(result.error
       ? { error: result.error }
-      : { userCode: result.userCode, verificationUri: result.verificationUri });
+      : { userCode: result.userCode, verificationUri: result.verificationUri, copied: result.copied });
   };
 
   const handleLogout = async () => {
@@ -132,7 +157,7 @@ function OAuthSection() {
 
   return (
     <div class="section">
-      <h2>GitHub Account</h2>
+      <h2>Primary GitHub sign-in</h2>
       {status?.authenticated ? (
         <>
           <UserCard
@@ -156,25 +181,27 @@ function OAuthSection() {
         </>
       ) : (
         <>
-          <p style={{ fontSize: '0.85rem', color: '#778' }}>Not signed in.</p>
+          <p style={{ fontSize: '0.85rem', color: status?.unreadableLogin ? '#ffb74d' : '#778' }}>{signInStatusText(status)}</p>
           <div class="btn-row">
             <button
               class="btn-save"
               onClick={() => void handleSignIn()}
               disabled={signIn !== null && !signIn.error}
             >
-              {signIn !== null && !signIn.error ? 'Waiting for GitHub…' : 'Sign in with GitHub'}
+              {signIn !== null && !signIn.error
+                ? 'Waiting for GitHub…'
+                : status?.unreadableLogin ? `Sign in again as @${status.unreadableLogin}` : 'Sign in with GitHub'}
             </button>
           </div>
-          {signIn && (
-            <p class="hint" style={{ marginTop: '0.4rem' }}>
-              {signIn.error
-                ? <span style={{ color: '#ff8080' }}>Sign-in failed: {signIn.error}</span>
-                : signIn.userCode
-                  ? <>A browser tab was opened at <code>{signIn.verificationUri}</code> — enter code <strong><code>{signIn.userCode}</code></strong> and click <strong>Authorize</strong>.</>
+          {signIn && (signIn.userCode && !signIn.error
+            ? <DeviceCodePrompt key={signIn.userCode} userCode={signIn.userCode} verificationUri={signIn.verificationUri} copied={signIn.copied} />
+            : (
+              <p class="hint" style={{ marginTop: '0.4rem' }}>
+                {signIn.error
+                  ? <span style={{ color: '#ff8080' }}>Sign-in failed: {signIn.error}</span>
                   : 'Starting GitHub sign-in…'}
-            </p>
-          )}
+              </p>
+            ))}
         </>
       )}
     </div>
@@ -190,7 +217,7 @@ function CopilotUsageSection() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [checking, setChecking] = useState(false);
-  const [reauth, setReauth] = useState<{ userCode?: string; verificationUri?: string; error?: string } | null>(null);
+  const [reauth, setReauth] = useState<{ userCode?: string; verificationUri?: string; copied?: boolean; error?: string } | null>(null);
   useEffect(() => {
     window.jarvis.getCopilotBudget()
       .then((res) => {
@@ -251,7 +278,7 @@ function CopilotUsageSection() {
       setReauth({ error: result.error });
       return;
     }
-    setReauth({ userCode: result.userCode, verificationUri: result.verificationUri });
+    setReauth({ userCode: result.userCode, verificationUri: result.verificationUri, copied: result.copied });
   };
   // Only offer re-authorization when the OAuth token actually lacks `user` — if it already
   // has it, another round-trip through GitHub changes nothing.
@@ -304,17 +331,20 @@ function CopilotUsageSection() {
                 </>}
         </p>
       )}
-      {reauth && (
-        <p class="hint" style={{ marginTop: '0.4rem' }}>
-          {reauth.error
-            ? <span style={{ color: '#ff8080' }}>Re-authorization failed: {reauth.error}</span>
-            : reauth.userCode
-              ? <>A browser tab was opened at <code>{reauth.verificationUri}</code> — enter code <strong><code>{reauth.userCode}</code></strong>.
-                  GitHub then asks for additional permission to <strong>Personal user data (Full access)</strong> — that is the <code>user</code> scope
-                  needed for billing data. GitHub doesn't let you pick individual scopes; just click <strong>Authorize</strong>.</>
+      {reauth && (reauth.userCode && !reauth.error
+        ? (
+          <DeviceCodePrompt key={reauth.userCode} userCode={reauth.userCode} verificationUri={reauth.verificationUri} copied={reauth.copied}>
+            GitHub then asks for additional permission to <strong>Personal user data (Full access)</strong> — that is the <code>user</code> scope
+            needed for billing data. GitHub doesn't let you pick individual scopes.
+          </DeviceCodePrompt>
+        )
+        : (
+          <p class="hint" style={{ marginTop: '0.4rem' }}>
+            {reauth.error
+              ? <span style={{ color: '#ff8080' }}>Re-authorization failed: {reauth.error}</span>
               : 'Starting GitHub authorization…'}
-        </p>
-      )}
+          </p>
+        ))}
       <div class="btn-row">
         <button class="btn-secondary" onClick={() => void handleCheck()} disabled={checking}>
           {checking ? 'Checking…' : 'Check usage now'}

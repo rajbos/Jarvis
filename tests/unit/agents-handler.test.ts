@@ -45,7 +45,12 @@ vi.mock('../../src/services/github-workflows', () => ({
 }));
 
 vi.mock('../../src/services/github-oauth', () => ({
-  loadGitHubAuth: vi.fn(() => null),
+  loadGitHubPat: vi.fn(() => null),
+}));
+
+vi.mock('../../src/services/github-repo-access', () => ({
+  accessForPrimary: vi.fn(async () => null),
+  accessForRepo: vi.fn(async () => null),
 }));
 
 vi.mock('../../src/services/github-copilot', () => ({
@@ -83,7 +88,13 @@ import { checkClaudeRateLimit } from '../../src/services/claude';
 import { resolveAccessToken } from '../../src/plugins/claude/handler';
 import { detectClaudeCli } from '../../src/services/claude-agent';
 import { createGitHubIssue, getWorkflowSummaryForRepo } from '../../src/services/github-workflows';
-import { loadGitHubAuth } from '../../src/services/github-oauth';
+import { accessForPrimary, accessForRepo } from '../../src/services/github-repo-access';
+
+/** Every account lookup (primary and per-repo) answers with `access`. */
+function setAccess(access: Awaited<ReturnType<typeof accessForRepo>>): void {
+  vi.mocked(accessForPrimary).mockResolvedValue(access);
+  vi.mocked(accessForRepo).mockResolvedValue(access);
+}
 import { checkCopilotAssignable, assignCopilotToIssue } from '../../src/services/github-copilot';
 
 const mockRunAgentSession = vi.mocked(runAgentSession);
@@ -171,7 +182,7 @@ describe('Agents plugin — IPC handlers', () => {
     // vi.clearAllMocks() (in beforeEach) clears call history but not
     // mockReturnValue/mockResolvedValue overrides — reset those explicitly so
     // a value set in one test can't leak into the next.
-    vi.mocked(loadGitHubAuth).mockReturnValue(null);
+    setAccess(null);
     vi.mocked(checkCopilotAssignable).mockReset();
     vi.mocked(assignCopilotToIssue).mockReset();
   });
@@ -349,7 +360,7 @@ describe('Agents plugin — IPC handlers', () => {
       };
 
       it('fails when not authenticated with GitHub', async () => {
-        vi.mocked(loadGitHubAuth).mockReturnValue(null);
+        setAccess(null);
         const findingId = insertApprovedFinding(db, 'assign_copilot', actionData);
 
         const result = await callHandler('agents:execute-finding', findingId) as { ok: boolean; error?: string };
@@ -358,7 +369,7 @@ describe('Agents plugin — IPC handlers', () => {
       });
 
       it('records execution_error when Copilot is not enabled / no seat', async () => {
-        vi.mocked(loadGitHubAuth).mockReturnValue({ login: 'me', accessToken: 'tok', scopes: 'repo', avatarUrl: null });
+        setAccess({ id: 'me', host: 'github.com', login: 'me', token: 'tok', source: 'oauth' as const, isPrimary: true });
         vi.mocked(checkCopilotAssignable).mockResolvedValue({ available: false, reason: 'not_enabled_or_no_seat' });
         const findingId = insertApprovedFinding(db, 'assign_copilot', actionData);
 
@@ -373,7 +384,7 @@ describe('Agents plugin — IPC handlers', () => {
       });
 
       it('records execution_error for insufficient repo access', async () => {
-        vi.mocked(loadGitHubAuth).mockReturnValue({ login: 'me', accessToken: 'tok', scopes: 'repo', avatarUrl: null });
+        setAccess({ id: 'me', host: 'github.com', login: 'me', token: 'tok', source: 'oauth' as const, isPrimary: true });
         vi.mocked(checkCopilotAssignable).mockResolvedValue({ available: false, reason: 'repo_not_found_or_no_access' });
         const findingId = insertApprovedFinding(db, 'assign_copilot', actionData);
 
@@ -383,7 +394,7 @@ describe('Agents plugin — IPC handlers', () => {
       });
 
       it('creates the issue and assigns Copilot on success', async () => {
-        vi.mocked(loadGitHubAuth).mockReturnValue({ login: 'me', accessToken: 'tok', scopes: 'repo', avatarUrl: null });
+        setAccess({ id: 'me', host: 'github.com', login: 'me', token: 'tok', source: 'oauth' as const, isPrimary: true });
         vi.mocked(checkCopilotAssignable).mockResolvedValue({ available: true, botId: 'BOT_1' });
         vi.mocked(assignCopilotToIssue).mockResolvedValue(undefined);
         const findingId = insertApprovedFinding(db, 'assign_copilot', actionData);
@@ -412,7 +423,7 @@ describe('Agents plugin — IPC handlers', () => {
       });
 
       it('records a clear execution_error (mentioning the created issue) when assignment fails after issue creation', async () => {
-        vi.mocked(loadGitHubAuth).mockReturnValue({ login: 'me', accessToken: 'tok', scopes: 'repo', avatarUrl: null });
+        setAccess({ id: 'me', host: 'github.com', login: 'me', token: 'tok', source: 'oauth' as const, isPrimary: true });
         vi.mocked(checkCopilotAssignable).mockResolvedValue({ available: true, botId: 'BOT_1' });
         vi.mocked(assignCopilotToIssue).mockRejectedValue(new Error('secondary rate limit'));
         const findingId = insertApprovedFinding(db, 'assign_copilot', actionData);
@@ -434,14 +445,14 @@ describe('Agents plugin — IPC handlers', () => {
     });
 
     it('returns not_authenticated when no GitHub auth is stored', async () => {
-      vi.mocked(loadGitHubAuth).mockReturnValue(null);
+      setAccess(null);
       const result = await callHandler('agents:check-copilot-availability', 'owner/repo');
       expect(result).toEqual({ available: false, reason: 'not_authenticated' });
       expect(checkCopilotAssignable).not.toHaveBeenCalled();
     });
 
     it('delegates to checkCopilotAssignable when authenticated', async () => {
-      vi.mocked(loadGitHubAuth).mockReturnValue({ login: 'me', accessToken: 'tok', scopes: 'repo', avatarUrl: null });
+      setAccess({ id: 'me', host: 'github.com', login: 'me', token: 'tok', source: 'oauth' as const, isPrimary: true });
       vi.mocked(checkCopilotAssignable).mockResolvedValue({ available: true, botId: 'BOT_1' });
 
       const result = await callHandler('agents:check-copilot-availability', 'owner/repo');

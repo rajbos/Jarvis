@@ -160,6 +160,24 @@ code {
   border-radius: 3px;
   font-size: 0.85em;
 }
+.device-code {
+  margin-top: 0.6rem;
+}
+.device-code-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.device-code-value {
+  font-size: 1.4rem;
+  font-weight: 600;
+  letter-spacing: 0.15em;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid #1f4a80;
+  border-radius: 6px;
+  user-select: all;
+}
 .mcp-snippet {
   background: #0f3460;
   border: 1px solid #1f4a80;
@@ -304,6 +322,7 @@ code {
   color: #aab;
 }
 .account-tag.primary { border-color: #e94560; color: #ff8fa3; }
+.account-tag.warning { border-color: #ffb74d; color: #ffb74d; }
 .assignment-row {
   display: flex;
   align-items: center;

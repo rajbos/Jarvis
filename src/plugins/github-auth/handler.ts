@@ -1,5 +1,5 @@
 // ── GitHub OAuth + PAT IPC handlers ──────────────────────────────────────────
-import { shell, Notification, BrowserWindow } from 'electron';
+import { shell, clipboard, Notification, BrowserWindow } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import {
   requestDeviceCode,
@@ -23,7 +23,7 @@ import { safeHandle } from '../ipc-utils';
 import { logger } from '../../services/logger';
 import { checkCopilotUsage } from '../copilot-usage/handler';
 import { DEFAULT_HOST, apiBaseForHost, hostOfUrl, webBaseForHost } from '../../services/github-host';
-import { accessForRepo } from '../../services/github-repo-access';
+import { accessForPrimary, accessForRepo } from '../../services/github-repo-access';
 
 /**
  * Sign-in can be started from the main window or the Settings window, so the
@@ -72,7 +72,14 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
       }
       return { authenticated: true, login: auth.login, scopes: auth.scopes, avatarUrl };
     }
-    return { authenticated: false };
+    // Not usable — but say why, and which credential single-account features use instead.
+    const stored = getPrimaryGitHubLogin(db);
+    const fallback = await accessForPrimary(db);
+    return {
+      authenticated: false,
+      unreadableLogin: stored,
+      fallback: fallback ? { login: fallback.login, source: fallback.source } : null,
+    };
   });
 
   safeHandle('github:open-url', (_event, url: string) => {
@@ -164,17 +171,18 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
   });
 
   safeHandle('github:save-pat', async (_event, pat: string) => {
-    const auth = loadGitHubAuth(db);
-    if (!auth) return { error: 'Not authenticated' };
+    // The stored sign-in's login is enough: a PAT also restores access when its token can't be decrypted.
+    const login = getPrimaryGitHubLogin(db);
+    if (!login) return { error: 'Not authenticated' };
     try {
       const user = await fetchGitHubUser(pat);
-      if (user.login.toLowerCase() !== auth.login.toLowerCase()) {
-        return { error: `PAT belongs to ${user.login}, but you are signed in as ${auth.login}` };
+      if (user.login.toLowerCase() !== login.toLowerCase()) {
+        return { error: `PAT belongs to ${user.login}, but you are signed in as ${login}` };
       }
     } catch {
       return { error: 'Invalid token — could not authenticate with GitHub' };
     }
-    saveGitHubPat(db, auth.login, pat);
+    saveGitHubPat(db, login, pat);
     const { setConfigValue } = await import('../../storage/database');
     setConfigValue(db, 'force_pat_discovery', '1');
     saveDatabase();
@@ -183,9 +191,9 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
   });
 
   safeHandle('github:delete-pat', () => {
-    const auth = loadGitHubAuth(db);
-    if (!auth) return { ok: false };
-    deleteGitHubPat(db, auth.login);
+    const login = getPrimaryGitHubLogin(db);
+    if (!login) return { ok: false };
+    deleteGitHubPat(db, login);
     saveDatabase();
     getWindow()?.webContents.send('github:pat-status-changed');
     return { ok: true };
@@ -243,6 +251,15 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
         additional: opts?.additional === true,
       };
       activeDeviceFlow = flow;
+      // Copy the code before the browser takes focus: a renderer can't write the
+      // clipboard once its window is in the background.
+      let copied = false;
+      try {
+        clipboard.writeText(deviceCode.user_code);
+        copied = true;
+      } catch (err) {
+        logger.warn('[IPC] Could not copy device code to clipboard:', err instanceof Error ? err.message : String(err));
+      }
       shell.openExternal(deviceCode.verification_uri);
       startPollingLoop(flow, db, getWindow);
       return {
@@ -250,6 +267,7 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
         userCode: deviceCode.user_code,
         verificationUri: deviceCode.verification_uri,
         expiresIn: deviceCode.expires_in,
+        copied,
       };
     } catch (err) {
       return { error: String(err) };
