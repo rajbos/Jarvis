@@ -12,9 +12,15 @@ defaults:
   run:
     shell: pwsh
 
+# Never run two publishes at once, and never cancel one that is mid-upload
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: windows-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout repository
@@ -35,6 +41,13 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      # Mirror the PR gates so a tag on an untested commit can't ship a broken installer
+      - name: Type-check renderer and unit tests
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
 
       - name: Test
         run: npm run test
