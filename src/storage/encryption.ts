@@ -77,13 +77,15 @@ function getKeyFilePath(): string {
 }
 
 /**
- * Moves an unreadable key file aside as `<name>.<timestamp>.bak` instead of
+ * Moves an unreadable key file aside as `<name>.<timestamp>-<random>.bak` instead of
  * overwriting it, so the secrets it protects can still be recovered once
  * whatever broke it (e.g. another instance with a different OS key) is gone.
  */
 function archiveKeyFile(keyFile: string): void {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const target = `${keyFile}.${stamp}.bak`;
+  // Random suffix: two archives in the same millisecond must not collide, and
+  // on POSIX renameSync would silently replace the earlier archive.
+  const target = `${keyFile}.${stamp}-${crypto.randomBytes(4).toString('hex')}.bak`;
   try {
     fs.renameSync(keyFile, target);
     logger.warn(`[Encryption] Moved unreadable ${path.basename(keyFile)} to ${path.basename(target)}`);
