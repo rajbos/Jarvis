@@ -31,8 +31,11 @@ vi.mock('../../src/storage/database', async (importOriginal) => {
 });
 
 vi.mock('../../src/services/github-oauth', () => ({
-  loadGitHubAuth: vi.fn(() => null),
   loadGitHubPat: vi.fn(() => null),
+}));
+
+vi.mock('../../src/services/github-repo-access', () => ({
+  accessForPrimary: vi.fn(async () => null),
 }));
 
 vi.mock('../../src/services/github-secrets', () => ({
@@ -45,7 +48,7 @@ vi.mock('../../src/services/github-secrets', () => ({
 }));
 
 import { registerHandlers } from '../../src/plugins/secrets/handler';
-import { loadGitHubAuth } from '../../src/services/github-oauth';
+import { accessForPrimary } from '../../src/services/github-repo-access';
 import {
   searchSecrets,
   listSecretFavorites,
@@ -78,7 +81,7 @@ describe('Secrets plugin — IPC handlers', () => {
 
     registerHandlers(db, () => null);
 
-    vi.mocked(loadGitHubAuth).mockReturnValue(null);
+    vi.mocked(accessForPrimary).mockResolvedValue(null);
   });
 
   afterEach(() => {
@@ -89,7 +92,7 @@ describe('Secrets plugin — IPC handlers', () => {
 
   describe('secrets:scan', () => {
     it('returns error when not authenticated', async () => {
-      vi.mocked(loadGitHubAuth).mockReturnValue(null);
+      vi.mocked(accessForPrimary).mockResolvedValue(null);
       const result = (await callHandler('secrets:scan')) as Record<string, unknown>;
       expect(result.error).toBe('Not authenticated with GitHub');
     });

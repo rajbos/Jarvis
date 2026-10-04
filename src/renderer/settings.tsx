@@ -13,6 +13,30 @@ interface OAuthStatus {
   authenticated: boolean;
   login?: string;
   avatarUrl?: string;
+  /** Not authenticated: the stored sign-in whose token can't be decrypted any more. */
+  unreadableLogin?: string | null;
+  /** Not authenticated: the credential single-account features use instead. */
+  fallback?: { login: string; source: 'oauth' | 'pat' | 'gh-cli' } | null;
+}
+
+const FALLBACK_SOURCE: Record<'oauth' | 'pat' | 'gh-cli', string> = {
+  oauth: 'Jarvis sign-in',
+  pat: 'personal access token',
+  'gh-cli': 'GitHub CLI token',
+};
+
+/** Why there is no usable Jarvis sign-in, and what Jarvis uses meanwhile. */
+function signInStatusText(status: OAuthStatus | null): string {
+  if (!status) return 'Checking…';
+  const using = status.fallback
+    ? ` Meanwhile Jarvis uses @${status.fallback.login}'s ${FALLBACK_SOURCE[status.fallback.source]}.`
+    : '';
+  if (status.unreadableLogin) {
+    return `The saved sign-in for @${status.unreadableLogin} can't be read any more (the encryption key changed) — sign in again to restore it.${using}`;
+  }
+  return status.fallback
+    ? `No Jarvis sign-in — features that work with one account use @${status.fallback.login}'s ${FALLBACK_SOURCE[status.fallback.source]}.`
+    : 'Not signed in.';
 }
 
 interface PatStatus {
@@ -133,7 +157,7 @@ function OAuthSection() {
 
   return (
     <div class="section">
-      <h2>GitHub Account</h2>
+      <h2>Primary GitHub sign-in</h2>
       {status?.authenticated ? (
         <>
           <UserCard
@@ -157,14 +181,16 @@ function OAuthSection() {
         </>
       ) : (
         <>
-          <p style={{ fontSize: '0.85rem', color: '#778' }}>Not signed in.</p>
+          <p style={{ fontSize: '0.85rem', color: status?.unreadableLogin ? '#ffb74d' : '#778' }}>{signInStatusText(status)}</p>
           <div class="btn-row">
             <button
               class="btn-save"
               onClick={() => void handleSignIn()}
               disabled={signIn !== null && !signIn.error}
             >
-              {signIn !== null && !signIn.error ? 'Waiting for GitHub…' : 'Sign in with GitHub'}
+              {signIn !== null && !signIn.error
+                ? 'Waiting for GitHub…'
+                : status?.unreadableLogin ? `Sign in again as @${status.unreadableLogin}` : 'Sign in with GitHub'}
             </button>
           </div>
           {signIn && (signIn.userCode && !signIn.error

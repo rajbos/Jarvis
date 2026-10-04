@@ -75,6 +75,12 @@ vi.mock('../../src/services/ollama', () => ({
   ToolsNotSupportedError: class extends Error {},
 }));
 
+// No GitHub CLI accounts — never spawn the real `gh`.
+vi.mock('../../src/services/github-accounts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/services/github-accounts')>();
+  return { ...actual, listGhCliAccounts: vi.fn(async () => []), listGhCliAccountsCached: vi.fn(async () => []) };
+});
+
 vi.mock('../../src/agent/config', () => ({
   loadConfig: vi.fn(() => ({ preferences: {}, github: { oauthClientId: '', scopes: '' } })),
   saveConfig: vi.fn(),
@@ -443,7 +449,7 @@ describe('IPC handler input validation', () => {
   describe('github:oauth-status', () => {
     it('returns { authenticated: false } on a fresh DB', async () => {
       const result = await callHandler('github:oauth-status');
-      expect(result).toEqual({ authenticated: false });
+      expect(result).toEqual({ authenticated: false, unreadableLogin: null, fallback: null });
     });
   });
 

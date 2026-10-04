@@ -7,7 +7,9 @@ import type { Database as SqlJsDatabase } from 'sql.js';
 import { safeHandle } from '../ipc-utils';
 import { logger } from '../../services/logger';
 import { getConfigValue, saveDatabase } from '../../storage/database';
-import { loadGitHubAuth, loadGitHubPat } from '../../services/github-oauth';
+import { loadGitHubPat } from '../../services/github-oauth';
+import { accessForPrimary, accessForRepo } from '../../services/github-repo-access';
+import { DEFAULT_HOST } from '../../services/github-host';
 import {
   fetchAndStoreWorkflowData,
   getWorkflowSummaryForRepo,
@@ -288,7 +290,7 @@ export function registerHandlers(
 
     try {
       if (actionType === 'close_notifications') {
-        const auth = loadGitHubAuth(db);
+        const auth = await accessForPrimary(db);
         if (!auth) return { ok: false, error: 'Not authenticated with GitHub' };
         const ids = (actionData.notification_ids as string[] | undefined) ?? [];
         const dismissed: string[] = [];
@@ -298,7 +300,7 @@ export function registerHandlers(
             const resp = await fetch(`https://api.github.com/notifications/threads/${id}`, {
               method: 'PATCH',
               headers: {
-                Authorization: `Bearer ${auth.accessToken}`,
+                Authorization: `Bearer ${auth.token}`,
                 Accept: 'application/vnd.github+json',
                 'X-GitHub-Api-Version': '2022-11-28',
               },
@@ -325,17 +327,17 @@ export function registerHandlers(
         saveDatabase();
         return { ok: true, dismissedIds: dismissed };
       } else if (actionType === 'create_issue') {
-        const auth = loadGitHubAuth(db);
+        const auth = await accessForRepo(db, repoFullName, DEFAULT_HOST);
         if (!auth) return { ok: false, error: 'Not authenticated with GitHub' };
         const title = (actionData.issue_title as string | undefined) ?? 'Issue from Jarvis agent';
         const body = (actionData.issue_body as string | undefined) ?? '';
         const labels = (actionData.issue_labels as string[] | undefined) ?? [];
-        await createGitHubIssue(auth.accessToken, repoFullName, title, body, labels);
+        await createGitHubIssue(auth.token, repoFullName, title, body, labels);
       } else if (actionType === 'assign_copilot') {
-        const auth = loadGitHubAuth(db);
+        const auth = await accessForRepo(db, repoFullName, DEFAULT_HOST);
         if (!auth) return { ok: false, error: 'Not authenticated with GitHub' };
 
-        const availability = await checkCopilotAssignable(auth.accessToken, repoFullName);
+        const availability = await checkCopilotAssignable(auth.token, repoFullName);
         if (!availability.available) {
           const detail = availability.detail ? ` — ${availability.detail}` : '';
           const message = availability.reason === 'not_enabled_or_no_seat'
@@ -351,10 +353,10 @@ export function registerHandlers(
         const title = (actionData.issue_title as string | undefined) ?? 'Workflow failure diagnosed by Jarvis';
         const labels = (actionData.issue_labels as string[] | undefined) ?? [];
         const body = buildCopilotHandoffIssueBody(actionData);
-        const issue = await createGitHubIssue(auth.accessToken, repoFullName, title, body, labels);
+        const issue = await createGitHubIssue(auth.token, repoFullName, title, body, labels);
 
         try {
-          await assignCopilotToIssue(auth.accessToken, repoFullName, issue.node_id);
+          await assignCopilotToIssue(auth.token, repoFullName, issue.node_id);
         } catch (assignErr) {
           const assignMsg = assignErr instanceof Error ? assignErr.message : String(assignErr);
           throw new Error(
@@ -408,9 +410,9 @@ export function registerHandlers(
     if (typeof repoFullName !== 'string' || !repoFullName.includes('/')) {
       return { available: false, reason: 'api_error', detail: 'Invalid repo name' };
     }
-    const auth = loadGitHubAuth(db);
+    const auth = await accessForRepo(db, repoFullName, DEFAULT_HOST);
     if (!auth) return { available: false, reason: 'not_authenticated' };
-    return checkCopilotAssignable(auth.accessToken, repoFullName);
+    return checkCopilotAssignable(auth.token, repoFullName);
   });
 
   // ── Workflow data fetching ────────────────────────────────────────────────
@@ -419,11 +421,11 @@ export function registerHandlers(
     if (typeof repoFullName !== 'string' || !repoFullName.includes('/')) {
       return { ok: false, error: 'Invalid repo name' };
     }
-    const auth = loadGitHubAuth(db);
+    const auth = await accessForRepo(db, repoFullName, DEFAULT_HOST);
     if (!auth) return { ok: false, error: 'Not authenticated with GitHub' };
     const pat = loadGitHubPat(db);
     try {
-      const { runsStored } = await fetchAndStoreWorkflowData(db, auth.accessToken, repoFullName);
+      const { runsStored } = await fetchAndStoreWorkflowData(db, auth.token, repoFullName);
       saveDatabase();
       return { ok: true, count: runsStored };
     } catch (err) {

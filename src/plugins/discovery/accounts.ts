@@ -1,5 +1,7 @@
 // ── Discovery for the non-primary accounts ───────────────────────────────────
-// The primary account is discovered by startDiscoveryIfAuthed. Every other
+// The primary account is discovered by startDiscoveryIfAuthed — when its Jarvis
+// sign-in is usable; otherwise (no sign-in, or one whose token can't be
+// decrypted) it is discovered here with its PAT or GitHub CLI token. Every other
 // account (a second github.com login, a GHE.com PAT or GitHub CLI login) is
 // discovered here afterwards, so the repos only it can see end up in the same
 // index — each recorded as visible to that account. Starred repos stay the
@@ -9,6 +11,7 @@ import type { BrowserWindow } from 'electron';
 import { runDiscovery, runLightweightRefresh } from '../../services/github-discovery';
 import { listAccounts, listGhCliAccounts, resolveAccountToken } from '../../services/github-accounts';
 import { runWithHost } from '../../services/github-host';
+import { loadGitHubAuth } from '../../services/github-oauth';
 import { getConfigValue, saveDatabase, setConfigValue } from '../../storage/database';
 import { logger } from '../../services/logger';
 import { lastDiscoveryProgress } from './state';
@@ -28,7 +31,8 @@ export async function discoverAdditionalAccounts(
   if (running) return;
   running = true;
   try {
-    const accounts = listAccounts(db, await listGhCliAccounts()).filter((a) => !a.isPrimary);
+    const accounts = listAccounts(db, await listGhCliAccounts())
+      .filter((a) => !a.isPrimary || !loadGitHubAuth(db, a.login));
     for (const account of accounts) {
       const token = await resolveAccountToken(db, account.id);
       if (!token) {
