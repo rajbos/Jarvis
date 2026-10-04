@@ -185,7 +185,7 @@ export function createOnboardingWindow(db: SqlJsDatabase): BrowserWindow {
 
 export function createSettingsWindow(): BrowserWindow {
   const win = new BrowserWindow({
-    width: 520,
+    width: 1040,
     height: 700,
     minWidth: 400,
     minHeight: 500,
