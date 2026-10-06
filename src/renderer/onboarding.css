@@ -5214,6 +5214,7 @@ h5.ec-heading { font-size: 0.9375rem; }
 }
 
 .as-pr-link:hover {
+  background: none;
   color: #a0c8ff;
 }
 
