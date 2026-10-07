@@ -358,7 +358,7 @@ function NotificationList({ repoFullName, dismissedNotifIds }: { repoFullName: s
     setTimeout(() => {
       setNotifications((prev) => prev?.filter((n) => n.id !== id) ?? null);
       setDismissingIds((prev) => { const next = new Set(prev); next.delete(id); return next; });
-    }, 180);
+    }, 260);
   };
 
   const handleDismissGroup = async (workflowName: string | null, ids: string[]) => {
@@ -377,7 +377,7 @@ function NotificationList({ repoFullName, dismissedNotifIds }: { repoFullName: s
     setTimeout(() => {
       setNotifications((prev) => prev?.filter((n) => !ids.includes(n.id)) ?? null);
       setDismissingIds((prev) => { const next = new Set(prev); for (const id of ids) next.delete(id); return next; });
-    }, 180);
+    }, 260);
     setDismissingGroup(null);
     if (dismissed > 0) {
       setSuccessMsg(`✓ ${dismissed} notification${dismissed > 1 ? 's' : ''} dismissed`);
@@ -427,7 +427,8 @@ function NotificationList({ repoFullName, dismissedNotifIds }: { repoFullName: s
   const { groups, isGrouped } = groupDashNotifications(visible);
 
   const renderRow = (n: StoredNotification) => (
-    <div key={n.id} class={`dash-notif-item${dismissingIds.has(n.id) ? ' dash-notif-item--dismissing' : ''}`}>
+    <div key={n.id} class={`dash-notif-item-wrap${dismissingIds.has(n.id) ? ' dash-notif-item-wrap--dismissing' : ''}`}>
+    <div class={`dash-notif-item${dismissingIds.has(n.id) ? ' dash-notif-item--dismissing' : ''}`}>
       <span class="dash-notif-icon" title={n.subject_type}>{subjectTypeIcon(n.subject_type)}</span>
       <div class="dash-notif-body">
         <span class="dash-notif-title">{n.subject_title}</span>
@@ -449,6 +450,7 @@ function NotificationList({ repoFullName, dismissedNotifIds }: { repoFullName: s
           title="Dismiss notification" aria-label="Dismiss notification"
         >✕</button>
       </div>
+    </div>
     </div>
   );
 
