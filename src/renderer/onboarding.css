@@ -5077,7 +5077,7 @@ h5.ec-heading { font-size: 0.9375rem; }
 
 .as-row {
   display: grid;
-  grid-template-columns: 2rem minmax(0, 1fr) auto 10rem;
+  grid-template-columns: 2rem minmax(0, 1fr) 28.5rem 10rem;
   align-items: center;
   gap: 0.6rem 0.9rem;
   padding: 0.7rem 1rem;
@@ -5219,8 +5219,8 @@ h5.ec-heading { font-size: 0.9375rem; }
 }
 
 .as-lights {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.35rem;
 }
 
@@ -5228,7 +5228,7 @@ h5.ec-heading { font-size: 0.9375rem; }
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  min-width: 6.75rem;
+  min-width: 0;
   padding: 0.3rem 0.55rem;
   border-radius: 6px;
   background: #0d1a30;
