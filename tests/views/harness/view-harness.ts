@@ -43,7 +43,17 @@ export interface OpenViewOptions {
   /** Seeds localStorage before the page loads (e.g. chat panel open/closed). */
   localStorage?: Record<string, string>;
   viewport?: { width: number; height: number };
+  /**
+   * Makes the render reproducible for screenshots: pins the page clock to `now`,
+   * forces en-US / UTC, dark colour scheme, reduced motion, and disables every
+   * CSS animation and transition before the first paint.
+   */
+  deterministic?: boolean;
 }
+
+/** Injected before the renderer loads in deterministic mode: no motion, no blinking caret. */
+const DETERMINISTIC_CSS =
+  '*, *::before, *::after { animation: none !important; transition: none !important; caret-color: transparent !important; }';
 
 export interface OpenedView {
   page: Page;
@@ -152,8 +162,26 @@ export class ViewHarness {
 
   async open(view: ViewName, opts: OpenViewOptions = {}): Promise<OpenedView> {
     if (!this.browser || !this.built) throw new Error('ViewHarness.start() has not run');
-    const context = await this.browser.newContext({ viewport: opts.viewport ?? { width: 1400, height: 900 } });
+    const context = await this.browser.newContext({
+      viewport: opts.viewport ?? { width: 1400, height: 900 },
+      ...(opts.deterministic
+        ? { locale: 'en-US', timezoneId: 'UTC', colorScheme: 'dark' as const, reducedMotion: 'reduce' as const }
+        : {}),
+    });
     this.contexts.push(context);
+    if (opts.deterministic) {
+      if (opts.now !== undefined) await context.clock.install({ time: opts.now });
+      await context.addInitScript((css) => {
+        const inject = () => {
+          const style = document.createElement('style');
+          style.textContent = css;
+          (document.head ?? document.documentElement).appendChild(style);
+        };
+        // Init scripts can run before <html> is parsed; fall back to the parser's first milestone.
+        if (document.documentElement) inject();
+        else document.addEventListener('DOMContentLoaded', inject, { once: true });
+      }, DETERMINISTIC_CSS);
+    }
 
     const blockedRequests: string[] = [];
     await context.route('**/*', (route) => {

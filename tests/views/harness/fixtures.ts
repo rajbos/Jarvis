@@ -322,30 +322,112 @@ export function createFixtures(now: number) {
     ],
   };
 
+  // One row per interesting layout state: every verdict, a long check label, a
+  // failed check, an unpushed branch, a draft PR, a PR lookup error and cloud
+  // session chips — so a CSS regression in the Agent / Checks / Review columns
+  // shows up in the headless screenshots.
   const activeSessions: ActiveSessionsSnapshot = {
-    entries: [{
-      session: {
-        key: 'copilot:fixture-1', provider: 'copilot', origin: 'cloud', client: 'fixture-client',
-        sessionId: 'fixture-1', title: 'Teach the rocket sled to brake', cwd: null,
-        repoFullName: REPO_ROCKET, branch: 'copilot/brakes', activity: 'completed',
-        startedAt: iso(now, -60 * 60 * 1000), updatedAt: iso(now, -10 * 60 * 1000),
+    entries: [
+      {
+        session: {
+          key: 'cloud:copilot:fixture-1', provider: 'copilot', origin: 'cloud', client: 'Copilot cloud agent',
+          sessionId: 'fixture-1', title: 'Teach the rocket sled to brake', cwd: null,
+          repoFullName: REPO_ROCKET, branch: 'copilot/brakes', activity: 'completed',
+          startedAt: iso(now, -60 * 60 * 1000), updatedAt: iso(now, -10 * 60 * 1000),
+          cloudTaskId: 'task-fixture-1',
+          cloudSessions: [{ model: 'fixture-model-large', usage: { kind: 'premium_requests', amount: 3 } }],
+        },
+        agent: { light: 'green', label: 'Done', detail: 'Agent finished', blocking: false },
+        pr: {
+          repoFullName: REPO_ROCKET, prNumber: 77, title: 'Teach the rocket sled to brake',
+          url: `https://github.com/${REPO_ROCKET}/pull/77`, state: 'OPEN', isDraft: false,
+          headSha: 'def5678', headRef: 'copilot/brakes',
+          checks: { light: 'green', label: 'Passed 3/3', detail: '3/3 passed', blocking: false, total: 3, pending: 0, failed: 0, passed: 3 },
+          copilotReview: { light: 'green', label: 'Reviewed', detail: 'Copilot reviewed the latest commit', blocking: false, status: 'completed' },
+          ready: true, waitingOn: [], checkedAt: iso(now, 0),
+        },
+        prAccount: 'test-user-work',
+        verdict: 'ready',
+        verdictLabel: 'Ready for review',
       },
-      agent: { light: 'green', label: 'Done', detail: 'Agent finished', blocking: false },
-      pr: {
-        repoFullName: REPO_ROCKET, prNumber: 77, title: 'Teach the rocket sled to brake',
-        url: `https://github.com/${REPO_ROCKET}/pull/77`, state: 'OPEN', isDraft: false,
-        headSha: 'def5678', headRef: 'copilot/brakes',
-        checks: { light: 'green', label: 'Checks', detail: '3/3 passed', blocking: false, total: 3, pending: 0, failed: 0, passed: 3 },
-        copilotReview: { light: 'green', label: 'Review', detail: 'Reviewed', blocking: false, status: 'completed' },
-        ready: true, waitingOn: [], checkedAt: iso(now, 0),
+      {
+        session: {
+          key: 'local:claude:fixture-2', provider: 'claude', origin: 'local', client: 'Claude Code',
+          sessionId: 'fixture-2', title: 'Add a retry queue to the anvil webhook worker',
+          cwd: `${LOCAL_ROOT}\\acme-labs\\anvil-api`,
+          repoFullName: REPO_ANVIL, branch: 'claude/retry-queue', activity: 'working',
+          startedAt: iso(now, -25 * 60 * 1000), updatedAt: iso(now, -2 * 60 * 1000), pid: 4242, branchPushed: true,
+        },
+        agent: { light: 'amber', label: 'Working', detail: 'The agent is still editing files', blocking: false },
+        pr: {
+          repoFullName: REPO_ANVIL, prNumber: 212, title: 'Add a retry queue to the anvil webhook worker',
+          url: `https://github.com/${REPO_ANVIL}/pull/212`, state: 'OPEN', isDraft: false,
+          headSha: 'abc1234', headRef: 'claude/retry-queue',
+          checks: { light: 'amber', label: 'Running 17/21', detail: '17 of 21 checks finished, 4 still running', blocking: true, total: 21, pending: 4, failed: 0, passed: 17 },
+          copilotReview: { light: 'amber', label: 'Requested', detail: 'Copilot review requested, not started yet', blocking: true, status: 'requested' },
+          ready: false, waitingOn: ['checks', 'copilot_review'], checkedAt: iso(now, 0),
+        },
+        verdict: 'waiting',
+        verdictLabel: 'Waiting on checks',
       },
-      verdict: 'ready',
-      verdictLabel: 'Ready for review',
-    }],
+      {
+        session: {
+          key: 'local:copilot:fixture-3', provider: 'copilot', origin: 'local', client: 'Copilot CLI',
+          sessionId: 'fixture-3', title: 'Fix the flaky hammock sunset snapshot test',
+          cwd: `${LOCAL_ROOT}\\globex-oss\\hammock`,
+          repoFullName: REPO_HAMMOCK, branch: 'copilot/sunset-colors', activity: 'idle',
+          startedAt: iso(now, -DAY - 60 * 60 * 1000), updatedAt: iso(now, -DAY), pid: 4343, branchPushed: true,
+        },
+        agent: { light: 'green', label: 'Idle', detail: 'Waiting for the next prompt', blocking: false },
+        pr: {
+          repoFullName: REPO_HAMMOCK, prNumber: 58, title: 'Fix the flaky hammock sunset snapshot test',
+          url: `https://github.com/${REPO_HAMMOCK}/pull/58`, state: 'OPEN', isDraft: true,
+          headSha: '9876fed', headRef: 'copilot/sunset-colors',
+          checks: { light: 'red', label: 'Failed 2/9', detail: '2 of 9 checks failed', blocking: true, total: 9, pending: 0, failed: 2, passed: 7 },
+          copilotReview: { light: 'grey', label: 'Not requested', detail: 'No Copilot review on this PR', blocking: false, status: 'not_requested' },
+          ready: false, waitingOn: ['checks'], checkedAt: iso(now, 0),
+        },
+        verdict: 'waiting',
+        verdictLabel: 'Checks failed',
+      },
+      {
+        session: {
+          key: 'local:claude:fixture-4', provider: 'claude', origin: 'local', client: 'Claude Code',
+          sessionId: 'fixture-4',
+          title: 'Spike: capture launch telemetry from every sled run and ship it to the fixture dashboard without blocking the launcher',
+          cwd: `${LOCAL_ROOT}\\acme-labs\\rocket-sled`,
+          repoFullName: REPO_ROCKET, branch: 'claude/telemetry-spike', activity: 'waiting_for_user',
+          startedAt: iso(now, -40 * 60 * 1000), updatedAt: iso(now, -5 * 60 * 1000), pid: 4444, branchPushed: false,
+        },
+        agent: { light: 'amber', label: 'Needs input', detail: 'The agent asked a question and is waiting for you', blocking: false },
+        pr: null,
+        verdict: 'no_pr',
+        verdictLabel: 'No PR yet',
+      },
+      {
+        session: {
+          key: 'cloud:copilot:fixture-5', provider: 'copilot', origin: 'cloud', client: 'Copilot cloud agent',
+          sessionId: 'fixture-5', title: 'Migrate the hammock CI to reusable workflows', cwd: null,
+          repoFullName: REPO_HAMMOCK, branch: 'copilot/reusable-workflows', activity: 'completed',
+          startedAt: iso(now, -3 * DAY), updatedAt: iso(now, -3 * DAY + 30 * 60 * 1000),
+          cloudTaskId: 'task-fixture-5',
+          cloudSessions: [
+            { model: 'fixture-model-large', usage: { kind: 'ai_credits', amount: 12.5 } },
+            { model: 'fixture-model-small', usage: { kind: 'ai_credits', amount: 0.75 } },
+          ],
+        },
+        agent: { light: 'green', label: 'Done', detail: 'Agent finished', blocking: false },
+        pr: null,
+        prError: 'HTTP 403: API rate limit exceeded for the fixture token',
+        prAccount: 'test-user',
+        verdict: 'no_pr',
+        verdictLabel: 'PR unknown',
+      },
+    ],
     sources: {
-      copilotLocal: { ok: true, count: 0 },
-      claudeLocal: { ok: true, count: 0 },
-      copilotCloud: { ok: true, count: 1 },
+      copilotLocal: { ok: true, count: 1 },
+      claudeLocal: { ok: true, count: 2 },
+      copilotCloud: { ok: true, count: 2, hidden: 1 },
     },
     readyCount: 1,
     refreshedAt: iso(now, 0),
