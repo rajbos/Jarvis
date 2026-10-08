@@ -101,7 +101,7 @@ describe('README trickle', () => {
       `UPDATE github_repos SET readme_excerpt = 'old', readme_etag = '"abc"', readme_status = 'ok',
        readme_fetched_at = datetime('now', '-30 day')`,
     );
-    const fetchMock = vi.fn(async () => res('', 304));
+    const fetchMock = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => res('', 304));
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     const result = await runReadmeBatch(db);
