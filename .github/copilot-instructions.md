@@ -52,6 +52,7 @@ Scripts for development:
 - **Renderer static files**: Copied from `src/renderer/*.html` to `dist/renderer/`
 - **Tests**: Unit tests are in `tests/unit/` and use Vitest (`*.test.ts`)
 - **View tests**: `tests/views/*.view.test.ts` render the renderer windows in headless Chromium (Playwright) against a fake `window.jarvis` (`tests/views/harness/`). Run with `npm run test:views`. Fixture data in `tests/views/harness/fixtures.ts` must stay synthetic — never use names, titles or paths from a real database or account.
+- **View screenshots**: `npm run screenshots` (optionally `-- -t <view>`) renders every window and main-window tab from the same fixtures and writes PNGs to `screenshots/` (gitignored). After any change to `src/renderer/**`, `src/plugins/**/*.tsx` or a `.css` file, run it, open the PNG and check the result against the intent of the change before calling the UI work done — see `.github/skills/visual-test/SKILL.md`.
 - **TypeScript config**: See `tsconfig.json` (strict mode, ES2022, declaration maps)
 
 ---

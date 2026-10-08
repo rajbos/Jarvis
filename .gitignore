@@ -37,6 +37,9 @@ coverage/
 *coverage*.txt
 *_output.txt
 
+# Headless view screenshots (npm run screenshots)
+screenshots/
+
 # Compiled test artifacts
 tests/**/*.js
 tests/**/*.d.ts

@@ -305,7 +305,8 @@ describe('main window — driving the fake API', () => {
 
     await pills.getByRole('button', { name: /Claude local/ }).click();
     await expect.poll(() => row.count()).toBe(0);
-    await expect.poll(() => page.locator('body').innerText()).toContain('No sessions from this source right now.');
+    await expect.poll(() => page.locator('.as-row').count()).toBe(2);
+    expect(await page.locator('.as-list').innerText()).toContain('Add a retry queue to the anvil webhook worker');
 
     await pills.getByRole('button', { name: /Copilot cloud/ }).click();
     await expect.poll(() => row.count()).toBe(1);
