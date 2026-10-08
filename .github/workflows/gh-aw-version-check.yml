@@ -31,15 +31,18 @@ jobs:
             exit 0
           fi
 
-          # Get the latest released gh-aw-actions version
-          LATEST_VERSION=$(gh release list --repo github/gh-aw-actions --limit 1 \
-            --exclude-drafts --exclude-pre-releases \
-            --json tagName --jq '.[0].tagName')
+          # Track the pinned gh-aw minor line (pre-releases included, since gh-aw ships almost
+          # exclusively as pre-releases). Bump PINNED_MINOR deliberately when upgrading gh-aw.
+          PINNED_MINOR="v0.90"
+
+          LATEST_VERSION=$(gh release list --repo github/gh-aw --limit 100 \
+            --exclude-drafts --json tagName --jq '.[].tagName' \
+            | grep -E "^${PINNED_MINOR//./\\.}\.[0-9]+$" | sort -V | tail -1 || true)
           if [ -z "$LATEST_VERSION" ]; then
-            echo "Could not determine latest gh-aw-actions version. Exiting."
+            echo "Could not determine latest gh-aw ${PINNED_MINOR}.x version. Exiting."
             exit 1
           fi
-          echo "Latest gh-aw-actions version: $LATEST_VERSION"
+          echo "Latest gh-aw ${PINNED_MINOR}.x version: $LATEST_VERSION"
 
           # Examine each lock file and collect those with outdated compiler versions
           AFFECTED_FILES=()
@@ -124,14 +127,14 @@ jobs:
           | | Version |
           |---|---|
           | Compiler version in lock file(s) | \`${COMPILER_LABEL}\` |
-          | Latest \`gh-aw-actions\` release | \`${LATEST_VERSION}\` |
+          | Latest \`gh-aw\` ${PINNED_MINOR}.x release | \`${LATEST_VERSION}\` |
 
           ### Fix
 
           Run the following commands to upgrade the compiler extension and regenerate the lock files:
 
           \`\`\`bash
-          gh extension upgrade gh-aw
+          gh extension install github/gh-aw --pin ${LATEST_VERSION} --force
           gh aw compile
           \`\`\`
 
@@ -144,5 +147,5 @@ jobs:
             echo "Superseding issue #$OLD_NUMBER"
             gh issue close "$OLD_NUMBER" \
               --reason "not planned" \
-              --comment "Superseded by $NEW_ISSUE_URL, which reflects the latest gh-aw-actions release (\`${LATEST_VERSION}\`). Closing this issue."
+              --comment "Superseded by $NEW_ISSUE_URL, which reflects the latest gh-aw ${PINNED_MINOR}.x release (\`${LATEST_VERSION}\`). Closing this issue."
           done
