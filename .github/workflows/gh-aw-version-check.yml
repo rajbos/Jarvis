@@ -127,7 +127,7 @@ jobs:
           | | Version |
           |---|---|
           | Compiler version in lock file(s) | \`${COMPILER_LABEL}\` |
-          | Latest \`gh-aw-actions\` release | \`${LATEST_VERSION}\` |
+          | Latest \`gh-aw\` ${PINNED_MINOR}.x release | \`${LATEST_VERSION}\` |
 
           ### Fix
 
