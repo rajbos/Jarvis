@@ -2,6 +2,7 @@
 import type { Database as SqlJsDatabase } from 'sql.js';
 import type { WorkflowRun, WorkflowJob, WorkflowRunSummary } from '../plugins/types';
 
+import { githubFetch } from './github-fetch';
 import { currentApiBase } from './github-host';
 
 // Max log bytes to store per job — keeps the DB size manageable
@@ -67,7 +68,7 @@ export interface LogExtractionResult {
 // ── Low-level GitHub API helpers ──────────────────────────────────────────────
 
 async function githubGet<T>(url: string, accessToken: string): Promise<T> {
-  const response = await fetch(url, {
+  const response = await githubFetch(url, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
       Accept: 'application/vnd.github+json',

@@ -1,6 +1,7 @@
 import type { Database as SqlJsDatabase } from 'sql.js';
 import { saveDatabase } from '../storage/database';
 import { logger } from './logger';
+import { parseRateLimit, sleep, type RateLimitInfo } from './github-fetch';
 
 import { currentApiBase, currentHostContext, hostKey } from './github-host';
 import { recordRepoVisibility } from './github-repo-visibility';
@@ -20,11 +21,7 @@ export class OrgTooLargeError extends Error {
   }
 }
 
-export interface RateLimitInfo {
-  remaining: number;
-  limit: number;
-  reset: number; // Unix timestamp (seconds)
-}
+export type { RateLimitInfo };
 
 export interface DiscoveryState {
   callsSinceLastPause: number;
@@ -74,14 +71,6 @@ interface GitHubRepo {
 
 // ─── Rate-limit helpers ────────────────────────────────────────────
 
-function parseRateLimit(headers: Headers): RateLimitInfo {
-  return {
-    remaining: parseInt(headers.get('x-ratelimit-remaining') || '5000', 10),
-    limit: parseInt(headers.get('x-ratelimit-limit') || '5000', 10),
-    reset: parseInt(headers.get('x-ratelimit-reset') || '0', 10),
-  };
-}
-
 function parseLinkNext(linkHeader: string | null): string | null {
   if (!linkHeader) return null;
   const match = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
@@ -93,10 +82,6 @@ function parseLinkLastPage(linkHeader: string | null): number | null {
   if (!linkHeader) return null;
   const match = linkHeader.match(/<[^>]+[?&]page=(\d+)[^>]*>;\s*rel="last"/);
   return match ? parseInt(match[1], 10) : null;
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
