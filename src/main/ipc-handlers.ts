@@ -55,5 +55,5 @@ export function registerIpcHandlers(
   registerGitHubAccountsHandlers(db);
   registerMcpServerHandlers(db, getWindow);
   registerActiveSessionsHandlers(db, getWindow);
-  registerTaskIpcHandlers();
+  registerTaskIpcHandlers(db);
 }

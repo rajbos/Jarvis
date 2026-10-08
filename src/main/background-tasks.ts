@@ -11,6 +11,8 @@ import { runActiveSessionsSweep } from '../plugins/active-sessions/handler';
 import { runReadmeBatch } from '../services/github-repo-catalog';
 import { safeHandle } from '../plugins/ipc-utils';
 import { logger } from '../services/logger';
+import { TaskFailureAlerter, recordTaskFailure, getRecentTaskFailures } from './task-failure-log';
+import type { TaskFailureEntry } from './task-failure-log';
 
 export const LOCAL_DISCOVERY_INITIAL_DELAY_MS = 30_000;
 export const LOCAL_DISCOVERY_INTERVAL_MS = 60 * 60 * 1000;
@@ -54,7 +56,12 @@ export function createBackgroundTaskScheduler(
   db: SqlJsDatabase,
   getWindow: () => BrowserWindow | null,
 ): TaskScheduler {
-  const taskScheduler = new TaskScheduler((record) => broadcastTaskUpdate(getWindow, record));
+  const alerter = new TaskFailureAlerter();
+  const taskScheduler: TaskScheduler = new TaskScheduler((record) => {
+    if (record.status === 'failed') recordTaskFailure(db, record);
+    alerter.handle(record, taskScheduler.getTask(record.taskId)?.label ?? record.taskId);
+    broadcastTaskUpdate(getWindow, record);
+  });
 
   registerTask(taskScheduler, getWindow, {
     id: 'github-workflow-cache-prewarm',
@@ -168,7 +175,8 @@ export function getBackgroundTaskScheduler(): TaskScheduler | null {
   return scheduler;
 }
 
-export function registerTaskIpcHandlers(): void {
+export function registerTaskIpcHandlers(db?: SqlJsDatabase): void {
+  safeHandle('tasks:recent-failures', (): TaskFailureEntry[] => (db ? getRecentTaskFailures(db) : []));
   safeHandle('tasks:list', (): TaskStatus[] => scheduler?.listTasks() ?? []);
   safeHandle('tasks:run-now', async (_event, taskId: string): Promise<TaskRunRecord | { ok: false; error: string }> => {
     if (typeof taskId !== 'string' || taskId.length === 0) return { ok: false, error: 'Invalid taskId' };
