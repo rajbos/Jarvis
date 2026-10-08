@@ -73,14 +73,10 @@ server.registerTool(
   },
   async () => {
     const db = await openSnapshot();
-    try {
-      const projects = listRuddrProjects(db);
-      return {
-        content: [{ type: 'text', text: JSON.stringify(projects, null, 2) }],
-      };
-    } finally {
-      db.close();
-    }
+    const projects = listRuddrProjects(db);
+    return {
+      content: [{ type: 'text', text: JSON.stringify(projects, null, 2) }],
+    };
   },
 );
 
@@ -103,17 +99,13 @@ server.registerTool(
       return { content: [{ type: 'text' as const, text: 'Error: provide either "name" or "path".' }], isError: true };
     }
     const db = await openSnapshot();
-    try {
-      const project = path
-        ? getRuddrProjectByPath(db, path)
-        : getRuddrProjectByName(db, name!);
-      if (!project) {
-        return { content: [{ type: 'text' as const, text: `No project found for ${path ? `path="${path}"` : `name="${name}"`}.` }] };
-      }
-      return { content: [{ type: 'text' as const, text: JSON.stringify(project, null, 2) }] };
-    } finally {
-      db.close();
+    const project = path
+      ? getRuddrProjectByPath(db, path)
+      : getRuddrProjectByName(db, name!);
+    if (!project) {
+      return { content: [{ type: 'text' as const, text: `No project found for ${path ? `path="${path}"` : `name="${name}"`}.` }] };
     }
+    return { content: [{ type: 'text' as const, text: JSON.stringify(project, null, 2) }] };
   },
 );
 
@@ -129,11 +121,7 @@ server.registerTool(
   },
   async () => {
     const db = await openSnapshot();
-    try {
-      return { content: [{ type: 'text' as const, text: JSON.stringify(listGroups(db), null, 2) }] };
-    } finally {
-      db.close();
-    }
+    return { content: [{ type: 'text' as const, text: JSON.stringify(listGroups(db), null, 2) }] };
   },
 );
 
@@ -149,11 +137,7 @@ server.registerTool(
   },
   async () => {
     const db = await openSnapshot();
-    try {
-      return { content: [{ type: 'text' as const, text: JSON.stringify(listGroupsWithRuddr(db), null, 2) }] };
-    } finally {
-      db.close();
-    }
+    return { content: [{ type: 'text' as const, text: JSON.stringify(listGroupsWithRuddr(db), null, 2) }] };
   },
 );
 
@@ -172,12 +156,8 @@ server.registerTool(
   },
   async ({ groupId }: { groupId?: number }) => {
     const db = await openSnapshot();
-    try {
-      const sections = listOneNoteSections(db, groupId);
-      return { content: [{ type: 'text' as const, text: JSON.stringify(sections, null, 2) }] };
-    } finally {
-      db.close();
-    }
+    const sections = listOneNoteSections(db, groupId);
+    return { content: [{ type: 'text' as const, text: JSON.stringify(sections, null, 2) }] };
   },
 );
 
@@ -199,15 +179,11 @@ server.registerTool(
   },
   async ({ query, groupId, limit }: { query: string; groupId?: number; limit?: number }) => {
     const db = await openSnapshot();
-    try {
-      const results = searchOneNotePages(db, query, groupId, limit ?? 20);
-      if (results.length === 0) {
-        return { content: [{ type: 'text' as const, text: `No pages found matching "${query}".` }] };
-      }
-      return { content: [{ type: 'text' as const, text: JSON.stringify(results, null, 2) }] };
-    } finally {
-      db.close();
+    const results = searchOneNotePages(db, query, groupId, limit ?? 20);
+    if (results.length === 0) {
+      return { content: [{ type: 'text' as const, text: `No pages found matching "${query}".` }] };
     }
+    return { content: [{ type: 'text' as const, text: JSON.stringify(results, null, 2) }] };
   },
 );
 
@@ -232,15 +208,11 @@ server.registerTool(
   },
   async ({ groupId, relativePath, pageIndex, maxChars }: { groupId: number; relativePath: string; pageIndex: number; maxChars?: number }) => {
     const db = await openSnapshot();
-    try {
-      const page = getOneNotePageContent(db, groupId, relativePath, pageIndex, maxChars ?? 8000);
-      if (!page) {
-        return { content: [{ type: 'text' as const, text: `Page not found: groupId=${groupId}, path="${relativePath}", index=${pageIndex}` }] };
-      }
-      return { content: [{ type: 'text' as const, text: JSON.stringify(page, null, 2) }] };
-    } finally {
-      db.close();
+    const page = getOneNotePageContent(db, groupId, relativePath, pageIndex, maxChars ?? 8000);
+    if (!page) {
+      return { content: [{ type: 'text' as const, text: `Page not found: groupId=${groupId}, path="${relativePath}", index=${pageIndex}` }] };
     }
+    return { content: [{ type: 'text' as const, text: JSON.stringify(page, null, 2) }] };
   },
 );
 
@@ -262,18 +234,14 @@ server.registerTool(
   },
   async ({ customer }: { customer: string }) => {
     const db = await openSnapshot();
-    try {
-      const summary = getCustomerBudget(db, customer);
-      if (summary.resolution === 'none') {
-        const hint = summary.candidates.length > 0
-          ? ` Closest groups: ${summary.candidates.map((c) => c.name).join(', ')}.`
-          : ' Use groups_list to see available customers.';
-        return { content: [{ type: 'text' as const, text: `No customer or Ruddr project matched "${customer}".${hint}` }] };
-      }
-      return { content: [{ type: 'text' as const, text: JSON.stringify(summary, null, 2) }] };
-    } finally {
-      db.close();
+    const summary = getCustomerBudget(db, customer);
+    if (summary.resolution === 'none') {
+      const hint = summary.candidates.length > 0
+        ? ` Closest groups: ${summary.candidates.map((c) => c.name).join(', ')}.`
+        : ' Use groups_list to see available customers.';
+      return { content: [{ type: 'text' as const, text: `No customer or Ruddr project matched "${customer}".${hint}` }] };
     }
+    return { content: [{ type: 'text' as const, text: JSON.stringify(summary, null, 2) }] };
   },
 );
 
@@ -289,11 +257,7 @@ server.registerTool(
   },
   async () => {
     const db = await openSnapshot();
-    try {
-      return { content: [{ type: 'text' as const, text: JSON.stringify(listRuddrBudgets(db), null, 2) }] };
-    } finally {
-      db.close();
-    }
+    return { content: [{ type: 'text' as const, text: JSON.stringify(listRuddrBudgets(db), null, 2) }] };
   },
 );
 
@@ -317,19 +281,15 @@ server.registerTool(
   },
   async ({ query, limitPerSource }: { query: string; limitPerSource?: number }) => {
     const db = await openSnapshot();
-    try {
-      const base = findAnywhere(db, query, limitPerSource ?? 10);
-      const files = searchLocalFiles(await openIndexSnapshot(), query, { limit: limitPerSource ?? 10 });
-      const result = { ...base, fileIndexAvailable: files.indexAvailable, files: files.hits };
-      const total = result.repos.length + result.localRepos.length + result.notifications.length + result.files.length;
-      if (total === 0) {
-        const hint = files.indexAvailable ? '' : ' (file contents are not indexed yet: start Jarvis and let the local repo scan finish)';
-        return { content: [{ type: 'text' as const, text: `Nothing cached matches "${query}". Try fewer or different words.${hint}` }] };
-      }
-      return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
-    } finally {
-      db.close();
+    const base = findAnywhere(db, query, limitPerSource ?? 10);
+    const files = searchLocalFiles(await openIndexSnapshot(), query, { limit: limitPerSource ?? 10 });
+    const result = { ...base, fileIndexAvailable: files.indexAvailable, files: files.hits };
+    const total = result.repos.length + result.localRepos.length + result.notifications.length + result.files.length;
+    if (total === 0) {
+      const hint = files.indexAvailable ? '' : ' (file contents are not indexed yet: start Jarvis and let the local repo scan finish)';
+      return { content: [{ type: 'text' as const, text: `Nothing cached matches "${query}". Try fewer or different words.${hint}` }] };
     }
+    return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
   },
 );
 
@@ -408,15 +368,11 @@ server.registerTool(
   },
   async ({ query, owner, roles, includeArchived, limit }: { query: string; owner?: string; roles?: RepoRole[]; includeArchived?: boolean; limit?: number }) => {
     const db = await openSnapshot();
-    try {
-      const repos = searchGitHubRepos(db, query, { owner, roles, includeArchived: includeArchived ?? false, limit: limit ?? 20 });
-      if (repos.length === 0) {
-        return { content: [{ type: 'text' as const, text: `No cached repos match "${query}".` }] };
-      }
-      return { content: [{ type: 'text' as const, text: JSON.stringify(repos, null, 2) }] };
-    } finally {
-      db.close();
+    const repos = searchGitHubRepos(db, query, { owner, roles, includeArchived: includeArchived ?? false, limit: limit ?? 20 });
+    if (repos.length === 0) {
+      return { content: [{ type: 'text' as const, text: `No cached repos match "${query}".` }] };
     }
+    return { content: [{ type: 'text' as const, text: JSON.stringify(repos, null, 2) }] };
   },
 );
 
@@ -437,15 +393,11 @@ server.registerTool(
   },
   async ({ query, limit }: { query?: string; limit?: number }) => {
     const db = await openSnapshot();
-    try {
-      const repos = searchLocalRepos(db, query, limit ?? 50);
-      if (repos.length === 0) {
-        return { content: [{ type: 'text' as const, text: query ? `No local repos match "${query}".` : 'No local repos have been discovered yet.' }] };
-      }
-      return { content: [{ type: 'text' as const, text: JSON.stringify(repos, null, 2) }] };
-    } finally {
-      db.close();
+    const repos = searchLocalRepos(db, query, limit ?? 50);
+    if (repos.length === 0) {
+      return { content: [{ type: 'text' as const, text: query ? `No local repos match "${query}".` : 'No local repos have been discovered yet.' }] };
     }
+    return { content: [{ type: 'text' as const, text: JSON.stringify(repos, null, 2) }] };
   },
 );
 
@@ -469,15 +421,11 @@ server.registerTool(
   },
   async ({ query, repo, unreadOnly, since, limit }: { query?: string; repo?: string; unreadOnly?: boolean; since?: string; limit?: number }) => {
     const db = await openSnapshot();
-    try {
-      const items = listNotifications(db, { query, repo, unreadOnly: unreadOnly ?? false, since, limit: limit ?? 50 });
-      if (items.length === 0) {
-        return { content: [{ type: 'text' as const, text: 'No cached notifications match the given filters.' }] };
-      }
-      return { content: [{ type: 'text' as const, text: JSON.stringify(items, null, 2) }] };
-    } finally {
-      db.close();
+    const items = listNotifications(db, { query, repo, unreadOnly: unreadOnly ?? false, since, limit: limit ?? 50 });
+    if (items.length === 0) {
+      return { content: [{ type: 'text' as const, text: 'No cached notifications match the given filters.' }] };
     }
+    return { content: [{ type: 'text' as const, text: JSON.stringify(items, null, 2) }] };
   },
 );
 
@@ -498,15 +446,11 @@ server.registerTool(
   },
   async ({ repo, conclusion, limit }: { repo?: string; conclusion?: string; limit?: number }) => {
     const db = await openSnapshot();
-    try {
-      const runs = listWorkflowRuns(db, { repo, conclusion, limit: limit ?? 50 });
-      if (runs.length === 0) {
-        return { content: [{ type: 'text' as const, text: 'No cached workflow runs match the given filters.' }] };
-      }
-      return { content: [{ type: 'text' as const, text: JSON.stringify(runs, null, 2) }] };
-    } finally {
-      db.close();
+    const runs = listWorkflowRuns(db, { repo, conclusion, limit: limit ?? 50 });
+    if (runs.length === 0) {
+      return { content: [{ type: 'text' as const, text: 'No cached workflow runs match the given filters.' }] };
     }
+    return { content: [{ type: 'text' as const, text: JSON.stringify(runs, null, 2) }] };
   },
 );
 

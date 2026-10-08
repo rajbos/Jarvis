@@ -356,6 +356,7 @@ contextBridge.exposeInMainWorld('jarvis', {
   getAutoDismissStats: () => ipcRenderer.invoke('github:auto-dismiss-stats'),
   // Background tasks
   listBackgroundTasks: () => ipcRenderer.invoke('tasks:list'),
+  listRecentTaskFailures: () => ipcRenderer.invoke('tasks:recent-failures'),
   runBackgroundTaskNow: (taskId: string) => ipcRenderer.invoke('tasks:run-now', taskId),
   onBackgroundTaskComplete: (callback: (record: unknown) => void) => {
     const listener = (_event: unknown, record: unknown) => callback(record);

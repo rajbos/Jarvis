@@ -198,6 +198,7 @@ const EXPECTED_CHANNELS = [
   'active-sessions:refresh',
   // background tasks
   'tasks:list',
+  'tasks:recent-failures',
   'tasks:run-now',
 ] as const;
 

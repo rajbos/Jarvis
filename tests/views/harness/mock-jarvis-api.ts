@@ -240,6 +240,7 @@ function defaultResponses(f: Fixtures): Responses {
     getActiveSessions: f.activeSessions,
     refreshActiveSessions: f.activeSessions,
     listBackgroundTasks: f.backgroundTasks,
+    listRecentTaskFailures: [],
     runBackgroundTaskNow: {
       taskId: 'notifications', status: 'success', startedAt: new Date(now).toISOString(),
       finishedAt: new Date(now).toISOString(), durationMs: 5,

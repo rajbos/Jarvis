@@ -117,3 +117,11 @@ Supported commands:
 ## Development
 
 The extension uses Manifest V3 with a persistent service worker. The WebSocket connection is maintained with exponential back-off reconnection logic and a keep-alive alarm so the service worker isn't unloaded between uses.
+
+## Testing
+
+The extension scripts are plain JS and are linted with the rest of `src/` (`npm run lint`).
+Unit tests live in `tests/unit/browser-extension.test.ts`. They evaluate `background.js`,
+`content.js` and `popup.js` in a Node `vm` context with a hand-written `chrome`, `WebSocket`
+and `document` mock, so no browser is needed. Extend the mocks in that file when you add a
+`chrome.*` API call.
