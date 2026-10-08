@@ -8,6 +8,7 @@ import { runBootWorkflowCheck, syncGitHubNotifications, runAutoDismissSweep } fr
 import { refreshRuddrProjectsInBackground, prewarmRuddrCache } from '../plugins/groups/handler';
 import { checkCopilotUsage } from '../plugins/copilot-usage/handler';
 import { runActiveSessionsSweep } from '../plugins/active-sessions/handler';
+import { runReadmeBatch } from '../services/github-repo-catalog';
 import { safeHandle } from '../plugins/ipc-utils';
 import { logger } from '../services/logger';
 
@@ -23,6 +24,8 @@ export const COPILOT_USAGE_INITIAL_DELAY_MS = 20_000;
 export const COPILOT_USAGE_INTERVAL_MS = 30 * 60 * 1000;
 export const ACTIVE_SESSIONS_INITIAL_DELAY_MS = 20_000;
 export const ACTIVE_SESSIONS_INTERVAL_MS = 2 * 60 * 1000;
+export const REPO_CATALOG_INITIAL_DELAY_MS = 120_000;
+export const REPO_CATALOG_INTERVAL_MS = 60 * 1000;
 
 let scheduler: TaskScheduler | null = null;
 
@@ -118,6 +121,19 @@ export function createBackgroundTaskScheduler(
     initialDelayMs: ACTIVE_SESSIONS_INITIAL_DELAY_MS,
     intervalMs: ACTIVE_SESSIONS_INTERVAL_MS,
     run: () => runActiveSessionsSweep(db, getWindow),
+  });
+
+  // Trickle-load README excerpts for the searchable repo catalog: a small
+  // batch per minute, until every discovered repo has one.
+  registerTask(taskScheduler, getWindow, {
+    id: 'github-repo-catalog',
+    label: 'Repo catalog README trickle',
+    initialDelayMs: REPO_CATALOG_INITIAL_DELAY_MS,
+    intervalMs: REPO_CATALOG_INTERVAL_MS,
+    run: async () => {
+      const result = await runReadmeBatch(db);
+      return { ...result };
+    },
   });
 
   return taskScheduler;

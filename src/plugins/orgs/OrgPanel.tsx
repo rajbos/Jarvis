@@ -16,6 +16,8 @@ interface OrgPanelProps {
   onSortToggle: () => void;
   onRefresh: () => void;
   onToggleFavoriteOrg: (orgLogin: string) => void;
+  /** Called after an org setting changed on the main side (e.g. a large org was approved). */
+  onOrgsChanged: () => void;
 }
 
 export function OrgPanel({
@@ -33,6 +35,7 @@ export function OrgPanel({
   onSortToggle,
   onRefresh,
   onToggleFavoriteOrg,
+  onOrgsChanged,
 }: OrgPanelProps) {
   const sorted = sortByNotifs && notifCounts
     ? [...orgs].sort((a, b) => {
@@ -109,6 +112,18 @@ export function OrgPanel({
               >
                 {isFav ? '\u2605' : '\u2606'}
               </span>
+              {org.largeOrg && !org.largeOrgApproved && (
+                <button
+                  style={{ fontSize: '0.68rem', padding: '0 0.4rem', cursor: 'pointer' }}
+                  title="This org has more than 500 repos, so it is skipped. Click to allow scanning it on the next discovery run."
+                  onClick={(e: MouseEvent) => {
+                    e.stopPropagation();
+                    window.jarvis.approveLargeOrg(org.login, true).then(onOrgsChanged);
+                  }}
+                >
+                  Approve scan
+                </button>
+              )}
               <label class="toggle" onClick={(e: MouseEvent) => e.stopPropagation()}>
                 <input
                   type="checkbox"

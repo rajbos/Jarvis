@@ -55,6 +55,8 @@ contextBridge.exposeInMainWorld('jarvis', {
   listOrgs: () => ipcRenderer.invoke('github:list-orgs'),
   setOrgEnabled: (orgLogin: string, enabled: boolean) =>
     ipcRenderer.invoke('github:set-org-enabled', orgLogin, enabled),
+  approveLargeOrg: (orgLogin: string, approved: boolean) =>
+    ipcRenderer.invoke('github:approve-large-org', orgLogin, approved),
   savePat: (pat: string) => ipcRenderer.invoke('github:save-pat', pat),
   deletePat: () => ipcRenderer.invoke('github:delete-pat'),
   getPatStatus: () => ipcRenderer.invoke('github:pat-status'),

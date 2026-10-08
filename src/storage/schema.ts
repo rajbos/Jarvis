@@ -71,7 +71,9 @@ export function getSchema(): string {
         discovery_enabled INTEGER DEFAULT 1,
         host              TEXT NOT NULL DEFAULT 'github.com',
         indexed_at        DATETIME,
-        metadata          TEXT
+        metadata          TEXT,
+        large_org         INTEGER NOT NULL DEFAULT 0,
+        large_org_approved INTEGER NOT NULL DEFAULT 0
     );
 
     -- GitHub repositories index (remote)
@@ -93,7 +95,12 @@ export function getSchema(): string {
         last_pushed_at  DATETIME,
         last_updated_at DATETIME,
         indexed_at      DATETIME,
-        metadata        TEXT
+        metadata        TEXT,
+        watching        INTEGER NOT NULL DEFAULT 0,
+        readme_excerpt  TEXT,
+        readme_etag     TEXT,
+        readme_status   TEXT,
+        readme_fetched_at DATETIME
     );
 
     -- Folders configured for local repo scanning

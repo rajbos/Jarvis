@@ -16,6 +16,10 @@ export interface GitHubRepoHit {
   fork: boolean;
   private: boolean;
   starred: boolean;
+  /** How the user relates to the repo: owner, org_member, collaborator, contributor, starred, watcher. */
+  roles: string[];
+  /** Short excerpt of the cached README around the first match (null when it did not match or is not cached yet). */
+  readmeSnippet: string | null;
   lastPushedAt: string | null;
   htmlUrl: string;
   /** Local clone paths of this repo known to Jarvis (empty if not cloned). */
@@ -123,21 +127,70 @@ function localPathsByRepoId(db: SqlJsDatabase, repoIds: number[]): Map<number, s
 
 // ── Queries ───────────────────────────────────────────────────────────────────
 
+export const REPO_ROLES = ['owner', 'org_member', 'collaborator', 'contributor', 'starred', 'watcher'] as const;
+export type RepoRole = (typeof REPO_ROLES)[number];
+
 export interface SearchReposOptions {
   limit?: number;
   includeArchived?: boolean;
   /** Restrict to repos owned by this org/user login. */
   owner?: string;
+  /** Only repos where the user has at least one of these roles. */
+  roles?: RepoRole[];
 }
 
 /**
- * Search cached GitHub repos by free text over full name, description and
- * language. All terms must match. Results include known local clone paths.
+ * Turn the stored discovery facts into roles. `collaboration_reason` holds a
+ * comma-separated list: owner, org_member, collaborator, or pr / issue (the
+ * user authored PRs / issues in a repo they were added to as collaborator).
+ */
+export function deriveRoles(collaborationReason: string | null, starred: boolean, watching: boolean): RepoRole[] {
+  const roles = new Set<RepoRole>();
+  for (const reason of (collaborationReason ?? '').split(',').map((r) => r.trim())) {
+    if (reason === 'owner') roles.add('owner');
+    else if (reason === 'org_member') roles.add('org_member');
+    else if (reason === 'collaborator') roles.add('collaborator');
+    else if (reason === 'pr' || reason === 'issue') {
+      roles.add('collaborator');
+      roles.add('contributor');
+    }
+  }
+  if (starred) roles.add('starred');
+  if (watching) roles.add('watcher');
+  return REPO_ROLES.filter((r) => roles.has(r));
+}
+
+function tableColumns(db: SqlJsDatabase, table: string): Set<string> {
+  return new Set(readAll<{ name: string }>(db, `PRAGMA table_info(${table})`).map((r) => r.name));
+}
+
+/** ~220 chars of README around the first term that appears in it. */
+function readmeSnippet(readme: string | null, terms: string[]): string | null {
+  if (!readme) return null;
+  const lower = readme.toLowerCase();
+  const hits = terms.map((t) => lower.indexOf(t)).filter((i) => i >= 0);
+  if (hits.length === 0) return null;
+  const from = Math.max(0, Math.min(...hits) - 80);
+  const text = readme.slice(from, from + 220).replace(/\s+/g, ' ').trim();
+  return `${from > 0 ? '…' : ''}${text}${from + 220 < readme.length ? '…' : ''}`;
+}
+
+/**
+ * Search cached GitHub repos by free text over full name, description,
+ * language and the cached README excerpt. All terms must match somewhere;
+ * name matches rank above description matches above README matches. Results
+ * carry the user's roles and known local clone paths. Works on databases from
+ * before the README / watcher columns existed.
  */
 export function searchGitHubRepos(db: SqlJsDatabase, query: string, opts: SearchReposOptions = {}): GitHubRepoHit[] {
   const limit = Math.min(Math.max(opts.limit ?? 20, 1), 200);
   const terms = queryTerms(query);
-  const filter = buildTermFilter(['full_name', 'description', 'language'], terms);
+  const cols = tableColumns(db, 'github_repos');
+  const hasReadme = cols.has('readme_excerpt');
+  const filter = buildTermFilter(
+    ['full_name', 'description', 'language', ...(hasReadme ? ['readme_excerpt'] : [])],
+    terms,
+  );
   const extra: string[] = [];
   const params: Array<string | number> = [...filter.params];
   if (!opts.includeArchived) extra.push('archived = 0');
@@ -145,23 +198,43 @@ export function searchGitHubRepos(db: SqlJsDatabase, query: string, opts: Search
     extra.push('LOWER(full_name) LIKE ?');
     params.push(`${opts.owner.toLowerCase()}/%`);
   }
-  params.push(limit);
+  const wanted = opts.roles && opts.roles.length > 0 ? new Set<RepoRole>(opts.roles) : null;
+  // Ranking and the role filter happen in JS, so pull a wider candidate set than `limit`.
+  params.push(wanted ? 2000 : Math.max(limit * 5, 100));
   const where = [filter.sql, ...extra].join(' AND ');
   const rows = readAll<{
     id: number; full_name: string; description: string | null; language: string | null;
     default_branch: string | null; archived: number; fork: number; private: number; starred: number;
-    last_pushed_at: string | null;
+    last_pushed_at: string | null; collaboration_reason: string | null; watching: number; readme_excerpt: string | null;
   }>(
     db,
-    `SELECT id, full_name, description, language, default_branch, archived, fork, private, starred, last_pushed_at
+    `SELECT id, full_name, description, language, default_branch, archived, fork, private, starred, last_pushed_at,
+            ${cols.has('collaboration_reason') ? 'collaboration_reason' : 'NULL'} AS collaboration_reason,
+            ${cols.has('watching') ? 'watching' : '0'} AS watching,
+            ${hasReadme ? 'readme_excerpt' : 'NULL'} AS readme_excerpt
      FROM github_repos
      WHERE ${where}
      ORDER BY last_pushed_at DESC NULLS LAST, full_name COLLATE NOCASE
      LIMIT ?`,
     params,
   );
-  const localPaths = localPathsByRepoId(db, rows.map((r) => r.id));
-  return rows.map((r) => ({
+
+  const scored = rows
+    .map((r) => ({ r, roles: deriveRoles(r.collaboration_reason, r.starred === 1, r.watching === 1) }))
+    .filter(({ roles }) => !wanted || roles.some((role) => wanted.has(role)))
+    .map(({ r, roles }) => {
+      const name = r.full_name.toLowerCase();
+      const desc = (r.description ?? '').toLowerCase();
+      let score = 0;
+      for (const t of terms) score += name.includes(t) ? 4 : desc.includes(t) ? 2 : 1;
+      return { r, roles, score };
+    })
+    // Array.sort is stable: equal scores keep the recently-pushed-first order.
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+
+  const localPaths = localPathsByRepoId(db, scored.map(({ r }) => r.id));
+  return scored.map(({ r, roles }) => ({
     fullName: r.full_name,
     description: r.description,
     language: r.language,
@@ -170,6 +243,8 @@ export function searchGitHubRepos(db: SqlJsDatabase, query: string, opts: Search
     fork: r.fork === 1,
     private: r.private === 1,
     starred: r.starred === 1,
+    roles,
+    readmeSnippet: readmeSnippet(r.readme_excerpt, terms),
     lastPushedAt: r.last_pushed_at,
     htmlUrl: `https://github.com/${r.full_name}`,
     localPaths: localPaths.get(r.id) ?? [],

@@ -118,6 +118,11 @@ export interface Org {
 
   discoveryEnabled: boolean;
 
+  /** More than 500 repos: skipped by discovery until approved. */
+  largeOrg?: boolean;
+
+  largeOrgApproved?: boolean;
+
 }
 
 export interface OrgListResult {
@@ -1407,6 +1412,8 @@ export interface JarvisApi {
   listOrgs(): Promise<OrgListResult | IpcErrorResponse>;
 
   setOrgEnabled(orgLogin: string, enabled: boolean): Promise<void>;
+
+  approveLargeOrg(orgLogin: string, approved: boolean): Promise<void>;
 
   searchRepos(query: string): Promise<Repo[] | IpcErrorResponse>;
 

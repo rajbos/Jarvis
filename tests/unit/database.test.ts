@@ -246,6 +246,7 @@ describe('Migration chain completeness (no orphaned user_version)', () => {
     26: `CREATE TABLE agent_sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, agent_id INTEGER, scope_type TEXT)`,
     27: `CREATE TABLE agent_definitions (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, system_prompt TEXT, updated_at DATETIME)`,
     31: `CREATE TABLE github_repos (id INTEGER PRIMARY KEY AUTOINCREMENT, full_name TEXT); CREATE TABLE github_orgs (id INTEGER PRIMARY KEY AUTOINCREMENT, login TEXT); CREATE TABLE github_notifications (id TEXT PRIMARY KEY)`,
+    32: `CREATE TABLE github_repos (id INTEGER PRIMARY KEY AUTOINCREMENT, full_name TEXT); CREATE TABLE github_orgs (id INTEGER PRIMARY KEY AUTOINCREMENT, login TEXT)`,
     30: `CREATE TABLE agent_definitions (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, system_prompt TEXT, updated_at DATETIME)`,
   };
 
@@ -325,5 +326,25 @@ describe('Migration v25 -> v26', () => {
     expect(version[0].values[0][0]).toBe(latestVersion);
 
     db2.close();
+  });
+});
+
+describe('Migration v32 -> v33', () => {
+  it('adds watcher, README cache and large-org columns and bumps user_version', async () => {
+    const SQL = await initSqlJs();
+    const oldDb = new SQL.Database();
+    oldDb.run('CREATE TABLE github_repos (id INTEGER PRIMARY KEY AUTOINCREMENT, full_name TEXT)');
+    oldDb.run('CREATE TABLE github_orgs (id INTEGER PRIMARY KEY AUTOINCREMENT, login TEXT)');
+    oldDb.run("INSERT INTO github_repos (full_name) VALUES ('a/b')");
+    oldDb.run('PRAGMA user_version = 32');
+
+    initializeSchema(oldDb);
+
+    expect(oldDb.exec('PRAGMA user_version')[0].values[0][0]).toBe(33);
+    const repoCols = oldDb.exec('PRAGMA table_info(github_repos)')[0].values.map((r) => r[1]);
+    expect(repoCols).toEqual(expect.arrayContaining(['watching', 'readme_excerpt', 'readme_etag', 'readme_status', 'readme_fetched_at']));
+    const orgCols = oldDb.exec('PRAGMA table_info(github_orgs)')[0].values.map((r) => r[1]);
+    expect(orgCols).toEqual(expect.arrayContaining(['large_org', 'large_org_approved']));
+    expect(oldDb.exec('SELECT watching, readme_excerpt FROM github_repos')[0].values[0]).toEqual([0, null]);
   });
 });
