@@ -92,6 +92,13 @@ jobs:
             exit 0
           fi
 
+          # Open drift issues with a different title are superseded by the new one
+          mapfile -t OLD_ISSUES < <(gh issue list \
+            --state open \
+            --search "chore: gh-aw lock files are out of date in:title" \
+            --json number,title \
+            --jq '.[] | select(.title | startswith("chore: gh-aw lock files are out of date")) | .number')
+
           # Ensure the 'maintenance' label exists (ignore error if it already does)
           gh label create maintenance \
             --description "Routine maintenance tasks" \
@@ -104,7 +111,7 @@ jobs:
           done
 
           # Create the issue
-          gh issue create \
+          NEW_ISSUE_URL=$(gh issue create \
             --title "$ISSUE_TITLE" \
             --label "maintenance" \
             --body "## gh-aw Lock File Version Drift Detected
@@ -128,6 +135,14 @@ jobs:
           gh aw compile
           \`\`\`
 
-          Then commit and push the regenerated lock files."
+          Then commit and push the regenerated lock files.")
 
-          echo "Issue created: $ISSUE_TITLE"
+          echo "Issue created: $ISSUE_TITLE ($NEW_ISSUE_URL)"
+
+          # Comment on and close each superseded issue
+          for OLD_NUMBER in "${OLD_ISSUES[@]}"; do
+            echo "Superseding issue #$OLD_NUMBER"
+            gh issue close "$OLD_NUMBER" \
+              --reason "not planned" \
+              --comment "Superseded by $NEW_ISSUE_URL, which reflects the latest gh-aw-actions release (\`${LATEST_VERSION}\`). Closing this issue."
+          done
