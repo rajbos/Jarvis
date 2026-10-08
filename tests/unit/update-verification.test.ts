@@ -6,7 +6,7 @@ import {
   enforceSignatureVerification,
 } from '../../src/main/update-verification';
 
-function fakeUpdater(config: Promise<{ publisherName?: string | string[] | null }>, original = vi.fn(async () => null)) {
+function fakeUpdater(config: Promise<{ publisherName?: string | string[] | null }>, original = vi.fn(async (_file: string): Promise<string | null> => null)) {
   const updater = { verifySignature: original, configOnDisk: { value: config } };
   return { updater, original, asUpdater: updater as unknown as AppUpdater };
 }
@@ -41,7 +41,7 @@ describe('update signature verification fails closed', () => {
   });
 
   it('defers to the real Authenticode check when a publisherName exists', async () => {
-    const original = vi.fn(async () => 'signature mismatch');
+    const original = vi.fn(async (_file: string): Promise<string | null> => 'signature mismatch');
     const { updater, asUpdater } = fakeUpdater(Promise.resolve({ publisherName: ['Jarvis Publisher'] }), original);
     enforceSignatureVerification(asUpdater, { warn: vi.fn() });
 
