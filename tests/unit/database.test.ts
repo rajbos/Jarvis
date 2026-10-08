@@ -1,8 +1,11 @@
 /// <reference path="../../src/types/sql.js.d.ts" />
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import initSqlJs, { Database as SqlJsDatabase } from 'sql.js';
 import { getSchema } from '../../src/storage/schema';
-import { getConfigValue, setConfigValue, initializeSchema, LATEST_SCHEMA_VERSION } from '../../src/storage/database';
+import { writeFileAtomic, getConfigValue, setConfigValue, initializeSchema, LATEST_SCHEMA_VERSION } from '../../src/storage/database';
 
 describe('Database Schema', () => {
   let db: SqlJsDatabase;
@@ -346,5 +349,41 @@ describe('Migration v32 -> v33', () => {
     const orgCols = oldDb.exec('PRAGMA table_info(github_orgs)')[0].values.map((r) => r[1]);
     expect(orgCols).toEqual(expect.arrayContaining(['large_org', 'large_org_approved']));
     expect(oldDb.exec('SELECT watching, readme_excerpt FROM github_repos')[0].values[0]).toEqual([0, null]);
+  });
+});
+
+describe('writeFileAtomic', () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jarvis-atomic-'));
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('writes the content and leaves no temp files behind', () => {
+    const target = path.join(dir, 'jarvis.db');
+    writeFileAtomic(target, Buffer.from('hello'));
+    expect(fs.readFileSync(target, 'utf-8')).toBe('hello');
+    expect(fs.readdirSync(dir)).toEqual(['jarvis.db']);
+  });
+
+  it('replaces an existing file', () => {
+    const target = path.join(dir, 'jarvis.db');
+    fs.writeFileSync(target, 'old');
+    writeFileAtomic(target, Buffer.from('new'));
+    expect(fs.readFileSync(target, 'utf-8')).toBe('new');
+  });
+
+  it('keeps the original file and cleans up the temp file when the write fails', () => {
+    const target = path.join(dir, 'jarvis.db');
+    fs.writeFileSync(target, 'original');
+    vi.spyOn(fs, 'fsyncSync').mockImplementation(() => {
+      throw new Error('disk full');
+    });
+    expect(() => writeFileAtomic(target, Buffer.from('new'))).toThrow('disk full');
+    expect(fs.readFileSync(target, 'utf-8')).toBe('original');
+    expect(fs.readdirSync(dir)).toEqual(['jarvis.db']);
   });
 });

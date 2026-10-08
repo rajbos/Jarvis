@@ -798,8 +798,34 @@ export function getDatabasePath(): string | null {
 export function saveDatabase(): void {
   if (db && dbPath) {
     const data = db.export();
-    const buffer = Buffer.from(data);
-    fs.writeFileSync(dbPath, buffer);
+    writeFileAtomic(dbPath, Buffer.from(data));
+  }
+}
+
+/**
+ * Replace `filePath` atomically: write + fsync a temp file in the same
+ * directory, then rename it over the target. A crash mid-write leaves either
+ * the old complete file or the new complete file, never a truncated hybrid.
+ */
+export function writeFileAtomic(filePath: string, data: Buffer): void {
+  const tmpPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
+  try {
+    const fd = fs.openSync(tmpPath, 'w');
+    try {
+      fs.writeSync(fd, data, 0, data.length, 0);
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
+    fs.renameSync(tmpPath, filePath);
+  } catch (err) {
+    try {
+      fs.rmSync(tmpPath, { force: true });
+    } catch {
+      /* best effort cleanup */
+    }
+    logger.error('[DB] Atomic write failed:', (err as Error).message);
+    throw err;
   }
 }
 
