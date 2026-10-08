@@ -9,6 +9,16 @@ const CALLS_PER_BATCH = 500;
 const BATCH_PAUSE_MS = 10_000; // 10 seconds between batches
 const LOW_RATE_LIMIT_THRESHOLD = 5;
 const PARALLEL_PAGE_CONCURRENCY = 10; // max simultaneous page requests
+/** Orgs with more repos than this are skipped until the user explicitly approves them. */
+export const MAX_ORG_REPOS = 500;
+
+/** Thrown while listing an org's repos when the page count shows it exceeds the repo limit. */
+export class OrgTooLargeError extends Error {
+  constructor(readonly lastPage: number) {
+    super(`Org has more than ${MAX_ORG_REPOS} repos (${lastPage} pages)`);
+    this.name = 'OrgTooLargeError';
+  }
+}
 
 export interface RateLimitInfo {
   remaining: number;
@@ -42,6 +52,9 @@ export interface OrgInfo {
   discoveryEnabled: boolean;
   indexedAt: string | null;
   repoCount: number;
+  /** More than MAX_ORG_REPOS repos: not scanned until approved. */
+  largeOrg: boolean;
+  largeOrgApproved: boolean;
 }
 
 interface GitHubRepo {
@@ -171,6 +184,7 @@ async function fetchAllPages<T>(
   accessToken: string,
   initialUrl: string,
   state: DiscoveryState,
+  maxRepos?: number,
 ): Promise<T[]> {
   // ── Page 1: establishes total page count ──────────────────────
   const first = await githubGet<T[]>(accessToken, initialUrl, state, 1);
@@ -179,6 +193,11 @@ async function fetchAllPages<T>(
   if (!first.nextUrl || state.aborted) return results;
 
   const totalPages = first.lastPage ?? null;
+
+  // Page 1 already told us how big the list is — bail out before fetching the rest.
+  if (maxRepos !== undefined && totalPages !== null && totalPages > Math.ceil(maxRepos / PER_PAGE)) {
+    throw new OrgTooLargeError(totalPages);
+  }
 
   // ── If total is known, fetch all remaining pages in parallel batches
   if (totalPages !== null) {
@@ -284,12 +303,13 @@ export function listOrgs(db: SqlJsDatabase): { orgs: OrgInfo[]; directRepoCount:
   const orgs: OrgInfo[] = [];
   const stmt = db.prepare(
     `SELECT o.id, o.login, o.name, o.discovery_enabled, o.indexed_at,
-            (SELECT COUNT(*) FROM github_repos r WHERE r.org_id = o.id) AS repo_count
+            (SELECT COUNT(*) FROM github_repos r WHERE r.org_id = o.id) AS repo_count,
+            o.large_org, o.large_org_approved
      FROM github_orgs o
      ORDER BY o.login COLLATE NOCASE`,
   );
   while (stmt.step()) {
-    const row = stmt.getAsObject() as { id: number; login: string; name: string | null; discovery_enabled: number; indexed_at: string | null; repo_count: number };
+    const row = stmt.getAsObject() as { id: number; login: string; name: string | null; discovery_enabled: number; indexed_at: string | null; repo_count: number; large_org: number; large_org_approved: number };
     orgs.push({
       id: row.id,
       login: row.login,
@@ -297,6 +317,8 @@ export function listOrgs(db: SqlJsDatabase): { orgs: OrgInfo[]; directRepoCount:
       discoveryEnabled: row.discovery_enabled !== 0,
       indexedAt: row.indexed_at,
       repoCount: row.repo_count,
+      largeOrg: row.large_org === 1,
+      largeOrgApproved: row.large_org_approved === 1,
     });
   }
   stmt.free();
@@ -312,6 +334,59 @@ export function listOrgs(db: SqlJsDatabase): { orgs: OrgInfo[]; directRepoCount:
   starredStmt.free();
 
   return { orgs, directRepoCount, starredRepoCount };
+}
+
+export function markOrgLarge(db: SqlJsDatabase, orgLogin: string): void {
+  db.run('UPDATE github_orgs SET large_org = 1 WHERE login = ?', [orgLogin]);
+}
+
+/** Explicit permission to scan an org that exceeds MAX_ORG_REPOS. */
+export function approveLargeOrg(db: SqlJsDatabase, orgLogin: string, approved: boolean): void {
+  db.run('UPDATE github_orgs SET large_org_approved = ? WHERE login = ?', [approved ? 1 : 0, orgLogin]);
+}
+
+/** Logins of large orgs that have not been approved: discovery must not scan them. */
+export function listBlockedLargeOrgs(db: SqlJsDatabase): string[] {
+  const stmt = db.prepare('SELECT login FROM github_orgs WHERE large_org = 1 AND large_org_approved = 0');
+  const out: string[] = [];
+  while (stmt.step()) out.push((stmt.getAsObject() as { login: string }).login);
+  stmt.free();
+  return out;
+}
+
+function isLargeOrgApproved(db: SqlJsDatabase, orgLogin: string): boolean {
+  const stmt = db.prepare('SELECT large_org_approved AS a FROM github_orgs WHERE login = ?');
+  stmt.bind([orgLogin]);
+  const approved = stmt.step() && (stmt.getAsObject() as { a: number }).a === 1;
+  stmt.free();
+  return approved;
+}
+
+/**
+ * Lists every repo of an org, unless it has more than MAX_ORG_REPOS and was not
+ * approved: then the org is flagged (large_org) and null is returned.
+ */
+async function fetchOrgRepos(
+  db: SqlJsDatabase,
+  token: string,
+  orgLogin: string,
+  state: DiscoveryState,
+): Promise<GitHubRepo[] | null> {
+  const limit = isLargeOrgApproved(db, orgLogin) ? undefined : MAX_ORG_REPOS;
+  try {
+    return await fetchAllPages<GitHubRepo>(
+      token,
+      `${currentApiBase()}/orgs/${encodeURIComponent(orgLogin)}/repos?type=all&per_page=${PER_PAGE}`,
+      state,
+      limit,
+    );
+  } catch (err) {
+    if (!(err instanceof OrgTooLargeError)) throw err;
+    logger.warn(`[Discovery] Skipping ${orgLogin}: more than ${MAX_ORG_REPOS} repos — needs explicit approval`);
+    markOrgLarge(db, orgLogin);
+    saveDatabase();
+    return null;
+  }
 }
 
 export function setOrgDiscoveryEnabled(db: SqlJsDatabase, orgLogin: string, enabled: boolean): void {
@@ -505,8 +580,9 @@ export async function runDiscovery(
 
     // ── Phase 2: Repos per org (skip disabled orgs) ─────────────────
     progress.phase = 'repos';
+    // Disabled by the user, or too large (> MAX_ORG_REPOS) and not yet approved
     const disabledOrgs = new Set(
-      listOrgs(db).orgs.filter((o) => !o.discoveryEnabled).map((o) => o.login),
+      listOrgs(db).orgs.filter((o) => !o.discoveryEnabled || (o.largeOrg && !o.largeOrgApproved)).map((o) => o.login),
     );
 
     for (const org of orgs) {
@@ -521,11 +597,11 @@ export async function runDiscovery(
       logger.debug(`[Discovery] Fetching repos for org: ${org.login}`);
       onProgress?.({ ...progress });
 
-      const repos = await fetchAllPages<GitHubRepo>(
-        accessToken,
-        `${currentApiBase()}/orgs/${encodeURIComponent(org.login)}/repos?type=all&per_page=${PER_PAGE}`,
-        state,
-      );
+      const repos = await fetchOrgRepos(db, accessToken, org.login, state);
+      if (!repos) {
+        disabledOrgs.add(org.login);
+        continue;
+      }
 
       const orgDbId = orgIdMap.get(org.login)!;
       for (const repo of repos) {
@@ -553,11 +629,11 @@ export async function runDiscovery(
       onProgress?.({ ...progress });
 
       try {
-        const repos = await fetchAllPages<GitHubRepo>(
-          pat!,
-          `${currentApiBase()}/orgs/${encodeURIComponent(org.login)}/repos?type=all&per_page=${PER_PAGE}`,
-          state,
-        );
+        const repos = await fetchOrgRepos(db, pat!, org.login, state);
+        if (!repos) {
+          disabledOrgs.add(org.login);
+          continue;
+        }
 
         const orgDbId = orgIdMap.get(org.login)!;
         for (const repo of repos) {
@@ -641,6 +717,7 @@ export async function runDiscovery(
     // ── Phase 4: Starred repos ────────────────────────────────────────
     if (!state.aborted && !opts.skipStarred) {
       await fetchStarredRepos(db, accessToken, state, progress, onProgress);
+      await fetchWatchedReposSafe(db, accessToken, state);
     }
 
     // ── Phase 5: PAT supplemental pass (repos OAuth can't see) ──────
@@ -712,8 +789,9 @@ export async function runLightweightRefresh(
     logger.debug(`[LightRefresh] ${orgs.length} org(s) synced`);
     onProgress?.({ ...progress });
 
+    // Disabled by the user, or too large (> MAX_ORG_REPOS) and not yet approved
     const disabledOrgs = new Set(
-      listOrgs(db).orgs.filter((o) => !o.discoveryEnabled).map((o) => o.login),
+      listOrgs(db).orgs.filter((o) => !o.discoveryEnabled || (o.largeOrg && !o.largeOrgApproved)).map((o) => o.login),
     );
 
     // Fetch personal + collaborator + org-member repos
@@ -786,7 +864,10 @@ export async function runLightweightRefresh(
     logger.debug(`[LightRefresh] ${directRepos.length} personal + collaborator + org-member repo(s) synced`);
 
     // Fetch starred repos
-    if (!opts.skipStarred) await fetchStarredRepos(db, accessToken, state, progress, onProgress);
+    if (!opts.skipStarred) {
+      await fetchStarredRepos(db, accessToken, state, progress, onProgress);
+      await fetchWatchedReposSafe(db, accessToken, state);
+    }
 
     // PAT supplemental pass
     if (pat) {
@@ -844,6 +925,50 @@ export async function fetchStarredRepos(
   logger.debug(`[Discovery] Starred repos: ${starred.length}`);
   onProgress?.({ ...progress });
   saveDatabase();
+}
+
+/** Watching is a nice-to-have role: a failure here must not abort discovery. */
+async function fetchWatchedReposSafe(db: SqlJsDatabase, accessToken: string, state: DiscoveryState): Promise<void> {
+  try {
+    await fetchWatchedRepos(db, accessToken, state);
+  } catch (err) {
+    logger.warn('[Discovery] Watched repos failed (non-fatal):', err instanceof Error ? err.message : err);
+  }
+}
+
+// ─── Fetch watched repos ────────────────────────────────────────────
+
+/**
+ * Marks repos the authenticated user watches (GET /user/subscriptions) with
+ * watching = 1. Note GitHub auto-subscribes you to repos you can push to, so
+ * "watching" overlaps heavily with owned/collaborator repos. Repos in unapproved
+ * large orgs are not stored.
+ */
+export async function fetchWatchedRepos(
+  db: SqlJsDatabase,
+  accessToken: string,
+  state: DiscoveryState,
+): Promise<number> {
+  logger.debug('[Discovery] Fetching watched repos…');
+  const watched = await fetchAllPages<GitHubRepo>(
+    accessToken,
+    `${currentApiBase()}/user/subscriptions?per_page=${PER_PAGE}`,
+    state,
+  );
+  if (state.aborted) return 0;
+
+  const blocked = new Set(listBlockedLargeOrgs(db).map((l) => l.toLowerCase()));
+  db.run('UPDATE github_repos SET watching = 0');
+  let stored = 0;
+  for (const repo of watched) {
+    if (repo.owner?.login && blocked.has(repo.owner.login.toLowerCase())) continue;
+    upsertRepo(db, repo, lookupExistingOrgId(db, repo));
+    db.run('UPDATE github_repos SET watching = 1 WHERE full_name = ?', [repo.full_name]);
+    stored++;
+  }
+  saveDatabase();
+  logger.debug(`[Discovery] Watched repos: ${stored}`);
+  return stored;
 }
 
 /**
@@ -1069,11 +1194,8 @@ export async function runPatDiscovery(
 
     logger.debug(`[PAT Discovery] Fetching repos for org: ${org.login}`);
     try {
-      const repos = await fetchAllPages<GitHubRepo>(
-        pat,
-        `${currentApiBase()}/orgs/${encodeURIComponent(org.login)}/repos?type=all&per_page=${PER_PAGE}`,
-        st,
-      );
+      const repos = await fetchOrgRepos(db, pat, org.login, st);
+      if (!repos) continue;
 
       for (const repo of repos) {
         upsertRepo(db, repo, orgDbId);
@@ -1110,7 +1232,9 @@ export async function runPatDiscovery(
       collabReasons = await resolveCollaborationReasons(db, pat, userLogin, collabRepos, st);
     }
 
+    const blockedOrgs = new Set(listBlockedLargeOrgs(db).map((l) => l.toLowerCase()));
     for (const repo of collabRepos) {
+      if (repo.owner?.login && blockedOrgs.has(repo.owner.login.toLowerCase())) continue;
       const orgId = resolveOrgId(db, repo);
       const reason = collabReasons?.get(repo.full_name) ?? 'collaborator';
       upsertRepo(db, repo, orgId, reason);

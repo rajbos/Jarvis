@@ -113,6 +113,7 @@ function defaultResponses(f: Fixtures): Responses {
     // Orgs + repos
     listOrgs: f.orgs,
     setOrgEnabled: undefined,
+    approveLargeOrg: undefined,
     searchRepos: (query) => Object.values(f.reposByOrg).flat().filter((r) => r.full_name.includes(query)),
     listReposForOrg: (org) => (org ? f.reposByOrg[org] ?? [] : []),
     listStarred: [],

@@ -31,7 +31,9 @@ import {
   findAnywhere,
   listNotifications,
   listWorkflowRuns,
+  REPO_ROLES,
   searchGitHubRepos,
+  type RepoRole,
   searchLocalRepos,
 } from './tools/github.js';
 import { openIndexSnapshot, INDEX_DB_PATH } from './index-db.js';
@@ -389,20 +391,25 @@ server.registerTool(
   {
     title: 'Search cached GitHub repos',
     description:
-      'Search remote GitHub repos discovered by Jarvis (own, org and starred repos) by words in the ' +
-      'full name, description or language. Returns metadata plus any local clone paths. ' +
+      'Search remote GitHub repos discovered by Jarvis (own, org, collaborator, watched and starred repos) by ' +
+      'words in the full name, description, language or the top 200 lines of the README. Use this when you ' +
+      'know what a repo contains but not where it lives. Results carry the user roles on the repo ' +
+      '(owner, org_member, collaborator, contributor, starred, watcher), a README snippet and any local clone ' +
+      'paths. Filter with `roles`, e.g. ["collaborator","contributor"] for repos of other users or orgs. ' +
+      'Orgs with more than 500 repos are not cached until the user approves them. ' +
       'Archived repos are excluded unless `includeArchived` is true.',
     inputSchema: {
       query: z.string().min(1).describe('Search words (all must match)'),
       owner: z.string().optional().describe('Restrict to one owner/org login'),
+      roles: z.array(z.enum(REPO_ROLES)).optional().describe('Only repos where the user has one of these roles'),
       includeArchived: z.boolean().optional().default(false),
       limit: z.number().int().min(1).max(200).optional().default(20),
     },
   },
-  async ({ query, owner, includeArchived, limit }: { query: string; owner?: string; includeArchived?: boolean; limit?: number }) => {
+  async ({ query, owner, roles, includeArchived, limit }: { query: string; owner?: string; roles?: RepoRole[]; includeArchived?: boolean; limit?: number }) => {
     const db = await openSnapshot();
     try {
-      const repos = searchGitHubRepos(db, query, { owner, includeArchived: includeArchived ?? false, limit: limit ?? 20 });
+      const repos = searchGitHubRepos(db, query, { owner, roles, includeArchived: includeArchived ?? false, limit: limit ?? 20 });
       if (repos.length === 0) {
         return { content: [{ type: 'text' as const, text: `No cached repos match "${query}".` }] };
       }

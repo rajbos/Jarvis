@@ -1106,6 +1106,7 @@ function App() {
             onRefresh={doFetchNotifications}
             favoritedOrgs={favoritedOrgs}
             onToggleFavoriteOrg={handleToggleFavoriteOrg}
+            onOrgsChanged={loadOrgs}
           />
         )}
 

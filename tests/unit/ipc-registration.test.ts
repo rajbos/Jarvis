@@ -94,6 +94,7 @@ const EXPECTED_CHANNELS = [
   // orgs plugin
   'github:list-orgs',
   'github:set-org-enabled',
+  'github:approve-large-org',
   // repos plugin
   'github:search-repos',
   'github:list-repos-for-org',

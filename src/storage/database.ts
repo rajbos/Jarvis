@@ -85,7 +85,7 @@ export async function createMemoryDatabase(): Promise<SqlJsDatabase> {
 // of the chain in initializeSchema(). Used only to warn if a database fails to
 // reach the latest schema after migration (e.g. a gap in the version chain).
 // A unit test fails if this drifts from the version a fresh database reaches.
-export const LATEST_SCHEMA_VERSION = 32;
+export const LATEST_SCHEMA_VERSION = 33;
 
 export function initializeSchema(database: SqlJsDatabase): void {
   const result = database.exec("PRAGMA user_version");
@@ -94,7 +94,7 @@ export function initializeSchema(database: SqlJsDatabase): void {
   if (userVersion === 0) {
     database.run(getSchema());
     seedBuiltInAgents(database);
-    database.run('PRAGMA user_version = 32');
+    database.run('PRAGMA user_version = 33');
   }
 
   if (userVersion === 1) {
@@ -659,6 +659,23 @@ export function initializeSchema(database: SqlJsDatabase): void {
       )
     `);
     database.run('PRAGMA user_version = 32');
+  }
+
+  if (userVersion === 32) {
+    // Migration v32 → v33: searchable repo catalog.
+    //  - watching: repos the user watches (GET /user/subscriptions)
+    //  - readme_*: README excerpt (top 200 lines) trickle-loaded per repo,
+    //    with the ETag so refreshes are conditional (304s cost no rate limit)
+    //  - large_org / large_org_approved: orgs with more than 500 repos are
+    //    skipped by discovery until the user explicitly approves them
+    database.run('ALTER TABLE github_repos ADD COLUMN watching INTEGER NOT NULL DEFAULT 0');
+    database.run('ALTER TABLE github_repos ADD COLUMN readme_excerpt TEXT');
+    database.run('ALTER TABLE github_repos ADD COLUMN readme_etag TEXT');
+    database.run('ALTER TABLE github_repos ADD COLUMN readme_status TEXT');
+    database.run('ALTER TABLE github_repos ADD COLUMN readme_fetched_at DATETIME');
+    database.run('ALTER TABLE github_orgs ADD COLUMN large_org INTEGER NOT NULL DEFAULT 0');
+    database.run('ALTER TABLE github_orgs ADD COLUMN large_org_approved INTEGER NOT NULL DEFAULT 0');
+    database.run('PRAGMA user_version = 33');
   }
 
   const finalResult = database.exec('PRAGMA user_version');
