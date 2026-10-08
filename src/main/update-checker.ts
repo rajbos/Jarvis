@@ -3,6 +3,7 @@ import { autoUpdater } from 'electron-updater';
 import type { UpdateState } from '../types/ipc-payloads';
 import { safeHandle } from '../plugins/ipc-utils';
 import { logger } from '../services/logger';
+import { enforceSignatureVerification } from './update-verification';
 
 const INITIAL_CHECK_DELAY_MS = 15_000;
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
@@ -50,6 +51,16 @@ function showNotification(title: string, body: string, onClick?: () => void): vo
 function registerListeners(): void {
   if (listenersRegistered) return;
   listenersRegistered = true;
+
+  // Surface electron-updater's own diagnostics (e.g. signature verification
+  // messages) in the app log instead of a console nobody reads.
+  autoUpdater.logger = {
+    info: (message?: unknown) => logger.info('[AutoUpdater]', message),
+    warn: (message?: unknown) => logger.warn('[AutoUpdater]', message),
+    error: (message?: unknown) => logger.error('[AutoUpdater]', message),
+  };
+  // Fail closed: reject downloads that cannot be verified against a publisher.
+  enforceSignatureVerification(autoUpdater, logger);
 
   autoUpdater.on('checking-for-update', () => {
     // A downloaded update outranks a fresh check: keep the install prompt up so
