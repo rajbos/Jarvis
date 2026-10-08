@@ -70,6 +70,8 @@ The workflow builds with `electron-builder --publish never` and uploads assets i
 
 The installer is currently unsigned, so Windows SmartScreen may warn until a code-signing certificate is configured.
 
+The in-app auto-updater fails closed: it only installs an update whose Authenticode publisher matches the `publisherName` recorded in `app-update.yml` at build time. Unsigned builds have no publisher, so their auto-updates are rejected (the update check reports an error) and you need to download and [verify](#verifying-an-installer) new installers manually until a code-signing certificate is configured.
+
 ### Verifying an installer
 
 The release workflow records a [build provenance attestation](https://docs.github.com/actions/security-for-github-actions/using-artifact-attestations) for every `Jarvis-Setup-<version>.exe` it builds. To confirm a downloaded installer was built by this repository's release workflow and has not been altered, run (with the [GitHub CLI](https://cli.github.com/) signed in):
