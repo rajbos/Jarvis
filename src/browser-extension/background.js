@@ -44,10 +44,6 @@ async function getStoredToken() {
   }
 }
 
-async function setStoredToken(token) {
-  await chrome.storage.local.set({ jarvisToken: token });
-}
-
 // ── Connection management ─────────────────────────────────────────────────────
 
 async function connect() {
@@ -215,7 +211,7 @@ async function handleCommand(rawData) {
         data = await cmdFill(tabId, payload);
         break;
       case 'screenshot':
-        data = await cmdScreenshot(tabId, payload);
+        data = await cmdScreenshot(tabId);
         break;
       case 'list-tabs':
         data = await cmdListTabs();
@@ -268,7 +264,7 @@ async function cmdNavigate(tabId, payload) {
       throw new Error(`URL scheme "${parsed.protocol}" is not allowed`);
     }
   } catch (e) {
-    throw new Error(`Invalid or disallowed URL: ${e.message}`);
+    throw new Error(`Invalid or disallowed URL: ${e.message}`, { cause: e });
   }
 
   // `newTab` opens a dedicated tab for this run instead of hijacking whatever the
@@ -295,7 +291,7 @@ async function cmdNavigate(tabId, payload) {
   try {
     const currentTab = await chrome.tabs.get(targetTabId);
     alreadyOnUrl = currentTab.url === url;
-  } catch (_) { /* tab may not exist yet — fall through to tabs.update */ }
+  } catch { /* tab may not exist yet — fall through to tabs.update */ }
 
   if (alreadyOnUrl) {
     console.log('[JarvisBridge] Tab already on target URL — reloading for clean state');
@@ -515,7 +511,7 @@ async function scrollAndExtract(selector, maxScrolls, waitMs, includeHref, debug
         // Also dispatch a wheel event - some virtual lists respond to wheel but not scroll
         const wheelTarget = lastEl.closest('[class*="table"], [class*="list"], [class*="grid"]') || lastEl.parentElement;
         if (wheelTarget) {
-          wheelTarget.dispatchEvent(new WheelEvent('wheel', {
+          wheelTarget.dispatchEvent(new window.WheelEvent('wheel', {
             deltaY: 500,
             deltaMode: 0, // pixels
             bubbles: true,
@@ -631,7 +627,7 @@ async function cmdReadFormFields(tabId, payload) {
   } catch (scriptErr) {
     console.error('[JarvisBridge] executeScript(readFormFields) threw:', scriptErr?.message ?? String(scriptErr));
     // Re-throw with a clearer message so the caller knows the exact Chrome error.
-    throw new Error(`executeScript failed: ${scriptErr?.message ?? String(scriptErr)}`);
+    throw new Error(`executeScript failed: ${scriptErr?.message ?? String(scriptErr)}`, { cause: scriptErr });
   }
 
   const result = results[0]?.result;
@@ -653,7 +649,7 @@ async function cmdFill(tabId, payload) {
   return results[0]?.result ?? null;
 }
 
-async function cmdScreenshot(tabId, _payload) {
+async function cmdScreenshot(tabId) {
   const targetTabId = await getTargetTabId(tabId);
   const tab = await chrome.tabs.get(targetTabId);
   const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });

@@ -72,7 +72,35 @@ export default tseslint.config(
     },
   },
   {
-    // Ignore build output and test compiled output and browser extension plain JS
-    ignores: ['dist/**', 'node_modules/**', 'tests/**', 'src/browser-extension/**'],
+    // Browser extension: plain JS (service worker, content script, popup) running in
+    // the browser/webextension context. console.* is the debugging surface there.
+    files: ['src/browser-extension/**/*.js'],
+    languageOptions: {
+      sourceType: 'script',
+      globals: {
+        chrome: 'readonly',
+        self: 'readonly',
+        window: 'readonly',
+        document: 'readonly',
+        console: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+        setInterval: 'readonly',
+        clearInterval: 'readonly',
+        WebSocket: 'readonly',
+        Event: 'readonly',
+        URL: 'readonly',
+        getComputedStyle: 'readonly',
+        MutationObserver: 'readonly',
+      },
+    },
+    rules: {
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrors: 'none' }],
+      'no-multiple-empty-lines': ['error', { max: 1, maxEOF: 0 }],
+    },
+  },
+  {
+    // Ignore build output and test compiled output
+    ignores: ['dist/**', 'node_modules/**', 'tests/**'],
   },
 );
