@@ -348,3 +348,15 @@ describe('Migration v32 -> v33', () => {
     expect(oldDb.exec('SELECT watching, readme_excerpt FROM github_repos')[0].values[0]).toEqual([0, null]);
   });
 });
+
+describe('Migration v33 -> v34', () => {
+  it('creates the task_failures table and bumps user_version', async () => {
+    const SQL = await initSqlJs();
+    const oldDb = new SQL.Database();
+    oldDb.run('PRAGMA user_version = 33');
+    initializeSchema(oldDb);
+    expect(oldDb.exec('PRAGMA user_version')[0].values[0][0]).toBe(34);
+    const cols = oldDb.exec('PRAGMA table_info(task_failures)')[0].values.map((r) => r[1]);
+    expect(cols).toEqual(['id', 'task_id', 'failed_at', 'error']);
+  });
+});

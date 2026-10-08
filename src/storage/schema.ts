@@ -430,5 +430,13 @@ export function getSchema(): string {
         ready_notified_sha  TEXT,
         PRIMARY KEY (repo_full_name, pr_number)
     );
+
+    -- Recent failed background task runs (kept across restarts).
+    CREATE TABLE IF NOT EXISTS task_failures (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id    TEXT NOT NULL,
+        failed_at  TEXT NOT NULL,
+        error      TEXT NOT NULL
+    );
   `;
 }

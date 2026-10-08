@@ -1710,6 +1710,7 @@ export interface JarvisApi {
   getAutoDismissStats(): Promise<AutoDismissStats | IpcErrorResponse>;
   // Background tasks
   listBackgroundTasks(): Promise<BackgroundTaskStatus[] | IpcErrorResponse>;
+  listRecentTaskFailures(): Promise<Array<{ taskId: string; failedAt: string; error: string }> | IpcErrorResponse>;
   runBackgroundTaskNow(taskId: string): Promise<BackgroundTaskRunRecord | { ok: false; error: string }>;
   onBackgroundTaskComplete(cb: (record: BackgroundTaskRunRecord) => void): () => void;
   onNotificationCountsUpdated(cb: (counts: NotificationCounts) => void): () => void;
