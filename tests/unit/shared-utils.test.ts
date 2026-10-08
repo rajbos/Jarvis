@@ -189,6 +189,37 @@ describe('renderChatMarkdown', () => {
     expect(out).toContain('GitHub');
   });
 
+  it('escapes literal HTML tags in plain text', () => {
+    const out = renderChatMarkdown('<img src=x onerror=alert(1)> hello <script>alert(2)</script>');
+    expect(out).not.toContain('<img');
+    expect(out).not.toContain('<script');
+    expect(out).toContain('&lt;img src=x onerror=alert(1)&gt;');
+    expect(out).toContain('&lt;script&gt;');
+  });
+
+  it('escapes HTML in headings, list items and inline code', () => {
+    expect(renderChatMarkdown('# <b onclick=x>')).toContain('&lt;b onclick=x&gt;');
+    expect(renderChatMarkdown('- <img src=x onerror=y>')).not.toContain('<img');
+    expect(renderChatMarkdown('`<script>`')).toContain('<span class="ec-inline-code">&lt;script&gt;</span>');
+  });
+
+  it('escapes HTML in link labels and keeps hrefs from breaking out of the attribute', () => {
+    const out = renderChatMarkdown('[<i>x</i>](https://a.com/"onmouseover="alert(1))');
+    expect(out).not.toContain('<i>');
+    expect(out).not.toContain('"onmouseover="');
+    expect(out).toContain('&quot;onmouseover=&quot;');
+  });
+
+  it('does not inject emphasis markup into link hrefs', () => {
+    const out = renderChatMarkdown('[a](https://a.com/*x*)');
+    expect(out).toContain('href="https://a.com/*x*"');
+  });
+
+  it('does not link non-http schemes', () => {
+    const out = renderChatMarkdown('[x](javascript:alert(1))');
+    expect(out).not.toContain('<a ');
+  });
+
   it('does not crash on empty string', () => {
     expect(() => renderChatMarkdown('')).not.toThrow();
   });

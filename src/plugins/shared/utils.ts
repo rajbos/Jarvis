@@ -219,30 +219,53 @@ export function normalizeGitHubUrl(url: string): string | null {
   return null;
 }
 
-/** Lightweight Markdown → HTML renderer (no external dependency). */
+/** Escape the characters that are significant in HTML text and attribute values. */
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/**
+ * Lightweight Markdown → HTML renderer (no external dependency).
+ * All input text is HTML-escaped before markdown transforms are applied; the
+ * output is safe for dangerouslySetInnerHTML. Links only allow http(s) URLs.
+ */
 export function renderChatMarkdown(text: string): string {
   // 1. Extract fenced code blocks so their content is never processed as Markdown.
   const blocks: string[] = [];
   let out = text.replace(/```[\w]*\n?([\s\S]*?)```/g, (_: string, code: string) => {
     blocks.push(
-      `<pre class="ec-code-block"><code>${code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code></pre>`,
+      `<pre class="ec-code-block"><code>${escapeHtml(code)}</code></pre>`,
     );
     return `\x00B${blocks.length - 1}\x00`;
   });
 
   // Inline formatter — protects code spans before applying bold/italic/links.
   const inline = (s: string): string => {
+    s = escapeHtml(s);
     const codeSpans: string[] = [];
     s = s.replace(/`([^`]+)`/g, (_: string, c: string) => {
       codeSpans.push(`<span class="ec-inline-code">${c}</span>`);
       return `\x00CS${codeSpans.length - 1}\x00`;
     });
+    // Links are extracted first so bold/italic never touch the href attribute.
+    // Text is already escaped, so the URL cannot break out of the attribute.
+    const links: string[] = [];
+    s = s.replace(
+      /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,
+      (_: string, label: string, url: string) => {
+        links.push(`<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`);
+        return `\x00L${links.length - 1}\x00`;
+      },
+    );
     s = s.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
     s = s.replace(/\*(.*?)\*/g, '<em>$1</em>');
-    s = s.replace(
-      /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,
-      '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>',
-    );
+    // eslint-disable-next-line no-control-regex
+    s = s.replace(/\x00L(\d+)\x00/g, (_: string, i: string) => links[parseInt(i, 10)]);
     // eslint-disable-next-line no-control-regex
     s = s.replace(/\x00CS(\d+)\x00/g, (_: string, i: string) => codeSpans[parseInt(i, 10)]);
     return s;
