@@ -10,13 +10,12 @@
     "src/browser-extension/content.js",
     "src/browser-extension/popup.js",
     "scripts/*.mjs",
-    "scripts/*.js",
     "dev/*.js",
     ".github/skills/**/*.js"
   ],
   "project": [
     "src/**/*.{ts,tsx,js}",
-    "scripts/**/*.{js,mjs}",
+    "scripts/**/*.mjs",
     "dev/**/*.js",
     ".github/skills/**/*.js"
   ],
