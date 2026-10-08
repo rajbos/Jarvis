@@ -1,5 +1,7 @@
 import type { Database as SqlJsDatabase } from 'sql.js';
 
+import { logger } from './logger';
+import { githubFetch, GitHubRateLimitError } from './github-fetch';
 import { currentApiBase, currentHostContext, DEFAULT_HOST } from './github-host';
 
 export interface GitHubNotification {
@@ -103,7 +105,7 @@ async function fetchSubjectActor(
   if (!subjectUrl?.startsWith(`${currentApiBase()}/repos/`)) return { login: null, type: null };
 
   try {
-    const response = await fetch(subjectUrl, {
+    const response = await githubFetch(subjectUrl, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         Accept: 'application/vnd.github+json',
@@ -112,7 +114,8 @@ async function fetchSubjectActor(
     });
     if (!response.ok) return { login: null, type: null };
     return extractActorFromSubject(await response.json());
-  } catch {
+  } catch (err) {
+    if (err instanceof GitHubRateLimitError) throw err;
     return { login: null, type: null };
   }
 }
@@ -124,13 +127,23 @@ async function enrichNotificationActors(
   const concurrency = 8;
   const enriched: GitHubNotification[] = new Array(notifications.length);
   let nextIndex = 0;
+  let rateLimited = false;
 
   async function worker(): Promise<void> {
     while (nextIndex < notifications.length) {
       const index = nextIndex;
       nextIndex++;
       const notification = notifications[index];
-      const actor = await fetchSubjectActor(accessToken, notification.subject.url);
+      let actor: { login: string | null; type: string | null } = { login: null, type: null };
+      if (!rateLimited) {
+        try {
+          actor = await fetchSubjectActor(accessToken, notification.subject.url);
+        } catch (err) {
+          if (!(err instanceof GitHubRateLimitError)) throw err;
+          rateLimited = true;
+          logger.warn('[Notifications] Rate limited while enriching actors; skipping remaining enrichment this sync');
+        }
+      }
       enriched[index] = {
         ...notification,
         subject_actor_login: actor.login,
@@ -489,7 +502,7 @@ function isDependabotPRNotification(n: StoredNotification): boolean {
 async function checkPRMerged(accessToken: string, prApiUrl: string): Promise<boolean> {
   if (!DEPENDABOT_PR_URL_RE.test(prApiUrl)) return false;
   try {
-    const response = await fetch(prApiUrl, {
+    const response = await githubFetch(prApiUrl, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         Accept: 'application/vnd.github+json',
@@ -499,7 +512,8 @@ async function checkPRMerged(accessToken: string, prApiUrl: string): Promise<boo
     if (!response.ok) return false;
     const pr = (await response.json()) as Record<string, unknown>;
     return pr.state === 'closed' && pr.merged_at != null;
-  } catch {
+  } catch (err) {
+    if (err instanceof GitHubRateLimitError) throw err;
     return false;
   }
 }
@@ -532,13 +546,20 @@ export async function listMergedDependabotPRNotifications(
   const merged: StoredNotification[] = [];
   const concurrency = 6;
   let next = 0;
+  let rateLimited = false;
 
   async function worker(): Promise<void> {
-    while (next < candidates.length) {
+    while (next < candidates.length && !rateLimited) {
       const i = next++;
       const n = candidates[i];
-      const isMerged = await checkPRMerged(accessToken, n.subject_url!);
-      if (isMerged) merged.push(n);
+      try {
+        const isMerged = await checkPRMerged(accessToken, n.subject_url!);
+        if (isMerged) merged.push(n);
+      } catch (err) {
+        if (!(err instanceof GitHubRateLimitError)) throw err;
+        rateLimited = true;
+        logger.warn('[Notifications] Rate limited while checking Dependabot PRs; stopping early');
+      }
     }
   }
 

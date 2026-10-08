@@ -405,6 +405,35 @@ describe('fetchNotificationsForRepo', () => {
     expect(result[0].subject_actor_type).toBe('Bot');
   });
 
+  it('stops enriching actors once rate limited instead of treating it as "no actor"', async () => {
+    const notifs = [1, 2, 3, 4, 5].map((i) =>
+      makeNotif(String(i), {
+        owner: 'myorg',
+        repoName: 'myrepo',
+        type: 'PullRequest',
+        subjectUrl: `https://api.github.com/repos/myorg/myrepo/pulls/${i}`,
+      }),
+    );
+    const reset = String(Math.floor(Date.now() / 1000) + 3600);
+    let subjectCalls = 0;
+    globalThis.fetch = vi.fn(async (url: RequestInfo | URL) => {
+      if (String(url).includes('/notifications')) {
+        return new Response(JSON.stringify(notifs), { status: 200 });
+      }
+      subjectCalls++;
+      return new Response('{}', {
+        status: 403,
+        headers: { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': reset },
+      });
+    });
+
+    const result = await fetchNotificationsForRepo('token', 'myorg/myrepo');
+    expect(result).toHaveLength(5);
+    expect(result.every((n) => n.subject_actor_login == null)).toBe(true);
+    // 8-way concurrency allows at most the in-flight workers; no further calls after the flag is set
+    expect(subjectCalls).toBeLessThanOrEqual(5);
+  });
+
   it('throws when the API returns a non-OK status', async () => {
     globalThis.fetch = vi.fn(async () =>
       new Response('Server Error', { status: 500, statusText: 'Internal Server Error' }),
