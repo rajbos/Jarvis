@@ -27,6 +27,7 @@ vi.mock('../../src/services/github-repo-access', () => ({
   accessForPrimary: vi.fn(async () => ({ id: 'me', host: 'github.com', login: 'me', token: 'tok', source: 'oauth', isPrimary: true })),
   // An org repo resolves to the org account.
   accessForRepo: vi.fn(async () => ({ id: 'me-org', host: 'github.com', login: 'me-org', token: 'tok-org', source: 'gh-cli', isPrimary: false })),
+  ghCliFallbacks: vi.fn(async () => []),
 }));
 
 vi.mock('../../src/services/active-sessions', () => ({
@@ -43,6 +44,7 @@ import {
 } from '../../src/plugins/active-sessions/handler';
 import { collectActiveSessions } from '../../src/services/active-sessions';
 import { saveDatabase } from '../../src/storage/database';
+import { ghCliFallbacks } from '../../src/services/github-repo-access';
 
 function pr(overrides: Partial<PrReadiness> = {}): PrReadiness {
   const stage = { light: 'green' as const, label: 'ok', detail: 'ok', blocking: false };
@@ -132,7 +134,11 @@ describe('refreshActiveSessions', () => {
 
     const opts = vi.mocked(collectActiveSessions).mock.calls[0][0];
     expect(opts).toMatchObject({ accessToken: 'tok', accessAccount: 'me' });
-    await expect(opts.accessForRepo!('org/app')).resolves.toEqual({ token: 'tok-org', account: 'me-org' });
+    const access = await opts.accessForRepo!('org/app');
+    expect(access).toMatchObject({ token: 'tok-org', account: 'me-org' });
+    // The GitHub CLI's logins back up a token that can't see the repo.
+    vi.mocked(ghCliFallbacks).mockResolvedValueOnce([{ id: 'me', host: 'github.com', login: 'me', token: 'cli-me', source: 'gh-cli' }]);
+    await expect(access!.fallbacks!()).resolves.toEqual([{ token: 'cli-me', account: 'me' }]);
     expect(saveDatabase).toHaveBeenCalled();
     expect(Notification).toHaveBeenCalledTimes(1);
     expect(vi.mocked(Notification).mock.calls[0][0]).toMatchObject({ title: 'PR ready for your review' });

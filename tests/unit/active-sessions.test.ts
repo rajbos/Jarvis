@@ -204,6 +204,43 @@ describe('collectActiveSessions', () => {
     expect(org).toMatchObject({ prAccount: 'me-org', prError: 'Could not resolve to a Repository (checked as @me-org)' });
   });
 
+  it('retries a lookup the account token cannot see with the fallback credentials', async () => {
+    vi.mocked(discoverCopilotLocalSessions).mockResolvedValue({ sessions: [localSession({})], mirroredTasks: new Map() });
+    vi.mocked(resolveGitContext).mockReturnValue(gitCtx('feature', ['org/app']));
+    const fallbacks = vi.fn(async () => [
+      { token: 'tok', account: 'me' },
+      { token: 'tok-other', account: 'other' },
+      { token: 'tok-cli', account: 'me' },
+    ]);
+    vi.mocked(fetchPullRequests).mockImplementation(async (token, lookups) => new Map(lookups.map((l) => [
+      prLookupKey(l),
+      token === 'tok-cli'
+        ? { ok: true as const, pr: rawPr() }
+        : { ok: false as const, error: 'Could not resolve to a Repository' },
+    ])));
+
+    const snap = await collectActiveSessions({
+      accessToken: null,
+      accessForRepo: async () => ({ token: 'tok', account: 'me', fallbacks }),
+      now: () => NOW,
+    });
+
+    // The token already tried is skipped; the fallbacks run in order until one works.
+    expect(vi.mocked(fetchPullRequests).mock.calls.map((c) => c[0])).toEqual(['tok', 'tok-other', 'tok-cli']);
+    expect(snap.entries[0]).toMatchObject({ prAccount: 'me', prError: null, verdict: 'ready' });
+  });
+
+  it('does not ask for fallbacks when every lookup succeeds', async () => {
+    vi.mocked(discoverCopilotLocalSessions).mockResolvedValue({ sessions: [localSession({})], mirroredTasks: new Map() });
+    vi.mocked(resolveGitContext).mockReturnValue(gitCtx('feature'));
+    vi.mocked(fetchPullRequests).mockImplementation(async (_token, lookups) => new Map(lookups.map((l) => [prLookupKey(l), { ok: true as const, pr: rawPr() }])));
+    const fallbacks = vi.fn(async () => []);
+
+    await collectActiveSessions({ accessToken: null, accessForRepo: async () => ({ token: 'tok', account: 'me', fallbacks }), now: () => NOW });
+
+    expect(fallbacks).not.toHaveBeenCalled();
+  });
+
   it('matches the PR on the local branch name, not the tracked upstream branch', async () => {
     vi.mocked(discoverCopilotLocalSessions).mockResolvedValue({ sessions: [localSession({})], mirroredTasks: new Map() });
     // A worktree created from origin/main tracks main as its upstream.

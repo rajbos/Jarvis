@@ -34,6 +34,12 @@ export interface RepoAccess {
   token: string;
   /** Account id, shown next to the PR so it is clear which account checked it. */
   account: string;
+  /**
+   * Other credentials to retry a failed lookup with — e.g. the GitHub CLI's
+   * token, which can be SSO-authorized for an org the Jarvis sign-in or PAT is
+   * not. Only called when a lookup with `token` fails.
+   */
+  fallbacks?: () => Promise<RepoAccess[]>;
 }
 
 export interface CollectActiveSessionsOptions extends LocalSessionDiscoveryOptions {
@@ -204,6 +210,24 @@ async function fetchWithAccounts(
   const results = new Map<string, PrLookupResult>();
   for (const { access, lookups: batch } of groups.values()) {
     for (const [key, result] of await fetchPullRequests(access.token, batch)) results.set(key, result);
+
+    // Retry what this token could not see with the fallback credentials, in order.
+    let failed = batch.filter((l) => results.get(prLookupKey(l))?.ok === false);
+    if (failed.length === 0 || !access.fallbacks) continue;
+    const fallbacks = await access.fallbacks().catch(() => [] as RepoAccess[]);
+    for (const fallback of fallbacks) {
+      if (failed.length === 0) break;
+      if (fallback.token === access.token) continue;
+      const retried = await fetchPullRequests(fallback.token, failed);
+      failed = failed.filter((lookup) => {
+        const key = prLookupKey(lookup);
+        const result = retried.get(key);
+        if (!result?.ok) return true;
+        results.set(key, result);
+        accountOf.set(key, fallback.account);
+        return false;
+      });
+    }
   }
   return { results, accountOf };
 }
