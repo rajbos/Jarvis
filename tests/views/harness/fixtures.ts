@@ -310,7 +310,7 @@ export function createFixtures(now: number) {
     entitlementCredits: 300,
     year: d.getUTCFullYear(),
     month: d.getUTCMonth() + 1,
-    resetsAt: now + 10 * DAY,
+    resetsAt: Math.floor(now / 1000) + 10 * DAY,
     creditsUsed: 120,
     includedCreditsUsed: 120,
     billedCredits: 0,
