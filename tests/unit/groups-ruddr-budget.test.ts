@@ -15,8 +15,7 @@ import { saveRuddrBudgetToDb, saveRuddrProjectsToDb, listGroups } from '../../sr
 const handlers = new Map<string, (...args: unknown[]) => unknown>();
 
 /** Electron Notification mock — the handler shows a desktop toast when the Ruddr scrape breaks. */
-const mockNotification = vi.fn();
-mockNotification.isSupported = vi.fn(() => true);
+const mockNotification = Object.assign(vi.fn(), { isSupported: vi.fn(() => true) });
 
 vi.mock('electron', () => ({
   ipcMain: {
