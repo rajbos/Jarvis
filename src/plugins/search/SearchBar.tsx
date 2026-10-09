@@ -9,7 +9,7 @@ export function SearchBar() {
   const [searchError, setSearchError] = useState<string | null>(null);
   const [showResults, setShowResults] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const timerRef = useRef<number>();
+  const timerRef = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
