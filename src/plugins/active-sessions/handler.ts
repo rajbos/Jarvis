@@ -10,7 +10,7 @@ import type { BrowserWindow } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import { safeHandle } from '../ipc-utils';
 import { logger } from '../../services/logger';
-import { accessForPrimary, accessForRepo } from '../../services/github-repo-access';
+import { accessForPrimary, accessForRepo, ghCliFallbacks } from '../../services/github-repo-access';
 import { DEFAULT_HOST } from '../../services/github-host';
 import { collectActiveSessions } from '../../services/active-sessions';
 import { saveDatabase } from '../../storage/database';
@@ -103,9 +103,16 @@ export async function refreshActiveSessions(
     const snapshot = await collectActiveSessions({
       accessToken: primary?.token ?? null,
       accessAccount: primary?.id ?? null,
+      // When that account's token can't see the repo (e.g. not SSO-authorized for
+      // the org), retry with the GitHub CLI's logins.
       accessForRepo: async (repoFullName) => {
         const access = await accessForRepo(db, repoFullName, DEFAULT_HOST);
-        return access ? { token: access.token, account: access.id } : null;
+        if (!access) return null;
+        return {
+          token: access.token,
+          account: access.id,
+          fallbacks: async () => (await ghCliFallbacks(access, DEFAULT_HOST)).map((f) => ({ token: f.token, account: f.id })),
+        };
       },
     });
 

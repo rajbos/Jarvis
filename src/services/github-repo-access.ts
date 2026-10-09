@@ -9,7 +9,8 @@ import {
   resolveAccountToken,
   type AccountToken,
 } from './github-accounts';
-import { DEFAULT_HOST, hostKey, parseAccountId } from './github-host';
+import { getGhCliToken } from './copilot-usage';
+import { DEFAULT_HOST, accountId, hostKey, parseAccountId } from './github-host';
 import { getPrimaryGitHubLogin } from './github-oauth';
 
 export interface AccountAccess extends AccountToken {
@@ -108,4 +109,26 @@ export async function accessForOwner(
 ): Promise<AccountAccess | null> {
   // `_` stands in for a repo name; no real repo assignment is expected to match it.
   return accessForRepo(db, `${owner}/_`, host);
+}
+
+/**
+ * GitHub CLI tokens to retry with when `access` can't see a repo: the same
+ * account's CLI token first (it can be SSO-authorized for an org the Jarvis
+ * sign-in or PAT is not), then the other CLI accounts on that host. Tokens equal
+ * to `access.token` are left out.
+ */
+export async function ghCliFallbacks(access: AccountToken | null, host: string = DEFAULT_HOST): Promise<AccountToken[]> {
+  const own = access?.login.toLowerCase();
+  // Same account first, then the CLI's active account, then the rest.
+  const rank = (a: { login: string; active: boolean }): number => (a.login.toLowerCase() === own ? 0 : a.active ? 1 : 2);
+  const accounts = (await listGhCliAccountsCached()).filter((a) => a.host === host).sort((a, b) => rank(a) - rank(b));
+  const out: AccountToken[] = [];
+  const seen = new Set(access ? [access.token] : []);
+  for (const account of accounts) {
+    const token = await getGhCliToken(account.login, host);
+    if (!token || seen.has(token)) continue;
+    seen.add(token);
+    out.push({ id: accountId(host, account.login), host, login: account.login, token, source: 'gh-cli' });
+  }
+  return out;
 }
