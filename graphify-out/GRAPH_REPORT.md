@@ -1,34 +1,34 @@
-# Graph Report - github-repo-discovery-cache-46255f  (2026-10-08)
+# Graph Report - session-titles-review-3693bb  (2026-10-09)
 
 ## Corpus Check
-- 286 files · ~302,808 words
+- 291 files · ~312,052 words
 - Verdict: corpus is large enough that graph structure adds value.
-- Unclassified: 9 file(s) not represented in the graph (top: (none) 5, .css 3, .nsh 1)
+- Unclassified: 8 file(s) not represented in the graph (top: (none) 4, .css 3, .nsh 1)
 
 ## Summary
-- 2655 nodes · 6291 edges · 124 communities (117 shown, 7 thin omitted)
-- Extraction: 97% EXTRACTED · 3% INFERRED · 0% AMBIGUOUS · INFERRED: 162 edges (avg confidence: 0.88)
+- 2708 nodes · 6441 edges · 125 communities (119 shown, 6 thin omitted)
+- Extraction: 97% EXTRACTED · 3% INFERRED · 0% AMBIGUOUS · INFERRED: 166 edges (avg confidence: 0.88)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `54812709`
+- Built from commit: `2d0a538f`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
 - JarvisApi
-- groups/handler.ts
-- notifications/handler.ts
+- server.ts
+- github-notifications.ts
 - saveDatabase
 - mcp-server/index.ts
 - local-file-index.ts
 - background-tasks.ts
 - plugins/types.ts
-- App
-- copilot-usage/handler.ts
+- utils.ts
+- copilot-usage.ts
 - github-accounts.ts
 - DashboardPanel.tsx
-- sql.js
+- getConfigValue
 - Notification Intelligence & Agent Framework
 - github-oauth.ts
 - preact
@@ -37,19 +37,19 @@
 - main/index.ts
 - ref_fs
 - active-sessions.ts
-- index.tsx
+- notifications/handler.ts
 - local-agent-sessions.ts
 - Contributing to Jarvis
 - NotifRepoPanel.tsx
 - fixtures.ts
-- StatusBadge
+- index.tsx
 - Customer Project Budget & Actuals Lookup
 - Repository Quality Improvement Agent
 - pr-readiness.ts
 - onedrive-onenote-cache.ts
 - onedrive/handler.ts
 - config.ts
-- getConfigValue
+- sql.js
 - claude.ts
 - package.json
 - scripts
@@ -58,14 +58,14 @@
 - OneNote Caching for Jarvis Groups
 - rules
 - mcp-server/handler.ts
-- encryption.ts
+- registerHandlers
 - claude-agent.ts
 - manifest.json
-- AgentApprovalPanel.tsx
-- claude/handler.ts
-- secrets/handler.ts
+- Phase 2 — Agent plugin
+- github-fetch.ts
+- database.ts
 - ErrorBoundary.tsx
-- agents-handler.test.ts
+- agents/handler.ts
 - github-host.ts
 - runner.ts
 - ClaudePanel.tsx
@@ -76,42 +76,42 @@
 - watch-electron.mjs
 - devDependencies
 - compilerOptions
-- chat/handler.ts
+- file-index-runner.ts
 - CopilotUsageBadge.tsx
-- git-health.ts
+- dashboard/handler.ts
 - Benevolent Product Owner
-- windows.ts
-- copilot-usage-handler.test.ts
+- github-repo-access.ts
+- browser-extension.test.ts
 - Database
 - Jarvis Agent — Architecture Specification
 - mcp-settings-section.tsx
 - mock-jarvis-api.ts
-- dashboard/handler.ts
+- groups/handler.ts
 - Jarvis MCP Server
 - ensure-electron.mjs
-- watch-electron.js
-- safeHandle
+- ensureRuddrCache
+- task-failure-log.ts
 - active-sessions/handler.ts
 - compilerOptions
 - compilerOptions
 - build-renderer.mjs
 - view-harness.ts
-- agents/handler.ts
-- update-checker.test.ts
+- screenshots.ts
+- createBackgroundTaskScheduler
 - README.md
 - Jarvis Browser Companion — Browser Extension
 - ollama-provider.ts
-- AutoDismissHistoryPanel.tsx
+- github-repo-catalog.ts
 - active-sessions.test.ts
 - useViewHarness
 - Initial Capabilities
 - Product
-- git-context.ts
+- GroupsDashboardPanel.tsx
 - Check Jarvis Database
 - 11. Activity Tracking & Weekly Summaries
 - bug_report.md
 - Getting Started
-- claude.test.ts
+- groups-ruddr-budget.test.ts
 - BrowserCompanionPanel.tsx
 - OneNoteCachePanel.tsx
 - 10. Async Actor Pattern
@@ -119,44 +119,45 @@
 - 9. Container Isolation
 - dependencies
 - popup.js
-- event-bus.ts
+- agents-handler.test.ts
 - 17. Active Agent Sessions & PR Review Readiness
 - 5. First-Run Onboarding Flow
 - 7. MCP Extensibility
 - pull_request_template.md
 - content.js
-- OpenedView
+- settings-and-about.view.test.ts
 - 16. Copilot AI Credit Budget Tracking
-- resolveAccountToken
+- 18. Multiple GitHub Accounts & GHE.com
 - feature_request.md
-- check-db.js
+- task-scheduler.ts
 - 13. Configuration
-- 6. Ollama Integration
-- 8. Local Storage
+- notifications-multi-account.test.ts
+- update-verification.ts
 - allowScripts
 - UpdateState
-- settings-and-about.view.test.ts
+- logger.ts
 - assets.d.ts
+- startBackgroundTasks
 
 ## God Nodes (most connected - your core abstractions)
-1. `JarvisApi` - 177 edges
-2. `sql.js` - 105 edges
-3. `vitest` - 91 edges
-4. `saveDatabase()` - 65 edges
+1. `JarvisApi` - 178 edges
+2. `sql.js` - 107 edges
+3. `vitest` - 96 edges
+4. `saveDatabase()` - 69 edges
 5. `safeHandle()` - 51 edges
 6. `getSchema()` - 48 edges
-7. `electron` - 40 edges
-8. `logger` - 37 edges
-9. `App()` - 36 edges
-10. `preact` - 32 edges
+7. `electron` - 41 edges
+8. `logger` - 40 edges
+9. `registerHandlers()` - 38 edges
+10. `App()` - 36 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `Authentication` --references--> `resolveGitHubScopes()`  [INFERRED]
   docs/ARCHITECTURE.md → src/agent/config.ts
+- `4. Agent-Initiated Dismiss (User-Approved)` --references--> `AgentApprovalPanel()`  [INFERRED]
+  docs/DISMISS-FLOWS.md → src/plugins/agents/AgentApprovalPanel.tsx
 - `IPC Handler Error Contract` --references--> `safeHandle()`  [INFERRED]
   docs/ARCHITECTURE.md → src/plugins/ipc-utils.ts
-- `Known Gotchas & Lessons Learned` --references--> `safeHandle()`  [INFERRED]
-  .github/copilot-instructions.md → src/plugins/ipc-utils.ts
 - `8.1 Main screen — Analyse button` --references--> `NotifRepoPanel()`  [INFERRED]
   docs/NOTIFICATION-INTELLIGENCE.md → src/plugins/notifications/NotifRepoPanel.tsx
 - `View tests (headless browser)` --references--> `JarvisApi`  [INFERRED]
@@ -165,111 +166,111 @@
 ## Import Cycles
 - None detected.
 
-## Communities (124 total, 7 thin omitted)
+## Communities (125 total, 6 thin omitted)
 
-### Community 1 - "groups/handler.ts"
-Cohesion: 0.05
-Nodes (80): ref_events, ws, registerHandlers(), ALLOWED_URL_SCHEMES, authTimeouts, BRIDGE_ORIGIN, BRIDGE_PORT, BridgeCommand (+72 more)
+### Community 1 - "server.ts"
+Cohesion: 0.10
+Nodes (28): ref_events, ws, registerHandlers(), ALLOWED_URL_SCHEMES, authTimeouts, BRIDGE_ORIGIN, BRIDGE_PORT, BridgeCommand (+20 more)
 
-### Community 2 - "notifications/handler.ts"
-Cohesion: 0.05
-Nodes (76): AutoDismissRunResult, AutoDismissStepResult, AutoDismissSweepResult, collaboratedOnPr(), dismissStoredNotification(), fetchIssueState(), fetchPrState(), fetchTokenRateLimitRemaining() (+68 more)
+### Community 2 - "github-notifications.ts"
+Cohesion: 0.10
+Nodes (29): AccountScope, checkPRMerged(), deleteNotificationsOfUntrackedAccounts(), enrichNotificationActors(), worker(), extractActorFromSubject(), extractBranchFromTitle(), fetchLiveBranchNames() (+21 more)
 
 ### Community 3 - "saveDatabase"
-Cohesion: 0.07
-Nodes (66): What uses it, accountIndexedKey(), discoverAdditionalAccounts(), registerHandlers(), startPrimaryDiscovery(), activeDiscovery, lastDiscoveryProgress, setActiveDiscovery() (+58 more)
+Cohesion: 0.12
+Nodes (43): What uses it, registerHandlers(), startPrimaryDiscovery(), activeDiscovery, lastDiscoveryProgress, setActiveDiscovery(), setLastDiscoveryProgress(), abortDiscovery() (+35 more)
 
 ### Community 4 - "mcp-server/index.ts"
 Cohesion: 0.06
 Nodes (58): DB_PATH, getSql(), INDEX_DB_PATH, openIndexSnapshot(), server, buildTermFilter(), deriveRoles(), findAnywhere() (+50 more)
 
 ### Community 5 - "local-file-index.ts"
-Cohesion: 0.07
-Nodes (52): ref_node_util, describeIndex(), FileSearchResult, searchLocalFiles(), FileIndexState, _resetFileIndexStateForTests(), runFileIndex(), buildMatchExpression() (+44 more)
+Cohesion: 0.08
+Nodes (38): ref_node_util, buildMatchExpression(), classifyFile(), CONFIG_BASENAMES, CONFIG_EXT, CONTENT_BUDGET, createMemoryIndexDatabase(), deleteFileRow() (+30 more)
 
 ### Community 6 - "background-tasks.ts"
-Cohesion: 0.06
-Nodes (33): 1. Boot Cache Pre-Warm, `prewarmRuddrCache(db)`, `runBootWorkflowCheck(db, getWindow)`, ACTIVE_SESSIONS_INITIAL_DELAY_MS, ACTIVE_SESSIONS_INTERVAL_MS, broadcastTaskUpdate(), COPILOT_USAGE_INITIAL_DELAY_MS, COPILOT_USAGE_INTERVAL_MS (+25 more)
+Cohesion: 0.10
+Nodes (18): ACTIVE_SESSIONS_INITIAL_DELAY_MS, ACTIVE_SESSIONS_INTERVAL_MS, COPILOT_USAGE_INITIAL_DELAY_MS, COPILOT_USAGE_INTERVAL_MS, getBackgroundTaskScheduler(), GITHUB_AUTO_DISMISS_INITIAL_DELAY_MS, GITHUB_AUTO_DISMISS_INTERVAL_MS, GITHUB_NOTIFICATIONS_INITIAL_DELAY_MS (+10 more)
 
 ### Community 7 - "plugins/types.ts"
 Cohesion: 0.06
-Nodes (35): OneNoteSectionPanel(), PageCard(), Props, ActiveSessionVerdict, AgentSessionOrigin, AutoDismissCompletePayload, AutoDismissReason, AutoDismissRunResult (+27 more)
+Nodes (39): OneNoteSectionPanel(), PageCard(), Props, SecretsScanPanelProps, ActiveSessionVerdict, AgentSessionOrigin, AutoDismissCompletePayload, AutoDismissReason (+31 more)
 
-### Community 8 - "App"
-Cohesion: 0.10
-Nodes (33): ChatMsg, EmbeddedChatPanelProps, LocalFolderPanel(), LocalRepoCard(), LocalRepoCardProps, LocalRepoPanelView(), LocalRepoPanelViewProps, LocalSortKey (+25 more)
+### Community 8 - "utils.ts"
+Cohesion: 0.12
+Nodes (30): LocalFolderPanel(), LocalFolderPanelProps, LocalRepoCard(), LocalRepoCardProps, LocalRepoPanelView(), LocalRepoPanelViewProps, LocalSortKey, LocalSubfolderPanel() (+22 more)
 
-### Community 9 - "copilot-usage/handler.ts"
+### Community 9 - "copilot-usage.ts"
 Cohesion: 0.10
-Nodes (38): AccountCredentials, EMPTY_USAGE, fetchAccountCopilotUsage(), quotaToUsage(), usageBase, ALERT_THRESHOLDS, broadcast(), checkCopilotUsage() (+30 more)
+Nodes (26): AccountCredentials, EMPTY_USAGE, usageBase, CopilotRawResponse, AI_CREDIT_USD, AiCreditFetchResult, AiCreditModelUsage, AiCreditUsageItem (+18 more)
 
 ### Community 10 - "github-accounts.ts"
 Cohesion: 0.11
-Nodes (40): checkAllAccountsUsage(), getAccountBudget(), isScope(), lookupHostUser(), registerHandlers(), sameId(), setAccountBudget(), AccountAssignment (+32 more)
+Nodes (38): checkAllAccountsUsage(), getAccountBudget(), isScope(), lookupHostUser(), registerHandlers(), sameId(), setAccountBudget(), getGhCliToken() (+30 more)
 
 ### Community 11 - "DashboardPanel.tsx"
 Cohesion: 0.08
-Nodes (41): 2b. Issues Closed by Me (Org view, User-Confirmed), 3. Per-Item and Per-Group Dismiss (Manual), 3b. Per-workflow-group "Dismiss all" button, 3c. `DashboardNotificationTriage` — per-item dismiss in triage view, Common IPC/API Chain, Dismiss Data Flows, Overview, State Management Rules (+33 more)
+Nodes (43): 2b. Issues Closed by Me (Org view, User-Confirmed), 3. Per-Item and Per-Group Dismiss (Manual), 3a. Single notification dismiss (right-click menu), 3b. Per-workflow-group "Dismiss all" button, 3c. `DashboardNotificationTriage` — per-item dismiss in triage view, 4. Agent-Initiated Dismiss (User-Approved), Common IPC/API Chain, Dismiss Data Flows (+35 more)
 
-### Community 12 - "sql.js"
-Cohesion: 0.09
-Nodes (27): Implementation: sql.js, sql.js, completeOnboardingStep(), getOnboardingStatus(), OnboardingStatus, skipOnboardingStep(), closeDatabase(), createMemoryDatabase() (+19 more)
+### Community 12 - "getConfigValue"
+Cohesion: 0.46
+Nodes (6): accountIndexedKey(), discoverAdditionalAccounts(), getConfigValue(), repo(), requested, stubFetch()
 
 ### Community 13 - "Notification Intelligence & Agent Framework"
 Cohesion: 0.05
-Nodes (41): 10. Implementation Roadmap, 1. Overview, 2. Current State Analysis, 3. Missing Data in the Database, 4.1 Workflow runs list, 4.2 Jobs for a run, 4.3 Job log download (streaming), 4.4 Mark notification thread as done (already partially implemented) (+33 more)
+Nodes (43): 10. Implementation Roadmap, 1. Overview, 2. Current State Analysis, 3. Missing Data in the Database, 4.1 Workflow runs list, 4.2 Jobs for a run, 4.3 Job log download (streaming), 4.4 Mark notification thread as done (already partially implemented) (+35 more)
 
 ### Community 14 - "github-oauth.ts"
-Cohesion: 0.14
-Nodes (32): resolveGitHubScopes(), startDiscoveryIfAuthed(), broadcastOAuthComplete(), checkPatForExpiry(), recheckCopilotUsage(), registerHandlers(), sleep(), startPollingLoop() (+24 more)
+Cohesion: 0.08
+Nodes (59): resolveGitHubScopes(), fetchAccountCopilotUsage(), quotaToUsage(), ALERT_THRESHOLDS, broadcast(), checkCopilotUsage(), getCopilotBudget(), hasUserScope() (+51 more)
 
 ### Community 15 - "preact"
 Cohesion: 0.09
-Nodes (25): preact, formatFetchedAt(), GroupCard(), GroupsDashboardPanel(), GroupsPanel(), GroupsPanelProps, formatDate(), RuddrProjectRow (+17 more)
+Nodes (29): preact, ACTION_LABEL, AgentApprovalPanel(), AgentApprovalPanelProps, copilotUnavailableReason(), EscalateButton(), EscalateButtonProps, FINDING_ICON (+21 more)
 
 ### Community 16 - "background.js"
 Cohesion: 0.13
 Nodes (34): clickElement(), cmdClick(), cmdCloseTab(), cmdEvaluate(), cmdExtract(), cmdFill(), cmdFocusWindow(), cmdGetPageContent() (+26 more)
 
 ### Community 17 - "local-discovery.ts"
-Cohesion: 0.14
-Nodes (27): getFileIndexState(), startFileIndexIfNeeded(), launchDetached(), openTerminal(), registerHandlers(), startLocalScanIfNeeded(), addScanFolder(), autoLinkLocalRepos() (+19 more)
+Cohesion: 0.15
+Nodes (26): startFileIndexIfNeeded(), launchDetached(), openTerminal(), registerHandlers(), startLocalScanIfNeeded(), addScanFolder(), autoLinkLocalRepos(), findGitRepos() (+18 more)
 
 ### Community 18 - "main/index.ts"
-Cohesion: 0.12
-Nodes (25): electron, initialize(), showAboutWindow(), showMainWindow(), showSettingsWindow(), createTray(), broadcastState(), checkForUpdates() (+17 more)
+Cohesion: 0.07
+Nodes (40): ref_node_events, completeOnboardingStep(), getOnboardingStatus(), OnboardingStatus, skipOnboardingStep(), initialize(), showAboutWindow(), showMainWindow() (+32 more)
 
 ### Community 19 - "ref_fs"
-Cohesion: 0.06
-Nodes (25): fs, initSqlJs, path, fs, initSqlJs, path, fs, initSqlJs (+17 more)
+Cohesion: 0.05
+Nodes (29): fs, initSqlJs, path, fs, initSqlJs, path, fs, initSqlJs (+21 more)
 
 ### Community 20 - "active-sessions.ts"
 Cohesion: 0.11
 Nodes (30): AgentActivity, CloudTaskCache, cloudTaskToSession(), collectActiveSessions(), CollectActiveSessionsOptions, DEFAULT_BRANCHES, describeAgentActivity(), listCloudTasks() (+22 more)
 
-### Community 21 - "index.tsx"
+### Community 21 - "notifications/handler.ts"
 Cohesion: 0.12
-Nodes (25): src_plugins_chat_embeddedchatpanel_embeddedchatpanel, LocalFolderConfigPanel(), LocalFolderConfigPanelProps, LocalFolderPanelProps, LocalReposStep(), LocalReposStepProps, COLLAB_LABELS, formatCollabReason() (+17 more)
+Nodes (27): AutoDismissRunResult, AutoDismissStepResult, AutoDismissSweepResult, collaboratedOnPr(), dismissStoredNotification(), fetchIssueState(), fetchPrState(), fetchTokenRateLimitRemaining() (+19 more)
 
 ### Community 22 - "local-agent-sessions.ts"
-Cohesion: 0.13
-Nodes (26): clientLabel(), deriveClaudeActivity(), deriveCopilotActivity(), discoverClaudeLocalSessions(), discoverCopilotLocalSessions(), encodeClaudeProjectDir(), eventsPrCache, eventTime() (+18 more)
+Cohesion: 0.12
+Nodes (28): CLAUDE_TITLE_ENTRIES, clientLabel(), deriveClaudeActivity(), deriveCopilotActivity(), discoverClaudeLocalSessions(), discoverCopilotLocalSessions(), encodeClaudeProjectDir(), eventsPrCache (+20 more)
 
 ### Community 23 - "Contributing to Jarvis"
-Cohesion: 0.06
-Nodes (26): Agents, Before you open a pull request, Common scripts, Contributing to Jarvis, Conventions, Don't commit local run artifacts, Getting started, Prerequisites (+18 more)
+Cohesion: 0.07
+Nodes (25): Agents, Before you open a pull request, Common scripts, Contributing to Jarvis, Conventions, Don't commit local run artifacts, Getting started, Prerequisites (+17 more)
 
 ### Community 24 - "NotifRepoPanel.tsx"
 Cohesion: 0.14
-Nodes (27): 3a. Single notification dismiss (right-click menu), AgentSelector(), AgentSelectorProps, DashNotifGroup, extractBranchFromTitle(), extractErrorHint(), FailureHint, groupNotifications() (+19 more)
+Nodes (27): AgentSelector(), AgentSelectorProps, DashNotifGroup, extractBranchFromTitle(), extractErrorHint(), FailureHint, groupNotifications(), normalizeWorkflowName() (+19 more)
 
 ### Community 25 - "fixtures.ts"
-Cohesion: 0.09
-Nodes (25): 5.1 Agent definition model, playwright, AgentDefinition, BackgroundTaskStatus, GitHubRateLimit, LocalIndexStatus, McpClientConfig, OnedriveRoot (+17 more)
+Cohesion: 0.08
+Nodes (33): 5.1 Agent definition model, AutoDismissHistoryPanel(), BarChart(), formatDate(), formatPeriod(), Granularity, reasonIcon(), reasonLabel() (+25 more)
 
-### Community 26 - "StatusBadge"
-Cohesion: 0.11
-Nodes (21): DiscoverySection(), DiscoverySectionProps, GitHubStep(), GitHubStepProps, GroupsStep(), GroupsStepProps, OllamaPanel(), OllamaPanelProps (+13 more)
+### Community 26 - "index.tsx"
+Cohesion: 0.07
+Nodes (50): src_plugins_chat_embeddedchatpanel_embeddedchatpanel, ClaudeStep(), CopilotUsageBadgeProps, DiscoverySection(), DiscoverySectionProps, GitHubStep(), GitHubStepProps, GroupsStep() (+42 more)
 
 ### Community 27 - "Customer Project Budget & Actuals Lookup"
 Cohesion: 0.07
@@ -284,8 +285,8 @@ Cohesion: 0.11
 Nodes (24): CopilotReviewStatus, fetchWithAccounts(), buildBatchQuery(), CHECKS_REGISTRATION_GRACE_MS, COPILOT_REVIEW_CHECK_NAME, COPILOT_REVIEWER_LOGINS, evaluateChecks(), evaluateCopilotReview() (+16 more)
 
 ### Community 30 - "onedrive-onenote-cache.ts"
-Cohesion: 0.11
-Nodes (22): Architecture Overview, Code Locations (Quick Reference), File Detection, Tier 1: Live COM API (Primary), Tier 2: Local Backup Files (Fallback), Two-Tier Caching Strategy, BackupSection, CacheGroupResult (+14 more)
+Cohesion: 0.10
+Nodes (23): Architecture Overview, Buffer Truncation Problem (Solved), Code Locations (Quick Reference), File Detection, Tier 1: Live COM API (Primary), Tier 2: Local Backup Files (Fallback), Two-Tier Caching Strategy, BackupSection (+15 more)
 
 ### Community 31 - "onedrive/handler.ts"
 Cohesion: 0.20
@@ -295,25 +296,25 @@ Nodes (18): isPathWithinConfiguredRoot(), registerHandlers(), OnedriveFile, Oned
 Cohesion: 0.14
 Nodes (17): DEFAULT_CONFIG, getConfigDir(), JarvisConfig, loadConfig(), REQUIRED_GITHUB_SCOPES, saveConfig(), registerHandlers(), AboutInfo (+9 more)
 
-### Community 33 - "getConfigValue"
-Cohesion: 0.13
-Nodes (17): 7.1 How the agent calls Ollama, What we have, registerHandlers(), ChatMessage, chatWithTools(), checkOllama(), extractTextToolCalls(), OllamaModel (+9 more)
+### Community 33 - "sql.js"
+Cohesion: 0.06
+Nodes (45): electron, sql.js, registerTaskIpcHandlers(), registerIpcHandlers(), registerHandlers(), buildSystemContext(), RepoSearchRow, searchOneNoteForChat() (+37 more)
 
 ### Community 34 - "claude.ts"
-Cohesion: 0.14
-Nodes (23): asCurrency(), asFraction(), asNumber(), asRecord(), checkClaudeRateLimit(), ClaudeCloudCredits, ClaudeExtraUsage, ClaudeRateLimitProbe (+15 more)
+Cohesion: 0.06
+Nodes (66): 8. Local Storage, Field-Level Encryption (AES-256-GCM), Requirements, Schema, Storage Location, ref_crypto, ref_module, clearStoredCredentials() (+58 more)
 
 ### Community 35 - "package.json"
 Cohesion: 0.09
-Nodes (22): author, description, engines, node, license, main, name, version (+14 more)
+Nodes (21): author, description, engines, node, license, main, name, version (+13 more)
 
 ### Community 36 - "scripts"
 Cohesion: 0.08
-Nodes (24): scripts, build, build:mcp, check:deps, copy-static, dev, dev:electron, dev:esbuild (+16 more)
+Nodes (25): scripts, build, build:mcp, check:deps, copy-static, dev, dev:electron, dev:esbuild (+17 more)
 
 ### Community 37 - "vitest"
 Cohesion: 0.12
-Nodes (10): ref_os, ref_path, vitest, getSql(), openSnapshot(), OneNoteSection, root, SOURCE_FILES (+2 more)
+Nodes (10): ref_os, ref_path, vitest, getSql(), openSnapshot(), LATEST_SCHEMA_VERSION, root, SOURCE_FILES (+2 more)
 
 ### Community 38 - "ActiveSessionsPanel.tsx"
 Cohesion: 0.14
@@ -321,19 +322,19 @@ Nodes (22): ActiveSessionsPanel(), formatCredits(), formatLastActive(), Light(),
 
 ### Community 39 - "OneNote Caching for Jarvis Groups"
 Cohesion: 0.09
-Nodes (21): 1. **Large Output from Long-Running Scripts**, 2. **Cloud Notebooks Require Live APIs**, 3. **COM API Requires Running Process**, 4. **Single-Threaded Apartment (STA) Mode is Essential**, 5. **Temp File Cleanup**, Buffer Truncation Problem (Solved), Cache shows stale dates (weeks old), Cache skipped all files with "no matching sections found" (+13 more)
+Nodes (20): 1. **Large Output from Long-Running Scripts**, 2. **Cloud Notebooks Require Live APIs**, 3. **COM API Requires Running Process**, 4. **Single-Threaded Apartment (STA) Mode is Essential**, 5. **Temp File Cleanup**, Cache shows stale dates (weeks old), Cache skipped all files with "no matching sections found", Database Schema (+12 more)
 
 ### Community 40 - "rules"
 Cohesion: 0.09
 Nodes (22): entry, ignoreDependencies, project, rules, binaries, catalog, catalogReferences, cycles (+14 more)
 
 ### Community 41 - "mcp-server/handler.ts"
-Cohesion: 0.18
-Nodes (19): ref_node_path, resolveIndexPath(), describeLaunch(), getMcpClientConfig(), McpClientConfig, resolveServerScriptPath(), serverScriptPathFrom(), getIndexDbPath() (+11 more)
+Cohesion: 0.21
+Nodes (16): ref_node_path, describeLaunch(), getMcpClientConfig(), McpClientConfig, resolveServerScriptPath(), serverScriptPathFrom(), buildMcpClientSnippets(), buildServerEnv() (+8 more)
 
-### Community 42 - "encryption.ts"
-Cohesion: 0.19
-Nodes (17): Field-Level Encryption (AES-256-GCM), ref_module, archiveKeyFile(), decrypt(), decryptSecret(), deriveKey(), generateKey(), getConfigDirPath() (+9 more)
+### Community 42 - "registerHandlers"
+Cohesion: 0.18
+Nodes (19): formatRuddrHours(), normalize(), parseRuddrFigure(), registerHandlers(), scoreMatch(), addGithubRepoToGroup(), addLocalRepoToGroup(), createGroup() (+11 more)
 
 ### Community 43 - "claude-agent.ts"
 Cohesion: 0.13
@@ -343,49 +344,49 @@ Nodes (19): RawFinding, ALLOWED_TOOL_PATTERNS, ClaudeAgentQueryResult, ClaudeCli
 Cohesion: 0.10
 Nodes (20): action, default_icon, default_popup, default_title, background, service_worker, content_scripts, 128 (+12 more)
 
-### Community 45 - "AgentApprovalPanel.tsx"
+### Community 45 - "Phase 2 — Agent plugin"
+Cohesion: 0.33
+Nodes (6): 2. Background Auto-Dismiss Sweep (Fully Automatic), Step rules, Surfacing results in the UI, Phase 2 — Agent plugin, WorkflowJob, WorkflowRun
+
+### Community 46 - "github-fetch.ts"
 Cohesion: 0.14
-Nodes (19): 2. Background Auto-Dismiss Sweep (Fully Automatic), 4. Agent-Initiated Dismiss (User-Approved), Step rules, Surfacing results in the UI, Phase 2 — Agent plugin, ACTION_LABEL, AgentApprovalPanel(), AgentApprovalPanelProps (+11 more)
+Nodes (17): Known Gotchas & Lessons Learned, fetchAllPages(), githubGet(), OrgTooLargeError, parseLinkLastPage(), parseLinkNext(), rateLimitAwarePause(), computeWaitMs() (+9 more)
 
-### Community 46 - "claude/handler.ts"
-Cohesion: 0.18
-Nodes (17): clearStoredCredentials(), loadStoredCredentials(), registerHandlers(), resolveAccessToken(), storeCredentials(), buildAuthorizeUrl(), ClaudeCredentials, exchangeCodeForToken() (+9 more)
-
-### Community 47 - "secrets/handler.ts"
-Cohesion: 0.22
-Nodes (12): registerHandlers(), addSecretFavorite(), fetchRepoSecretNames(), listSecretFavorites(), listSecretsForRepo(), removeSecretFavorite(), RepoSecretRow, scanUserRepoSecrets() (+4 more)
+### Community 47 - "database.ts"
+Cohesion: 0.11
+Nodes (25): Implementation: sql.js, registerHandlers(), addSecretFavorite(), fetchRepoSecretNames(), listSecretFavorites(), listSecretsForRepo(), removeSecretFavorite(), RepoSecretRow (+17 more)
 
 ### Community 48 - "ErrorBoundary.tsx"
 Cohesion: 0.15
 Nodes (11): describeError(), ErrorBoundary, ErrorBoundaryProps, ErrorBoundaryState, installGlobalErrorHandlers(), AboutApp(), AboutInfo, formatReleaseDate() (+3 more)
 
-### Community 49 - "agents-handler.test.ts"
-Cohesion: 0.13
-Nodes (11): assignCopilotToIssue(), checkCopilotAssignable(), CopilotAvailability, GraphQLResponse, IMPORTANT: this only works with a token tied to a real, Copilot-enabled user, SuggestedActorsResult, handlers, mockCheckClaudeRateLimit (+3 more)
+### Community 49 - "agents/handler.ts"
+Cohesion: 0.19
+Nodes (14): buildCopilotHandoffIssueBody(), checkEscalationReadiness(), registerHandlers(), createAgentSession(), getAgentSession(), listAgentDefinitions(), detectClaudeCli(), resolveLocalRepoPath() (+6 more)
 
 ### Community 50 - "github-host.ts"
 Cohesion: 0.23
-Nodes (17): ref_async_hooks, parseGhAuthStatus(), parseGitCredentialUsernames(), saveHostAccountPat(), accountId(), AccountRef, apiBaseForHost(), currentHost() (+9 more)
+Nodes (18): ref_async_hooks, parseGhAuthStatus(), parseGitCredentialUsernames(), saveHostAccountPat(), accountId(), AccountRef, apiBaseForHost(), currentHost() (+10 more)
 
 ### Community 51 - "runner.ts"
-Cohesion: 0.20
-Nodes (15): extractJsonResult(), buildFailureRangeContext(), buildLocalRepoContext(), buildNotificationContext(), buildWorkflowContext(), CreateAgentSessionOptions, renderSystemPrompt(), runAgentSession() (+7 more)
+Cohesion: 0.18
+Nodes (17): extractJsonResult(), buildFailureRangeContext(), buildLocalRepoContext(), buildNotificationContext(), buildWorkflowContext(), CreateAgentSessionOptions, getAgentDefinition(), renderSystemPrompt() (+9 more)
 
 ### Community 52 - "ClaudePanel.tsx"
-Cohesion: 0.18
-Nodes (15): ClaudePanel(), ClaudePanelProps, CloudCreditsRow(), ExtraUsageRow(), formatMoney(), WindowRow(), ClaudeStep(), ClaudeStepProps (+7 more)
+Cohesion: 0.25
+Nodes (13): ClaudePanel(), ClaudePanelProps, CloudCreditsRow(), ExtraUsageRow(), formatMoney(), WindowRow(), ClaudeStepProps, formatDurationUntil() (+5 more)
 
 ### Community 53 - "github-workflows.ts"
-Cohesion: 0.19
-Nodes (14): WorkflowRunSummary, extractErrorHighlights(), extractFailingStepWindow(), extractLogExcerpt(), fetchAndStoreWorkflowData(), fetchJobLogExcerpt(), fetchWorkflowRunJobs(), fetchWorkflowRuns() (+6 more)
+Cohesion: 0.20
+Nodes (15): WorkflowRunSummary, createGitHubIssue(), extractErrorHighlights(), extractFailingStepWindow(), extractLogExcerpt(), fetchAndStoreWorkflowData(), fetchJobLogExcerpt(), fetchWorkflowRunJobs() (+7 more)
 
 ### Community 54 - "ref_node_fs"
 Cohesion: 0.12
 Nodes (10): ref_node_child_process, ref_node_fs, ref_node_os, ROOT, SERVER_ENTRY_MODULES, MAIN_DIR, RENDERER_DIR, ROOT (+2 more)
 
 ### Community 55 - "onenote-reader.ts"
-Cohesion: 0.17
-Nodes (16): buildPage(), ComNotebookResult, ComReaderPage, ComReaderResult, ExtractedString, extractIsoDateFromTitle(), extractStrings(), isNoise() (+8 more)
+Cohesion: 0.15
+Nodes (17): buildPage(), ComNotebookResult, ComReaderPage, ComReaderResult, ExtractedString, extractIsoDateFromTitle(), extractStrings(), isNoise() (+9 more)
 
 ### Community 56 - "compilerOptions"
 Cohesion: 0.11
@@ -393,7 +394,7 @@ Nodes (17): compilerOptions, declaration, declarationMap, esModuleInterop, force
 
 ### Community 57 - "watch-electron.mjs"
 Cohesion: 0.14
-Nodes (15): ref_net, configuredBridgePort, knownContents, __dirname, DIST_RENDERER, electronPath, require, ROOT (+7 more)
+Nodes (15): ref_net, configuredBridgePort, __dirname, DIST_RENDERER, electronPath, knownContents, portIsFree(), preloadDir() (+7 more)
 
 ### Community 58 - "devDependencies"
 Cohesion: 0.12
@@ -403,49 +404,49 @@ Nodes (16): devDependencies, concurrently, electron, electron-builder, esbuild, 
 Cohesion: 0.12
 Nodes (15): ../../tsconfig.json, compilerOptions, declaration, declarationMap, incremental, jsx, jsxImportSource, module (+7 more)
 
-### Community 60 - "chat/handler.ts"
-Cohesion: 0.23
-Nodes (10): buildSystemContext(), RepoSearchRow, searchOneNoteForChat(), searchProjectBudgetForChat(), searchReposForChat(), searchSecretsForChat(), STOP_WORDS, activeChatAborts (+2 more)
+### Community 60 - "file-index-runner.ts"
+Cohesion: 0.18
+Nodes (18): describeIndex(), FileSearchResult, searchLocalFiles(), FileIndexState, getFileIndexState(), _resetFileIndexStateForTests(), resolveIndexPath(), runFileIndex() (+10 more)
 
 ### Community 61 - "CopilotUsageBadge.tsx"
-Cohesion: 0.26
-Nodes (14): copilotBudgetLevel, copilotUsageLimit(), AccountHeader(), CopilotUsageBadge(), CopilotUsageBadgeProps, credits(), LEVEL_COLOR, LEVEL_RANK (+6 more)
-
-### Community 62 - "git-health.ts"
 Cohesion: 0.21
-Nodes (11): BranchUpstreamInfo, checkRepoHealth(), countRemotes(), DashboardSummary, escapeRegExp(), getBranchUpstream(), getCurrentBranch(), getLastCommitTime() (+3 more)
+Nodes (13): copilotBudgetLevel, copilotUsageLimit(), AccountHeader(), CopilotUsageBadge(), credits(), LEVEL_COLOR, LEVEL_RANK, RawResponsesDialog() (+5 more)
+
+### Community 62 - "dashboard/handler.ts"
+Cohesion: 0.13
+Nodes (19): ref_child_process, getFailedRunCount(), getLastPushedAt(), getLinkedGithubFullName(), getRepoNotifCount(), registerHandlers(), BranchUpstreamInfo, checkRepoHealth() (+11 more)
 
 ### Community 63 - "Benevolent Product Owner"
 Cohesion: 0.13
 Nodes (14): Benevolent Product Owner, Codebase Health, Guardrails, Mission Statement, Performance, Phase 1 — Assessment, Phase 2 — Proposals, Phase 3 — Rubber Duck Reviews (+6 more)
 
-### Community 64 - "windows.ts"
-Cohesion: 0.24
-Nodes (13): attachCrashHandlers(), centerWindowBounds(), createAboutWindow(), createOnboardingWindow(), createSettingsWindow(), DEFAULT_WINDOW_SIZE, DisplayBounds, ensureWindowBoundsVisible() (+5 more)
+### Community 64 - "github-repo-access.ts"
+Cohesion: 0.21
+Nodes (16): registerHandlers(), syncGitHubNotifications(), AccountToken, listGhCliAccountsCached(), resolveAccountToken(), parseAccountId(), getNotificationCounts(), accessForAccount() (+8 more)
 
-### Community 65 - "copilot-usage-handler.test.ts"
-Cohesion: 0.13
-Nodes (12): _resetCopilotUsageState(), allWindows, enterpriseQuota, handlers, mockAuth, mockFetch, mockGhToken, mockPat (+4 more)
+### Community 65 - "browser-extension.test.ts"
+Cohesion: 0.14
+Nodes (13): ref_vm, connected(), Ctx, EXT_DIR, FakeElement, FakeWebSocket, flush(), Harness (+5 more)
 
 ### Community 66 - "Database"
 Cohesion: 0.13
 Nodes (5): Database, QueryExecResult, sql.js, SqlJsStatic, Statement
 
 ### Community 67 - "Jarvis Agent — Architecture Specification"
-Cohesion: 0.14
-Nodes (14): 14. Initial Stack, 15. Claude Rate Limit Awareness, 1. Requirements Summary, 2. High-Level Architecture, 3. Runtime & Language implementation in TypeScript / Node.js, Core Flow, Credential Source, Decision Log (+6 more)
+Cohesion: 0.11
+Nodes (18): 14. Initial Stack, 15. Claude Rate Limit Awareness, 1. Requirements Summary, 2. High-Level Architecture, 3. Runtime & Language implementation in TypeScript / Node.js, 6. Ollama Integration, Core Flow, Credential Source (+10 more)
 
 ### Community 68 - "mcp-settings-section.tsx"
 Cohesion: 0.21
 Nodes (8): formatWhen(), IndexProgressView, IndexStatusView, McpClientConfigView, McpSectionApi, McpServerSection(), SNIPPET_TABS, SnippetKey
 
 ### Community 69 - "mock-jarvis-api.ts"
-Cohesion: 0.15
-Nodes (11): Fixtures, REPO_ROCKET, defaultResponses(), EVENT_METHODS, install(), JarvisTestControl, ok, Responder (+3 more)
+Cohesion: 0.17
+Nodes (10): Fixtures, defaultResponses(), EVENT_METHODS, install(), JarvisTestControl, ok, Responder, Responses (+2 more)
 
-### Community 70 - "dashboard/handler.ts"
-Cohesion: 0.24
-Nodes (8): ref_child_process, getFailedRunCount(), getLastPushedAt(), getLinkedGithubFullName(), getRepoNotifCount(), registerHandlers(), deriveWarnings(), handlers
+### Community 70 - "groups/handler.ts"
+Cohesion: 0.14
+Nodes (19): BrowserTabSession, budgetRowToResult(), CachedBudget, getRuddrMyProjectsUrl(), getRuddrProjectsUrl(), getRuddrWorkspace(), _getWindowFn(), isBudgetFresh() (+11 more)
 
 ### Community 71 - "Jarvis MCP Server"
 Cohesion: 0.15
@@ -455,17 +456,17 @@ Nodes (13): Available tools, Claude Desktop configuration (manual), Data freshne
 Cohesion: 0.22
 Nodes (9): ref_url, __dirname, outDir, srcDir, DEFAULT_ROOT, __dirname, electronDir(), ensureElectron() (+1 more)
 
-### Community 73 - "watch-electron.js"
-Cohesion: 0.17
-Nodes (10): fileContents, __dirname, DIST_RENDERER, electronPath, require, ROOT, scheduleRestart(), SRC_RENDERER (+2 more)
+### Community 73 - "ensureRuddrCache"
+Cohesion: 0.29
+Nodes (14): sendCommand(), closeSessionTab(), createTabSession(), keepSessionTabOpen(), navigatePayload(), recordNavigationTab(), ensureRuddrCache(), _notifyNewProjects() (+6 more)
 
-### Community 74 - "safeHandle"
-Cohesion: 0.36
-Nodes (10): registerTaskIpcHandlers(), registerIpcHandlers(), registerHandlers(), registerHandlers(), errorMessage(), safeHandle(), registerHandlers(), registerHandlers() (+2 more)
+### Community 74 - "task-failure-log.ts"
+Cohesion: 0.21
+Nodes (6): getRecentTaskFailures(), MAX_FAILURES_PER_TASK, NOTIFY_AFTER_CONSECUTIVE_FAILURES, recordTaskFailure(), TaskFailureAlerter, TaskRunRecord
 
 ### Community 75 - "active-sessions/handler.ts"
-Cohesion: 0.27
-Nodes (10): notifyReady(), prKey(), recordReadiness(), refreshActiveSessions(), resetActiveSessionsState(), STILL_PUSHING, ActiveSessionsSnapshot, PrReadiness (+2 more)
+Cohesion: 0.26
+Nodes (11): notifyReady(), prKey(), recordReadiness(), refreshActiveSessions(), resetActiveSessionsState(), runActiveSessionsSweep(), STILL_PUSHING, ActiveSessionsSnapshot (+3 more)
 
 ### Community 76 - "compilerOptions"
 Cohesion: 0.15
@@ -476,44 +477,44 @@ Cohesion: 0.15
 Nodes (12): compilerOptions, allowJs, esModuleInterop, lib, module, moduleResolution, noEmit, skipLibCheck (+4 more)
 
 ### Community 78 - "build-renderer.mjs"
-Cohesion: 0.21
-Nodes (9): esbuild, __dirname, main(), options, watch, __dirname, main(), options (+1 more)
+Cohesion: 0.33
+Nodes (5): esbuild, __dirname, main(), options, watch
 
 ### Community 79 - "view-harness.ts"
 Cohesion: 0.18
-Nodes (11): ref_node_http, ref_node_net, InvokeMethod, BuiltViews, CONTENT_TYPES, ERROR_BOUNDARY_ENTRY, MOCK_ENTRY, OpenViewOptions (+3 more)
+Nodes (11): ref_node_http, ref_node_net, buildViews(), BuiltViews, CONTENT_TYPES, ERROR_BOUNDARY_ENTRY, launchBrowser(), MOCK_ENTRY (+3 more)
 
-### Community 80 - "agents/handler.ts"
-Cohesion: 0.30
-Nodes (11): buildCopilotHandoffIssueBody(), checkEscalationReadiness(), registerHandlers(), createAgentSession(), getAgentDefinition(), getAgentSession(), listAgentDefinitions(), detectClaudeCli() (+3 more)
+### Community 80 - "screenshots.ts"
+Cohesion: 0.20
+Nodes (11): playwright, InvokeMethod, OpenViewOptions, ViewName, harness, NOW, OUT_DIR, ROOT (+3 more)
 
-### Community 81 - "update-checker.test.ts"
-Cohesion: 0.18
-Nodes (5): ref_node_events, getUpdateState(), MockNotification, mocks, UpdateCheckerModule
+### Community 81 - "createBackgroundTaskScheduler"
+Cohesion: 0.26
+Nodes (4): broadcastTaskUpdate(), createBackgroundTaskScheduler(), registerTask(), TaskScheduler
 
 ### Community 82 - "README.md"
 Cohesion: 0.20
 Nodes (7): Available tools, Connecting from an editor, Goals, Jarvis, MCP Server, Setup, Status
 
 ### Community 83 - "Jarvis Browser Companion — Browser Extension"
-Cohesion: 0.20
-Nodes (9): Architecture, Commands (Jarvis → Extension), Development, Installation (Developer Mode), Jarvis Browser Companion — Browser Extension, Owned tabs, Permissions, Security (+1 more)
+Cohesion: 0.18
+Nodes (10): Architecture, Commands (Jarvis → Extension), Development, Installation (Developer Mode), Jarvis Browser Companion — Browser Extension, Owned tabs, Permissions, Security (+2 more)
 
 ### Community 84 - "ollama-provider.ts"
 Cohesion: 0.36
 Nodes (6): claudeAgentProvider, ollamaProvider, AgentProvider, AgentRunCallbacks, AgentRunOptions, AgentRunOutcome
 
-### Community 85 - "AutoDismissHistoryPanel.tsx"
-Cohesion: 0.31
-Nodes (9): AutoDismissHistoryPanel(), BarChart(), formatDate(), formatPeriod(), Granularity, reasonIcon(), reasonLabel(), AutoDismissLogEntry (+1 more)
+### Community 85 - "github-repo-catalog.ts"
+Cohesion: 0.23
+Nodes (11): Candidate, countReposNeedingReadme(), pickCandidates(), README_MAX_CHARS, README_MAX_LINES, ReadmeBatchOptions, ReadmeBatchResult, ReadmeStatus (+3 more)
 
 ### Community 86 - "active-sessions.test.ts"
-Cohesion: 0.22
-Nodes (6): ActiveAgentSession, PendingLink, resetCloudTaskCache(), CopilotLocalDiscovery, PrLookup, NOW
+Cohesion: 0.16
+Nodes (14): ActiveAgentSession, PendingLink, resetCloudTaskCache(), findRepoRoot(), GitConfigSection, GitContext, hasRemoteBranch(), parseGitConfig() (+6 more)
 
 ### Community 87 - "useViewHarness"
-Cohesion: 0.29
-Nodes (6): harness, buildViews(), launchBrowser(), serve(), useViewHarness(), ViewHarness
+Cohesion: 0.53
+Nodes (3): harness, useViewHarness(), ViewHarness
 
 ### Community 88 - "Initial Capabilities"
 Cohesion: 0.22
@@ -523,9 +524,9 @@ Nodes (9): 12.1 Repository & Organization Indexing, 12.2 Secrets Scanning, 12.3 
 Cohesion: 0.22
 Nodes (8): Accessibility & Inclusion, Anti-references, Brand Personality, Design Principles, Product, Product Purpose, Register, Users
 
-### Community 90 - "git-context.ts"
-Cohesion: 0.42
-Nodes (8): findRepoRoot(), GitConfigSection, GitContext, hasRemoteBranch(), parseGitConfig(), readFileSafe(), resolveGitContext(), resolveGitDirs()
+### Community 90 - "GroupsDashboardPanel.tsx"
+Cohesion: 0.27
+Nodes (9): formatFetchedAt(), GroupCard(), GroupsDashboardPanel(), formatDate(), RuddrProjectRow, RuddrProjectsPanel(), RuddrBudget, RuddrProjectInfo (+1 more)
 
 ### Community 91 - "Check Jarvis Database"
 Cohesion: 0.25
@@ -543,9 +544,9 @@ Nodes (7): Actual Behavior, Additional Context, Description, Environment, Expect
 Cohesion: 0.25
 Nodes (8): Getting Started, Install and start with Windows, Intended Use, Jarvis, Main Features, Publish updates, Run and debug from VS Code, Verifying an installer
 
-### Community 95 - "claude.test.ts"
-Cohesion: 0.29
-Nodes (5): ref_crypto, base64UrlEncode(), generatePkce(), isTokenExpired(), isTokenPotentiallyUsable()
+### Community 95 - "groups-ruddr-budget.test.ts"
+Cohesion: 0.20
+Nodes (7): saveRuddrBudgetToDb(), saveRuddrProjectsToDb(), BridgeModule, handlers, mockNotification, register(), SCRAPED_STATS
 
 ### Community 96 - "BrowserCompanionPanel.tsx"
 Cohesion: 0.36
@@ -575,9 +576,9 @@ Nodes (7): dependencies, electron-updater, @modelcontextprotocol/sdk, preact, sq
 Cohesion: 0.29
 Nodes (5): btnSave, savedMsg, statusEl, statusTextEl, tokenInput
 
-### Community 103 - "event-bus.ts"
-Cohesion: 0.43
-Nodes (5): emit(), Events, Handler, on(), registry
+### Community 103 - "agents-handler.test.ts"
+Cohesion: 0.20
+Nodes (5): handlers, mockCheckClaudeRateLimit, mockDetectClaudeCli, mockResolveAccessToken, mockRunAgentSession
 
 ### Community 104 - "17. Active Agent Sessions & PR Review Readiness"
 Cohesion: 0.33
@@ -599,61 +600,69 @@ Nodes (5): Checklist, How to Test, Related Issue, Summary of Changes, Type of Ch
 Cohesion: 0.60
 Nodes (5): clickElement(), extractBySelector(), fillElement(), getPageContent(), handleMessage()
 
-### Community 109 - "OpenedView"
-Cohesion: 0.33
-Nodes (3): EventMethod, RecordedCall, OpenedView
+### Community 109 - "settings-and-about.view.test.ts"
+Cohesion: 0.20
+Nodes (5): FIXTURE_USER, EventMethod, RecordedCall, OpenedView, harness
 
 ### Community 110 - "16. Copilot AI Credit Budget Tracking"
 Cohesion: 0.40
 Nodes (5): 16. Copilot AI Credit Budget Tracking, Authentication, Budget, Data Sources, Scheduling & UI
 
-### Community 111 - "resolveAccountToken"
-Cohesion: 0.40
-Nodes (5): 18. Multiple GitHub Accounts & GHE.com, Accounts and hosts, Known limits, Which account serves which repo, resolveAccountToken()
+### Community 111 - "18. Multiple GitHub Accounts & GHE.com"
+Cohesion: 0.50
+Nodes (4): 18. Multiple GitHub Accounts & GHE.com, Accounts and hosts, Known limits, Which account serves which repo
 
 ### Community 112 - "feature_request.md"
 Cohesion: 0.40
 Nodes (4): Additional Context, Describe Alternatives You've Considered, Describe the Solution You'd Like, Is Your Feature Request Related to a Problem?
 
-### Community 113 - "check-db.js"
-Cohesion: 0.40
-Nodes (4): dbPath, fs, initSqlJs, path
+### Community 113 - "task-scheduler.ts"
+Cohesion: 0.28
+Nodes (6): errorMessage(), nowIso(), RegisteredTask, TaskDefinition, TaskRunStatus, TaskStatus
 
 ### Community 114 - "13. Configuration"
 Cohesion: 0.50
 Nodes (4): 13. Configuration, Agent Configuration File, Encryption Key Management, Environment Variables
 
-### Community 115 - "6. Ollama Integration"
-Cohesion: 0.50
-Nodes (4): 6. Ollama Integration, How Ollama Fits In, Model Selection, Tool Calling Approach
+### Community 115 - "notifications-multi-account.test.ts"
+Cohesion: 0.22
+Nodes (5): Access, ACCOUNTS, handlers, inboxes, requested
 
-### Community 116 - "8. Local Storage"
-Cohesion: 0.50
-Nodes (4): 8. Local Storage, Requirements, Schema, Storage Location
+### Community 116 - "update-verification.ts"
+Cohesion: 0.43
+Nodes (5): electron-updater, checkPublisherPresent(), enforceSignatureVerification(), MISSING_PUBLISHER_REASON, VerifiableUpdater
 
 ### Community 117 - "allowScripts"
 Cohesion: 0.50
 Nodes (4): allowScripts, electron, electron-winstaller, esbuild
 
+### Community 119 - "logger.ts"
+Cohesion: 0.32
+Nodes (4): getLogLevel(), LEVEL_ORDER, LogLevel, setLogLevel()
+
+### Community 124 - "startBackgroundTasks"
+Cohesion: 0.67
+Nodes (4): 1. Boot Cache Pre-Warm, `prewarmRuddrCache(db)`, `runBootWorkflowCheck(db, getWindow)`, startBackgroundTasks()
+
 ## Knowledge Gaps
-- **828 isolated node(s):** `initSqlJs`, `fs`, `path`, `dbPath`, `initSqlJs` (+823 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 1175 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **7 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **834 isolated node(s):** `initSqlJs`, `fs`, `path`, `dbPath`, `initSqlJs` (+829 more)
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 1194 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **6 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `JarvisApi` connect `JarvisApi` to `mock-jarvis-api.ts`, `plugins/types.ts`, `App`, `OpenedView`, `view-harness.ts`, `UpdateState`, `Contributing to Jarvis`, `StatusBadge`?**
-  _High betweenness centrality (0.157) - this node is a cross-community bridge._
-- **Why does `sql.js` connect `sql.js` to `groups/handler.ts`, `notifications/handler.ts`, `saveDatabase`, `mcp-server/index.ts`, `local-file-index.ts`, `background-tasks.ts`, `copilot-usage/handler.ts`, `github-accounts.ts`, `github-oauth.ts`, `local-discovery.ts`, `main/index.ts`, `ref_fs`, `onedrive-onenote-cache.ts`, `onedrive/handler.ts`, `config.ts`, `getConfigValue`, `package.json`, `vitest`, `mcp-server/handler.ts`, `claude-agent.ts`, `claude/handler.ts`, `secrets/handler.ts`, `agents-handler.test.ts`, `runner.ts`, `github-workflows.ts`, `chat/handler.ts`, `windows.ts`, `copilot-usage-handler.test.ts`, `dashboard/handler.ts`, `safeHandle`, `active-sessions/handler.ts`, `agents/handler.ts`?**
-  _High betweenness centrality (0.153) - this node is a cross-community bridge._
-- **Why does `vitest` connect `vitest` to `groups/handler.ts`, `notifications/handler.ts`, `saveDatabase`, `mcp-server/index.ts`, `local-file-index.ts`, `background-tasks.ts`, `App`, `copilot-usage/handler.ts`, `github-accounts.ts`, `sql.js`, `github-oauth.ts`, `preact`, `local-discovery.ts`, `main/index.ts`, `ref_fs`, `active-sessions.ts`, `local-agent-sessions.ts`, `fixtures.ts`, `pr-readiness.ts`, `onedrive-onenote-cache.ts`, `onedrive/handler.ts`, `config.ts`, `getConfigValue`, `package.json`, `mcp-server/handler.ts`, `encryption.ts`, `claude-agent.ts`, `claude/handler.ts`, `secrets/handler.ts`, `ErrorBoundary.tsx`, `agents-handler.test.ts`, `github-host.ts`, `runner.ts`, `github-workflows.ts`, `ref_node_fs`, `onenote-reader.ts`, `chat/handler.ts`, `git-health.ts`, `windows.ts`, `copilot-usage-handler.test.ts`, `dashboard/handler.ts`, `ensure-electron.mjs`, `active-sessions/handler.ts`, `view-harness.ts`, `update-checker.test.ts`, `active-sessions.test.ts`, `useViewHarness`, `claude.test.ts`, `event-bus.ts`, `settings-and-about.view.test.ts`?**
-  _High betweenness centrality (0.116) - this node is a cross-community bridge._
+- **Why does `JarvisApi` connect `JarvisApi` to `mock-jarvis-api.ts`, `plugins/types.ts`, `settings-and-about.view.test.ts`, `view-harness.ts`, `screenshots.ts`, `UpdateState`, `Contributing to Jarvis`?**
+  _High betweenness centrality (0.150) - this node is a cross-community bridge._
+- **Why does `sql.js` connect `sql.js` to `server.ts`, `github-notifications.ts`, `saveDatabase`, `mcp-server/index.ts`, `local-file-index.ts`, `background-tasks.ts`, `github-accounts.ts`, `getConfigValue`, `github-oauth.ts`, `local-discovery.ts`, `main/index.ts`, `ref_fs`, `notifications/handler.ts`, `onedrive-onenote-cache.ts`, `onedrive/handler.ts`, `config.ts`, `claude.ts`, `package.json`, `vitest`, `mcp-server/handler.ts`, `registerHandlers`, `claude-agent.ts`, `database.ts`, `agents/handler.ts`, `runner.ts`, `github-workflows.ts`, `file-index-runner.ts`, `dashboard/handler.ts`, `github-repo-access.ts`, `groups/handler.ts`, `task-failure-log.ts`, `active-sessions/handler.ts`, `github-repo-catalog.ts`, `groups-ruddr-budget.test.ts`, `agents-handler.test.ts`, `notifications-multi-account.test.ts`?**
+  _High betweenness centrality (0.136) - this node is a cross-community bridge._
+- **Why does `vitest` connect `vitest` to `server.ts`, `github-notifications.ts`, `saveDatabase`, `mcp-server/index.ts`, `local-file-index.ts`, `background-tasks.ts`, `utils.ts`, `copilot-usage.ts`, `github-accounts.ts`, `getConfigValue`, `github-oauth.ts`, `preact`, `local-discovery.ts`, `main/index.ts`, `ref_fs`, `active-sessions.ts`, `notifications/handler.ts`, `local-agent-sessions.ts`, `fixtures.ts`, `pr-readiness.ts`, `onedrive-onenote-cache.ts`, `onedrive/handler.ts`, `config.ts`, `sql.js`, `claude.ts`, `package.json`, `mcp-server/handler.ts`, `registerHandlers`, `claude-agent.ts`, `github-fetch.ts`, `database.ts`, `ErrorBoundary.tsx`, `agents/handler.ts`, `github-host.ts`, `runner.ts`, `github-workflows.ts`, `ref_node_fs`, `onenote-reader.ts`, `file-index-runner.ts`, `dashboard/handler.ts`, `github-repo-access.ts`, `browser-extension.test.ts`, `ensure-electron.mjs`, `ensureRuddrCache`, `task-failure-log.ts`, `active-sessions/handler.ts`, `view-harness.ts`, `screenshots.ts`, `active-sessions.test.ts`, `useViewHarness`, `groups-ruddr-budget.test.ts`, `agents-handler.test.ts`, `settings-and-about.view.test.ts`, `notifications-multi-account.test.ts`, `update-verification.ts`, `logger.ts`?**
+  _High betweenness centrality (0.130) - this node is a cross-community bridge._
 - **Are the 3 inferred relationships involving `saveDatabase()` (e.g. with `Implementation: sql.js` and `active-sessions-handler.test.ts`) actually correct?**
   _`saveDatabase()` has 3 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `initSqlJs`, `fs`, `path` to the rest of the system?**
-  _828 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _834 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `JarvisApi` be split into smaller, more focused modules?**
-  _Cohesion score 0.012578616352201259 - nodes in this community are weakly interconnected._
-- **Should `groups/handler.ts` be split into smaller, more focused modules?**
-  _Cohesion score 0.05394736842105263 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.012345679012345678 - nodes in this community are weakly interconnected._
+- **Should `server.ts` be split into smaller, more focused modules?**
+  _Cohesion score 0.09747899159663866 - nodes in this community are weakly interconnected._
