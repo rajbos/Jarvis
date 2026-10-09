@@ -9,7 +9,7 @@ import {
   type BillingMonth,
   type CopilotQuota,
 } from '../../services/copilot-usage';
-import type { CopilotUsage } from '../types';
+import type { CopilotRawResponse, CopilotUsage } from '../types';
 
 /** Fields every usage result carries regardless of source. */
 export type UsageBase = Pick<CopilotUsage, 'year' | 'month' | 'resetsAt' | 'budgetCredits' | 'fetchedAt'>;
@@ -88,10 +88,12 @@ export async function fetchAccountCopilotUsage(
     return { ...base, ...EMPTY_USAGE, configured: false, login: creds.login };
   }
 
+  const rawResponses: CopilotRawResponse[] = [];
   let quotaError: string | undefined;
   if (creds.ghToken) {
     const quota = await fetchCopilotQuota(creds.ghToken, creds.apiBase);
-    if (quota.ok) return quotaToUsage(base, quota.quota, period, now, creds.login);
+    if (quota.raw) rawResponses.push(quota.raw);
+    if (quota.ok) return { ...quotaToUsage(base, quota.quota, period, now, creds.login), rawResponses };
     quotaError = quota.error;
   }
 
@@ -103,6 +105,7 @@ export async function fetchAccountCopilotUsage(
   let missingScope = false;
   for (const attempt of attempts) {
     const result = await fetchAiCreditUsage(attempt.token, creds.login, period, creds.apiBase);
+    if (result.raw) rawResponses.push(result.raw);
     if (result.ok) {
       return {
         ...base,
@@ -111,6 +114,7 @@ export async function fetchAccountCopilotUsage(
         source: attempt.source,
         login: creds.login,
         projectedCredits: projectMonthEndUsage(result.summary.creditsUsed, period, now),
+        rawResponses,
       };
     }
     lastError = result.error;
@@ -126,6 +130,7 @@ export async function fetchAccountCopilotUsage(
     login: creds.login,
     missingScope,
     oauthHasUserScope,
+    rawResponses,
     error: missingScope
       ? 'This account cannot read personal billing data. Copilot is probably billed through an organization — log in to the GitHub CLI (gh auth login) as this account so the quota can be read.'
       : lastError ?? quotaError ?? 'Usage check failed',

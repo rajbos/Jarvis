@@ -98,7 +98,7 @@ describe('fetchAiCreditUsage', () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => ({ usageItems: [item({ grossQuantity: 42, netQuantity: 42, netAmount: 0.42 })] }),
+      text: async () => JSON.stringify({ usageItems: [item({ grossQuantity: 42, netQuantity: 42, netAmount: 0.42 })] }),
     });
     vi.stubGlobal('fetch', fetchMock);
 
@@ -108,6 +108,12 @@ describe('fetchAiCreditUsage', () => {
     );
     expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe('Bearer tok');
     expect(result).toMatchObject({ ok: true, summary: { creditsUsed: 42 } });
+    // The untouched body is kept for the flyout's raw JSON view.
+    expect(result.raw).toMatchObject({
+      endpoint: '/users/octo%20cat/settings/billing/ai_credit/usage?year=2026&month=9',
+      status: 200,
+      body: { usageItems: [expect.objectContaining({ grossQuantity: 42 })] },
+    });
   });
 
   it('flags a missing scope on 403/404', async () => {
@@ -119,6 +125,11 @@ describe('fetchAiCreditUsage', () => {
     const result = await fetchAiCreditUsage('tok', 'me', period);
     expect(result).toEqual({
       ok: false, status: 403, error: 'HTTP 403: Resource not accessible by integration', missingScope: true,
+      raw: {
+        endpoint: '/users/me/settings/billing/ai_credit/usage?year=2026&month=9',
+        status: 403,
+        body: { message: 'Resource not accessible by integration' },
+      },
     });
   });
 
@@ -176,13 +187,17 @@ describe('fetchCopilotQuota', () => {
     expect(fetchMock.mock.calls[0][0]).toBe('https://api.github.com/copilot_internal/user');
     expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe('Bearer gho_x');
     expect(result).toMatchObject({ ok: true, quota: { creditsUsed: 121320, entitlementCredits: 175000 } });
+    expect(result.raw).toEqual({ endpoint: '/copilot_internal/user', status: 200, body: internalUser });
   });
 
   it('reports HTTP errors with the GitHub message', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: false, status: 404, text: async () => JSON.stringify({ message: 'Not Found' }),
     }));
-    expect(await fetchCopilotQuota('tok')).toEqual({ ok: false, status: 404, error: 'HTTP 404: Not Found' });
+    expect(await fetchCopilotQuota('tok')).toEqual({
+      ok: false, status: 404, error: 'HTTP 404: Not Found',
+      raw: { endpoint: '/copilot_internal/user', status: 404, body: { message: 'Not Found' } },
+    });
   });
 
   it('fails when the response carries no premium quota', async () => {

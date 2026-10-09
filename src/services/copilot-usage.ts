@@ -25,6 +25,9 @@
 // Jarvis setting that the user enters in the Settings window.
 
 import { execFile } from 'child_process';
+import type { CopilotRawResponse } from '../plugins/types';
+
+export type { CopilotRawResponse };
 
 export const AI_CREDIT_USD = 0.01;
 
@@ -130,9 +133,18 @@ export function summarizeAiCreditUsage(items: AiCreditUsageItem[]): AiCreditUsag
   };
 }
 
+/** Parse a response body as JSON, falling back to the raw text. */
+function parseBody(body: string): unknown {
+  try {
+    return JSON.parse(body) as unknown;
+  } catch {
+    return body;
+  }
+}
+
 export type AiCreditFetchResult =
-  | { ok: true; summary: AiCreditUsageSummary }
-  | { ok: false; status: number; error: string; missingScope: boolean };
+  | { ok: true; summary: AiCreditUsageSummary; raw?: CopilotRawResponse }
+  | { ok: false; status: number; error: string; missingScope: boolean; raw?: CopilotRawResponse };
 
 /** Fetch and summarise the AI credit usage of `login` for the given month. */
 export async function fetchAiCreditUsage(
@@ -141,9 +153,10 @@ export async function fetchAiCreditUsage(
   period: BillingMonth,
   apiBase = 'https://api.github.com',
 ): Promise<AiCreditFetchResult> {
-  const url =
-    `${apiBase}/users/${encodeURIComponent(login)}/settings/billing/ai_credit/usage` +
+  const endpoint =
+    `/users/${encodeURIComponent(login)}/settings/billing/ai_credit/usage` +
     `?year=${period.year}&month=${period.month}`;
+  const url = `${apiBase}${endpoint}`;
   try {
     const res = await fetch(url, {
       headers: {
@@ -152,8 +165,9 @@ export async function fetchAiCreditUsage(
         'X-GitHub-Api-Version': '2022-11-28',
       },
     });
+    const body = await res.text().catch(() => '');
+    const raw: CopilotRawResponse = { endpoint, status: res.status, body: parseBody(body) };
     if (!res.ok) {
-      const body = await res.text().catch(() => '');
       // GitHub answers 403 (or 404 for classic tokens lacking scope) when
       // the token can't read billing data.
       const missingScope = res.status === 403 || res.status === 404;
@@ -163,10 +177,13 @@ export async function fetchAiCreditUsage(
       } catch {
         message = body.slice(0, 200);
       }
-      return { ok: false, status: res.status, error: `HTTP ${res.status}${message ? `: ${message}` : ''}`, missingScope };
+      return { ok: false, status: res.status, error: `HTTP ${res.status}${message ? `: ${message}` : ''}`, missingScope, raw };
     }
-    const data = (await res.json()) as { usageItems?: AiCreditUsageItem[] };
-    return { ok: true, summary: summarizeAiCreditUsage(Array.isArray(data.usageItems) ? data.usageItems : []) };
+    if (typeof raw.body !== 'object' || raw.body === null) {
+      return { ok: false, status: res.status, error: 'Invalid JSON from billing usage report', missingScope: false, raw };
+    }
+    const data = raw.body as { usageItems?: AiCreditUsageItem[] };
+    return { ok: true, summary: summarizeAiCreditUsage(Array.isArray(data.usageItems) ? data.usageItems : []), raw };
   } catch (err) {
     return { ok: false, status: 0, error: err instanceof Error ? err.message : String(err), missingScope: false };
   }
@@ -191,8 +208,8 @@ export interface CopilotQuota {
 }
 
 export type CopilotQuotaFetchResult =
-  | { ok: true; quota: CopilotQuota }
-  | { ok: false; status: number; error: string };
+  | { ok: true; quota: CopilotQuota; raw?: CopilotRawResponse }
+  | { ok: false; status: number; error: string; raw?: CopilotRawResponse };
 
 /**
  * Resolve a GitHub CLI OAuth token via `gh auth token` — the active account's,
@@ -264,6 +281,7 @@ export async function fetchCopilotQuota(token: string, apiBase = 'https://api.gi
       },
     });
     const body = await res.text().catch(() => '');
+    const raw: CopilotRawResponse = { endpoint: '/copilot_internal/user', status: res.status, body: parseBody(body) };
     if (!res.ok) {
       let message = '';
       try {
@@ -271,17 +289,14 @@ export async function fetchCopilotQuota(token: string, apiBase = 'https://api.gi
       } catch {
         message = body.slice(0, 200);
       }
-      return { ok: false, status: res.status, error: `HTTP ${res.status}${message ? `: ${message}` : ''}` };
+      return { ok: false, status: res.status, error: `HTTP ${res.status}${message ? `: ${message}` : ''}`, raw };
     }
-    let data: CopilotInternalUser;
-    try {
-      data = JSON.parse(body) as CopilotInternalUser;
-    } catch {
-      return { ok: false, status: res.status, error: 'Invalid JSON from copilot_internal/user' };
+    if (typeof raw.body !== 'object' || raw.body === null) {
+      return { ok: false, status: res.status, error: 'Invalid JSON from copilot_internal/user', raw };
     }
-    const quota = parseCopilotQuota(data);
-    if (!quota) return { ok: false, status: res.status, error: 'No premium quota in copilot_internal/user response' };
-    return { ok: true, quota };
+    const quota = parseCopilotQuota(raw.body as CopilotInternalUser);
+    if (!quota) return { ok: false, status: res.status, error: 'No premium quota in copilot_internal/user response', raw };
+    return { ok: true, quota, raw };
   } catch (err) {
     return { ok: false, status: 0, error: err instanceof Error ? err.message : String(err) };
   }

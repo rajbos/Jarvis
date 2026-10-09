@@ -55,6 +55,17 @@ const SHOTS: Shot[] = [
     open: { responses: { getGitHubOAuthStatus: { authenticated: false } } },
   },
   { name: 'dismissed', view: 'index', tab: /Dismissed/, waitFor: ['Auto-Dismissed Notifications', 'Bump fixture-lib from 0.9.0 to 1.0.0'] },
+  {
+    name: 'copilot-flyout', view: 'index', waitFor: ['By model', '@test-user-work'],
+    prepare: (page) => page.locator('.bg-status-copilot').hover(),
+  },
+  {
+    name: 'copilot-raw-json', view: 'index', waitFor: ['raw API responses', 'GET /copilot_internal/user'],
+    prepare: async (page) => {
+      await page.locator('.bg-status-copilot').hover();
+      await page.locator('.bg-status-copilot').getByRole('button', { name: 'Raw JSON' }).click();
+    },
+  },
   { name: 'settings', view: 'settings', waitFor: ['Windows Startup', 'GitHub Accounts', 'MCP Server'], fullPage: true },
   { name: 'about', view: 'about', waitFor: ['9.9.9-fixture'] },
 ];

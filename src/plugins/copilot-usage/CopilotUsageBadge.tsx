@@ -1,3 +1,5 @@
+import { useCallback, useEffect, useState } from 'preact/hooks';
+import { createPortal } from 'preact/compat';
 import type { CopilotUsage, GitHubAccountUsage } from '../types';
 import { formatNumber, formatDurationUntil } from '../shared/utils';
 import { copilotBudgetLevel, copilotUsageLimit, type CopilotBudgetLevel } from './budget-level';
@@ -44,7 +46,17 @@ interface UsageRowsProps {
   showModels?: boolean;
 }
 
-/** The month / budget / included / projected rows for one account. */
+function Row({ label, value, note, valueClass = '' }: { label: string; value: string; note?: string; valueClass?: string }) {
+  return (
+    <div class="bg-status-claude-row">
+      <span class="bg-status-claude-label">{label}</span>
+      <span class={`bg-status-claude-state${valueClass ? ` ${valueClass}` : ''}`}>{value}</span>
+      <span class="bg-status-claude-reset">{note ?? ''}</span>
+    </div>
+  );
+}
+
+/** One account's usage: a headline total with a meter, the credit breakdown, and the per-model split. */
 function UsageRows({ usage, showModels = true }: UsageRowsProps) {
   const level = copilotBudgetLevel(usage);
   const budget = usage.budgetCredits;
@@ -53,66 +65,82 @@ function UsageRows({ usage, showModels = true }: UsageRowsProps) {
   const limit = copilotUsageLimit(usage);
   const pct = limit ? Math.round((usage.creditsUsed / limit) * 100) : null;
   const monthLabel = new Date(Date.UTC(usage.year, usage.month - 1, 1)).toLocaleString(undefined, { month: 'long', year: 'numeric', timeZone: 'UTC' });
+  const models = showModels ? usage.byModel.slice(0, 6) : [];
+  // When the plan covers everything so far, Included / Billed only repeat the headline.
+  const showSplit = !entitlement || usage.billedCredits > 0;
 
   return (
     <>
-      <div class="bg-status-claude-row">
-        <span class="bg-status-claude-label">{monthLabel}</span>
+      <div class="bg-copilot-hero">
+        <div class="bg-copilot-hero-top">
+          <span>{monthLabel}{usage.plan ? <span class="bg-copilot-plan">{usage.plan}</span> : null}</span>
+          <span>{formatDurationUntil(usage.resetsAt)} · {new Date(usage.resetsAt * 1000).toLocaleDateString()}</span>
+        </div>
         {usage.error ? (
-          <span class="bg-status-claude-state bg-status-claude-state--unknown">No data</span>
+          <div class="bg-copilot-hero-value bg-status-claude-state--unknown">No data</div>
         ) : (
-          <span class={`bg-status-claude-state bg-status-claude-state--${level}`}>
-            {credits(usage.creditsUsed)}{limit ? ` / ${credits(limit)}` : ''} AIC{pct !== null ? ` · ${pct}%` : ''}
-          </span>
+          <div class={`bg-copilot-hero-value bg-status-claude-state--${level}`}>
+            {credits(usage.creditsUsed)}
+            <span class="bg-copilot-hero-unit">{limit ? ` / ${credits(limit)} AIC` : ' AIC'}</span>
+            {pct !== null && <span class="bg-copilot-hero-pct">{pct}%</span>}
+          </div>
         )}
-        <span class="bg-status-claude-reset">
-          {formatDurationUntil(usage.resetsAt)} · {new Date(usage.resetsAt * 1000).toLocaleDateString()}
-        </span>
+        {!usage.error && limit !== null && (
+          <div class="bg-copilot-meter">
+            <span style={{ width: `${Math.min(100, pct ?? 0)}%`, background: LEVEL_COLOR[level] }} />
+          </div>
+        )}
       </div>
       {!usage.error && (
-        <>
+        <div class="bg-copilot-section">
+          {limit !== null && (
+            <Row
+              label="Remaining"
+              value={`${credits(Math.max(0, limit - usage.creditsUsed))} AIC`}
+              note={budget ? 'of your budget' : `included on ${usage.plan ?? 'plan'}`}
+            />
+          )}
+          {showSplit && (
+            <>
+              <Row label="Included" value={`${credits(usage.includedCreditsUsed)} AIC`} note="covered by the plan" />
+              <Row label="Billed" value={`${credits(usage.billedCredits)} AIC`} note={`$${usage.billedAmountUsd.toFixed(2)} overage`} />
+            </>
+          )}
+          {usage.projectedCredits !== null && (
+            <Row
+              label="Projected"
+              value={`${credits(usage.projectedCredits)} AIC`}
+              valueClass={limit && usage.projectedCredits > limit ? 'bg-status-claude-state--warning' : ''}
+              note={limit
+                ? `by month end · ${Math.round((usage.projectedCredits / limit) * 100)}% of ${budget ? 'budget' : 'plan'}`
+                : 'by month end at current pace'}
+            />
+          )}
           {/* With a detected plan entitlement and no budget of our own, the Budget row is just noise. */}
           {(budget || !entitlement) && (
-            <div class="bg-status-claude-row">
-              <span class="bg-status-claude-label">Budget</span>
-              <span class="bg-status-claude-state">
-                {budget ? `${credits(Math.max(0, budget - usage.creditsUsed))} AIC left` : 'Not set'}
-              </span>
-              <span class="bg-status-claude-reset">
-                {budget ? `$${(budget * 0.01).toFixed(2)} / month` : 'Set it in Settings'}
-              </span>
-            </div>
+            <Row
+              label="Budget"
+              value={budget ? `${credits(budget)} AIC` : 'Not set'}
+              note={budget ? `$${(budget * 0.01).toFixed(2)} / month` : 'set it in Settings'}
+            />
           )}
-          <div class="bg-status-claude-row">
-            <span class="bg-status-claude-label">Included</span>
-            <span class="bg-status-claude-state">
-              {credits(usage.includedCreditsUsed)}{entitlement ? ` / ${credits(entitlement)}` : ''} AIC
-            </span>
-            <span class="bg-status-claude-reset">
-              {entitlement
-                ? `${credits(Math.max(0, entitlement - usage.creditsUsed))} left on ${usage.plan ?? 'plan'}`
-                : `billed ${credits(usage.billedCredits)} AIC · $${usage.billedAmountUsd.toFixed(2)}`}
-            </span>
-          </div>
-          {usage.projectedCredits !== null && (
-            <div class="bg-status-claude-row">
-              <span class="bg-status-claude-label">Projected</span>
-              <span class={`bg-status-claude-state${budget && usage.projectedCredits > budget ? ' bg-status-claude-state--warning' : ''}`}>
-                {credits(usage.projectedCredits)} AIC
-              </span>
-              <span class="bg-status-claude-reset">by month end at current pace</span>
-            </div>
-          )}
-          {showModels && usage.byModel.slice(0, 4).map((m) => (
-            <div class="bg-status-claude-row" key={m.model}>
-              <span class="bg-status-claude-label">{m.model}</span>
-              <span class="bg-status-claude-state">{credits(m.credits)} AIC</span>
-              <span class="bg-status-claude-reset">
-                {usage.creditsUsed > 0 ? `${Math.round((m.credits / usage.creditsUsed) * 100)}%` : ''}
-              </span>
-            </div>
-          ))}
-        </>
+        </div>
+      )}
+      {models.length > 0 && (
+        <div class="bg-copilot-section">
+          <div class="bg-copilot-section-title">By model</div>
+          {models.map((m) => {
+            const share = usage.creditsUsed > 0 ? Math.round((m.credits / usage.creditsUsed) * 100) : 0;
+            return (
+              <div class="bg-copilot-model" key={m.model} title={m.model}>
+                <span class="bg-copilot-model-name">{m.model}</span>
+                <span class="bg-copilot-model-credits">{credits(m.credits)} AIC</span>
+                <span class="bg-copilot-model-pct">{share}%</span>
+                <span class="bg-copilot-model-bar"><span style={{ width: `${share}%` }} /></span>
+              </div>
+            );
+          })}
+        </div>
       )}
       {usage.error && (
         <div class="bg-status-claude-error">
@@ -120,6 +148,65 @@ function UsageRows({ usage, showModels = true }: UsageRowsProps) {
         </div>
       )}
     </>
+  );
+}
+
+/** Full-window view of the raw GitHub API answers behind each account's usage. */
+function RawResponsesDialog({ accounts, onClose }: { accounts: Array<{ login: string; usage: CopilotUsage }>; onClose: () => void }) {
+  const [copied, setCopied] = useState<string | null>(null);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const copy = async (key: string, text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(key);
+      setTimeout(() => setCopied((c) => (c === key ? null : c)), 1500);
+    } catch { /* clipboard unavailable */ }
+  };
+
+  return createPortal(
+    <div class="bg-copilot-raw-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div class="bg-copilot-raw" role="dialog" aria-label="Copilot usage raw responses">
+        <div class="bg-copilot-raw-head">
+          <strong>Copilot usage: raw API responses</strong>
+          <button type="button" class="bg-status-claude-action" onClick={onClose}>Close</button>
+        </div>
+        <div class="bg-copilot-raw-body">
+          {accounts.map(({ login, usage }) => (
+            <section key={login}>
+              <h3>@{login} <span>fetched {new Date(usage.fetchedAt).toLocaleTimeString()}</span></h3>
+              {(usage.rawResponses ?? []).length === 0 && (
+                <p class="bg-copilot-raw-empty">No API response recorded for this check.</p>
+              )}
+              {(usage.rawResponses ?? []).map((r, i) => {
+                const key = `${login}:${i}`;
+                const text = typeof r.body === 'string' ? r.body : JSON.stringify(r.body, null, 2);
+                return (
+                  <div class="bg-copilot-raw-entry" key={key}>
+                    <div class="bg-copilot-raw-entry-head">
+                      <code>GET {r.endpoint}</code>
+                      <span class={r.status >= 200 && r.status < 300 ? 'bg-status-claude-state--available' : 'bg-status-claude-state--warning'}>
+                        {r.status || 'no response'}
+                      </span>
+                      <button type="button" class="bg-status-claude-action" onClick={() => copy(key, text)}>
+                        {copied === key ? 'Copied' : 'Copy'}
+                      </button>
+                    </div>
+                    <pre>{text}</pre>
+                  </div>
+                );
+              })}
+            </section>
+          ))}
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -145,6 +232,12 @@ export function CopilotUsageBadge({ usage, otherAccounts = [], onOpenSettings, o
       : `Copilot ${credits(usage.creditsUsed)} AIC`) + (configuredOthers.length > 0 ? ` +${configuredOthers.length}` : '');
 
   const stacked = configuredOthers.length > 0;
+  const [showRaw, setShowRaw] = useState(false);
+  const closeRaw = useCallback(() => setShowRaw(false), []);
+  const rawAccounts = [
+    { login: usage.login ?? 'account', usage },
+    ...configuredOthers.map((a) => ({ login: a.account.login, usage: a.usage })),
+  ];
 
   return (
     <span class="bg-status-claude bg-status-copilot">
@@ -177,11 +270,19 @@ export function CopilotUsageBadge({ usage, otherAccounts = [], onOpenSettings, o
             )}
           </div>
         )}
-        <div class="bg-status-claude-checked">
-          Last checked {new Date(usage.fetchedAt).toLocaleTimeString()}
-          {usage.source ? ` via ${SOURCE_LABEL[usage.source]}` : ''}
+        <div class="bg-status-claude-checked bg-copilot-footer">
+          <span>
+            Last checked {new Date(usage.fetchedAt).toLocaleTimeString()}
+            {usage.source ? ` via ${SOURCE_LABEL[usage.source]}` : ''}
+          </span>
+          {usage.configured && (
+            <button type="button" class="bg-status-claude-action" onClick={(e) => { e.currentTarget.blur(); setShowRaw(true); }} title="Show the raw JSON GitHub returned">
+              Raw JSON
+            </button>
+          )}
         </div>
       </div>
+      {showRaw && <RawResponsesDialog accounts={rawAccounts} onClose={closeRaw} />}
     </span>
   );
 }
