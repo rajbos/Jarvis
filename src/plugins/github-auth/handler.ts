@@ -21,6 +21,8 @@ import { completeOnboardingStep } from '../../agent/onboarding';
 import { startDiscoveryIfAuthed } from '../discovery/handler';
 import { safeHandle } from '../ipc-utils';
 import { logger } from '../../services/logger';
+import { getRateLimitHistory, recordRateLimitSample } from '../../services/github-rate-limit-history';
+import type { GitHubRateLimitResource } from '../types';
 import { checkCopilotUsage } from '../copilot-usage/handler';
 import { DEFAULT_HOST, apiBaseForHost, hostOfUrl, webBaseForHost } from '../../services/github-host';
 import { accessForPrimary, accessForRepo } from '../../services/github-repo-access';
@@ -277,9 +279,15 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
     const auth = loadGitHubAuth(db);
     const pat = loadGitHubPat(db);
 
-    type RateLimitResource = { limit: number; remaining: number; reset: number; used: number };
+    type TokenResult = {
+      resource: GitHubRateLimitResource | null;
+      resources?: Record<string, GitHubRateLimitResource>;
+      error?: string;
+      tokenExpiresAt?: string | null;
+      tokenExpired?: boolean;
+    };
 
-    const fetchForToken = async (token: string): Promise<{ resource: RateLimitResource | null; error?: string; tokenExpiresAt?: string | null; tokenExpired?: boolean }> => {
+    const fetchForToken = async (token: string): Promise<TokenResult> => {
       try {
         const res = await fetch('https://api.github.com/rate_limit', {
           headers: {
@@ -295,8 +303,8 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
           return { resource: null, error: 'HTTP 401 — token expired or revoked', tokenExpiresAt, tokenExpired: true };
         }
         if (!res.ok) return { resource: null, error: `HTTP ${res.status}`, tokenExpiresAt };
-        const data = (await res.json()) as { resources: { core: RateLimitResource } };
-        return { resource: data.resources.core, tokenExpiresAt };
+        const data = (await res.json()) as { resources: Record<string, GitHubRateLimitResource> };
+        return { resource: data.resources.core, resources: data.resources, tokenExpiresAt };
       } catch (err) {
         return { resource: null, error: String(err) };
       }
@@ -307,6 +315,11 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
       pat ? fetchForToken(pat) : Promise.resolve(null),
     ]);
 
+    // /rate_limit itself does not count against any quota, so every poll is a
+    // free sample for the status-bar history chart.
+    if (oauthResult?.resources) recordRateLimitSample('oauth', oauthResult.resources);
+    if (patResult?.resources) recordRateLimitSample('pat', patResult.resources);
+
     // The rate-limit call doubles as a liveness check for the PAT: a 401 here
     // means the token is expired/revoked — let the renderer switch to the
     // "PAT expired" state immediately.
@@ -316,12 +329,20 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
 
     return {
       oauth: auth
-        ? { configured: true, resource: oauthResult!.resource, error: oauthResult!.error }
+        ? {
+            configured: true,
+            resource: oauthResult!.resource,
+            resources: oauthResult!.resources,
+            history: getRateLimitHistory('oauth'),
+            error: oauthResult!.error,
+          }
         : { configured: false, resource: null },
       pat: pat
         ? {
             configured: true,
             resource: patResult!.resource,
+            resources: patResult!.resources,
+            history: getRateLimitHistory('pat'),
             error: patResult!.error,
             tokenExpiresAt: patResult!.tokenExpiresAt ?? null,
             tokenExpired: patResult!.tokenExpired ?? false,

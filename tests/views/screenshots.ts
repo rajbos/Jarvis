@@ -66,6 +66,10 @@ const SHOTS: Shot[] = [
       await page.locator('.bg-status-copilot').getByRole('button', { name: 'Raw JSON' }).click();
     },
   },
+  {
+    name: 'pat-rate-limit-flyout', view: 'index', waitFor: ['PAT resets at', 'GraphQL % remaining'],
+    prepare: (page) => page.locator('.bg-status-ratelimit').last().hover(),
+  },
   { name: 'settings', view: 'settings', waitFor: ['Windows Startup', 'GitHub Accounts', 'MCP Server'], fullPage: true },
   { name: 'about', view: 'about', waitFor: ['9.9.9-fixture'] },
 ];

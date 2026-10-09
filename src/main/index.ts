@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Tray, Menu, session, Notification } from 'electron';
+import { app, BrowserWindow, Tray, Menu, session, Notification, crashReporter, shell } from 'electron';
 import path from 'path';
 import { getDatabase, closeDatabase } from '../storage/database';
 import { loadConfig } from '../agent/config';
@@ -12,7 +12,7 @@ import { checkPatForExpiry } from '../plugins/github-auth/handler';
 import { checkOllama } from '../services/ollama';
 import { saveDatabase } from '../storage/database';
 import { stopBridgeServer } from '../plugins/browser-companion/server';
-import { logger, setLogLevel } from '../services/logger';
+import { logger, setLogLevel, enableFileLogging } from '../services/logger';
 import { checkForUpdates, registerUpdateIpcHandlers, startUpdateChecks, stopUpdateChecks } from './update-checker';
 import { safeHandle } from '../plugins/ipc-utils';
 if (process.env.JARVIS_CONFIG_DIR) {
@@ -26,6 +26,27 @@ if (process.env.JARVIS_CONFIG_DIR) {
   app.setPath('userData', path.join(app.getPath('appData'), 'Jarvis'));
 }
 setLogLevel(app.isPackaged ? 'warn' : 'debug');
+
+// Packaged builds have no attached console, so persist logs to disk
+// (%APPDATA%\Jarvis\logs\main.log on Windows) and keep native crash dumps
+// locally under app.getPath('crashDumps') — nothing is uploaded.
+app.setAppLogsPath();
+try {
+  enableFileLogging(app.getPath('logs'));
+} catch (err) {
+  logger.warn('[Main] Could not enable file logging:', err);
+}
+crashReporter.start({ uploadToServer: false, compress: true });
+
+// Catch-all for main-process failures outside initialize(). Registering these
+// replaces Electron's default error dialog; the error lands in the log file and
+// the app keeps running in the tray.
+process.on('uncaughtException', (err) => {
+  logger.error('[Main] Uncaught exception:', err);
+});
+process.on('unhandledRejection', (reason) => {
+  logger.error('[Main] Unhandled promise rejection:', reason);
+});
 
 let mainWindow: BrowserWindow | null = null;
 let settingsWindow: BrowserWindow | null = null;
@@ -98,6 +119,7 @@ async function initialize(): Promise<void> {
           accelerator: process.platform === 'darwin' ? 'Alt+Command+I' : 'Ctrl+Shift+I',
           click: () => { mainWindow?.webContents.toggleDevTools(); },
         },
+        { label: 'Open Logs Folder', click: () => { void shell.openPath(app.getPath('logs')); } },
         { type: 'separator' },
         { role: 'quit' },
       ],

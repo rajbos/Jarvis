@@ -21,7 +21,7 @@ import { LocalFolderConfigPanel } from '../plugins/local-repos/LocalFolderConfig
 import { LocalFolderPanel } from '../plugins/local-repos/LocalFolderPanel';
 import { LocalSubfolderPanel } from '../plugins/local-repos/LocalSubfolderPanel';
 import { LocalRepoPanelView } from '../plugins/local-repos/LocalRepoPanelView';
-import { getReposUnder, hasDeepRepos, setSystemLocale, formatNumber, formatDurationUntil, describeIpcFailure } from '../plugins/shared/utils';
+import { getReposUnder, hasDeepRepos, setSystemLocale, formatDurationUntil, describeIpcFailure } from '../plugins/shared/utils';
 import { IpcErrorBanner } from '../plugins/shared/IpcErrorBanner';
 import { SecretsStep } from '../plugins/secrets/SecretsStep';
 import { SecretsScanPanel } from '../plugins/secrets/SecretsScanPanel';
@@ -36,6 +36,7 @@ import { AutoDismissHistoryPanel } from '../plugins/notifications/AutoDismissHis
 import { ClaudeStep } from '../plugins/claude/ClaudeStep';
 import { ClaudePanel } from '../plugins/claude/ClaudePanel';
 import { CopilotUsageBadge } from '../plugins/copilot-usage/CopilotUsageBadge';
+import { GitHubRateLimitBadge } from '../plugins/github-auth/GitHubRateLimitBadge';
 import { ClaudeIcon } from '../plugins/shared/BrandIcons';
 import { ActiveSessionsPanel } from '../plugins/active-sessions/ActiveSessionsPanel';
 
@@ -1502,24 +1503,6 @@ function BackgroundStatusBar({
 
   const message = ipcMessage ?? derivedMessage;
 
-  // Helper: pick badge colour from remaining count
-  function rateLimitColor(remaining: number): string {
-    if (remaining < 100) return '#f44336';       // red
-    if (remaining < 1000) return '#ff9800';      // orange
-    return '#4caf50';                            // green
-  }
-
-  // Helper: human-readable time until rate limit reset
-  function formatResetIn(resetUnixSec: number): string {
-    const msLeft = resetUnixSec * 1000 - Date.now();
-    if (msLeft <= 0) return 'resets soon';
-    const totalMins = Math.ceil(msLeft / 60_000);
-    if (totalMins < 60) return `resets in ${totalMins}m`;
-    const hours = Math.floor(totalMins / 60);
-    const mins = totalMins % 60;
-    return mins > 0 ? `resets in ${hours}h ${mins}m` : `resets in ${hours}h`;
-  }
-
   // Build badges for OAuth and PAT sources (only when configured)
   const oauthBadge = rateLimit?.oauth.configured ? rateLimit.oauth : null;
   const patBadge = rateLimit?.pat.configured ? rateLimit.pat : null;
@@ -1662,39 +1645,11 @@ function BackgroundStatusBar({
           )}
           {hasAnyBadge && (oauthBadge || patBadge) && (
             <div class="bg-status-rate-limits">
-              {oauthBadge && (
-                <span
-                  class="bg-status-rate-limit"
-                  title={oauthBadge.error
-                    ? `OAuth rate limit error: ${oauthBadge.error}`
-                    : `OAuth: ${formatNumber(oauthBadge.resource!.remaining)}/${formatNumber(oauthBadge.resource!.limit)} calls remaining (resets ${new Date(oauthBadge.resource!.reset * 1000).toLocaleTimeString()})`}
-                  style={{ color: oauthBadge.error ? '#888' : (oauthBadge.resource ? rateLimitColor(oauthBadge.resource.remaining) : '#888') }}
-                >
-                  {oauthBadge.error || !oauthBadge.resource
-                    ? '⚡ OAuth –'
-                    : `⚡ OAuth ${formatNumber(oauthBadge.resource.remaining)}/${formatNumber(oauthBadge.resource.limit)}${oauthBadge.resource.remaining < 500 ? ` · ${formatResetIn(oauthBadge.resource.reset)}` : ''}`}
-                </span>
-              )}
+              {oauthBadge && <GitHubRateLimitBadge label="OAuth" source={oauthBadge} />}
               {oauthBadge && patBadge && (
                 <span class="bg-status-rate-sep" aria-hidden="true">|</span>
               )}
-              {patBadge && (
-                <span
-                  class="bg-status-rate-limit"
-                  title={patBadge.tokenExpired
-                    ? 'PAT expired or revoked — open Settings → GitHub Access to enter a new token'
-                    : patBadge.error
-                      ? `PAT rate limit error: ${patBadge.error}`
-                      : `PAT: ${formatNumber(patBadge.resource!.remaining)}/${formatNumber(patBadge.resource!.limit)} calls remaining (resets ${new Date(patBadge.resource!.reset * 1000).toLocaleTimeString()})${patBadge.tokenExpiresAt ? ` — token expires ${patBadge.tokenExpiresAt}` : ''}`}
-                  style={{ color: patBadge.tokenExpired ? '#ff6b81' : patBadge.error ? '#888' : (patBadge.resource ? rateLimitColor(patBadge.resource.remaining) : '#888') }}
-                >
-                  {patBadge.tokenExpired
-                    ? '⚡ PAT expired'
-                    : patBadge.error || !patBadge.resource
-                      ? '⚡ PAT –'
-                      : `⚡ PAT ${formatNumber(patBadge.resource.remaining)}/${formatNumber(patBadge.resource.limit)}${patBadge.resource.remaining < 500 ? ` · ${formatResetIn(patBadge.resource.reset)}` : ''}`}
-                </span>
-              )}
+              {patBadge && <GitHubRateLimitBadge label="PAT" source={patBadge} />}
             </div>
           )}
         </div>
