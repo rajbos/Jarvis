@@ -14,6 +14,9 @@ import { saveRuddrBudgetToDb, saveRuddrProjectsToDb, listGroups } from '../../sr
 // ── Track registered handlers ─────────────────────────────────────────────────
 const handlers = new Map<string, (...args: unknown[]) => unknown>();
 
+/** Electron Notification mock — the handler shows a desktop toast when the Ruddr scrape breaks. */
+const mockNotification = Object.assign(vi.fn(), { isSupported: vi.fn(() => true) });
+
 vi.mock('electron', () => ({
   ipcMain: {
     handle: vi.fn((channel: string, handler: (...args: unknown[]) => unknown) => {
@@ -22,6 +25,7 @@ vi.mock('electron', () => ({
     on: vi.fn(),
     removeHandler: vi.fn(),
   },
+  Notification: mockNotification,
 }));
 
 vi.mock('../../src/services/groups', async (importOriginal) => {
@@ -228,5 +232,109 @@ describe('Groups plugin — Ruddr budget cache', () => {
     // synchronous throw into a predictable error payload for the renderer.
     const result = await callHandler('groups:list');
     expect(result).toEqual({ ok: false, error: 'groups table missing' });
+  });
+
+  // ── 2026 Ruddr redesign: budgets moved to the Settings > Budget page ─────────
+
+  /**
+   * Bridge mock serving per-page scrape payloads keyed off the last navigated
+   * URL, so repeated handler invocations keep getting the right page's stats.
+   */
+  function mockTwoPageScrape(overviewStats: Record<string, string>, budgetPageStats: Record<string, string>): void {
+    let currentUrl = 'https://www.ruddr.io/overview';
+    vi.mocked(bridge.sendCommand).mockImplementation(async (command) => {
+      if (command.type === 'navigate') {
+        currentUrl = (command.payload as { url?: string }).url ?? currentUrl;
+        return { id: 'cmd-1', ok: true, data: { url: currentUrl, tabId: 7, createdTab: true } };
+      }
+      if (command.type === 'scrape-stats') {
+        return {
+          id: 'cmd-1',
+          ok: true,
+          data: currentUrl.includes('/settings/budget') ? budgetPageStats : overviewStats,
+        };
+      }
+      if (command.type === 'close-tab') return { id: 'cmd-1', ok: true, data: { closed: true } };
+      return { id: 'cmd-1', ok: true, data: null };
+    });
+  }
+
+  it('reads budget hours from the settings/budget page when the overview has none', async () => {
+    mockTwoPageScrape(
+      { 'Actual Billable Hours': '174', 'Actual Total Hours': '174' },
+      {
+        'Budget Hours': '514,00',
+        'Budget Billable Hours': '514,00',
+        'Budget Non-Billable Hours': '0,00',
+        'Budget Revenue': '€\u00a087.350,00',
+      },
+    );
+
+    await register();
+
+    const result = await callHandler('groups:get-ruddr-budget', 'Project A', { force: true }) as Record<string, unknown>;
+
+    expect(result.ok).toBe(true);
+    expect(result.budget).toBe('514');
+    expect(result.budgetLeft).toBe('340'); // 514 budget − 174 actual total
+    expect(result.actualBillableHours).toBe('174');
+    expect(result.scrapeBroken).toBeUndefined();
+
+    const stored = db.exec('SELECT budget, budget_left FROM ruddr_budgets');
+    expect(stored[0].values[0][0]).toBe('514');
+    expect(stored[0].values[0][1]).toBe('340');
+  });
+
+  it('flags scrapeBroken and notifies the user once when readable pages yield no budget figures', async () => {
+    mockTwoPageScrape(
+      { 'Actual Billable Hours': '174' },
+      { 'Budget Revenue': '€\u00a087.350,00' }, // readable page, but no hours-budget labels
+    );
+
+    await register();
+
+    const first = await callHandler('groups:get-ruddr-budget', 'Project A', { force: true }) as Record<string, unknown>;
+    expect(first.ok).toBe(true);
+    expect(first.scrapeBroken).toBe(true);
+    expect(first.budget).toBeNull();
+    expect(mockNotification).toHaveBeenCalledTimes(1);
+    expect(db.exec("SELECT value FROM config WHERE key = 'ruddr_budget_alert_at'").length).toBe(1);
+
+    // A second scrape during the same outage must not re-notify.
+    const second = await callHandler('groups:get-ruddr-budget', 'Project A', { force: true }) as Record<string, unknown>;
+    expect(second.scrapeBroken).toBe(true);
+    expect(mockNotification).toHaveBeenCalledTimes(1);
+
+    // Recovery: a readable budget clears the alert again.
+    mockTwoPageScrape({ 'Actual Billable Hours': '10', 'Actual Total Hours': '10' }, { 'Budget Hours': '100,00' });
+    const healthy = await callHandler('groups:get-ruddr-budget', 'Project A', { force: true }) as Record<string, unknown>;
+    expect(healthy.scrapeBroken).toBeUndefined();
+    expect(healthy.budget).toBe('100');
+    expect(db.exec("SELECT value FROM config WHERE key = 'ruddr_budget_alert_at'").length).toBe(0);
+  });
+
+  it('keeps cached figures and reports ruddr_dom_changed when no stats can be found at all', async () => {
+    saveRuddrBudgetToDb(db, {
+      projectName: 'Project A',
+      actualBillableHours: '10', actualNonBillableHours: '0', actualTotalHours: '10',
+      budget: '100', budgetLeft: '90', projectUrl: '/a', note: null, cloudFolderUrl: null,
+    });
+    db.run("UPDATE ruddr_budgets SET fetched_at = datetime('now', '-10 hours')");
+    mockTwoPageScrape({}, {});
+
+    await register();
+
+    const result = await callHandler('groups:get-ruddr-budget', 'Project A') as Record<string, unknown>;
+
+    expect(result.ok).toBe(true);
+    expect(result.cached).toBe(true);
+    expect(result.budgetLeft).toBe('90');
+    expect(result.refreshError).toBe('ruddr_dom_changed');
+    expect(mockNotification).toHaveBeenCalledTimes(1);
+
+    // A forced refresh surfaces the detection error directly.
+    const forced = await callHandler('groups:get-ruddr-budget', 'Project A', { force: true }) as Record<string, unknown>;
+    expect(forced.ok).toBe(false);
+    expect(forced.error).toBe('ruddr_dom_changed');
   });
 });

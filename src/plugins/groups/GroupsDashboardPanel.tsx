@@ -486,7 +486,15 @@ function GroupCard(props: {
                             <span class="groups-dash-budget-lbl">left</span>
                           </div>
                         </div>
-                        {budgetData[name].budget === '0' && (
+                        {budgetData[name].scrapeBroken && (
+                          <div class="groups-dash-budget-alerts">
+                            <span
+                              class="groups-dash-budget-warn"
+                              title="Ruddr's page layout changed — Jarvis could not read any budget figures for this project. The scraper needs an update."
+                            >⚠️ Budget unreadable — Ruddr layout changed</span>
+                          </div>
+                        )}
+                        {budgetData[name].budget === '0' && !budgetData[name].scrapeBroken && (
                           <div class="groups-dash-budget-alerts">
                             <span class="groups-dash-budget-warn" title="No budget set for this project in Ruddr">⚠️ No budget set</span>
                           </div>
@@ -505,6 +513,8 @@ function GroupCard(props: {
                         <span class="groups-dash-budget-error">
                           {budgetData[name].error === 'ruddr_no_projects_found'
                             ? 'Ruddr project list is empty — browser extension may not have loaded the page yet. Click 💰 to retry.'
+                            : budgetData[name].error === 'ruddr_dom_changed'
+                            ? 'The Ruddr page layout changed — Jarvis could not read it. The scraper needs an update.'
                             : budgetData[name].error === 'project_url_unknown'
                             ? 'Run "Find Ruddr project" first to cache the project URL'
                             : budgetData[name].error === 'project_not_in_ruddr'

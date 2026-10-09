@@ -1,5 +1,6 @@
 // ── Groups IPC handlers ───────────────────────────────────────────────────────
 import type { Database as SqlJsDatabase } from 'sql.js';
+import { Notification } from 'electron';
 import type { BrowserWindow } from 'electron';
 import { saveDatabase, getConfigValue, setConfigValue } from '../../storage/database';
 import {
@@ -120,6 +121,77 @@ function withCacheMeta(cached: CachedBudget, extra: Record<string, unknown> = {}
 const RUDDR_BASE = 'https://www.ruddr.io/app';
 /** Config key for the Ruddr workspace slug (e.g. "xebia-xms-benelux"). */
 const RUDDR_WORKSPACE_KEY = 'ruddr_workspace';
+
+// ── Ruddr figure parsing + scrape health ─────────────────────────────────────
+
+/** Overview-page stat labels that carry a project's actual hours. */
+const RUDDR_ACTUAL_LABELS = ['Actual Billable Hours', 'Actual Non-Billable Hours', 'Actual Total Hours'] as const;
+/**
+ * Stat labels that carry budget figures, old and new Ruddr layouts. The 2026
+ * redesign moved budgets to the Settings > Budget page and dropped the
+ * overview "Budget"/"Budget Left" stats, so the scraper falls back to
+ * "Budget Hours" and friends there.
+ */
+const RUDDR_BUDGET_LABELS = [
+  'Budget', 'Budget Left',
+  'Budget Hours', 'Budget Total Hours', 'Budget Billable Hours', 'Budget Non-Billable Hours',
+] as const;
+/**
+ * Config key holding the epoch ms of the last "cannot read Ruddr budgets"
+ * alert. Set when a scrape of readable Ruddr pages yields no budget figures,
+ * cleared again as soon as a budget is found — so the end user is notified
+ * once per outage instead of once per project.
+ */
+const RUDDR_BUDGET_ALERT_KEY = 'ruddr_budget_alert_at';
+
+/**
+ * Parses a Ruddr figure into a number. Ruddr renders amounts with Dutch
+ * formatting ("514,00", "€ 87.350,00", "-", "174"): dot = thousands separator,
+ * comma = decimal separator. Returns null for anything non-numeric.
+ */
+export function parseRuddrFigure(raw: string | null | undefined): number | null {
+  if (raw == null) return null;
+  const cleaned = raw.replace(/\u00a0/g, '').replace(/€/g, '').replace(/\s+/g, '');
+  if (!cleaned || !/[0-9]/.test(cleaned)) return null;
+  const normalized = cleaned.replace(/\./g, '').replace(/,/g, '.');
+  const n = parseFloat(normalized);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Formats a parsed Ruddr figure back to the plain string the dashboard expects ("514", "-174", "340.5"). */
+export function formatRuddrHours(hours: number): string {
+  return String(Math.round(hours * 100) / 100);
+}
+
+/** Desktop notification for the "Ruddr budgets are unreadable" state. */
+function notifyRuddrBudgetScrapeBroken(projectName: string): void {
+  const body = `The Ruddr page layout appears to have changed — no budget figures were found for "${projectName}". Budgets will show as unreadable until the Jarvis scraper is updated.`;
+  logger.warn(`[Groups] Ruddr budget scrape broken for "${projectName}" — the Ruddr DOM may have changed.`);
+  try {
+    if (!Notification.isSupported()) return;
+    new Notification({ title: 'Jarvis cannot read Ruddr budgets', body }).show();
+  } catch (err) {
+    logger.warn('[Groups] Could not show Ruddr budget alert notification:', err instanceof Error ? err.message : String(err));
+  }
+}
+
+/**
+ * Raises or clears the persisted Ruddr budget-scrape alert. The desktop
+ * notification fires once per outage (on the healthy → broken transition);
+ * recovery clears the key so a future breakage alerts again.
+ */
+function updateRuddrBudgetScrapeAlert(db: SqlJsDatabase, broken: boolean, projectName: string): void {
+  const alerted = getConfigValue(db, RUDDR_BUDGET_ALERT_KEY);
+  if (broken && !alerted) {
+    setConfigValue(db, RUDDR_BUDGET_ALERT_KEY, String(Date.now()));
+    saveDatabase();
+    notifyRuddrBudgetScrapeBroken(projectName);
+  } else if (!broken && alerted) {
+    db.run('DELETE FROM config WHERE key = ?', [RUDDR_BUDGET_ALERT_KEY]);
+    saveDatabase();
+    logger.info('[Groups] Ruddr budget scrape healthy again — alert cleared.');
+  }
+}
 
 function getRuddrWorkspace(db: SqlJsDatabase): string {
   return (getConfigValue(db, RUDDR_WORKSPACE_KEY) ?? '').trim();
@@ -754,19 +826,30 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
     }
 
     const overviewUrl = `https://www.ruddr.io${entry.path}/overview`;
+    // A budget scrape navigates at least twice (overview + settings/budget) —
+    // run it in a dedicated background tab instead of hijacking the tab the
+    // user is looking at.
+    const session = createTabSession();
     try {
-      const navResp = await sendCommand({ type: 'navigate', payload: { url: overviewUrl } });
+      const navResp = await sendCommand({
+        type: 'navigate',
+        tabId: session.tabId,
+        payload: { url: overviewUrl, ...navigatePayload(session) },
+      });
       if (!navResp.ok) return cachedOr(`Navigation failed: ${navResp.error ?? 'unknown'}`);
+      recordNavigationTab(session, navResp.data);
 
       const navData = navResp.data as { url?: string; tabId?: number } | null;
       if ((navData?.url ?? '').includes('/login')) {
+        keepSessionTabOpen(session);
         sendCommand({ type: 'focus-window', tabId: navData?.tabId, payload: {} }).catch(() => { /* non-fatal */ });
         return cachedOr('login_required');
       }
+      const scrapeTabId = session.tabId ?? navData?.tabId;
 
       const statsResp = await sendCommand({
         type: 'scrape-stats',
-        tabId: navData?.tabId,
+        tabId: scrapeTabId,
         payload: { waitMs: 3000 },
       });
       if (!statsResp.ok) return cachedOr(`Scrape failed: ${statsResp.error ?? 'unknown'}`);
@@ -774,16 +857,65 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
       const raw = statsResp.data as Record<string, string> | null;
       const note = raw?.['Notes'] ?? raw?.['Note'] ?? raw?.['Description'] ?? null;
       const cloudFolderUrl = raw?.['_cloud_folder_url'] ?? null;
+
+      // ── Budget figures ────────────────────────────────────────────────────
+      // Legacy Ruddr exposed "Budget"/"Budget Left" stats on the overview page.
+      // The 2026 redesign moved them to the project's Settings > Budget page,
+      // so when the overview has none, scrape that page as well.
+      const overviewBudgetRaw = raw?.['Budget'] ?? null;
+      const overviewBudgetLeftRaw = raw?.['Budget Left'] ?? null;
+      let budgetHours = parseRuddrFigure(overviewBudgetRaw);
+      let budgetPageRaw: Record<string, string> | null = null;
+      if (budgetHours === null) {
+        const budgetUrl = `https://www.ruddr.io${entry.path}/settings/budget`;
+        const budgetNav = await sendCommand({ type: 'navigate', tabId: scrapeTabId, payload: { url: budgetUrl } });
+        if (!budgetNav.ok) return cachedOr(`Budget page navigation failed: ${budgetNav.error ?? 'unknown'}`);
+        const budgetStatsResp = await sendCommand({
+          type: 'scrape-stats',
+          tabId: scrapeTabId,
+          payload: { waitMs: 3000 },
+        });
+        if (!budgetStatsResp.ok) return cachedOr(`Budget page scrape failed: ${budgetStatsResp.error ?? 'unknown'}`);
+        budgetPageRaw = budgetStatsResp.data as Record<string, string> | null;
+        budgetHours =
+          parseRuddrFigure(budgetPageRaw?.['Budget Hours'])
+          ?? parseRuddrFigure(budgetPageRaw?.['Budget Total Hours'])
+          ?? parseRuddrFigure(budgetPageRaw?.['Budget Billable Hours']);
+      }
+
+      const actualTotalHours = parseRuddrFigure(raw?.['Actual Total Hours']);
+      let budgetLeftHours = parseRuddrFigure(overviewBudgetLeftRaw);
+      if (budgetLeftHours === null && budgetHours !== null && actualTotalHours !== null) {
+        budgetLeftHours = budgetHours - actualTotalHours;
+      }
+
+      // ── Scrape-health detection ───────────────────────────────────────────
+      // When neither page yields any label Jarvis recognizes, Ruddr most likely
+      // changed its DOM again — keep the cached figures and alert the user
+      // instead of caching empty budgets.
+      const sawKnownLabel =
+        RUDDR_ACTUAL_LABELS.some((l) => raw?.[l] !== undefined)
+        || RUDDR_BUDGET_LABELS.some((l) => raw?.[l] !== undefined || budgetPageRaw?.[l] !== undefined);
+      if (!sawKnownLabel) {
+        updateRuddrBudgetScrapeAlert(db, true, trimmed);
+        return cachedOr('ruddr_dom_changed');
+      }
+      // The pages are readable but no budget figures exist on them — flag the
+      // result so the dashboard can explain itself, and alert the user once.
+      const scrapeBroken = budgetHours === null && budgetPageRaw !== null;
+      updateRuddrBudgetScrapeAlert(db, scrapeBroken, trimmed);
+
       const budgetResult = {
         ok: true,
         actualBillableHours: raw?.['Actual Billable Hours'] ?? null,
         actualNonBillableHours: raw?.['Actual Non-Billable Hours'] ?? null,
         actualTotalHours: raw?.['Actual Total Hours'] ?? null,
-        budget: raw?.['Budget'] ?? null,
-        budgetLeft: raw?.['Budget Left'] ?? null,
+        budget: budgetHours !== null ? formatRuddrHours(budgetHours) : overviewBudgetRaw,
+        budgetLeft: budgetLeftHours !== null ? formatRuddrHours(budgetLeftHours) : overviewBudgetLeftRaw,
         projectUrl: overviewUrl,
         note: note,
         cloudFolderUrl: cloudFolderUrl,
+        ...(scrapeBroken ? { scrapeBroken: true } : {}),
       };
       const fetchedAtMs = Date.now();
       ruddrBudgetCache.set(trimmed, { result: budgetResult, fetchedAtMs });
@@ -828,6 +960,8 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
       return { ...budgetResult, fetchedAt: new Date(fetchedAtMs).toISOString(), stale: false };
     } catch (err) {
       return cachedOr(err instanceof Error ? err.message : String(err));
+    } finally {
+      await closeSessionTab(session);
     }
   });
 
