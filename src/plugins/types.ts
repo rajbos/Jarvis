@@ -614,6 +614,16 @@ export interface GitHubRateLimitResource {
 
 }
 
+/** One rate-limit snapshot, used for the status-bar history chart. */
+
+export interface GitHubRateLimitSample {
+
+  at: number; // epoch ms
+
+  buckets: Partial<Record<'core' | 'graphql' | 'search', { remaining: number; limit: number }>>;
+
+}
+
 /** Per-token rate limit status. `configured: false` means the token is not set up. */
 
 export interface GitHubRateLimitSource {
@@ -621,6 +631,18 @@ export interface GitHubRateLimitSource {
   configured: boolean;
 
   resource: GitHubRateLimitResource | null;
+
+  /**
+   * Every bucket from `/rate_limit` (core, graphql, search, …). `resource` is
+   * only `core`; GraphQL and search have their own quotas and can be exhausted
+   * while core is untouched.
+   */
+
+  resources?: Record<string, GitHubRateLimitResource>;
+
+  /** Snapshots from the last 2 hours, oldest first (main-process memory only). */
+
+  history?: GitHubRateLimitSample[];
 
   error?: string;
 
