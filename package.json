@@ -52,9 +52,9 @@
     "vitest": "^5.0.0"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.31.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "electron-updater": "^6.8.9",
-    "preact": "^10.29.8",
+    "preact": "^11.0.0",
     "sql.js": "^1.14.2",
     "ws": "^8.22.0",
     "zod": "^4.6.5"
