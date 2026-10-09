@@ -4331,20 +4331,16 @@ h5.ec-heading { font-size: 0.9375rem; }
 .bg-status-rate-limits {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0;
   flex-shrink: 0;
   pointer-events: auto;
-}
-
-.bg-status-rate-limits--both {
-  gap: 0;
   padding: 0.1rem 0.5rem;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 4px;
   background: rgba(255, 255, 255, 0.04);
 }
 
-.bg-status-rate-limits--both .bg-status-rate-limit {
+.bg-status-rate-limits .bg-status-rate-limit {
   padding: 0 0.4rem;
 }
 
@@ -4384,10 +4380,16 @@ h5.ec-heading { font-size: 0.9375rem; }
 }
 
 /* Claude badge hover popover (mirrors the setup panel info) */
+/* Boxed like the combined OAuth / PAT block (.bg-status-rate-limits--both):
+   same border, background and outer + inner horizontal padding. */
 .bg-status-claude {
   position: relative;
   pointer-events: auto;
   flex-shrink: 0;
+  padding: 0.1rem 0.9rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .bg-status-claude-pop {
