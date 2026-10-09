@@ -1644,7 +1644,7 @@ function BackgroundStatusBar({
             </span>
           )}
           {hasAnyBadge && (oauthBadge || patBadge) && (
-            <div class={`bg-status-rate-limits${oauthBadge && patBadge ? ' bg-status-rate-limits--both' : ''}`}>
+            <div class="bg-status-rate-limits">
               {oauthBadge && <GitHubRateLimitBadge label="OAuth" source={oauthBadge} />}
               {oauthBadge && patBadge && (
                 <span class="bg-status-rate-sep" aria-hidden="true">|</span>
