@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'preact/hooks';
+import { useCallback, useLayoutEffect, useState } from 'preact/hooks';
 import { createPortal } from 'preact/compat';
 import type { CopilotUsage, GitHubAccountUsage } from '../types';
 import { formatNumber, formatDurationUntil } from '../shared/utils';
@@ -155,7 +155,8 @@ function UsageRows({ usage, showModels = true }: UsageRowsProps) {
 function RawResponsesDialog({ accounts, onClose }: { accounts: Array<{ login: string; usage: CopilotUsage }>; onClose: () => void }) {
   const [copied, setCopied] = useState<string | null>(null);
 
-  useEffect(() => {
+  // Layout effect: the Esc listener must be live as soon as the dialog shows, not after the next paint.
+  useLayoutEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
