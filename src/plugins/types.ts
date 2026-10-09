@@ -1177,6 +1177,13 @@ export interface RuddrBudget {
 
   cloudFolderUrl?: string | null;
 
+  /**
+   * True when the Ruddr pages were readable but no budget figures were found —
+   * most likely a Ruddr DOM change. The dashboard explains the situation
+   * instead of showing a misleading "No budget set".
+   */
+  scrapeBroken?: boolean;
+
   error?: string;
 
   /** ISO timestamp of the scrape this data came from (null when unknown). */

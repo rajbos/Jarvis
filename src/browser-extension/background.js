@@ -550,23 +550,47 @@ async function scrollAndExtract(selector, maxScrolls, waitMs, includeHref, debug
     : items;
 }
 
-// Runs inside the page — finds <small> label elements and pairs them with the
-// preceding sibling element's text (the numeric value). Returns { [label]: value }.
+// Runs inside the page — finds stat label elements and pairs them with the
+// adjacent element's text (the numeric value). Returns { [label]: value }.
+//
+// Two Ruddr layouts are supported; both passes run and the first pair
+// collected for a label wins:
+//   Legacy:  <div>174</div><small>Actual Billable Hours</small>  (value BEFORE label)
+//   2026:    <span>Budget Hours</span><div>514,00</div>           (label BEFORE value)
+//            <span>Budget Billable Hours</span><span>514,00</span><span>100.0%</span>
+// The 2026 redesign dropped <small> labels entirely, so the second pass pairs
+// any leaf text element with the text of its next sibling. Values, numbers and
+// percentages never look like labels (they contain no letters) and are skipped.
 async function scrapeStatsByLabel(waitMs) {
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
+  // True when any label/value pair candidate is present (either layout).
+  const hasStats = () => {
+    if (document.querySelector('small') !== null) return true;
+    for (const el of document.querySelectorAll('span, div')) {
+      if (el.childElementCount !== 0) continue; // leaf text elements only
+      const label = (el.innerText || el.textContent || '').trim();
+      if (!label || !/[a-z]/i.test(label)) continue;
+      const next = el.nextElementSibling;
+      if (next && (next.innerText || next.textContent || '').trim()) return true;
+    }
+    return false;
+  };
+
   // Wait for stats to render (React populates them asynchronously).
-  let hasSmall = document.querySelector('small') !== null;
-  if (!hasSmall) {
-    for (let i = 0; i < 20 && !hasSmall; i++) {
+  let ready = hasStats();
+  if (!ready) {
+    for (let i = 0; i < 20 && !ready; i++) {
       await wait(waitMs / 20);
-      hasSmall = document.querySelector('small') !== null;
+      ready = hasStats();
     }
   }
   // Extra settle time for numbers to hydrate.
   await wait(500);
 
   const stats = {};
+
+  // Legacy pass: <small>label</small> preceded by the value element.
   document.querySelectorAll('small').forEach((small) => {
     const label = (small.innerText || small.textContent || '').trim();
     if (!label) return;
@@ -575,6 +599,18 @@ async function scrapeStatsByLabel(waitMs) {
       const value = (valueEl.innerText || valueEl.textContent || '').trim();
       if (value) stats[label] = value;
     }
+  });
+
+  // 2026 pass: leaf label element followed by the value element.
+  document.querySelectorAll('span, div').forEach((el) => {
+    if (el.childElementCount !== 0) return; // leaf text elements only
+    const label = (el.innerText || el.textContent || '').trim();
+    if (!label || stats[label] !== undefined) return; // first pair wins
+    if (!/[a-z]/i.test(label)) return; // values/percentages are not labels
+    const valueEl = el.nextElementSibling;
+    if (!valueEl) return;
+    const value = (valueEl.innerText || valueEl.textContent || '').trim();
+    if (value) stats[label] = value;
   });
 
   // Also look for cloud storage folder links anywhere on the page.

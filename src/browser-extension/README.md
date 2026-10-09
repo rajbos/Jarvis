@@ -36,7 +36,7 @@ Each command is a JSON message `{ id, type, tabId?, payload }`; the extension an
 | `evaluate` | `{ instructions, testMode? }` | Step results |
 | `extract` | `{ selector }` | Matching elements |
 | `scroll-extract` | `{ selector, maxScrolls?, waitMs?, includeHref?, debug? }` | `{ items, debugLog?, hidden?, scrollable?, grewOnScroll? }` |
-| `scrape-stats` | `{ waitMs? }` | Label → value map |
+| `scrape-stats` | `{ waitMs? }` | Label → value map (pairs `<small>` labels with the preceding value and, since the 2026 Ruddr redesign, leaf label elements with the following value sibling) |
 | `read-form-fields` | `{ selectors, waitMs? }` | Selector → value map |
 | `click` / `fill` | `{ selector }` / `{ selector, value }` | `{ ok }` |
 | `screenshot` | — | Data URL |
