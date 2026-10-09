@@ -290,10 +290,11 @@ export function createFixtures(now: number) {
     includedCreditsUsed: 120,
     billedCredits: 0,
     billedAmountUsd: 0,
-    byModel: [{ model: 'fixture-model', credits: 120 }],
+    byModel: [{ model: 'fixture-model-with-a-long-name', credits: 90 }, { model: 'fixture-model', credits: 30 }],
     budgetCredits: null,
     projectedCredits: 200,
     fetchedAt: iso(now, 0),
+    rawResponses: [{ endpoint: '/copilot_internal/user', status: 200, body: { login: FIXTURE_USER, copilot_plan: 'business' } }],
   };
 
   const accountMain = {

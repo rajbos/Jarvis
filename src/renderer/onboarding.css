@@ -4533,6 +4533,208 @@ h5.ec-heading { font-size: 0.9375rem; }
   line-height: 1.35;
 }
 
+/* ── Copilot usage flyout ─────────────────────────────────────────────────── */
+/* Several stacked accounts can outgrow the window: scroll instead of clipping at the top. */
+.bg-status-copilot .bg-status-claude-pop {
+  max-height: calc(100vh - 4rem);
+  overflow-y: auto;
+}
+
+.bg-copilot-hero {
+  padding: 0.45rem 0.85rem 0.55rem;
+}
+
+.bg-copilot-hero-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  color: var(--text-muted);
+  font-size: var(--type-meta);
+  white-space: nowrap;
+}
+
+.bg-copilot-plan {
+  margin-left: 0.4rem;
+  padding: 0 0.35rem;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 3px;
+  text-transform: capitalize;
+}
+
+.bg-copilot-hero-value {
+  margin-top: 0.2rem;
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.bg-copilot-hero-unit {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.bg-copilot-hero-pct {
+  float: right;
+  font-size: 0.875rem;
+  line-height: 1.9;
+}
+
+.bg-copilot-meter {
+  height: 5px;
+  margin-top: 0.35rem;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.bg-copilot-meter > span {
+  display: block;
+  height: 100%;
+}
+
+.bg-copilot-section {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0.15rem 0;
+}
+
+.bg-copilot-section-title {
+  padding: 0.4rem 0.85rem 0.15rem;
+  color: var(--text-muted);
+  font-size: var(--type-meta);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.bg-copilot-model {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content 2.75rem;
+  column-gap: 0.75rem;
+  row-gap: 0.2rem;
+  align-items: baseline;
+  padding: 0.3rem 0.85rem;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.bg-copilot-model-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bg-copilot-model-credits {
+  font-weight: 700;
+  text-align: right;
+}
+
+.bg-copilot-model-pct {
+  color: var(--text-muted);
+  font-size: var(--type-meta);
+  text-align: right;
+}
+
+.bg-copilot-model-bar {
+  grid-column: 1 / -1;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+
+.bg-copilot-model-bar > span {
+  display: block;
+  height: 100%;
+  background: #58a6ff;
+}
+
+.bg-copilot-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.bg-copilot-raw-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.65);
+}
+
+.bg-copilot-raw {
+  display: flex;
+  flex-direction: column;
+  width: min(900px, calc(100vw - 2rem));
+  max-height: calc(100vh - 3rem);
+  background: #0d1a2e;
+  border: 1px solid #1e3a5a;
+  border-radius: 6px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  color: var(--text-secondary);
+}
+
+.bg-copilot-raw-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.6rem 0.85rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.bg-copilot-raw-body {
+  overflow: auto;
+  padding: 0.25rem 0.85rem 0.85rem;
+}
+
+.bg-copilot-raw-body h3 {
+  margin: 0.75rem 0 0.4rem;
+  font-size: 0.95rem;
+}
+
+.bg-copilot-raw-body h3 span,
+.bg-copilot-raw-empty {
+  color: var(--text-muted);
+  font-size: var(--type-meta);
+  font-weight: 400;
+}
+
+.bg-copilot-raw-entry + .bg-copilot-raw-entry {
+  margin-top: 0.6rem;
+}
+
+.bg-copilot-raw-entry-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.3rem;
+  font-size: var(--type-meta);
+}
+
+.bg-copilot-raw-entry-head code {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.bg-copilot-raw-entry pre {
+  margin: 0;
+  max-height: 50vh;
+  overflow: auto;
+  padding: 0.6rem;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.35);
+  font-size: 0.8rem;
+  line-height: 1.4;
+  white-space: pre;
+  user-select: text;
+}
+
 /* ── Right-side group (tasks + rate limits) ──────────────────────────────── */
 .bg-status-right {
   margin-left: auto;

@@ -14,7 +14,7 @@ import {
 } from '../../services/copilot-usage';
 import { quotaToUsage } from './account-usage';
 import { getConfigValue, setConfigValue, saveDatabase } from '../../storage/database';
-import type { CopilotUsage } from '../types';
+import type { CopilotRawResponse, CopilotUsage } from '../types';
 
 const KEY_BUDGET = 'copilot_aic_monthly_budget';
 /** `YYYY-MM:<threshold>` of the last budget alert, so each alert fires once per month. */
@@ -117,6 +117,7 @@ export async function checkCopilotUsage(
   const pat = loadGitHubPat(db);
 
   let usage: CopilotUsage | null = null;
+  const rawResponses: CopilotRawResponse[] = [];
 
   // The primary account's CLI token — not whichever account `gh` has active, or the
   // flyout would show that account twice and miss the primary. Without a Jarvis
@@ -125,6 +126,7 @@ export async function checkCopilotUsage(
   const ghToken = await getGhCliToken(primaryLogin ?? undefined);
   if (ghToken) {
     const quotaResult = await fetchCopilotQuota(ghToken);
+    if (quotaResult.raw) rawResponses.push(quotaResult.raw);
     if (quotaResult.ok) {
       usage = quotaToUsage(base, quotaResult.quota, period, now, auth?.login ?? primaryLogin ?? undefined);
     } else {
@@ -141,6 +143,7 @@ export async function checkCopilotUsage(
 
     if (auth) {
       result = await fetchAiCreditUsage(auth.accessToken, auth.login, period);
+      if (result.raw) rawResponses.push(result.raw);
       source = 'oauth';
       login = auth.login;
     }
@@ -148,6 +151,7 @@ export async function checkCopilotUsage(
       try {
         if (patLogin?.pat !== pat) patLogin = { pat, login: (await fetchGitHubUser(pat)).login };
         const patResult = await fetchAiCreditUsage(pat, patLogin.login, period);
+        if (patResult.raw) rawResponses.push(patResult.raw);
         // Keep the OAuth error when the PAT can't read billing data either.
         if (patResult.ok || !result) {
           result = patResult;
@@ -190,6 +194,7 @@ export async function checkCopilotUsage(
     }
   }
 
+  if (rawResponses.length > 0) usage = { ...usage, rawResponses };
   lastUsage = usage;
   if (!usage.error && usage.configured) notifyBudgetThreshold(db, usage);
   broadcast(getWindow, usage);

@@ -773,6 +773,18 @@ export interface CopilotUsage {
   oauthHasUserScope?: boolean;
   error?: string;
   fetchedAt: string; // ISO timestamp
+  /** Every GitHub API answer this check received, in request order — shown in the flyout's debug view. */
+  rawResponses?: CopilotRawResponse[];
+}
+
+/** One raw GitHub API answer behind a {@link CopilotUsage}. */
+export interface CopilotRawResponse {
+  /** Request path, without host or token. */
+  endpoint: string;
+  /** HTTP status; 0 when the request never got an answer. */
+  status: number;
+  /** Parsed JSON body, or the body text when it was not JSON. */
+  body: unknown;
 }
 
 // ── Multiple GitHub accounts ──────────────────────────────────────────────────

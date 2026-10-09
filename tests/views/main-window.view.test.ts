@@ -223,11 +223,12 @@ describe('main window — Copilot flyout content', () => {
     const block = flyout.locator('.bg-status-claude-account').first();
     await expect.poll(() => block.textContent()).toContain('@work-account');
     const text = (await block.textContent()) ?? '';
-    expect(text).toContain('4,200 / 5,000 AIC · 84%'); // the budget is the ceiling
-    expect(text).toContain('800 AIC left'); // 5,000 - 4,200
-    expect(text).toContain('4,200 / 175,000 AIC'); // included vs the plan
-    expect(text).toContain('170,800 left on enterprise');
+    expect(text).toContain('4,200 / 5,000 AIC'); // the budget is the ceiling
+    expect(text).toContain('84%');
+    expect(text).toContain('800 AICof your budget'); // 5,000 - 4,200
+    expect(text).not.toContain('Billed'); // the plan covers it all, so no Included / Billed split
     expect(text).toContain('6,300 AIC'); // projection
+    expect(text).toContain('126% of budget');
     // The primary's numbers must not leak into this block.
     expect(text).not.toContain('120');
   });
@@ -254,6 +255,26 @@ describe('main window — Copilot flyout content', () => {
     await expect.poll(() => broken.textContent()).toContain('Check failed: HTTP 403: nope');
     expect(await broken.textContent()).toContain('No data');
     expect(await flyout.locator('.bg-status-claude-account', { hasText: '@work-account' }).textContent()).toContain('55 / 1,000 AIC');
+  });
+
+  it('opens the raw JSON of every account from the footer', async () => {
+    const { view } = await openFlyout([
+      accountUsage('work-account', {
+        rawResponses: [{ endpoint: '/copilot_internal/user', status: 200, body: { copilot_plan: 'business', new_field: 'surprise' } }],
+      }),
+    ]);
+    const button = view.page.locator('.bg-status-copilot').getByRole('button', { name: 'Raw JSON' });
+    await view.page.locator('.bg-status-copilot').hover();
+    await button.click();
+    const dialog = view.page.getByRole('dialog', { name: 'Copilot usage raw responses' });
+    await expect.poll(() => dialog.textContent()).toContain('@work-account');
+    const text = (await dialog.textContent()) ?? '';
+    expect(text).toContain('@test-user');
+    expect(text).toContain('GET /copilot_internal/user');
+    expect(text).toContain('"new_field": "surprise"');
+    await view.page.keyboard.press('Escape');
+    await expect.poll(() => dialog.count()).toBe(0);
+    await expectCleanRender(view);
   });
 
   it('names the host of accounts that are not on github.com', async () => {
