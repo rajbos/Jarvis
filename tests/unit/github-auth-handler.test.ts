@@ -90,6 +90,7 @@ vi.mock('../../src/plugins/copilot-usage/handler', () => ({
 import { registerHandlers } from '../../src/plugins/github-auth/handler';
 import { checkCopilotUsage } from '../../src/plugins/copilot-usage/handler';
 import { saveGitHubAuth, saveGitHubPat, fetchGitHubUser, validateGitHubPat } from '../../src/services/github-oauth';
+import { clearRateLimitHistory } from '../../src/services/github-rate-limit-history';
 
 // ── Helper ────────────────────────────────────────────────────────────────────
 
@@ -389,6 +390,25 @@ describe('GitHub Auth plugin — IPC handlers', () => {
       // Expiry date surfaced from the github-authentication-token-expiration header
       expect(pat.tokenExpiresAt).toBe('2027-06-15 00:00:00 UTC');
       expect(pat.tokenExpired).toBe(false);
+    });
+
+    it('returns every bucket and a growing history for the PAT', async () => {
+      clearRateLimitHistory();
+      saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo');
+      saveGitHubPat(db, 'octocat', 'ghp_pat_token');
+      const resources = {
+        core: { limit: 5000, remaining: 5000, reset: 1700000000, used: 0 },
+        graphql: { limit: 5000, remaining: 12, reset: 1700000000, used: 4988 },
+        search: { limit: 30, remaining: 30, reset: 1700000000, used: 0 },
+      };
+      global.fetch = vi.fn().mockResolvedValue({ ok: true, headers: { get: () => null }, json: async () => ({ resources }) } as unknown as Response);
+
+      await callHandler('github:get-rate-limit');
+      const result = (await callHandler('github:get-rate-limit')) as Record<string, unknown>;
+      const pat = result.pat as { resources: Record<string, { remaining: number }>; history: Array<{ buckets: Record<string, { remaining: number }> }> };
+      expect(pat.resources.graphql.remaining).toBe(12);
+      expect(pat.history).toHaveLength(2);
+      expect(pat.history[1].buckets.graphql.remaining).toBe(12);
     });
 
     it('marks the PAT as expired when the rate-limit call answers 401', async () => {

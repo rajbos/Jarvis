@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'preact/hooks';
 import type { UpdateState } from '../../types/ipc-payloads';
+import { showDiagnosticInChat } from '../chat/diagnostics';
 
 /**
  * Persistent update affordance in the top bar.
@@ -15,10 +16,6 @@ export function UpdateButton() {
   useEffect(() => {
     void window.jarvis.getUpdateState().then(setState).catch(() => { /* dev run without updates */ });
     return window.jarvis.onUpdateState(setState);
-  }, []);
-
-  const onCheck = useCallback(() => {
-    void window.jarvis.checkForUpdatesNow();
   }, []);
 
   const onInstall = useCallback(() => {
@@ -51,9 +48,15 @@ export function UpdateButton() {
   }
 
   if (state.status === 'error') {
+    // Investigating beats blindly retrying: the chat card has the cause, the
+    // log lines and a retry button.
     return (
-      <button class="update-btn update-btn--error" title={state.error} onClick={onCheck}>
-        Update check failed — retry
+      <button
+        class="update-btn update-btn--error"
+        title={`${state.error}\n\nClick for details`}
+        onClick={() => showDiagnosticInChat(state.diagnostic)}
+      >
+        Update check failed — details
       </button>
     );
   }

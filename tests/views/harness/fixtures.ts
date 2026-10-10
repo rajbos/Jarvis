@@ -259,9 +259,34 @@ export function createFixtures(now: number) {
     ],
   };
 
+  // Two hours of samples every 2 minutes. The hourly reset lands 30 minutes
+  // from now, so 90 minutes ago the buckets refilled; GraphQL drains steadily.
+  const rlReset = Math.floor((now + 30 * 60 * 1000) / 1000);
+  const rlBucket = (remaining: number, limit = 5000) => ({ limit, remaining, reset: rlReset, used: limit - remaining });
+  const rlHistory = (core: (minsAgo: number) => number, graphql: (minsAgo: number) => number) =>
+    Array.from({ length: 60 }, (_, i) => {
+      const minsAgo = 118 - i * 2;
+      return {
+        at: now - minsAgo * 60 * 1000,
+        buckets: { core: { remaining: core(minsAgo), limit: 5000 }, graphql: { remaining: graphql(minsAgo), limit: 5000 } },
+      };
+    });
+  const sinceReset = (minsAgo: number) => (minsAgo > 90 ? 120 - minsAgo + 60 : 90 - minsAgo);
   const rateLimit: GitHubRateLimit = {
-    oauth: { configured: true, resource: { limit: 5000, remaining: 4321, reset: Math.floor((now + 30 * 60 * 1000) / 1000), used: 679 } },
-    pat: { configured: false, resource: null },
+    oauth: {
+      configured: true,
+      resource: rlBucket(4321),
+      resources: { core: rlBucket(4321), graphql: rlBucket(4800), search: rlBucket(30, 30) },
+      history: rlHistory((m) => 5000 - Math.round(sinceReset(m) * 7.5), (m) => 5000 - sinceReset(m) * 2),
+    },
+    pat: {
+      configured: true,
+      resource: rlBucket(5000),
+      resources: { core: rlBucket(5000), graphql: rlBucket(140), search: rlBucket(2, 30) },
+      history: rlHistory(() => 5000, (m) => Math.max(140, 5000 - sinceReset(m) * 54)),
+      tokenExpiresAt: null,
+      tokenExpired: false,
+    },
     fetchedAt: iso(now, 0),
   };
 
@@ -285,7 +310,7 @@ export function createFixtures(now: number) {
     entitlementCredits: 300,
     year: d.getUTCFullYear(),
     month: d.getUTCMonth() + 1,
-    resetsAt: now + 10 * DAY,
+    resetsAt: Math.floor(now / 1000) + 10 * DAY,
     creditsUsed: 120,
     includedCreditsUsed: 120,
     billedCredits: 0,

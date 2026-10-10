@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld('jarvis', {
   getUpdateState: () => ipcRenderer.invoke('updates:get-state'),
   checkForUpdatesNow: () => ipcRenderer.invoke('updates:check'),
   installUpdate: () => ipcRenderer.invoke('updates:install'),
+  getDiagnosticLogTail: (filter?: string, maxLines?: number) => ipcRenderer.invoke('diagnostics:log-tail', filter, maxLines),
+  openAppLog: () => ipcRenderer.invoke('diagnostics:open-log'),
   onUpdateState: (callback: (state: UpdateState) => void) => {
     const listener = (_event: unknown, state: UpdateState) => callback(state);
     ipcRenderer.on('updates:state', listener);

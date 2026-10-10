@@ -74,7 +74,7 @@ function UsageRows({ usage, showModels = true }: UsageRowsProps) {
       <div class="bg-copilot-hero">
         <div class="bg-copilot-hero-top">
           <span>{monthLabel}{usage.plan ? <span class="bg-copilot-plan">{usage.plan}</span> : null}</span>
-          <span>{formatDurationUntil(usage.resetsAt)} · {new Date(usage.resetsAt * 1000).toLocaleDateString()}</span>
+          <span>{formatDurationUntil(usage.resetsAt)}</span>
         </div>
         {usage.error ? (
           <div class="bg-copilot-hero-value bg-status-claude-state--unknown">No data</div>
@@ -97,7 +97,7 @@ function UsageRows({ usage, showModels = true }: UsageRowsProps) {
             <Row
               label="Remaining"
               value={`${credits(Math.max(0, limit - usage.creditsUsed))} AIC`}
-              note={budget ? 'of your budget' : `included on ${usage.plan ?? 'plan'}`}
+              note={budget ? 'of your budget' : undefined}
             />
           )}
           {showSplit && (
@@ -112,8 +112,8 @@ function UsageRows({ usage, showModels = true }: UsageRowsProps) {
               value={`${credits(usage.projectedCredits)} AIC`}
               valueClass={limit && usage.projectedCredits > limit ? 'bg-status-claude-state--warning' : ''}
               note={limit
-                ? `by month end · ${Math.round((usage.projectedCredits / limit) * 100)}% of ${budget ? 'budget' : 'plan'}`
-                : 'by month end at current pace'}
+                ? `${Math.round((usage.projectedCredits / limit) * 100)}% of ${budget ? 'budget' : 'plan'}`
+                : 'at current pace'}
             />
           )}
           {/* With a detected plan entitlement and no budget of our own, the Budget row is just noise. */}

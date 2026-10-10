@@ -450,31 +450,54 @@ export function encodeClaudeProjectDir(cwd: string): string {
 }
 
 /**
- * Pull a human-readable title out of a Claude Code transcript: the generated
- * `summary` entry if one exists, otherwise the first user message (truncated).
+ * Transcript entries that carry a session title, best first: the user's/desktop
+ * app's rename (`custom-title`), the agent name the app assigns, Claude Code's
+ * generated `ai-title`, and the legacy `summary` entry.
+ */
+const CLAUDE_TITLE_ENTRIES: Array<[type: string, field: string]> = [
+  ['custom-title', 'customTitle'],
+  ['agent-name', 'agentName'],
+  ['ai-title', 'aiTitle'],
+  ['summary', 'summary'],
+];
+
+function isClaudeTitleEntry(e: Record<string, unknown>): boolean {
+  return CLAUDE_TITLE_ENTRIES.some(([type, field]) => e.type === type && typeof e[field] === 'string' && e[field] !== '');
+}
+
+/**
+ * Pull a human-readable title out of a Claude Code transcript: the latest title
+ * entry if one exists, otherwise the first real user prompt (truncated).
  * Exported for tests.
  */
 export function extractClaudeTitle(entries: Array<Record<string, unknown>>): string | null {
-  const summary = [...entries].reverse().find((e) => e.type === 'summary' && typeof e.summary === 'string');
-  if (summary) return String(summary.summary);
+  for (const [type, field] of CLAUDE_TITLE_ENTRIES) {
+    const hit = [...entries].reverse().find((e) => e.type === type && typeof e[field] === 'string' && e[field] !== '');
+    if (hit) return String(hit[field]).trim();
+  }
 
   for (const e of entries) {
     if (e.type !== 'user') continue;
     const message = (e.message ?? {}) as Record<string, unknown>;
     const content = message.content;
-    let text: string | null = null;
+    const texts: string[] = [];
     if (typeof content === 'string') {
-      text = content;
+      texts.push(content);
     } else if (Array.isArray(content)) {
-      const block = content.find((c) => c && typeof c === 'object' && (c as Record<string, unknown>).type === 'text');
-      text = block && typeof (block as Record<string, unknown>).text === 'string' ? String((block as Record<string, unknown>).text) : null;
+      for (const c of content) {
+        const block = (c ?? {}) as Record<string, unknown>;
+        if (block.type === 'text' && typeof block.text === 'string') texts.push(block.text);
+      }
     }
-    if (!text) continue;
-    text = text.trim().replace(/\s+/g, ' ');
-    // Skip command/tool-result scaffolding ("<command-...>") and pasted-attachment
-    // placeholders ("[Image: ...]", "[Request interrupted...]") — neither is a title.
-    if (!text || text.startsWith('<') || /^\[[^\]]*\]/.test(text)) continue;
-    return text.length > 80 ? `${text.slice(0, 79)}…` : text;
+    for (const raw of texts) {
+      // Drop injected <system-reminder> blocks, which often lead the first prompt.
+      const text = raw.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '').trim().replace(/\s+/g, ' ');
+      // Skip command/tool-result scaffolding ("<command-...>"), pasted-attachment
+      // placeholders ("[Image: ...]", "[Request interrupted...]") and messages
+      // relayed from another session — none of them is a title.
+      if (!text || text.startsWith('<') || /^\[[^\]]*\]/.test(text) || text.startsWith('Another Claude session sent a message')) continue;
+      return text.length > 80 ? `${text.slice(0, 79)}…` : text;
+    }
   }
   return null;
 }
@@ -572,12 +595,12 @@ export async function discoverClaudeLocalSessions(options: LocalSessionDiscovery
       const transcript = path.join(home, '.claude', 'projects', encodeClaudeProjectDir(cwd), `${sessionId}.jsonl`);
       const mtime = mtimeOf(transcript);
       if (mtime !== null) {
-        // A `summary` entry (the transcript's title) isn't necessarily near the
-        // tail — widen the read until one turns up, not just until there's
-        // enough to tell activity, or titles fall back to the worktree folder name.
+        // A title entry isn't necessarily near the tail — widen the read until
+        // one turns up, not just until there's enough to tell activity, or
+        // titles fall back to the first prompt.
         const entries = readTailEntries(
           transcript,
-          (es) => es.some((e) => e.type === 'assistant' || e.type === 'user') && es.some((e) => e.type === 'summary'),
+          (es) => es.some((e) => e.type === 'assistant' || e.type === 'user') && es.some(isClaudeTitleEntry),
         );
         activity = deriveClaudeActivity(entries, mtime, now);
         title = extractClaudeTitle(entries);

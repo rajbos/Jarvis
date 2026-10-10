@@ -8,6 +8,7 @@ import {
   discoverClaudeLocalSessions,
   discoverCopilotLocalSessions,
   encodeClaudeProjectDir,
+  extractClaudeTitle,
   findCopilotPrLinkInText,
   findPrLinkInText,
   parseWorkspaceYaml,
@@ -100,6 +101,35 @@ describe('deriveClaudeActivity', () => {
 
   it('is unknown without user/assistant entries', () => {
     expect(deriveClaudeActivity([{ type: 'summary', summary: 'x' }], NOW, NOW)).toBe('unknown');
+  });
+});
+
+describe('extractClaudeTitle', () => {
+  const user = (content: unknown) => ({ type: 'user', message: { content } });
+
+  it('prefers custom-title over agent-name, ai-title and summary, using the latest of each', () => {
+    expect(extractClaudeTitle([
+      { type: 'summary', summary: 'Old summary' },
+      { type: 'ai-title', aiTitle: 'Generated title' },
+      { type: 'agent-name', agentName: 'Agent name' },
+      { type: 'custom-title', customTitle: 'First rename' },
+      { type: 'custom-title', customTitle: 'Renamed session' },
+    ])).toBe('Renamed session');
+    expect(extractClaudeTitle([{ type: 'ai-title', aiTitle: 'Generated title' }, { type: 'summary', summary: 'x' }])).toBe('Generated title');
+  });
+
+  it('falls back to the first real prompt, skipping system reminders and cross-session messages', () => {
+    expect(extractClaudeTitle([
+      user('Another Claude session sent a message: <cross-session-message from="local_1">do x</cross-session-message>'),
+      user([
+        { type: 'text', text: '<system-reminder>\nYou are in a worktree.\n</system-reminder>\n\n' },
+        { type: 'text', text: 'Work on   issue #12' },
+      ]),
+    ])).toBe('Work on issue #12');
+  });
+
+  it('returns null when nothing title-like exists', () => {
+    expect(extractClaudeTitle([user('<command-name>/clear</command-name>'), { type: 'assistant' }])).toBeNull();
   });
 });
 

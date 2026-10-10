@@ -14,6 +14,8 @@ import {
   abortDiscovery,
   resolveCollaborationReason,
   resolveCollaborationReasons,
+  fetchStarredRepos,
+  type DiscoveryProgress,
   type DiscoveryState,
 } from '../../src/services/github-discovery';
 
@@ -929,5 +931,190 @@ describe('GitHub Discovery — collaboration reason', () => {
 
     const collabResult = db.exec('SELECT collaboration_reason FROM github_repos WHERE full_name = "other/collab"');
     expect(collabResult[0].values[0][0]).toBe('issue');
+  });
+});
+
+// ─── Per-bucket rate limits & secondary rate limits ──────────────────
+
+describe('GitHub Discovery — rate-limit buckets', () => {
+  let db: SqlJsDatabase;
+  let originalFetch: typeof globalThis.fetch;
+
+  const SECONDARY_BODY = JSON.stringify({
+    message: 'You have exceeded a secondary rate limit. Please wait a few minutes before you try again.',
+  });
+
+  function searchHeaders(remaining: number, reset = Math.floor(Date.now() / 1000) + 3600): Headers {
+    const h = makeHeaders(remaining, 30, reset);
+    h.set('x-ratelimit-resource', 'search');
+    return h;
+  }
+
+  function newState(): DiscoveryState {
+    return { callsSinceLastPause: 0, aborted: false, lastRateLimit: null };
+  }
+
+  function newProgress(): DiscoveryProgress {
+    return { phase: 'starred', orgsFound: 0, reposFound: 0 };
+  }
+
+  beforeEach(async () => {
+    const SQL = await initSqlJs();
+    db = new SQL.Database();
+    db.run(getSchema());
+    originalFetch = globalThis.fetch;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    globalThis.fetch = originalFetch;
+    db.close();
+  });
+
+  it('a nearly exhausted search bucket does not overwrite core state or pause core calls', async () => {
+    const state = newState();
+    const coreHeaders = makeHeaders(4990);
+    coreHeaders.set('x-ratelimit-resource', 'core');
+
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/search/issues')) {
+        return jsonResponse({ total_count: 1, items: [{ pull_request: {} }] }, searchHeaders(2));
+      }
+      return jsonResponse([{ full_name: 'a/b', name: 'b' }], coreHeaders);
+    }) as Mock;
+
+    expect(await resolveCollaborationReason('token', 'me', 'a/b', state)).toBe('pr');
+    expect(state.rateLimits?.search).toMatchObject({ remaining: 2, limit: 30, resource: 'search' });
+    expect(state.lastRateLimit).toBeNull();
+
+    // The core call must not sleep until the search bucket's reset an hour away.
+    const timeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+    await fetchStarredRepos(db, 'token', state, newProgress());
+    expect(timeoutSpy).not.toHaveBeenCalled();
+
+    expect(state.lastRateLimit).toMatchObject({ remaining: 4990, limit: 5000 });
+    expect(state.rateLimits?.core).toMatchObject({ remaining: 4990 });
+    expect(state.rateLimits?.search).toMatchObject({ remaining: 2 });
+  });
+
+  it('infers the bucket from the URL when x-ratelimit-resource is absent', async () => {
+    const state = newState();
+    globalThis.fetch = vi.fn(async () => jsonResponse({ total_count: 0, items: [] }, makeHeaders(3, 30))) as Mock;
+
+    await resolveCollaborationReason('token', 'me', 'a/b', state);
+
+    expect(state.rateLimits?.search).toMatchObject({ remaining: 3, limit: 30 });
+    expect(state.lastRateLimit).toBeNull();
+  });
+
+  it('pauses a search call until reset when the search bucket is low', async () => {
+    vi.useFakeTimers();
+    const reset = Math.floor(Date.now() / 1000) + 10;
+    const state: DiscoveryState = {
+      ...newState(),
+      lastRateLimit: { remaining: 4000, limit: 5000, reset, resource: 'core' },
+      rateLimits: { search: { remaining: 1, limit: 30, reset, resource: 'search' } },
+    };
+    const fetchMock = vi.fn(async () => jsonResponse({ total_count: 0, items: [] }, searchHeaders(29)));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const p = resolveCollaborationReason('token', 'me', 'a/b', state);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(7_000);
+    expect(await p).toBe('collaborator');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not treat missing rate-limit headers as a full 5000 budget', async () => {
+    const state = newState();
+    globalThis.fetch = vi.fn(async () => jsonResponse([], new Headers())) as Mock;
+
+    await fetchStarredRepos(db, 'token', state, newProgress());
+
+    expect(state.lastRateLimit).toBeNull();
+    expect(state.rateLimits).toBeUndefined();
+  });
+
+  it('waits and retries on a secondary rate limit (403 with retry-after)', async () => {
+    vi.useFakeTimers();
+    const state = newState();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response('{}', {
+          status: 403,
+          headers: { 'x-ratelimit-remaining': '4000', 'x-ratelimit-limit': '5000', 'retry-after': '3' },
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse([{ full_name: 'a/b', name: 'b' }], makeHeaders(3999)));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const progress = newProgress();
+    const p = fetchStarredRepos(db, 'token', state, progress);
+    await vi.advanceTimersByTimeAsync(5_000);
+    await p;
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(progress.reposFound).toBe(1);
+  });
+
+  it('waits and retries on a secondary rate limit reported only in the body', async () => {
+    vi.useFakeTimers();
+    const state = newState();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(SECONDARY_BODY, {
+          status: 403,
+          headers: { 'x-ratelimit-remaining': '4000', 'x-ratelimit-limit': '5000' },
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse([], makeHeaders(3999)));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const p = fetchStarredRepos(db, 'token', state, newProgress());
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(31_000);
+    await p;
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('gives up with a clear secondary-rate-limit error after repeated rejections', async () => {
+    vi.useFakeTimers();
+    const state = newState();
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(SECONDARY_BODY, {
+          status: 403,
+          headers: { 'x-ratelimit-remaining': '4000', 'x-ratelimit-limit': '5000', 'retry-after': '1' },
+        }),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const assertion = expect(fetchStarredRepos(db, 'token', state, newProgress())).rejects.toThrow(
+      /secondary rate limit/,
+    );
+    await vi.advanceTimersByTimeAsync(10_000);
+    await assertion;
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('still surfaces a genuine 403 as an API error', async () => {
+    const state = newState();
+    globalThis.fetch = vi.fn(
+      async () =>
+        new Response('{"message":"Resource not accessible by integration"}', {
+          status: 403,
+          statusText: 'Forbidden',
+          headers: { 'x-ratelimit-remaining': '4000', 'x-ratelimit-limit': '5000' },
+        }),
+    ) as unknown as typeof fetch;
+
+    await expect(fetchStarredRepos(db, 'token', state, newProgress())).rejects.toThrow(/GitHub API error: 403/);
   });
 });
