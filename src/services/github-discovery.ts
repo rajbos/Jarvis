@@ -1,7 +1,15 @@
 import type { Database as SqlJsDatabase } from 'sql.js';
 import { saveDatabase } from '../storage/database';
 import { logger } from './logger';
-import { parseRateLimit, sleep, type RateLimitInfo } from './github-fetch';
+import {
+  computeRateLimitWaitMs,
+  isPrimaryRateLimited,
+  isSecondaryRateLimited,
+  parseRateLimit,
+  rateLimitResourceForUrl,
+  sleep,
+  type RateLimitInfo,
+} from './github-fetch';
 
 import { currentApiBase, currentHostContext, hostKey } from './github-host';
 import { recordRepoVisibility } from './github-repo-visibility';
@@ -9,6 +17,7 @@ const PER_PAGE = 100;
 const CALLS_PER_BATCH = 500;
 const BATCH_PAUSE_MS = 10_000; // 10 seconds between batches
 const LOW_RATE_LIMIT_THRESHOLD = 5;
+const MAX_SECONDARY_RATE_LIMIT_RETRIES = 2;
 const PARALLEL_PAGE_CONCURRENCY = 10; // max simultaneous page requests
 /** Orgs with more repos than this are skipped until the user explicitly approves them. */
 export const MAX_ORG_REPOS = 500;
@@ -26,7 +35,21 @@ export type { RateLimitInfo };
 export interface DiscoveryState {
   callsSinceLastPause: number;
   aborted: boolean;
+  /** Latest core-bucket info — what the UI shows as "the" rate limit. */
   lastRateLimit: RateLimitInfo | null;
+  /**
+   * Latest info per bucket (`x-ratelimit-resource`: core, search, graphql, …).
+   * Search responses report the 30/min search bucket, so pauses must only look
+   * at the bucket the next call will be billed against.
+   */
+  rateLimits?: Record<string, RateLimitInfo>;
+}
+
+function recordRateLimit(state: DiscoveryState, url: string, info: RateLimitInfo): string {
+  const resource = info.resource ?? rateLimitResourceForUrl(url);
+  state.rateLimits = { ...state.rateLimits, [resource]: info };
+  if (resource === 'core') state.lastRateLimit = info;
+  return resource;
 }
 
 export interface DiscoveryProgress {
@@ -86,9 +109,9 @@ function parseLinkLastPage(linkHeader: string | null): number | null {
 
 /**
  * Pause when we've consumed CALLS_PER_BATCH API calls, or when the
- * remaining rate-limit budget drops below the safety threshold.
+ * remaining budget of the bucket `resource` drops below the safety threshold.
  */
-async function rateLimitAwarePause(state: DiscoveryState): Promise<void> {
+async function rateLimitAwarePause(state: DiscoveryState, resource: string): Promise<void> {
   if (state.aborted) return;
 
   state.callsSinceLastPause++;
@@ -99,11 +122,12 @@ async function rateLimitAwarePause(state: DiscoveryState): Promise<void> {
     state.callsSinceLastPause = 0;
   }
 
-  if (state.lastRateLimit && state.lastRateLimit.remaining < LOW_RATE_LIMIT_THRESHOLD) {
-    const waitMs = state.lastRateLimit.reset * 1000 - Date.now() + 1000;
+  const info = resource === 'core' ? (state.rateLimits?.core ?? state.lastRateLimit) : state.rateLimits?.[resource];
+  if (info && info.remaining < LOW_RATE_LIMIT_THRESHOLD) {
+    const waitMs = info.reset * 1000 - Date.now() + 1000;
     if (waitMs > 0) {
       logger.debug(
-        `[Discovery] Rate limit low (${state.lastRateLimit.remaining} remaining). ` +
+        `[Discovery] Rate limit low (${resource}: ${info.remaining} remaining). ` +
           `Waiting ${Math.ceil(waitMs / 1000)}s until reset…`,
       );
       await sleep(waitMs);
@@ -119,8 +143,9 @@ async function githubGet<T>(
   state: DiscoveryState,
   pageNum?: number,
   totalPages?: number,
+  secondaryRetries = 0,
 ): Promise<{ data: T; nextUrl: string | null; lastPage: number | null }> {
-  await rateLimitAwarePause(state);
+  await rateLimitAwarePause(state, rateLimitResourceForUrl(url));
 
   if (state.aborted) {
     throw new Error('Discovery aborted');
@@ -134,24 +159,36 @@ async function githubGet<T>(
     },
   });
 
-  state.lastRateLimit = parseRateLimit(response.headers);
+  const info = parseRateLimit(response.headers);
+  const resource = info ? recordRateLimit(state, url, info) : null;
   const pageInfo = pageNum !== undefined && totalPages !== undefined
     ? ` — ${pageNum}/${totalPages} pages`
     : '';
   logger.debug(
     `[Discovery] ${url.replace(currentApiBase(), '')}${pageInfo} — ` +
-      `rate limit: ${state.lastRateLimit.remaining}/${state.lastRateLimit.limit}`,
+      (info ? `rate limit (${resource}): ${info.remaining}/${info.limit}` : 'rate limit: unknown'),
   );
 
-  // Rate-limit exceeded — wait until reset, then retry once
-  if (response.status === 403 && state.lastRateLimit.remaining === 0) {
-    const waitMs = state.lastRateLimit.reset * 1000 - Date.now() + 1000;
+  // Primary rate limit exceeded — wait until the bucket resets, then retry
+  if (isPrimaryRateLimited(response, info)) {
+    const waitMs = computeRateLimitWaitMs(response, info);
     if (waitMs > 0) {
-      logger.debug(`[Discovery] Rate limit exceeded. Waiting ${Math.ceil(waitMs / 1000)}s…`);
+      logger.debug(`[Discovery] Rate limit exceeded (${resource}). Waiting ${Math.ceil(waitMs / 1000)}s…`);
       await sleep(waitMs);
     }
     state.callsSinceLastPause = 0;
-    return githubGet(accessToken, url, state, pageNum, totalPages);
+    return githubGet(accessToken, url, state, pageNum, totalPages, secondaryRetries);
+  }
+
+  // Secondary rate limit — the primary budget is fine, GitHub wants us to back off
+  if (await isSecondaryRateLimited(response, info)) {
+    const waitMs = computeRateLimitWaitMs(response, info);
+    if (secondaryRetries >= MAX_SECONDARY_RATE_LIMIT_RETRIES) {
+      throw new Error(`GitHub secondary rate limit for ${url} (retry in ${Math.ceil(waitMs / 1000)}s)`);
+    }
+    logger.debug(`[Discovery] Secondary rate limit hit. Waiting ${Math.ceil(waitMs / 1000)}s…`);
+    await sleep(waitMs);
+    return githubGet(accessToken, url, state, pageNum, totalPages, secondaryRetries + 1);
   }
 
   if (!response.ok) {
