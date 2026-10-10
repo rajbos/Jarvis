@@ -137,8 +137,8 @@ export function createFixtures(now: number) {
 
   const orgs: OrgListResult = {
     orgs: [
-      { login: ORG_ACME, repoCount: 2, discoveryEnabled: true },
-      { login: ORG_GLOBEX, repoCount: 1, discoveryEnabled: true },
+      { login: ORG_ACME, repoCount: 2, discoveryEnabled: true, secretScanSetting: null, secretScanEnabled: true },
+      { login: ORG_GLOBEX, repoCount: 1, discoveryEnabled: true, secretScanSetting: false, secretScanEnabled: false },
     ],
     directRepoCount: 0,
     starredRepoCount: 0,
