@@ -3,7 +3,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import {
-  logger, setLogLevel, getLogLevel, enableFileLogging, disableFileLogging, getLogFilePath,
+  logger, setLogLevel, getLogLevel, enableFileLogging, disableFileLogging, getLogFilePath, readRecentLogLines,
 } from '../../src/services/logger';
 
 describe('logger', () => {
@@ -115,6 +115,26 @@ describe('logger', () => {
       expect(fs.existsSync(path.join(dir, 'main.old.log'))).toBe(true);
       expect(fs.statSync(file).size).toBeLessThanOrEqual(200);
       expect(fs.readFileSync(file, 'utf8')).toContain('line 9');
+    });
+
+    it('reads back nothing when file logging is off', () => {
+      expect(readRecentLogLines(10)).toEqual([]);
+    });
+
+    it('reads back the newest lines, optionally filtered by a substring', () => {
+      enableFileLogging(dir);
+      logger.info('[Updates] first');
+      logger.info('[Sync] unrelated');
+      logger.warn('[AutoUpdater] second');
+      logger.info('[Updates] third');
+
+      expect(readRecentLogLines(2).map((l) => l.replace(/^\S+ /, ''))).toEqual([
+        '[WARN] [AutoUpdater] second',
+        '[INFO] [Updates] third',
+      ]);
+      const filtered = readRecentLogLines(10, 'Update');
+      expect(filtered).toHaveLength(3);
+      expect(filtered.every((l) => l.includes('Update'))).toBe(true);
     });
   });
 });

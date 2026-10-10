@@ -1373,6 +1373,7 @@ export type {
   NewRuddrProjectsPayload,
   BrowserExtensionConnectedPayload,
   UpdateState,
+  DiagnosticReport,
 
 } from '../types/ipc-payloads';
 
@@ -1761,6 +1762,10 @@ export interface JarvisApi {
   checkForUpdatesNow(): Promise<UpdateState>;
   installUpdate(): Promise<{ ok: boolean }>;
   onUpdateState(cb: (state: UpdateState) => void): () => void;
+
+  // Diagnostics (chat panel cards)
+  getDiagnosticLogTail(filter?: string, maxLines?: number): Promise<string[] | IpcErrorResponse>;
+  openAppLog(): Promise<{ ok: boolean; error?: string }>;
 
 }
 

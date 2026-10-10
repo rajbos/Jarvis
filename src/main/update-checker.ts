@@ -1,9 +1,11 @@
+import path from 'path';
 import { app, Notification, type BrowserWindow } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import type { UpdateState } from '../types/ipc-payloads';
 import { safeHandle } from '../plugins/ipc-utils';
 import { logger } from '../services/logger';
 import { enforceSignatureVerification } from './update-verification';
+import { buildUpdateDiagnostic, updateErrorNotification } from './update-diagnostics';
 
 const INITIAL_CHECK_DELAY_MS = 15_000;
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
@@ -14,6 +16,9 @@ let periodicCheckTimer: NodeJS.Timeout | null = null;
 let upToDateTimer: NodeJS.Timeout | null = null;
 let manualCheckInFlight = false;
 let listenersRegistered = false;
+// Version announced by the latest 'update-available'; the download must carry
+// build provenance from exactly this release tag.
+let targetVersion: string | null = null;
 
 // The update state lives in the main process so it survives renderer reloads and
 // missed notifications: a downloaded update stays visible in the UI until it is
@@ -59,8 +64,19 @@ function registerListeners(): void {
     warn: (message?: unknown) => logger.warn('[AutoUpdater]', message),
     error: (message?: unknown) => logger.error('[AutoUpdater]', message),
   };
-  // Fail closed: reject downloads that cannot be verified against a publisher.
-  enforceSignatureVerification(autoUpdater, logger);
+  // Fail closed: reject downloads that are neither Authenticode-signed nor
+  // attested by the release workflow for the announced version.
+  enforceSignatureVerification(autoUpdater, {
+    log: logger,
+    attestation: {
+      policy: () => ({
+        repo: 'rajbos/Jarvis',
+        workflowPath: '.github/workflows/release.yml',
+        tufCachePath: path.join(app.getPath('userData'), 'sigstore-tuf'),
+      }),
+      getExpectedVersion: () => targetVersion,
+    },
+  });
 
   autoUpdater.on('checking-for-update', () => {
     // A downloaded update outranks a fresh check: keep the install prompt up so
@@ -69,6 +85,7 @@ function registerListeners(): void {
   });
 
   autoUpdater.on('update-available', (info) => {
+    targetVersion = info.version;
     setState({ status: 'downloading', version: info.version, percent: 0 });
     showNotification(`Jarvis ${info.version} is available`, 'Downloading the update in the background…');
   });
@@ -104,16 +121,20 @@ function registerListeners(): void {
     );
   });
 
-  autoUpdater.on('error', (error) => {
-    logger.warn('[Updates] Update check failed:', error);
-    if (state.status !== 'downloaded') {
-      setState({ status: 'error', error: error instanceof Error ? error.message : String(error) });
-    }
-    if (manualCheckInFlight) {
-      showNotification('Update check failed', 'Jarvis could not reach GitHub Releases. Try again later.');
-    }
-    manualCheckInFlight = false;
-  });
+  autoUpdater.on('error', (error) => { reportFailure(error, manualCheckInFlight); });
+}
+
+function reportFailure(error: unknown, manual: boolean): void {
+  logger.warn('[Updates] Update check failed:', error);
+  if (state.status !== 'downloaded') {
+    setState({
+      status: 'error',
+      error: error instanceof Error ? error.message : String(error),
+      diagnostic: buildUpdateDiagnostic(error, { currentVersion: app.getVersion(), targetVersion }),
+    });
+  }
+  if (manual) showNotification('Update check failed', updateErrorNotification(error));
+  manualCheckInFlight = false;
 }
 
 export function installUpdate(): void {
@@ -138,14 +159,7 @@ export async function checkForUpdates(manual = false): Promise<void> {
     // electron-updater usually reports failures via the 'error' event, but some
     // failures (e.g. missing publish config) only reject this promise — make sure
     // those are visible too instead of leaving the UI stuck on 'checking'.
-    logger.warn('[Updates] Update check failed:', error);
-    if (state.status !== 'downloaded') {
-      setState({ status: 'error', error: error instanceof Error ? error.message : String(error) });
-    }
-    if (manual) {
-      showNotification('Update check failed', 'Jarvis could not reach GitHub Releases. Try again later.');
-    }
-    manualCheckInFlight = false;
+    reportFailure(error, manual);
   }
 }
 

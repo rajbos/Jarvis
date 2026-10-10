@@ -12,6 +12,7 @@ import {
 import { getConfigValue } from '../../storage/database';
 import { buildSystemContext, searchReposForChat, searchSecretsForChat, searchOneNoteForChat, searchProjectBudgetForChat } from './db-helpers';
 import { safeHandle } from '../ipc-utils';
+import { readRecentLogLines } from '../../services/logger';
 
 const activeChatAborts = new Map<number, AbortController>();
 
@@ -110,7 +111,43 @@ const CHAT_TOOLS: OllamaTool[] = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'read_app_log',
+      description:
+        'Read the most recent lines of the Jarvis application log. Use this when the user asks why ' +
+        'something in Jarvis failed (update checks, sync, sign-in, background tasks) or wants to know ' +
+        'what Jarvis has been doing. Optionally filter to lines containing a tag such as "[Updates]".',
+      parameters: {
+        type: 'object',
+        properties: {
+          filter: {
+            type: 'string',
+            description: 'Optional case-sensitive substring; only lines containing it are returned (e.g. "[Updates]", "ERROR").',
+          },
+          lines: {
+            type: 'number',
+            description: 'How many lines to return, newest last. Defaults to 40, at most 200.',
+          },
+        },
+        required: [],
+      },
+    },
+  },
 ];
+
+const APP_LOG_DEFAULT_LINES = 40;
+const APP_LOG_MAX_LINES = 200;
+
+export function readAppLogForChat(filter?: string, lines?: number): string {
+  const count = Math.min(APP_LOG_MAX_LINES, Math.max(1, Math.floor(lines ?? APP_LOG_DEFAULT_LINES)));
+  const result = readRecentLogLines(count, filter || undefined);
+  if (result.length === 0) {
+    return filter ? `No log lines containing "${filter}" were found.` : 'The application log is empty or file logging is off.';
+  }
+  return result.join('\n');
+}
 
 function dispatchToolCall(db: SqlJsDatabase, call: OllamaToolCall): string {
   if (call.function.name === 'search_repos') {
@@ -130,6 +167,11 @@ function dispatchToolCall(db: SqlJsDatabase, call: OllamaToolCall): string {
   if (call.function.name === 'search_project_budget') {
     const groupName = String(call.function.arguments['group_name'] ?? '');
     return searchProjectBudgetForChat(db, groupName);
+  }
+  if (call.function.name === 'read_app_log') {
+    const filter = call.function.arguments['filter'] != null ? String(call.function.arguments['filter']) : undefined;
+    const lines = Number(call.function.arguments['lines']);
+    return readAppLogForChat(filter, Number.isFinite(lines) ? lines : undefined);
   }
   return `Unknown tool: ${call.function.name}`;
 }

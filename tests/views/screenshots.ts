@@ -70,6 +70,49 @@ const SHOTS: Shot[] = [
     name: 'pat-rate-limit-flyout', view: 'index', waitFor: ['PAT resets at', 'GraphQL % remaining'],
     prepare: (page) => page.locator('.bg-status-ratelimit').last().hover(),
   },
+  {
+    // Failed update check handed to the chat: the badge opens a diagnostic card.
+    name: 'update-diagnostic', view: 'index',
+    waitFor: ['Update could not be verified', 'Explain this', 'Open log', 'Rejecting downloaded update'],
+    open: {
+      responses: {
+        getSelectedOllamaModel: 'fixture-model:3b',
+        getUpdateState: {
+          status: 'error',
+          error: 'New version 9.9.10 is not signed by the application owner: no build provenance attestation exists for this download',
+          diagnostic: {
+            id: 'updates-fixture',
+            source: 'updates',
+            title: 'Update check failed',
+            summary: 'Jarvis downloaded the update but could not prove it was built by the official release workflow, so it was not installed. This protects against tampered releases; check that the release has a build provenance attestation.',
+            facts: [
+              { label: 'Cause', value: 'Update could not be verified' },
+              { label: 'Installed version', value: '9.9.9' },
+              { label: 'Update version', value: '9.9.10' },
+              { label: 'Error code', value: 'ERR_UPDATER_INVALID_SIGNATURE' },
+              { label: 'Error', value: 'New version 9.9.10 is not signed by the application owner: no build provenance attestation exists for this download' },
+            ],
+            logFilter: 'Update',
+            links: [
+              { label: 'Releases page', url: 'https://example.invalid/jarvis/releases' },
+              { label: 'Release v9.9.10', url: 'https://example.invalid/jarvis/releases/tag/v9.9.10' },
+            ],
+            retry: 'update-check',
+            occurredAt: '2030-01-16T14:30:00.000Z',
+          },
+        },
+        getDiagnosticLogTail: [
+          '2030-01-16T14:29:58.000Z [INFO] [AutoUpdater] Found version 9.9.10 (url: Jarvis-Setup-9.9.10.exe)',
+          '2030-01-16T14:30:00.000Z [WARN] [Updates] Rejecting downloaded update: no build provenance attestation exists for this download',
+          '2030-01-16T14:30:00.000Z [WARN] [Updates] Update check failed: Error: New version 9.9.10 is not signed by the application owner',
+        ],
+      },
+    },
+    prepare: async (page) => {
+      await page.getByRole('button', { name: /Update check failed/ }).click();
+      await page.getByRole('button', { name: /Recent log lines/ }).click();
+    },
+  },
   { name: 'settings', view: 'settings', waitFor: ['Windows Startup', 'GitHub Accounts', 'MCP Server'], fullPage: true },
   { name: 'about', view: 'about', waitFor: ['9.9.9-fixture'] },
 ];

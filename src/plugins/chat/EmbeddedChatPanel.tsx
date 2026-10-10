@@ -1,12 +1,25 @@
 import { useState, useEffect, useRef, useCallback } from 'preact/hooks';
 import { renderChatMarkdown } from '../shared/utils';
 import { AgentApprovalPanel } from '../agents/AgentApprovalPanel';
-import type { AgentSession } from '../types';
+import type { AgentSession, DiagnosticReport } from '../types';
 import { isIpcError } from '../types';
+import { DiagnosticCard } from './DiagnosticCard';
+import { diagnosticToText, explainPrompt, onShowDiagnostic } from './diagnostics';
 
-interface ChatMsg {
-  role: 'user' | 'assistant';
-  content: string;
+type ChatMsg =
+  | {
+    role: 'user' | 'assistant';
+    content: string;
+    /** Shown in the bubble instead of `content` when the prompt sent to the model is longer. */
+    display?: string;
+  }
+  | { role: 'diagnostic'; report: DiagnosticReport };
+
+/** Diagnostic cards become plain context for the model; everything else passes through. */
+function toModelMessages(msgs: ChatMsg[]): Array<{ role: string; content: string }> {
+  return msgs.map((m) => m.role === 'diagnostic'
+    ? { role: 'user', content: `[Jarvis diagnostic]\n${diagnosticToText(m.report)}` }
+    : { role: m.role, content: m.content });
 }
 
 interface EmbeddedChatPanelProps {
@@ -14,10 +27,11 @@ interface EmbeddedChatPanelProps {
   selectedModel: string | null;
   onClose: () => void;
   onAgentStart?: () => void; // called when first agent token arrives (so parent can show the panel)
+  onShowRequested?: () => void; // called when something is handed to the chat that the user should see
   onNotificationsDismissed?: (ids: string[]) => void;
 }
 
-export function EmbeddedChatPanel({ visible, selectedModel, onClose, onAgentStart, onNotificationsDismissed }: EmbeddedChatPanelProps) {
+export function EmbeddedChatPanel({ visible, selectedModel, onClose, onAgentStart, onShowRequested, onNotificationsDismissed }: EmbeddedChatPanelProps) {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
@@ -195,6 +209,14 @@ export function EmbeddedChatPanel({ visible, selectedModel, onClose, onAgentStar
     };
   }, [onAgentStart]);
 
+  useEffect(() => onShowDiagnostic((report) => {
+    // Re-opening the same report just brings the chat forward instead of duplicating the card.
+    setMessages((msgs) => msgs.some((m) => m.role === 'diagnostic' && m.report.id === report.id)
+      ? msgs
+      : [...msgs, { role: 'diagnostic', report }]);
+    onShowRequested?.();
+  }), [onShowRequested]);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, streamText]);
@@ -207,21 +229,30 @@ export function EmbeddedChatPanel({ visible, selectedModel, onClose, onAgentStar
     void window.jarvis.abortChat();
   }, []);
 
-  const handleSend = useCallback(async () => {
-    const text = input.trim();
-    if (!text || streaming) return;
+  const sendMessages = useCallback(async (newMessages: ChatMsg[]) => {
     setError(null);
-    const newMessages: ChatMsg[] = [...messages, { role: 'user', content: text }];
     setMessages(newMessages);
-    setInput('');
     setStreaming(true);
     try {
-      await window.jarvis.sendChatMessage(newMessages);
+      await window.jarvis.sendChatMessage(toModelMessages(newMessages));
     } catch (e) {
       setError(String(e));
       setStreaming(false);
     }
-  }, [input, messages, streaming]);
+  }, []);
+
+  const handleSend = useCallback(async () => {
+    const text = input.trim();
+    if (!text || streaming) return;
+    setInput('');
+    await sendMessages([...messages, { role: 'user', content: text }]);
+  }, [input, messages, streaming, sendMessages]);
+
+  const handleExplain = useCallback((report: DiagnosticReport, logLines: string[]) => {
+    if (streaming) return;
+    // The card itself is already in the history as context; the prompt adds the log lines.
+    void sendMessages([...messages, { role: 'user', content: explainPrompt(report, logLines), display: `Explain: **${report.title}**` }]);
+  }, [messages, streaming, sendMessages]);
 
   const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -259,9 +290,10 @@ export function EmbeddedChatPanel({ visible, selectedModel, onClose, onAgentStar
               : 'Select an Ollama model first to start chatting.'}
           </div>
         )}
-        {messages.map((msg, i) => (
-          <div key={i} class={`ec-bubble ${msg.role === 'user' ? 'ec-user' : 'ec-assistant'}`}
-            dangerouslySetInnerHTML={{ __html: renderChatMarkdown(msg.content) }} />
+        {messages.map((msg, i) => (msg.role === 'diagnostic'
+          ? <DiagnosticCard key={msg.report.id} report={msg.report} busy={streaming || agentStreaming} onExplain={selectedModel ? handleExplain : null} />
+          : <div key={i} class={`ec-bubble ${msg.role === 'user' ? 'ec-user' : 'ec-assistant'}`}
+            dangerouslySetInnerHTML={{ __html: renderChatMarkdown(msg.display ?? msg.content) }} />
         ))}
         {streaming && (
           <div class="ec-bubble ec-assistant">
