@@ -51,6 +51,14 @@ const SHOTS: Shot[] = [
   { name: 'browser', view: 'index', tab: /Browser/, waitFor: ['Browser Skills', 'Fixture weather check'] },
   { name: 'setup', view: 'index', tab: /Setup/, waitFor: ['GitHub Account', 'Local Repositories', 'Groups', 'Ollama AI', 'Claude AI'] },
   {
+    name: 'setup-orgs', view: 'index', tab: /Setup/, waitFor: ['Organizations', '2 repos'],
+    prepare: (page) => page.locator('.discovery-toggle').click(),
+  },
+  {
+    name: 'setup-secrets', view: 'index', tab: /Setup/, waitFor: ['Repository Secrets', 'FIXTURE_DEPLOY_KEY'],
+    prepare: (page) => page.locator('#secrets-step').click(),
+  },
+  {
     name: 'setup-signed-out', view: 'index', tab: /Setup/, waitFor: ['Sign in with GitHub'],
     open: { responses: { getGitHubOAuthStatus: { authenticated: false } } },
   },

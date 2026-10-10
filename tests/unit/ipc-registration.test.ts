@@ -141,6 +141,7 @@ const EXPECTED_CHANNELS = [
   'github:get-cached-workflow-info',
   // secrets plugin
   'secrets:scan',
+  'secrets:set-org-scan',
   'secrets:list-all',
   'secrets:list-favorites',
   'secrets:add-favorite',

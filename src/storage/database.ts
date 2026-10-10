@@ -85,7 +85,7 @@ export async function createMemoryDatabase(): Promise<SqlJsDatabase> {
 // of the chain in initializeSchema(). Used only to warn if a database fails to
 // reach the latest schema after migration (e.g. a gap in the version chain).
 // A unit test fails if this drifts from the version a fresh database reaches.
-export const LATEST_SCHEMA_VERSION = 34;
+export const LATEST_SCHEMA_VERSION = 35;
 
 export function initializeSchema(database: SqlJsDatabase): void {
   const result = database.exec("PRAGMA user_version");
@@ -94,7 +94,7 @@ export function initializeSchema(database: SqlJsDatabase): void {
   if (userVersion === 0) {
     database.run(getSchema());
     seedBuiltInAgents(database);
-    database.run('PRAGMA user_version = 34');
+    database.run('PRAGMA user_version = 35');
   }
 
   if (userVersion === 1) {
@@ -687,6 +687,25 @@ export function initializeSchema(database: SqlJsDatabase): void {
         error      TEXT NOT NULL
     )`);
     database.run('PRAGMA user_version = 34');
+  }
+
+  if (userVersion === 34) {
+    // Migration v34 → v35: trickle secrets scanning across org repos.
+    //  - github_repos.secrets_scanned_at / secrets_scan_status: when a repo's
+    //    secret names were last fetched, so unchanged repos are skipped
+    //  - github_orgs.secret_scan_enabled: NULL = automatic (on for orgs up to
+    //    SECRET_SCAN_MAX_AUTO_ORG_REPOS repos), 1 = always, 0 = never.
+    //    Former org favorites become an explicit "always".
+    database.run('ALTER TABLE github_repos ADD COLUMN secrets_scanned_at DATETIME');
+    database.run('ALTER TABLE github_repos ADD COLUMN secrets_scan_status TEXT');
+    database.run('ALTER TABLE github_orgs ADD COLUMN secret_scan_enabled INTEGER');
+    database.run(`UPDATE github_repos SET secrets_scan_status = 'ok',
+      secrets_scanned_at = (SELECT MAX(s.scanned_at) FROM repo_secrets s WHERE s.github_repo_id = github_repos.id)
+      WHERE id IN (SELECT github_repo_id FROM repo_secrets)`);
+    database.run(`UPDATE github_orgs SET secret_scan_enabled = 1
+      WHERE LOWER(login) IN (SELECT LOWER(target_name) FROM secret_scan_favorites WHERE target_type = 'org')`);
+    database.run(`DELETE FROM secret_scan_favorites WHERE target_type = 'org'`);
+    database.run('PRAGMA user_version = 35');
   }
 
   const finalResult = database.exec('PRAGMA user_version');

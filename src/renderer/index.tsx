@@ -141,7 +141,6 @@ function App() {
   const [secretsScanProgress, setSecretsScanProgress] = useState<SecretsScanProgress | null>(null);
   const [secretsList, setSecretsList] = useState<RepoSecret[]>([]);
   const [secretsListError, setSecretsListError] = useState<string | null>(null);
-  const [favoritedOrgs, setFavoritedOrgs] = useState<Set<string>>(new Set());
   const [favoritedRepos, setFavoritedRepos] = useState<Set<string>>(new Set());
 
   // Groups state
@@ -381,9 +380,7 @@ function App() {
         console.warn('[Jarvis] Could not load secret favorites:', favs.error);
         setSecretsListError((prev) => prev ?? describeIpcFailure('load secret favorites', favs.error));
       } else {
-        const orgs = new Set(favs.filter((f: SecretFavorite) => f.target_type === 'org').map((f: SecretFavorite) => f.target_name));
         const repos = new Set(favs.filter((f: SecretFavorite) => f.target_type === 'repo').map((f: SecretFavorite) => f.target_name));
-        setFavoritedOrgs(orgs);
         setFavoritedRepos(repos);
       }
     } catch (err) {
@@ -981,14 +978,9 @@ function App() {
     await handleClaudeRefresh();
   };
 
-  const handleToggleFavoriteOrg = async (orgLogin: string) => {
-    if (favoritedOrgs.has(orgLogin)) {
-      await window.jarvis.removeSecretFavorite(orgLogin);
-      setFavoritedOrgs((prev) => { const next = new Set(prev); next.delete(orgLogin); return next; });
-    } else {
-      await window.jarvis.addSecretFavorite('org', orgLogin);
-      setFavoritedOrgs((prev) => new Set(prev).add(orgLogin));
-    }
+  const handleToggleOrgSecretScan = async (orgLogin: string, enabled: boolean) => {
+    await window.jarvis.setOrgSecretScan(orgLogin, enabled);
+    await loadOrgs();
   };
 
   const handleToggleFavoriteRepo = async (repoFullName: string) => {
@@ -1105,8 +1097,7 @@ function App() {
             onNotifDive={handleNotifDive}
             onSortToggle={handleSortToggle}
             onRefresh={doFetchNotifications}
-            favoritedOrgs={favoritedOrgs}
-            onToggleFavoriteOrg={handleToggleFavoriteOrg}
+            onToggleOrgSecretScan={handleToggleOrgSecretScan}
             onOrgsChanged={loadOrgs}
           />
         )}

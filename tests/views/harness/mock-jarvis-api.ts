@@ -158,6 +158,7 @@ function defaultResponses(f: Fixtures): Responses {
     listSecretFavorites: [],
     addSecretFavorite: ok,
     removeSecretFavorite: ok,
+    setOrgSecretScan: ok,
     // Agents
     agentsList: f.agents,
     agentsUpdate: ok,

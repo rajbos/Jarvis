@@ -9,6 +9,9 @@ import { refreshRuddrProjectsInBackground, prewarmRuddrCache } from '../plugins/
 import { checkCopilotUsage } from '../plugins/copilot-usage/handler';
 import { runActiveSessionsSweep } from '../plugins/active-sessions/handler';
 import { runReadmeBatch } from '../services/github-repo-catalog';
+import { runSecretsBatch } from '../services/github-secrets';
+import { loadGitHubPat } from '../services/github-oauth';
+import { accessForPrimary } from '../services/github-repo-access';
 import { safeHandle } from '../plugins/ipc-utils';
 import { logger } from '../services/logger';
 import { TaskFailureAlerter, recordTaskFailure, getRecentTaskFailures } from './task-failure-log';
@@ -28,6 +31,8 @@ export const ACTIVE_SESSIONS_INITIAL_DELAY_MS = 20_000;
 export const ACTIVE_SESSIONS_INTERVAL_MS = 2 * 60 * 1000;
 export const REPO_CATALOG_INITIAL_DELAY_MS = 120_000;
 export const REPO_CATALOG_INTERVAL_MS = 60 * 1000;
+export const SECRETS_SCAN_INITIAL_DELAY_MS = 180_000;
+export const SECRETS_SCAN_INTERVAL_MS = 5 * 60 * 1000;
 
 let scheduler: TaskScheduler | null = null;
 
@@ -140,6 +145,21 @@ export function createBackgroundTaskScheduler(
     run: async () => {
       const result = await runReadmeBatch(db);
       return { ...result };
+    },
+  });
+
+  // Trickle-scan GitHub Actions secret names across personal and org repos:
+  // a small batch every few minutes, skipping repos unchanged since their last scan.
+  registerTask(taskScheduler, getWindow, {
+    id: 'github-secrets-scan',
+    label: 'Repo secrets scan trickle',
+    initialDelayMs: SECRETS_SCAN_INITIAL_DELAY_MS,
+    intervalMs: SECRETS_SCAN_INTERVAL_MS,
+    run: async () => {
+      const primary = await accessForPrimary(db);
+      if (!primary) return { skipped: true, reason: 'GitHub not connected' };
+      const { errors, ...result } = await runSecretsBatch(db, { ownerLogin: primary.login, patToken: loadGitHubPat(db) });
+      return { ...result, errorCount: errors.length };
     },
   });
 
