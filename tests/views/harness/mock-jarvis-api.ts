@@ -96,6 +96,8 @@ function defaultResponses(f: Fixtures): Responses {
     getUpdateState: { status: 'up-to-date' },
     checkForUpdatesNow: { status: 'up-to-date' },
     installUpdate: ok,
+    getDiagnosticLogTail: [],
+    openAppLog: ok,
     getSystemLocale: 'en-US',
     openSettings: undefined,
     shellOpenUrl: ok,

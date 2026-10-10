@@ -1355,6 +1355,7 @@ function App() {
         selectedModel={selectedOllamaModel}
         onClose={() => { setShowChatPanel(false); localStorage.setItem('chat-panel-open', 'false'); }}
         onAgentStart={handleOpenChat}
+        onShowRequested={handleOpenChat}
         onNotificationsDismissed={(ids) => {
           console.log('[App] onNotificationsDismissed called with ids:', ids);
           const idSet = new Set(ids.map(String));

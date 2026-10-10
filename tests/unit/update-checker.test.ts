@@ -222,7 +222,28 @@ describe('update checker', () => {
 
     await checkForUpdates();
 
-    expect(getUpdateState()).toEqual({ status: 'error', error: 'no publish config' });
+    expect(getUpdateState()).toMatchObject({ status: 'error', error: 'no publish config' });
+  });
+
+  it('attaches a diagnostic naming the cause and the update version to the error state', async () => {
+    await checkForUpdates(true);
+    autoUpdater.emit('update-available', { version: '1.3.0' });
+    autoUpdater.emit('error', Object.assign(
+      new Error('New version 1.3.0 is not signed by the application owner: no build provenance attestation exists'),
+      { code: 'ERR_UPDATER_INVALID_SIGNATURE' },
+    ));
+
+    const state = getUpdateState();
+    if (state.status !== 'error') throw new Error(`expected error state, got ${state.status}`);
+    expect(state.diagnostic.retry).toBe('update-check');
+    expect(state.diagnostic.facts).toEqual(expect.arrayContaining([
+      { label: 'Cause', value: 'Update could not be verified' },
+      { label: 'Installed version', value: '1.2.3' },
+      { label: 'Update version', value: '1.3.0' },
+    ]));
+    expect(state.diagnostic.links?.map((l) => l.url)).toContain('https://github.com/rajbos/Jarvis/releases/tag/v1.3.0');
+    // The manual-check notification names the real cause instead of blaming the network.
+    expect(mocks.notifications.at(-1)?.options.body).toBe('The downloaded update could not be verified and was not installed.');
   });
 
   // ── safeHandle migration ────────────────────────────────────────────────
