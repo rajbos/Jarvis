@@ -4617,14 +4617,19 @@ h5.ec-heading { font-size: 0.9375rem; }
 .bg-status-copilot .bg-status-claude-pop {
   max-height: calc(100vh - 4rem);
   overflow-y: auto;
-  /* The vertical scrollbar steals width from the max-content popup; reserve its
-     space up front and never let that trigger a horizontal scrollbar. */
   overflow-x: hidden;
-  scrollbar-gutter: stable;
+  /* No visible scrollbar: the ::before hover bridge below the popup adds 10px of
+     overflow inside this scroll box, which always showed a bar. Wheel scrolling
+     still works when several accounts outgrow the window. */
+  scrollbar-width: none;
   /* Fixed width instead of max-content: shorter rows and a wrapping footer keep
      the flyout narrow where it used to stretch for one long line. */
   width: 320px;
   min-width: 0;
+}
+
+.bg-status-copilot .bg-status-claude-pop::-webkit-scrollbar {
+  display: none;
 }
 
 .bg-status-copilot .bg-status-claude-row {
