@@ -82,7 +82,7 @@ const ELIGIBLE_WHERE = `(
     o.secret_scan_enabled = 1
     OR LOWER(o.login) IN (SELECT LOWER(target_name) FROM secret_scan_favorites WHERE target_type = 'org')
     OR (o.secret_scan_enabled IS NULL AND o.discovery_enabled = 1 AND o.large_org = 0
-        AND (SELECT COUNT(*) FROM github_repos x WHERE x.org_id = o.id) <= ${SECRET_SCAN_MAX_AUTO_ORG_REPOS})
+        AND c.n <= ${SECRET_SCAN_MAX_AUTO_ORG_REPOS})
   ))
 )`;
 
@@ -97,7 +97,11 @@ const NEEDS_SCAN_WHERE = `(
   ))
 )`;
 
-const FROM_REPOS = 'FROM github_repos r LEFT JOIN github_orgs o ON o.id = r.org_id';
+// `c` holds each org's repo count, computed once. A correlated COUNT(*) per row
+// scans github_repos (no org_id index) for every candidate: with ~42k repos the
+// query ran for minutes and froze the whole main thread.
+const FROM_REPOS = `FROM github_repos r LEFT JOIN github_orgs o ON o.id = r.org_id
+  LEFT JOIN (SELECT org_id, COUNT(*) AS n FROM github_repos GROUP BY org_id) c ON c.org_id = o.id`;
 
 function ownerPrefix(ownerLogin: string | null | undefined): string {
   // An empty pattern matches no repo name.
