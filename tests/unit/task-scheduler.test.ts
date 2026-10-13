@@ -40,7 +40,7 @@ describe('TaskScheduler', () => {
 
     await scheduler.runNow('failing');
 
-    expect(warn).toHaveBeenCalledWith('[Tasks] Task failed:', 'failing', 'boom');
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/^\[Tasks\] failing failed after \d+ms:$/), 'boom');
     warn.mockRestore();
   });
 

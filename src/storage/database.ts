@@ -54,20 +54,29 @@ export async function getDatabase(customDbPath?: string): Promise<SqlJsDatabase>
     fs.mkdirSync(dir, { recursive: true });
   }
 
+  const t0 = Date.now();
+  const lap = (step: string): void => logger.info(`[DB] ${step} (${Date.now() - t0}ms)`);
+
   // Rotate a backup before loading — once per day, only if there's data to keep.
   rotateDatabaseBackup(resolvedPath);
+  lap('backup rotation done');
 
   const SQL = await initSqlJs();
+  lap('sql.js initialised');
 
   if (fs.existsSync(resolvedPath)) {
     const fileBuffer = fs.readFileSync(resolvedPath);
+    lap(`read ${(fileBuffer.length / 1048576).toFixed(1)} MB from disk`);
     db = new SQL.Database(fileBuffer);
+    lap('database opened in memory');
   } else {
     db = new SQL.Database();
   }
 
   initializeSchema(db);
-  saveDatabase(); // persist after schema init
+  lap('schema checked/migrated');
+  saveDatabaseNow(); // persist after schema init
+  lap('initial save done');
   return db;
 }
 
@@ -825,10 +834,82 @@ export function getDatabasePath(): string | null {
   return dbPath;
 }
 
+/** Quiet period after the last save request before the file is actually written. */
+export const SAVE_DEBOUNCE_MS = 2_000;
+/** Upper bound on how long a pending change may wait while requests keep arriving. */
+export const SAVE_MAX_WAIT_MS = 15_000;
+
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+let firstPendingAt = 0;
+
+/**
+ * Request a save. The whole database is exported and rewritten synchronously on
+ * the main thread (a ~200 MB freeze), and callers invoke this after nearly every
+ * write, so requests are coalesced: the file is written once SAVE_DEBOUNCE_MS
+ * after the last request, or SAVE_MAX_WAIT_MS after the first, whichever is
+ * sooner. closeDatabase() and flushDatabase() write immediately.
+ */
 export function saveDatabase(): void {
+  if (!db || !dbPath) return;
+  const now = Date.now();
+  if (saveTimer === null) {
+    firstPendingAt = now;
+  } else {
+    clearTimeout(saveTimer);
+  }
+  const delay = Math.min(SAVE_DEBOUNCE_MS, Math.max(0, firstPendingAt + SAVE_MAX_WAIT_MS - now));
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    try {
+      saveDatabaseNow();
+    } catch {
+      // writeFileAtomic already logged; the next request retries.
+    }
+  }, delay);
+  saveTimer.unref?.();
+}
+
+/** Write any pending change to disk now. No-op when nothing is pending. */
+export function flushDatabase(): void {
+  if (saveTimer === null) return;
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  saveDatabaseNow();
+}
+
+/** Export and write the database immediately, bypassing the debounce. */
+export function saveDatabaseNow(): void {
+  if (saveTimer !== null) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
   if (db && dbPath) {
+    const t0 = Date.now();
     const data = db.export();
     writeFileAtomic(dbPath, Buffer.from(data));
+    const ms = Date.now() - t0;
+    // Saves block the main thread; surface the slow ones.
+    if (ms >= 250) logger.warn(`[DB] Slow save: ${ms}ms for ${(data.length / 1048576).toFixed(1)} MB`);
+  }
+}
+
+/**
+ * rename() over an existing file fails with EPERM/EACCES/EBUSY on Windows while
+ * antivirus, the search indexer or a sync client briefly holds the file. Those
+ * locks clear within moments, so retry a few times before giving up.
+ */
+function renameWithRetry(from: string, to: string, attempts = 6, delayMs = 100): void {
+  for (let i = 1; ; i++) {
+    try {
+      fs.renameSync(from, to);
+      return;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (i >= attempts || (code !== 'EPERM' && code !== 'EACCES' && code !== 'EBUSY')) throw err;
+      logger.warn(`[DB] rename blocked (${code}), retry ${i}/${attempts - 1}`);
+      // Synchronous callers (saveDatabase) cannot await, so block briefly.
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delayMs * i);
+    }
   }
 }
 
@@ -847,7 +928,7 @@ export function writeFileAtomic(filePath: string, data: Buffer): void {
     } finally {
       fs.closeSync(fd);
     }
-    fs.renameSync(tmpPath, filePath);
+    renameWithRetry(tmpPath, filePath);
   } catch (err) {
     try {
       fs.rmSync(tmpPath, { force: true });
@@ -876,7 +957,7 @@ export function setConfigValue(database: SqlJsDatabase, key: string, value: stri
 
 export function closeDatabase(): void {
   if (db) {
-    saveDatabase();
+    saveDatabaseNow();
     db.close();
     db = null;
     dbPath = null;
