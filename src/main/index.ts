@@ -7,12 +7,13 @@ import { createTray } from './tray';
 import { createOnboardingWindow, createSettingsWindow, createAboutWindow } from './windows';
 import { getOnboardingStatus, completeOnboardingStep } from '../agent/onboarding';
 import { registerIpcHandlers, startDiscoveryIfAuthed } from './ipc-handlers';
-import { startBackgroundTasks, stopBackgroundTasks } from './background-tasks';
+import { startBackgroundTasks, stopBackgroundTasks, getBackgroundTaskScheduler } from './background-tasks';
 import { checkPatForExpiry } from '../plugins/github-auth/handler';
 import { checkOllama } from '../services/ollama';
 import { saveDatabase } from '../storage/database';
 import { stopBridgeServer } from '../plugins/browser-companion/server';
 import { logger, setLogLevel, enableFileLogging } from '../services/logger';
+import { startStallWatchdog } from '../services/stall-watchdog';
 import { checkForUpdates, registerUpdateIpcHandlers, startUpdateChecks, stopUpdateChecks } from './update-checker';
 import { registerDiagnosticsIpcHandlers } from './diagnostics';
 import { safeHandle } from '../plugins/ipc-utils';
@@ -53,6 +54,15 @@ logger.info(`[Startup] Jarvis ${pkg.version} starting (pid ${process.pid}, elect
 // Catch-all for main-process failures outside initialize(). Registering these
 // replaces Electron's default error dialog; the error lands in the log file and
 // the app keeps running in the tray.
+// Log every stretch where the main thread was blocked for 1s+, naming the
+// background tasks that were running, to pin down what freezes the window.
+startStallWatchdog({
+  context: () => {
+    const running = getBackgroundTaskScheduler()?.listTasks().filter((t) => t.running).map((t) => t.id) ?? [];
+    return `running tasks: ${running.length ? running.join(', ') : 'none'}`;
+  },
+});
+
 process.on('uncaughtException', (err) => {
   logger.error('[Main] Uncaught exception:', err);
 });
