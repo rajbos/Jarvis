@@ -43,6 +43,7 @@ You can also run and debug from VS Code: press **F5** and choose
 | `npm run test:coverage` | Run tests with a coverage report (written to `coverage/`) |
 | `npm run test:views` | Render every window in headless Chromium and run the view integration tests |
 | `npm run test:views:install` | One-time download of the headless Chromium used by `test:views` |
+| `npm run screenshots` | Render every view from the same fixtures and save PNGs to `screenshots/` |
 | `npm run lint` | Lint `src` with ESLint (`npm run lint:fix` to autofix) |
 
 ## Before you open a pull request
@@ -84,6 +85,34 @@ then drive the page with Playwright and assert on `view.calls('listOrgs')`. The
 tests fail on uncaught page errors and `console.error` output. When Playwright's
 Chromium is not installed, the harness falls back to a local Edge or Chrome
 (`JARVIS_VIEW_BROWSER_CHANNEL` forces one).
+
+### Screenshots in pull requests
+
+A PR that touches the renderer, plugin views, CSS or `tests/views/` gets a
+comment with a `| Name | Before | After | Diff |` table for every view that
+changed (magenta pixels in the diff changed; unchanged views are collapsed).
+
+- `.github/workflows/pr-screenshots.yml` runs `npm run screenshots` on the PR's
+  base commit and on the PR, then `scripts/screenshot-diff.mjs` compares them and
+  uploads the `view-screenshots` artifact. It runs with a read-only token, so it
+  works for forks too.
+- `.github/workflows/pr-screenshots-comment.yml` runs from `main` after that,
+  checks the artifact belongs to the PR's current head, publishes the PNGs of the
+  changed views to the `view-screenshots` branch and creates or updates one
+  comment (`scripts/screenshot-comment.mjs`). It never runs PR code. When the PR
+  closes its folder is removed from that branch; the comment keeps rendering
+  because the images are linked by commit.
+
+To see the same diff locally:
+
+```powershell
+$env:JARVIS_SCREENSHOT_DIR = 'screenshots/before'; npm run screenshots   # on main
+$env:JARVIS_SCREENSHOT_DIR = 'screenshots/after'; npm run screenshots    # on your branch
+node scripts/screenshot-diff.mjs --before screenshots/before --after screenshots/after --out screenshots
+```
+
+To add a view or state to the table, add it to `SHOTS` in
+`tests/views/screenshots.ts` (fixture data stays synthetic, see above).
 
 ## Conventions
 

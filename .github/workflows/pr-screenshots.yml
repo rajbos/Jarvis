@@ -1,0 +1,109 @@
+name: PR Screenshots
+
+# Renders every view headless from the synthetic fixtures (npm run screenshots)
+# on the PR's base commit and on the PR, diffs them, and uploads before / after /
+# diff PNGs plus report.json as the `view-screenshots` artifact.
+#
+# This run has a read-only token because it executes PR code (forks included).
+# pr-screenshots-comment.yml picks the artifact up from the default branch, with
+# write access, and posts the | Name | Before | After | Diff | comment.
+
+on:
+  pull_request:
+    branches:
+      - '**'
+    paths:
+      - 'src/renderer/**'
+      - 'src/plugins/**'
+      - '**/*.css'
+      - 'tests/views/**'
+      - 'scripts/build-renderer.mjs'
+      - 'scripts/screenshot-*.mjs'
+      - 'vitest.screenshots.config.ts'
+      - '.github/workflows/pr-screenshots.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  screenshots:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+
+    steps:
+      # The runner context is not available in job-level env
+      - name: Set paths
+        run: |
+          echo "SHOTS=$RUNNER_TEMP/view-screenshots" >> "$GITHUB_ENV"
+          echo "BASE_DIR=$RUNNER_TEMP/base" >> "$GITHUB_ENV"
+
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install headless Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Render PR views (after)
+        run: JARVIS_SCREENSHOT_DIR="$SHOTS/after" npm run screenshots
+
+      # The base may predate the screenshot harness or a view may not render there;
+      # whatever is missing simply shows up as "added" in the report.
+      - name: Render base views (before)
+        continue-on-error: true
+        run: |
+          git worktree add --detach "$BASE_DIR" "$BASE_SHA"
+          cd "$BASE_DIR"
+          if [ ! -f tests/views/screenshots.ts ]; then
+            echo "::notice::Base commit has no screenshot harness; every view will be reported as added."
+            exit 0
+          fi
+          npm ci
+          npx playwright install chromium
+          JARVIS_SCREENSHOT_DIR="$SHOTS/before" npm run screenshots
+
+      - name: Diff screenshots
+        run: node scripts/screenshot-diff.mjs --before "$SHOTS/before" --after "$SHOTS/after" --out "$SHOTS"
+
+      - name: Record PR metadata
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          jq -n --argjson number "$PR_NUMBER" --arg headSha "$HEAD_SHA" '{number: $number, headSha: $headSha}' > "$SHOTS/pr.json"
+
+      - name: Job summary
+        run: |
+          {
+            echo '### View screenshots'
+            echo
+            echo '| View | Status | Changed pixels |'
+            echo '|------|--------|----------------|'
+            jq -r '.[] | "| \(.name) | \(.status) | \(.diffPixels) |"' "$SHOTS/report.json"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload screenshots
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: view-screenshots
+          path: ${{ env.SHOTS }}
+          retention-days: 14
+          if-no-files-found: error
