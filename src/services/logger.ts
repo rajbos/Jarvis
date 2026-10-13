@@ -87,3 +87,34 @@ export const logger = {
     writeToFile('debug', args);
   },
 };
+
+/** How far back from the end of the log file readRecentLogLines looks. */
+const LOG_TAIL_BYTES = 256 * 1024;
+
+/**
+ * Returns the last `maxLines` lines of the log file, optionally only those
+ * containing `filter` (case-sensitive substring). Empty when file logging is
+ * off or nothing has been written yet.
+ */
+export function readRecentLogLines(maxLines: number, filter?: string): string[] {
+  if (!logFilePath) return [];
+  let text: string;
+  try {
+    const size = fs.statSync(logFilePath).size;
+    const start = Math.max(0, size - LOG_TAIL_BYTES);
+    const fd = fs.openSync(logFilePath, 'r');
+    try {
+      const buffer = Buffer.alloc(size - start);
+      fs.readSync(fd, buffer, 0, buffer.length, start);
+      text = buffer.toString('utf8');
+    } finally {
+      fs.closeSync(fd);
+    }
+    // A read that starts mid-file almost certainly begins mid-line.
+    if (start > 0) text = text.slice(text.indexOf('\n') + 1);
+  } catch {
+    return [];
+  }
+  const lines = text.split(/\r?\n/).filter((line) => line !== '' && (!filter || line.includes(filter)));
+  return lines.slice(-Math.max(1, maxLines));
+}

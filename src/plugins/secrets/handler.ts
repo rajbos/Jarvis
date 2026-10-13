@@ -4,13 +4,17 @@ import type { BrowserWindow } from 'electron';
 import { loadGitHubPat } from '../../services/github-oauth';
 import { accessForPrimary } from '../../services/github-repo-access';
 import {
-  scanUserRepoSecrets,
+  runSecretsBatch,
+  setOrgSecretScan,
   searchSecrets,
   listSecretFavorites,
   addSecretFavorite,
   removeSecretFavorite,
 } from '../../services/github-secrets';
 import { safeHandle } from '../ipc-utils';
+
+/** "Scan Now" takes a bigger bite than the background trickle; the trickle does the rest. */
+const MANUAL_SCAN_BATCH_SIZE = 100;
 
 export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWindow | null): void {
   // Intentionally kept custom catch/early-return shape (`{ error }`, not `{ ok: false, error }`):
@@ -22,19 +26,26 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
     const pat = loadGitHubPat(db);
 
     try {
-      const result = await scanUserRepoSecrets(
-        db,
-        auth.token,
-        auth.login,
-        (done, total, secretsFound) => {
+      const result = await runSecretsBatch(db, {
+        batchSize: MANUAL_SCAN_BATCH_SIZE,
+        ownerLogin: auth.login,
+        patToken: pat,
+        onProgress: (done, total, secretsFound) => {
           _getWindow()?.webContents.send('secrets:scan-progress', { done, total, secretsFound });
         },
-        pat ?? undefined,
-      );
+      });
       return result;
     } catch (err) {
       return { error: err instanceof Error ? err.message : String(err) };
     }
+  });
+
+  // enabled: true = always scan the org's repos, false = never, null = automatic (small orgs only)
+  safeHandle('secrets:set-org-scan', (_event, orgLogin: string, enabled: boolean | null) => {
+    if (typeof orgLogin !== 'string' || orgLogin.length === 0) return { ok: false, error: 'Invalid orgLogin' };
+    if (enabled !== null && typeof enabled !== 'boolean') return { ok: false, error: 'Invalid enabled value' };
+    setOrgSecretScan(db, orgLogin, enabled);
+    return { ok: true };
   });
 
   safeHandle('secrets:list-all', () => {

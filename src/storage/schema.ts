@@ -73,7 +73,9 @@ export function getSchema(): string {
         indexed_at        DATETIME,
         metadata          TEXT,
         large_org         INTEGER NOT NULL DEFAULT 0,
-        large_org_approved INTEGER NOT NULL DEFAULT 0
+        large_org_approved INTEGER NOT NULL DEFAULT 0,
+        -- Secrets scan: NULL = automatic (small orgs only), 1 = always, 0 = never
+        secret_scan_enabled INTEGER
     );
 
     -- GitHub repositories index (remote)
@@ -100,7 +102,9 @@ export function getSchema(): string {
         readme_excerpt  TEXT,
         readme_etag     TEXT,
         readme_status   TEXT,
-        readme_fetched_at DATETIME
+        readme_fetched_at DATETIME,
+        secrets_scanned_at DATETIME,
+        secrets_scan_status TEXT
     );
 
     -- Folders configured for local repo scanning

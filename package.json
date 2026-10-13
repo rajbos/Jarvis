@@ -1,6 +1,6 @@
 {
   "name": "jarvis",
-  "version": "0.2.1",
+  "version": "0.2.3",
   "description": "Jarvis — a locally-hosted personal assistant agent for GitHub repository maintenance",
   "main": "dist/main/index.js",
   "scripts": {
@@ -37,6 +37,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@joplin/onenote-converter": "^3.7.1",
+    "@sigstore/protobuf-specs": "^0.5.2",
     "@types/node": "^26.6.4",
     "@types/ws": "^8.18.2",
     "@vitest/coverage-v8": "^5.0.3",
@@ -54,6 +55,9 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",
     "@rajbos/ai-engineering-fluency": "^0.7.0",
+    "@sigstore/bundle": "^5.0.0",
+    "@sigstore/tuf": "^5.0.0",
+    "@sigstore/verify": "^4.1.2",
     "electron-updater": "^6.8.9",
     "preact": "^11.0.0",
     "sql.js": "^1.14.2",

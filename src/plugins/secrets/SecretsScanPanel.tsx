@@ -44,7 +44,10 @@ export function SecretsScanPanel({
       )}
 
       <p style={{ fontSize: '0.82rem', color: '#c8c8c8', marginBottom: '0.75rem' }}>
-        Scans your personal repositories for GitHub Actions secret names via the GitHub API.
+        Scans your personal repositories and your organizations' repositories for GitHub Actions
+        secret names via the GitHub API. Orgs with up to 200 repos are included automatically;
+        use the star in the Organizations list to switch an org on or off. Repos are scanned a
+        batch at a time in the background, and only rescanned once they changed (or after 30 days).
         Only secret <em>names</em> are retrieved — values are never exposed.
       </p>
 
@@ -79,6 +82,14 @@ export function SecretsScanPanel({
             <span style={{ color: '#fa8' }}>
               {' '}({lastResult.errors.length} error{lastResult.errors.length !== 1 ? 's' : ''})
             </span>
+          )}
+          {lastResult.eligible !== undefined && lastResult.pending !== undefined && (
+            <div style={{ color: '#aab' }}>
+              {lastResult.pending === 0
+                ? `All ${lastResult.eligible} repo${lastResult.eligible !== 1 ? 's' : ''} in scope are up to date.`
+                : `${lastResult.pending} of ${lastResult.eligible} repos still to scan — continuing in the background.`}
+              {lastResult.stoppedReason === 'rate-limit' && ' Paused to spare the GitHub rate limit.'}
+            </div>
           )}
         </div>
       )}

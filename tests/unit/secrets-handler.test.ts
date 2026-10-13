@@ -6,7 +6,7 @@
  * in-memory DB, then invokes captured handlers directly to verify input
  * guards, DB reads, and favorites CRUD.
  *
- * Network calls (scanUserRepoSecrets) are mocked to keep tests fast and offline.
+ * Network calls (runSecretsBatch) are mocked to keep tests fast and offline.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import initSqlJs, { Database as SqlJsDatabase } from 'sql.js';
@@ -39,7 +39,8 @@ vi.mock('../../src/services/github-repo-access', () => ({
 }));
 
 vi.mock('../../src/services/github-secrets', () => ({
-  scanUserRepoSecrets: vi.fn().mockResolvedValue({ scanned: 0, found: 0 }),
+  runSecretsBatch: vi.fn().mockResolvedValue({ scanned: 0, secretsFound: 0, errors: [], eligible: 0, pending: 0 }),
+  setOrgSecretScan: vi.fn(),
   listSecretsForRepo: vi.fn().mockReturnValue([]),
   searchSecrets: vi.fn().mockReturnValue([]),
   listSecretFavorites: vi.fn().mockReturnValue([]),
@@ -50,6 +51,8 @@ vi.mock('../../src/services/github-secrets', () => ({
 import { registerHandlers } from '../../src/plugins/secrets/handler';
 import { accessForPrimary } from '../../src/services/github-repo-access';
 import {
+  runSecretsBatch,
+  setOrgSecretScan,
   searchSecrets,
   listSecretFavorites,
   addSecretFavorite,
@@ -95,6 +98,29 @@ describe('Secrets plugin — IPC handlers', () => {
       vi.mocked(accessForPrimary).mockResolvedValue(null);
       const result = (await callHandler('secrets:scan')) as Record<string, unknown>;
       expect(result.error).toBe('Not authenticated with GitHub');
+    });
+
+    it('runs one larger batch for the signed-in account', async () => {
+      vi.mocked(accessForPrimary).mockResolvedValue({ token: 'gho_x', login: 'alice' } as never);
+      await callHandler('secrets:scan');
+      expect(runSecretsBatch).toHaveBeenCalledWith(db, expect.objectContaining({ ownerLogin: 'alice', batchSize: 100 }));
+    });
+  });
+
+  // ── secrets:set-org-scan ──────────────────────────────────────────────────
+
+  describe('secrets:set-org-scan', () => {
+    it('accepts true, false and null', () => {
+      for (const value of [true, false, null]) {
+        expect(callHandler('secrets:set-org-scan', 'mycorp', value)).toEqual({ ok: true });
+        expect(setOrgSecretScan).toHaveBeenLastCalledWith(db, 'mycorp', value);
+      }
+    });
+
+    it('rejects an invalid org login or value', () => {
+      expect((callHandler('secrets:set-org-scan', '', true) as Record<string, unknown>).ok).toBe(false);
+      expect((callHandler('secrets:set-org-scan', 'mycorp', 'yes') as Record<string, unknown>).ok).toBe(false);
+      expect(setOrgSecretScan).not.toHaveBeenCalled();
     });
   });
 

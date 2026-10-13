@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld('jarvis', {
   getUpdateState: () => ipcRenderer.invoke('updates:get-state'),
   checkForUpdatesNow: () => ipcRenderer.invoke('updates:check'),
   installUpdate: () => ipcRenderer.invoke('updates:install'),
+  getDiagnosticLogTail: (filter?: string, maxLines?: number) => ipcRenderer.invoke('diagnostics:log-tail', filter, maxLines),
+  openAppLog: () => ipcRenderer.invoke('diagnostics:open-log'),
   onUpdateState: (callback: (state: UpdateState) => void) => {
     const listener = (_event: unknown, state: UpdateState) => callback(state);
     ipcRenderer.on('updates:state', listener);
@@ -104,6 +106,7 @@ contextBridge.exposeInMainWorld('jarvis', {
   listSecretFavorites: () => ipcRenderer.invoke('secrets:list-favorites'),
   addSecretFavorite: (targetType: string, targetName: string) => ipcRenderer.invoke('secrets:add-favorite', targetType, targetName),
   removeSecretFavorite: (targetName: string) => ipcRenderer.invoke('secrets:remove-favorite', targetName),
+  setOrgSecretScan: (orgLogin: string, enabled: boolean | null) => ipcRenderer.invoke('secrets:set-org-scan', orgLogin, enabled),
   onSecretsProgress: (callback: (progress: SecretsScanProgress) => void) => {
     const listener = (_event: unknown, progress: SecretsScanProgress) => callback(progress);
     ipcRenderer.on('secrets:scan-progress', listener);

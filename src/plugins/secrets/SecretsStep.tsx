@@ -17,7 +17,7 @@ export function SecretsStep({
 }: SecretsStepProps) {
   let badgeStatus: 'pending' | 'in-progress' | 'completed' = 'pending';
   let badgeLabel = 'Not scanned';
-  let detail = 'Click to scan your personal repos for GitHub Actions secrets.';
+  let detail = 'Click to scan your personal and org repos for GitHub Actions secrets.';
 
   if (scanning) {
     badgeStatus = 'in-progress';

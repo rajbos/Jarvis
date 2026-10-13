@@ -62,4 +62,25 @@ export type UpdateState =
   | { status: 'up-to-date' }
   | { status: 'downloading'; version: string; percent: number }
   | { status: 'downloaded'; version: string }
-  | { status: 'error'; error: string };
+  | { status: 'error'; error: string; diagnostic: DiagnosticReport };
+
+/**
+ * A self-contained description of something that went wrong, shown as a card in
+ * the chat panel. It carries enough facts to be useful without a model running;
+ * the chat can additionally ask the local model to explain it.
+ */
+export interface DiagnosticReport {
+  id: string;
+  /** Feature that produced it, e.g. 'updates'. */
+  source: string;
+  title: string;
+  /** Plain-language explanation of what happened. */
+  summary: string;
+  facts: Array<{ label: string; value: string }>;
+  /** Substring used to pick the relevant lines out of the app log, e.g. '[Updates]'. */
+  logFilter?: string;
+  links?: Array<{ label: string; url: string }>;
+  /** Lets the card offer a retry for the action that failed. */
+  retry?: 'update-check';
+  occurredAt: string;
+}

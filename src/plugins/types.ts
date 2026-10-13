@@ -123,6 +123,12 @@ export interface Org {
 
   largeOrgApproved?: boolean;
 
+  /** Explicit secrets scan choice; null = automatic (orgs up to 200 repos). */
+  secretScanSetting?: boolean | null;
+
+  /** Whether the org's repos are secrets-scanned, after applying the automatic rule. */
+  secretScanEnabled?: boolean;
+
 }
 
 export interface OrgListResult {
@@ -288,6 +294,14 @@ export interface SecretsScanResult {
   secretsFound?: number;
 
   errors?: string[];
+
+  /** Repos in scope for secrets scanning. */
+  eligible?: number;
+
+  /** Repos still waiting for a (re)scan; the background task picks them up. */
+  pending?: number;
+
+  stoppedReason?: 'rate-limit' | 'done';
 
   error?: string;
 
@@ -1388,6 +1402,7 @@ export type {
   NewRuddrProjectsPayload,
   BrowserExtensionConnectedPayload,
   UpdateState,
+  DiagnosticReport,
 
 } from '../types/ipc-payloads';
 
@@ -1577,6 +1592,9 @@ export interface JarvisApi {
   addSecretFavorite(targetType: 'org' | 'repo', targetName: string): Promise<{ ok: boolean }>;
 
   removeSecretFavorite(targetName: string): Promise<{ ok: boolean }>;
+
+  /** true = always scan the org's repos for secrets, false = never, null = automatic. */
+  setOrgSecretScan(orgLogin: string, enabled: boolean | null): Promise<{ ok: boolean }>;
 
   onSecretsProgress(cb: (progress: SecretsScanProgress) => void): () => void;
 
@@ -1776,6 +1794,10 @@ export interface JarvisApi {
   checkForUpdatesNow(): Promise<UpdateState>;
   installUpdate(): Promise<{ ok: boolean }>;
   onUpdateState(cb: (state: UpdateState) => void): () => void;
+
+  // Diagnostics (chat panel cards)
+  getDiagnosticLogTail(filter?: string, maxLines?: number): Promise<string[] | IpcErrorResponse>;
+  openAppLog(): Promise<{ ok: boolean; error?: string }>;
 
 }
 

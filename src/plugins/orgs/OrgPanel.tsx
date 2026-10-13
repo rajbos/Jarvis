@@ -10,12 +10,12 @@ interface OrgPanelProps {
   notifFetching: boolean;
   sortByNotifs: boolean;
   currentUserLogin: string | null;
-  favoritedOrgs: Set<string>;
   onSelectOrg: (orgLogin: string | null, displayName: string) => void;
   onNotifDive: (owner: string, displayName: string, kind: 'owner' | 'starred') => void;
   onSortToggle: () => void;
   onRefresh: () => void;
-  onToggleFavoriteOrg: (orgLogin: string) => void;
+  /** Switch secrets scanning for an org's repos on or off (overrides the automatic size rule). */
+  onToggleOrgSecretScan: (orgLogin: string, enabled: boolean) => void;
   /** Called after an org setting changed on the main side (e.g. a large org was approved). */
   onOrgsChanged: () => void;
 }
@@ -29,12 +29,11 @@ export function OrgPanel({
   notifFetching,
   sortByNotifs,
   currentUserLogin,
-  favoritedOrgs,
   onSelectOrg,
   onNotifDive,
   onSortToggle,
   onRefresh,
-  onToggleFavoriteOrg,
+  onToggleOrgSecretScan,
   onOrgsChanged,
 }: OrgPanelProps) {
   const sorted = sortByNotifs && notifCounts
@@ -85,7 +84,11 @@ export function OrgPanel({
       <div class="org-list">
         {sorted.map((org) => {
           const nc = notifCounts?.perOrg[org.login] ?? 0;
-          const isFav = favoritedOrgs.has(org.login);
+          const scanOn = org.secretScanEnabled ?? false;
+          const scanAuto = org.secretScanSetting === null || org.secretScanSetting === undefined;
+          const scanTitle = scanOn
+            ? `Secrets scan on${scanAuto ? ' (automatic: org has at most 200 repos)' : ''} — click to turn off`
+            : `Secrets scan off${scanAuto ? ' (automatic: org has more than 200 repos)' : ''} — click to turn on`;
           return (
             <div
               key={org.login}
@@ -106,11 +109,11 @@ export function OrgPanel({
                 <span class="org-repos-count">{formatNumber(org.repoCount)} repo{org.repoCount !== 1 ? 's' : ''}</span>
               </span>
               <span
-                class={`fav-star${isFav ? ' fav-star-active' : ''}`}
-                title={isFav ? 'Remove from secrets scan favorites' : 'Add to secrets scan favorites'}
-                onClick={(e: MouseEvent) => { e.stopPropagation(); onToggleFavoriteOrg(org.login); }}
+                class={`fav-star${scanOn ? ' fav-star-active' : ''}`}
+                title={scanTitle}
+                onClick={(e: MouseEvent) => { e.stopPropagation(); onToggleOrgSecretScan(org.login, !scanOn); }}
               >
-                {isFav ? '\u2605' : '\u2606'}
+                {scanOn ? '\u2605' : '\u2606'}
               </span>
               {org.largeOrg && !org.largeOrgApproved && (
                 <button

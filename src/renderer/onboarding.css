@@ -4617,14 +4617,19 @@ h5.ec-heading { font-size: 0.9375rem; }
 .bg-status-copilot .bg-status-claude-pop {
   max-height: calc(100vh - 4rem);
   overflow-y: auto;
-  /* The vertical scrollbar steals width from the max-content popup; reserve its
-     space up front and never let that trigger a horizontal scrollbar. */
   overflow-x: hidden;
-  scrollbar-gutter: stable;
+  /* No visible scrollbar: the ::before hover bridge below the popup adds 10px of
+     overflow inside this scroll box, which always showed a bar. Wheel scrolling
+     still works when several accounts outgrow the window. */
+  scrollbar-width: none;
   /* Fixed width instead of max-content: shorter rows and a wrapping footer keep
      the flyout narrow where it used to stretch for one long line. */
   width: 320px;
   min-width: 0;
+}
+
+.bg-status-copilot .bg-status-claude-pop::-webkit-scrollbar {
+  display: none;
 }
 
 .bg-status-copilot .bg-status-claude-row {
@@ -5643,4 +5648,131 @@ h5.ec-heading { font-size: 0.9375rem; }
 
 .as-verdict--closed {
   color: #7a8fb0;
+}
+
+/* ── Chat diagnostic card ────────────────────────────────────────────────── */
+.ec-diag {
+  align-self: stretch;
+  background: #241a22;
+  border: 1px solid #5a2d3a;
+  border-left: 3px solid #e94560;
+  border-radius: 8px;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.875rem;
+  color: #dde;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.ec-diag-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.ec-diag-icon {
+  color: #f08090;
+}
+
+.ec-diag-title {
+  font-weight: 600;
+  color: #f0b9b9;
+  flex: 1;
+}
+
+.ec-diag-time {
+  font-size: 0.75rem;
+  color: #8899bb;
+}
+
+.ec-diag-summary {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.ec-diag-facts {
+  margin: 0;
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.15rem 0.6rem;
+  font-size: 0.8125rem;
+}
+
+.ec-diag-fact {
+  display: contents;
+}
+
+.ec-diag-fact dt {
+  color: #8899bb;
+}
+
+.ec-diag-fact dd {
+  margin: 0;
+  word-break: break-word;
+  font-family: Consolas, 'Cascadia Mono', monospace;
+  font-size: 0.78rem;
+}
+
+.ec-diag-log-toggle {
+  align-self: flex-start;
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: #5580a8;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.ec-diag-log-toggle:hover {
+  color: #8ab4e8;
+}
+
+.ec-diag-log {
+  margin: 0;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.ec-diag-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.ec-diag-btn {
+  background: #1e2a40;
+  border: 1px solid #2c3e60;
+  color: #cdd8f0;
+  border-radius: 6px;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.ec-diag-btn:hover:not(:disabled) {
+  background: #263655;
+}
+
+.ec-diag-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ec-diag-btn--primary {
+  background: #0f3460;
+  border-color: #3a7bd5;
+}
+
+.ec-diag-btn--link {
+  color: #8ab4e8;
+}
+
+.ec-diag-hint {
+  font-size: 0.75rem;
+  color: #8899bb;
+}
+
+.ec-diag-hint--error {
+  color: #f08090;
 }

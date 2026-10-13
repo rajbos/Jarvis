@@ -13,6 +13,7 @@ import {
 
 import { currentApiBase, currentHostContext, hostKey } from './github-host';
 import { recordRepoVisibility } from './github-repo-visibility';
+import { isOrgSecretScanOn } from './github-secrets';
 const PER_PAGE = 100;
 const CALLS_PER_BATCH = 500;
 const BATCH_PAUSE_MS = 10_000; // 10 seconds between batches
@@ -75,6 +76,10 @@ export interface OrgInfo {
   /** More than MAX_ORG_REPOS repos: not scanned until approved. */
   largeOrg: boolean;
   largeOrgApproved: boolean;
+  /** Explicit secrets scan choice; null = automatic (small orgs only). */
+  secretScanSetting: boolean | null;
+  /** Whether the org's repos are secrets-scanned, after applying the automatic rule. */
+  secretScanEnabled: boolean;
 }
 
 interface GitHubRepo {
@@ -326,13 +331,16 @@ export function listOrgs(db: SqlJsDatabase): { orgs: OrgInfo[]; directRepoCount:
   const stmt = db.prepare(
     `SELECT o.id, o.login, o.name, o.discovery_enabled, o.indexed_at,
             (SELECT COUNT(*) FROM github_repos r WHERE r.org_id = o.id) AS repo_count,
-            o.large_org, o.large_org_approved
+            o.large_org, o.large_org_approved,
+            CASE WHEN EXISTS (SELECT 1 FROM secret_scan_favorites f
+                              WHERE f.target_type = 'org' AND LOWER(f.target_name) = LOWER(o.login))
+                 THEN 1 ELSE o.secret_scan_enabled END AS secret_scan_enabled
      FROM github_orgs o
      ORDER BY o.login COLLATE NOCASE`,
   );
   while (stmt.step()) {
-    const row = stmt.getAsObject() as { id: number; login: string; name: string | null; discovery_enabled: number; indexed_at: string | null; repo_count: number; large_org: number; large_org_approved: number };
-    orgs.push({
+    const row = stmt.getAsObject() as { id: number; login: string; name: string | null; discovery_enabled: number; indexed_at: string | null; repo_count: number; large_org: number; large_org_approved: number; secret_scan_enabled: number | null };
+    const org = {
       id: row.id,
       login: row.login,
       name: row.name,
@@ -341,7 +349,9 @@ export function listOrgs(db: SqlJsDatabase): { orgs: OrgInfo[]; directRepoCount:
       repoCount: row.repo_count,
       largeOrg: row.large_org === 1,
       largeOrgApproved: row.large_org_approved === 1,
-    });
+      secretScanSetting: row.secret_scan_enabled === null ? null : row.secret_scan_enabled === 1,
+    };
+    orgs.push({ ...org, secretScanEnabled: isOrgSecretScanOn(org) });
   }
   stmt.free();
 

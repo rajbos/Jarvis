@@ -251,6 +251,7 @@ describe('Migration chain completeness (no orphaned user_version)', () => {
     31: `CREATE TABLE github_repos (id INTEGER PRIMARY KEY AUTOINCREMENT, full_name TEXT); CREATE TABLE github_orgs (id INTEGER PRIMARY KEY AUTOINCREMENT, login TEXT); CREATE TABLE github_notifications (id TEXT PRIMARY KEY)`,
     32: `CREATE TABLE github_repos (id INTEGER PRIMARY KEY AUTOINCREMENT, full_name TEXT); CREATE TABLE github_orgs (id INTEGER PRIMARY KEY AUTOINCREMENT, login TEXT)`,
     30: `CREATE TABLE agent_definitions (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, system_prompt TEXT, updated_at DATETIME)`,
+    34: `CREATE TABLE github_repos (id INTEGER PRIMARY KEY AUTOINCREMENT, full_name TEXT); CREATE TABLE github_orgs (id INTEGER PRIMARY KEY AUTOINCREMENT, login TEXT); CREATE TABLE repo_secrets (id INTEGER PRIMARY KEY AUTOINCREMENT, github_repo_id INTEGER, secret_name TEXT, scanned_at DATETIME); CREATE TABLE secret_scan_favorites (id INTEGER PRIMARY KEY AUTOINCREMENT, target_type TEXT, target_name TEXT)`,
   };
 
   it('advances the version from every intermediate user_version (0..28)', async () => {
@@ -397,5 +398,31 @@ describe('Migration v33 -> v34', () => {
     expect(oldDb.exec('PRAGMA user_version')[0].values[0][0]).toBe(34);
     const cols = oldDb.exec('PRAGMA table_info(task_failures)')[0].values.map((r) => r[1]);
     expect(cols).toEqual(['id', 'task_id', 'failed_at', 'error']);
+  });
+});
+
+describe('Migration v34 -> v35', () => {
+  it('adds secrets scan columns and turns org favorites into an explicit org setting', async () => {
+    const SQL = await initSqlJs();
+    const oldDb = new SQL.Database();
+    oldDb.run(`CREATE TABLE github_orgs (id INTEGER PRIMARY KEY, login TEXT NOT NULL UNIQUE)`);
+    oldDb.run(`CREATE TABLE github_repos (id INTEGER PRIMARY KEY, full_name TEXT NOT NULL UNIQUE)`);
+    oldDb.run(`CREATE TABLE repo_secrets (id INTEGER PRIMARY KEY, github_repo_id INTEGER, secret_name TEXT, scanned_at DATETIME)`);
+    oldDb.run(`CREATE TABLE secret_scan_favorites (id INTEGER PRIMARY KEY, target_type TEXT, target_name TEXT UNIQUE)`);
+    oldDb.run(`INSERT INTO github_orgs (id, login) VALUES (1, 'FavCorp'), (2, 'other')`);
+    oldDb.run(`INSERT INTO github_repos (id, full_name) VALUES (1, 'alice/a'), (2, 'alice/b')`);
+    oldDb.run(`INSERT INTO repo_secrets (github_repo_id, secret_name, scanned_at) VALUES (1, 'X', '2026-01-02 03:04:05')`);
+    oldDb.run(`INSERT INTO secret_scan_favorites (target_type, target_name) VALUES ('org', 'favcorp'), ('repo', 'alice/b')`);
+    oldDb.run('PRAGMA user_version = 34');
+
+    initializeSchema(oldDb);
+
+    expect(oldDb.exec('PRAGMA user_version')[0].values[0][0]).toBe(35);
+    expect(oldDb.exec('SELECT login, secret_scan_enabled FROM github_orgs ORDER BY id')[0].values).toEqual([['FavCorp', 1], ['other', null]]);
+    expect(oldDb.exec('SELECT id, secrets_scanned_at, secrets_scan_status FROM github_repos ORDER BY id')[0].values).toEqual([
+      [1, '2026-01-02 03:04:05', 'ok'],
+      [2, null, null],
+    ]);
+    expect(oldDb.exec('SELECT target_type, target_name FROM secret_scan_favorites')[0].values).toEqual([['repo', 'alice/b']]);
   });
 });
