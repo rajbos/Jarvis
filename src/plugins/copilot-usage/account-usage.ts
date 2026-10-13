@@ -9,7 +9,7 @@ import {
   type BillingMonth,
   type CopilotQuota,
 } from '../../services/copilot-usage';
-import type { CopilotRawResponse, CopilotUsage } from '../types';
+import type { CopilotModelUsage, CopilotRawResponse, CopilotUsage } from '../types';
 
 /** Fields every usage result carries regardless of source. */
 export type UsageBase = Pick<CopilotUsage, 'year' | 'month' | 'resetsAt' | 'budgetCredits' | 'fetchedAt'>;
@@ -60,6 +60,26 @@ export function quotaToUsage(
   };
 }
 
+/**
+ * Per-model split from the public billing report, to enrich a quota-endpoint
+ * result (which only carries totals). Tries each token in turn; `byModel` is
+ * empty when none can read the report or the account has no personal usage
+ * (org/enterprise-billed seats report 0 there).
+ */
+export async function fetchModelBreakdown(
+  attempts: Array<{ token: string; login: string }>,
+  period: BillingMonth,
+  apiBase?: string,
+): Promise<{ byModel: CopilotModelUsage[]; raw: CopilotRawResponse[] }> {
+  const raw: CopilotRawResponse[] = [];
+  for (const { token, login } of attempts) {
+    const result = await fetchAiCreditUsage(token, login, period, apiBase);
+    if (result.raw) raw.push(result.raw);
+    if (result.ok) return { byModel: result.summary.byModel, raw };
+  }
+  return { byModel: [], raw };
+}
+
 /** Everything Jarvis can authenticate as for one GitHub account. */
 export interface AccountCredentials {
   login: string;
@@ -93,7 +113,13 @@ export async function fetchAccountCopilotUsage(
   if (creds.ghToken) {
     const quota = await fetchCopilotQuota(creds.ghToken, creds.apiBase);
     if (quota.raw) rawResponses.push(quota.raw);
-    if (quota.ok) return { ...quotaToUsage(base, quota.quota, period, now, creds.login), rawResponses };
+    if (quota.ok) {
+      const usage = quotaToUsage(base, quota.quota, period, now, creds.login);
+      const tokens = [creds.oauth?.accessToken, creds.pat].filter((t): t is string => !!t);
+      const models = await fetchModelBreakdown(tokens.map((token) => ({ token, login: usage.login || creds.login })), period, creds.apiBase);
+      rawResponses.push(...models.raw);
+      return { ...usage, byModel: models.byModel, rawResponses };
+    }
     quotaError = quota.error;
   }
 

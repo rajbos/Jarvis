@@ -12,7 +12,7 @@ import {
   projectMonthEndUsage,
   type AiCreditFetchResult,
 } from '../../services/copilot-usage';
-import { quotaToUsage } from './account-usage';
+import { fetchModelBreakdown, quotaToUsage } from './account-usage';
 import { getConfigValue, setConfigValue, saveDatabase } from '../../storage/database';
 import type { CopilotRawResponse, CopilotUsage } from '../types';
 
@@ -129,6 +129,20 @@ export async function checkCopilotUsage(
     if (quotaResult.raw) rawResponses.push(quotaResult.raw);
     if (quotaResult.ok) {
       usage = quotaToUsage(base, quotaResult.quota, period, now, auth?.login ?? primaryLogin ?? undefined);
+      // The quota endpoint only has totals; the billing report adds the per-model split.
+      const attempts: Array<{ token: string; login: string }> = [];
+      if (auth) attempts.push({ token: auth.accessToken, login: auth.login });
+      if (pat) {
+        try {
+          if (patLogin?.pat !== pat) patLogin = { pat, login: (await fetchGitHubUser(pat)).login };
+          attempts.push({ token: pat, login: patLogin.login });
+        } catch (err) {
+          logger.debug('[copilot-usage] PAT user lookup failed:', err instanceof Error ? err.message : String(err));
+        }
+      }
+      const models = await fetchModelBreakdown(attempts, period);
+      rawResponses.push(...models.raw);
+      usage = { ...usage, byModel: models.byModel };
     } else {
       logger.debug(`[copilot-usage] GitHub CLI quota lookup failed (${quotaResult.error}); falling back to billing report`);
     }
