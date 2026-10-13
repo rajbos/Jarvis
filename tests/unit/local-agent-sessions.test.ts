@@ -190,6 +190,7 @@ describe('filesystem discovery', () => {
       cloudTaskId: 'task-live',
       pid: 111,
       startedAt: '2026-03-01T10:00:00.000Z',
+      sessionFile: path.join(home, '.copilot', 'session-state', 'live', 'events.jsonl'),
     });
     expect([...result.mirroredTasks.entries()].sort()).toEqual([['task-dead', 'Copilot CLI'], ['task-live', 'Copilot app']]);
   });
@@ -284,6 +285,7 @@ describe('filesystem discovery', () => {
       cwd,
       activity: 'working',
       pid: 333,
+      sessionFile: path.join(projectDir, 'sess-1.jsonl'),
     });
   });
 

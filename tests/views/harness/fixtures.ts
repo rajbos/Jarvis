@@ -383,6 +383,7 @@ export function createFixtures(now: number) {
           cwd: `${LOCAL_ROOT}\\acme-labs\\anvil-api`,
           repoFullName: REPO_ANVIL, branch: 'claude/retry-queue', activity: 'working',
           startedAt: iso(now, -25 * 60 * 1000), updatedAt: iso(now, -2 * 60 * 1000), pid: 4242, branchPushed: true,
+          localUsage: { primaryModel: 'claude-opus-5-5', models: ['claude-haiku-5-5', 'claude-opus-5-5'], totalTokens: 4_820_000, credits: null, estimatedUsd: 3.47 },
         },
         agent: { light: 'amber', label: 'Working', detail: 'The agent is still editing files', blocking: false },
         pr: {
@@ -403,6 +404,7 @@ export function createFixtures(now: number) {
           cwd: `${LOCAL_ROOT}\\globex-oss\\hammock`,
           repoFullName: REPO_HAMMOCK, branch: 'copilot/sunset-colors', activity: 'idle',
           startedAt: iso(now, -DAY - 60 * 60 * 1000), updatedAt: iso(now, -DAY), pid: 4343, branchPushed: true,
+          localUsage: { primaryModel: 'claude-sonnet-5.5', models: ['claude-sonnet-5.5'], totalTokens: 6_840_000, credits: 20.82, estimatedUsd: 2.08 },
         },
         agent: { light: 'green', label: 'Idle', detail: 'Waiting for the next prompt', blocking: false },
         pr: {

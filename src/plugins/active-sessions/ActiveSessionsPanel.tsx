@@ -8,6 +8,7 @@ import type {
   ActiveSessionSourceStatus,
   ActiveSessionsSnapshot,
   AgentProvider,
+  LocalSessionUsage,
   ReadinessStage,
 } from '../types';
 import type { CloudTaskSession } from '../../services/copilot-agent-tasks';
@@ -48,7 +49,38 @@ function formatCredits(usage: CloudTaskSession['usage']): string | null {
   if (usage.kind === 'premium_requests') {
     return `${usage.amount % 1 === 0 ? usage.amount : usage.amount.toFixed(1)} premium req`;
   }
-  return `${usage.amount >= 10 ? usage.amount.toFixed(0) : usage.amount.toFixed(2)} credits`;
+  return formatCreditAmount(usage.amount);
+}
+
+function formatCreditAmount(amount: number): string {
+  return `${amount >= 10 ? amount.toFixed(0) : amount.toFixed(2)} credits`;
+}
+
+function formatTokens(tokens: number): string {
+  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`;
+  if (tokens >= 1_000) return `${Math.round(tokens / 1_000)}k`;
+  return String(tokens);
+}
+
+/** Chip text for a local session: exact Copilot credits, otherwise an estimated dollar cost. */
+function formatLocalUsage(usage: LocalSessionUsage): { label: string; title: string } {
+  const model = usage.primaryModel ?? 'session';
+  const more = usage.models.length > 1 ? ` +${usage.models.length - 1}` : '';
+  const tokens = `${formatTokens(usage.totalTokens)} tokens`;
+  const models = usage.models.join(', ') || 'unknown model';
+  if (usage.credits !== null) {
+    return {
+      label: `${model}${more} · ${formatCreditAmount(usage.credits)}`,
+      title: `Billed so far (from the local session log): ${formatCreditAmount(usage.credits)}, ${tokens}
+Models: ${models}`,
+    };
+  }
+  const usd = usage.estimatedUsd >= 10 ? usage.estimatedUsd.toFixed(0) : usage.estimatedUsd.toFixed(2);
+  return {
+    label: `${model}${more} · ~$${usd}`,
+    title: `Estimated at API rates from ${tokens} — not a bill
+Models: ${models}`,
+  };
 }
 
 /** "14:32" for today, "Yesterday 14:32" / "Mon 14:32" / "12 Sep 14:32" otherwise. */
@@ -93,6 +125,10 @@ function SessionRow({ entry }: { entry: ActiveSessionEntry }) {
               {cs.model ?? 'session'}{formatCredits(cs.usage) ? ` · ${formatCredits(cs.usage)}` : ''}
             </span>
           ))}
+          {session.localUsage && (() => {
+            const { label, title } = formatLocalUsage(session.localUsage);
+            return <span class="as-chip as-chip--model" title={title}>{label}</span>;
+          })()}
           {(session.cloudSessions?.length ?? 0) > 3 && (
             <span class="as-chip as-chip--model" title={`${session.cloudSessions!.length} Copilot cloud agent sessions`}>
               +{session.cloudSessions!.length - 3} more

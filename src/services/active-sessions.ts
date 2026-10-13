@@ -18,6 +18,7 @@ import {
   discoverCopilotLocalSessions,
   type LocalSessionDiscoveryOptions,
 } from './local-agent-sessions';
+import { attachLocalSessionUsage, type AnalyzeSessionFile } from './local-session-usage';
 import {
   cloudStateToActivity,
   fetchCopilotTaskSessions,
@@ -56,6 +57,8 @@ export interface CollectActiveSessionsOptions extends LocalSessionDiscoveryOptio
   cloudFinishedWindowMs?: number;
   /** Max per-task detail calls per refresh; keeps the sweep inside the rate limit. */
   cloudSessionDetailLimit?: number;
+  /** Parser for local session usage; defaults to the ai-engineering-fluency package, null disables it. */
+  analyzeSessionFile?: AnalyzeSessionFile | null;
   /** How often to re-list every agent task; in between only changed tasks are fetched. */
   cloudFullListIntervalMs?: number;
 }
@@ -263,6 +266,7 @@ export async function collectActiveSessions(options: CollectActiveSessionsOption
   } else {
     sources.claudeLocal = fail(claudeResult.reason);
   }
+  await attachLocalSessionUsage(localSessions, options.analyzeSessionFile);
 
   const links: PendingLink[] = [];
   for (const session of localSessions) {

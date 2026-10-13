@@ -53,6 +53,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",
+    "@rajbos/ai-engineering-fluency": "^0.7.0",
     "electron-updater": "^6.8.9",
     "preact": "^11.0.0",
     "sql.js": "^1.14.2",
