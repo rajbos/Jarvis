@@ -134,7 +134,7 @@ jobs:
           else
             git commit -q -m "Screenshots for PR #$NUMBER at ${HEAD_SHA:0:7}"
             pushed=false
-            for attempt in 1 2 3; do
+            for _ in 1 2 3; do
               if git push -q origin "HEAD:$ASSETS_BRANCH"; then pushed=true; break; fi
               git pull -q --rebase origin "$ASSETS_BRANCH"
             done
@@ -213,7 +213,7 @@ jobs:
           fi
           git rm -rq "pr-$NUMBER"
           git commit -q -m "Remove screenshots for closed PR #$NUMBER"
-          for attempt in 1 2 3; do
+          for _ in 1 2 3; do
             git push -q origin "HEAD:$ASSETS_BRANCH" && exit 0
             git pull -q --rebase origin "$ASSETS_BRANCH"
           done
