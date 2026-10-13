@@ -26,7 +26,17 @@ if (process.env.JARVIS_CONFIG_DIR) {
   // stored token. Use the installed app's folder so both share one key.
   app.setPath('userData', path.join(app.getPath('appData'), 'Jarvis'));
 }
-setLogLevel(app.isPackaged ? 'warn' : 'debug');
+// 'info' in packaged builds so the startup timeline and per-task run lines reach
+// main.log; that is what diagnoses a hang on launch (5 MB cap, rotated).
+setLogLevel(app.isPackaged ? 'info' : 'debug');
+const startupT0 = Date.now();
+let startupLast = startupT0;
+/** Log a startup milestone with total elapsed time and time since the previous one. */
+function startupStep(step: string): void {
+  const now = Date.now();
+  logger.info(`[Startup] ${step} (+${now - startupLast}ms, ${now - startupT0}ms total)`);
+  startupLast = now;
+}
 
 // Packaged builds have no attached console, so persist logs to disk
 // (%APPDATA%\Jarvis\logs\main.log on Windows) and keep native crash dumps
@@ -38,6 +48,7 @@ try {
   logger.warn('[Main] Could not enable file logging:', err);
 }
 crashReporter.start({ uploadToServer: false, compress: true });
+logger.info(`[Startup] Jarvis ${pkg.version} starting (pid ${process.pid}, electron ${process.versions.electron}, ${process.platform}/${process.arch})`);
 
 // Catch-all for main-process failures outside initialize(). Registering these
 // replaces Electron's default error dialog; the error lands in the log file and
@@ -57,12 +68,15 @@ let _tray: Tray | null = null;
 let currentDb: Awaited<ReturnType<typeof getDatabase>> | null = null;
 
 async function initialize(): Promise<void> {
+  startupStep('initialize() begin');
   const config = loadConfig();
+  startupStep('config loaded');
 
   // Initialize the database (creates it if not present)
   const db = await getDatabase(config.storage.database);
   currentDb = db;
   logger.info('Database initialized at:', config.storage.database);
+  startupStep('database ready');
 
   // Register IPC handlers for renderer ↔ main communication
   registerIpcHandlers(db, () => mainWindow);
@@ -72,6 +86,7 @@ async function initialize(): Promise<void> {
   safeHandle('app:open-settings', () => {
     showSettingsWindow();
   });
+  startupStep('IPC handlers registered');
   // Validate the stored GitHub PAT on startup; warn clearly when it has
   // expired or been revoked instead of silently failing API calls later.
   checkPatForExpiry(db, () => mainWindow).then((expired) => {
@@ -140,19 +155,23 @@ async function initialize(): Promise<void> {
   // hidden login launch via the --hidden arg we register in setLoginItemSettings.
   const startedHidden = process.argv.includes('--hidden') || config.electron.startMinimized;
 
+  startupStep('tray created');
   if (!startedHidden) {
     showMainWindow();
+    startupStep('main window created');
   }
 
   // If GitHub auth is already set up, start background discovery
   const githubReady = !needsOnboarding || onboarding.github_oauth === 'completed';
   if (githubReady) {
     startDiscoveryIfAuthed(db, () => mainWindow);
+    startupStep('discovery started');
   }
 
   // Start centralized main-process background jobs. These continue to run even
   // when renderer panels are not mounted.
   startBackgroundTasks(db, () => mainWindow, { githubReady });
+  startupStep('background tasks started');
 
   // Register for startup on login (only when packaged — in dev mode the bare
   // electron.exe would be registered without the app path, causing the default
@@ -164,6 +183,7 @@ async function initialize(): Promise<void> {
     });
   }
   startUpdateChecks();
+  startupStep('initialize() complete');
 }
 
 function showMainWindow(): void {
@@ -174,6 +194,7 @@ function showMainWindow(): void {
   }
   mainWindow = createOnboardingWindow(currentDb!);
   mainWindow.once('ready-to-show', () => {
+    startupStep('main window ready-to-show');
     mainWindow?.show();
     mainWindow?.focus();
   });
@@ -227,6 +248,7 @@ if (app.isPackaged) {
 }
 
 app.whenReady().then(() => {
+  startupStep('electron ready');
   // Content Security Policy: prevent inline scripts, eval(), and
   // unauthorized resource loads even if the renderer is compromised.
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {

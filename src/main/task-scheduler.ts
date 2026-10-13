@@ -138,9 +138,11 @@ export class TaskScheduler {
     task.running = true;
     const startedAtMs = Date.now();
     const startedAt = nowIso();
+    logger.info(`[Tasks] ${task.id} started`);
     try {
       const result = await task.run();
       const finishedAt = nowIso();
+      logger.info(`[Tasks] ${task.id} finished in ${Date.now() - startedAtMs}ms`);
       const record: TaskRunRecord = {
         taskId: task.id,
         status: 'success',
@@ -163,7 +165,7 @@ export class TaskScheduler {
         error: errorMessage(err),
       };
       task.lastRun = record;
-      logger.warn('[Tasks] Task failed:', task.id, record.error);
+      logger.warn(`[Tasks] ${task.id} failed after ${record.durationMs}ms:`, record.error);
       this.onRunComplete?.(record);
       return record;
     } finally {

@@ -5,7 +5,7 @@ import os from 'os';
 import path from 'path';
 import initSqlJs, { Database as SqlJsDatabase } from 'sql.js';
 import { getSchema } from '../../src/storage/schema';
-import { writeFileAtomic, getConfigValue, setConfigValue, initializeSchema, LATEST_SCHEMA_VERSION } from '../../src/storage/database';
+import { writeFileAtomic, getDatabase, closeDatabase, saveDatabase, flushDatabase, SAVE_DEBOUNCE_MS, SAVE_MAX_WAIT_MS, getConfigValue, setConfigValue, initializeSchema, LATEST_SCHEMA_VERSION } from '../../src/storage/database';
 
 describe('Database Schema', () => {
   let db: SqlJsDatabase;
@@ -386,6 +386,75 @@ describe('writeFileAtomic', () => {
     expect(() => writeFileAtomic(target, Buffer.from('new'))).toThrow('disk full');
     expect(fs.readFileSync(target, 'utf-8')).toBe('original');
     expect(fs.readdirSync(dir)).toEqual(['jarvis.db']);
+  });
+
+  it('retries the rename when the target is briefly locked (EPERM)', () => {
+    const target = path.join(dir, 'jarvis.db');
+    const realRename = fs.renameSync;
+    let calls = 0;
+    vi.spyOn(fs, 'renameSync').mockImplementation((from, to) => {
+      if (++calls < 3) throw Object.assign(new Error('locked'), { code: 'EPERM' });
+      realRename(from, to);
+    });
+    writeFileAtomic(target, Buffer.from('data'));
+    expect(calls).toBe(3);
+    expect(fs.readFileSync(target, 'utf-8')).toBe('data');
+  });
+
+  it('does not retry non-lock errors', () => {
+    const target = path.join(dir, 'jarvis.db');
+    const rename = vi.spyOn(fs, 'renameSync').mockImplementation(() => {
+      throw Object.assign(new Error('nope'), { code: 'ENOENT' });
+    });
+    expect(() => writeFileAtomic(target, Buffer.from('x'))).toThrow('nope');
+    expect(rename).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('saveDatabase coalescing', () => {
+  let dir: string;
+  let dbFile: string;
+  beforeEach(async () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jarvis-save-'));
+    dbFile = path.join(dir, 'jarvis.db');
+    await getDatabase(dbFile);
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    closeDatabase();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('writes once after a burst of requests', () => {
+    const write = vi.spyOn(fs, 'renameSync');
+    saveDatabase();
+    saveDatabase();
+    saveDatabase();
+    expect(write).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(SAVE_DEBOUNCE_MS);
+    expect(write).toHaveBeenCalledTimes(1);
+  });
+
+  it('writes within the max wait even if requests keep arriving', () => {
+    const write = vi.spyOn(fs, 'renameSync');
+    for (let t = 0; t < SAVE_MAX_WAIT_MS; t += SAVE_DEBOUNCE_MS / 2) {
+      saveDatabase();
+      vi.advanceTimersByTime(SAVE_DEBOUNCE_MS / 2);
+    }
+    expect(write).toHaveBeenCalled();
+  });
+
+  it('flushDatabase writes immediately and only when something is pending', () => {
+    const write = vi.spyOn(fs, 'renameSync');
+    flushDatabase();
+    expect(write).not.toHaveBeenCalled();
+    saveDatabase();
+    flushDatabase();
+    expect(write).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(SAVE_MAX_WAIT_MS);
+    expect(write).toHaveBeenCalledTimes(1);
   });
 });
 
