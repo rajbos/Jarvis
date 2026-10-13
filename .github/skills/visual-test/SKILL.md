@@ -89,6 +89,20 @@ compare the images visually rather than by file hash.
   build if the local user, host or git identity shows up in the fixtures.
 - Keep `npm run test:views` green: the same fixtures drive the headless view tests.
 
+## In pull requests
+
+The same screenshots run on every PR that touches the views
+(`.github/workflows/pr-screenshots.yml`): base vs. PR, diffed by
+`scripts/screenshot-diff.mjs`, and posted as a `| Name | Before | After | Diff |`
+comment by `.github/workflows/pr-screenshots-comment.yml`. A new entry in `SHOTS`
+shows up there as "added" automatically. Compare two local runs the same way:
+
+```shell
+node scripts/screenshot-diff.mjs --before <dir> --after <dir> --out <dir>
+```
+
+It writes `<out>/diff/<name>.png` (changed pixels in magenta) and `<out>/report.json`.
+
 ## Related
 
 - `npm run test:views` — the headless view tests (assertions, no PNGs); CI runs them.
