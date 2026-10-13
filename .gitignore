@@ -52,3 +52,6 @@ AppData/
 
 # Impeccable design skill local cache
 .impeccable/
+
+# Local code-graph (graphify) output
+graphify-out/
