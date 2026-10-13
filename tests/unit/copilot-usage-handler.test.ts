@@ -102,6 +102,18 @@ describe('Copilot usage plugin', () => {
     expect(usage.projectedCredits).toBeGreaterThan(121320);
   });
 
+  it('enriches the quota with the per-model split from the OAuth billing report', async () => {
+    mockGhToken.mockResolvedValue('gho_cli');
+    mockQuota.mockResolvedValue({ ok: true, quota: enterpriseQuota });
+    mockAuth.mockReturnValue({ accessToken: 'gho_oauth', login: 'rajbos', scopes: 'user' } as ReturnType<typeof loadGitHubAuth>);
+    const byModel = [{ model: 'Claude Opus', credits: 90000 }];
+    mockFetch.mockResolvedValue({ ok: true, summary: { ...summary(90000), byModel } });
+
+    const usage = await checkCopilotUsage(db, () => null, now);
+    expect(mockFetch).toHaveBeenCalledWith('gho_oauth', 'rajbos', expect.objectContaining({ month: 9 }), undefined);
+    expect(usage).toMatchObject({ source: 'gh-cli', creditsUsed: 121320, byModel });
+  });
+
   it('asks the GitHub CLI for the primary account, not whichever account is active', async () => {
     mockPrimary.mockReturnValue('rajbos');
     mockGhToken.mockResolvedValue('gho_primary');

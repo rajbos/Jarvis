@@ -1249,6 +1249,8 @@ Since June 2026 GitHub Copilot bills usage in **AI credits** (1 AIC = $0.01). Us
 
 Only the user's **personal** plan usage is reported here; seats billed through an organization or enterprise show 0.
 
+The quota endpoint only carries totals, so after a successful quota read Jarvis also calls the billing report (OAuth token, then PAT) purely for its per-model split (`fetchModelBreakdown()`). The totals still come from the quota; when the report is refused or empty, the flyout simply has no "By model" section.
+
 ### Authentication
 
 Order: GitHub CLI token → linked OAuth token (device flow) → PAT. The billing report needs the classic `user` scope, so `user` replaced `read:user` in the default scopes and `resolveGitHubScopes()` forces it onto older `config.json` scope lists. Existing sign-ins get a **Re-authorize GitHub** button in Settings when the fallback returns 403/404 (and the CLI route was unavailable). The PAT is used last (classic PAT with `user`, or fine-grained PAT with the *Plan* read permission).

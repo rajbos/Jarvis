@@ -33,6 +33,27 @@ describe('fetchAccountCopilotUsage', () => {
     expect(usage).toMatchObject({ source: 'gh-cli', login: 'alice-work', plan: 'business', creditsUsed: 300, budgetCredits: 800 });
   });
 
+  it('adds the per-model split from the billing report to a quota result', async () => {
+    mockQuota.mockResolvedValue({ ok: true, quota });
+    const byModel = [{ model: 'Claude Opus', credits: 200 }, { model: 'GPT-5', credits: 100 }];
+    mockBilling.mockResolvedValue({ ok: true, summary: { ...summary(300), byModel } });
+    const usage = await fetchAccountCopilotUsage(
+      { login: 'alice-work', ghToken: 'gho', oauth: { accessToken: 'oauth', scopes: 'user' }, pat: null }, null, now,
+    );
+    expect(mockBilling).toHaveBeenCalledWith('oauth', 'alice-work', expect.objectContaining({ month: 9 }), undefined);
+    expect(usage).toMatchObject({ source: 'gh-cli', creditsUsed: 300, byModel });
+  });
+
+  it('keeps the quota result when the billing report is refused', async () => {
+    mockQuota.mockResolvedValue({ ok: true, quota });
+    mockBilling.mockResolvedValue({ ok: false, status: 403, error: 'HTTP 403', missingScope: true });
+    const usage = await fetchAccountCopilotUsage(
+      { login: 'alice-work', ghToken: 'gho', oauth: null, pat: 'ghp' }, null, now,
+    );
+    expect(usage).toMatchObject({ source: 'gh-cli', creditsUsed: 300, byModel: [] });
+    expect(usage.error).toBeUndefined();
+  });
+
   it('falls back to the OAuth billing report for that login', async () => {
     mockQuota.mockResolvedValue({ ok: false, status: 404, error: 'HTTP 404' });
     mockBilling.mockResolvedValue({ ok: true, summary: summary(42) });
