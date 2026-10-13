@@ -901,6 +901,21 @@ export interface ActiveAgentSession {
   /** False when the session's local branch exists on no remote (never pushed) — a signal the work is not on GitHub yet. */
   branchPushed?: boolean | null;
   linkedPr?: { repoFullName: string; number: number } | null;
+  /** Local sessions: the transcript / event log the session writes to. */
+  sessionFile?: string | null;
+  /** Local sessions: token usage and cost read from `sessionFile`. */
+  localUsage?: LocalSessionUsage | null;
+}
+/** Usage of a local session, from the ai-engineering-fluency session parser. */
+export interface LocalSessionUsage {
+  /** Model with the most tokens in the session. */
+  primaryModel: string | null;
+  models: string[];
+  totalTokens: number;
+  /** Exact GitHub Copilot billing in AI credits; null when the log has none (e.g. Claude Code). */
+  credits: number | null;
+  /** Estimated USD at the provider's API rates (Copilot rates for Copilot sessions). */
+  estimatedUsd: number;
 }
 export interface ReadinessStage {
   light: ReadinessLight;

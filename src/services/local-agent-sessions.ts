@@ -378,6 +378,7 @@ export async function discoverCopilotLocalSessions(options: LocalSessionDiscover
       cloudTaskId: ws.mc_task_id || null,
       pid,
       linkedPr: files.includes('events.jsonl') ? findCopilotPrLink(path.join(dir, 'events.jsonl')) : null,
+      sessionFile: files.includes('events.jsonl') ? path.join(dir, 'events.jsonl') : null,
     });
   }
 
@@ -591,6 +592,7 @@ export async function discoverClaudeLocalSessions(options: LocalSessionDiscovery
     let title: string | null = null;
     let linkedPr: ActiveAgentSession['linkedPr'] = null;
     let lastActiveMs: number | null = null;
+    let sessionFile: string | null = null;
     if (cwd) {
       const transcript = path.join(home, '.claude', 'projects', encodeClaudeProjectDir(cwd), `${sessionId}.jsonl`);
       const mtime = mtimeOf(transcript);
@@ -606,6 +608,7 @@ export async function discoverClaudeLocalSessions(options: LocalSessionDiscovery
         title = extractClaudeTitle(entries);
         lastActiveMs = mtime;
         linkedPr = findClaudePrLink(transcript);
+        sessionFile = transcript;
       }
     }
     // sessions/<pid>.json is only rewritten on some state changes; the transcript mtime is the real last write.
@@ -630,6 +633,7 @@ export async function discoverClaudeLocalSessions(options: LocalSessionDiscovery
       cloudTaskId: null,
       pid,
       linkedPr,
+      sessionFile,
     });
   }
   return sessions;
