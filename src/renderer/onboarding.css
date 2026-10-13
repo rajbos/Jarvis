@@ -4331,24 +4331,10 @@ h5.ec-heading { font-size: 0.9375rem; }
 .bg-status-rate-limits {
   display: flex;
   align-items: center;
-  gap: 0;
+  /* Each badge is its own box (.bg-status-claude); space them like .bg-status-right */
+  gap: 0.5rem;
   flex-shrink: 0;
   pointer-events: auto;
-  padding: 0.1rem 0.5rem;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.04);
-}
-
-.bg-status-rate-limits .bg-status-rate-limit {
-  padding: 0 0.4rem;
-}
-
-.bg-status-rate-sep {
-  font-size: 0.8125rem;
-  color: rgba(255, 255, 255, 0.25);
-  user-select: none;
-  flex-shrink: 0;
 }
 
 .bg-status-rate-limit {
@@ -4380,8 +4366,7 @@ h5.ec-heading { font-size: 0.9375rem; }
 }
 
 /* Claude badge hover popover (mirrors the setup panel info) */
-/* Boxed like the OAuth / PAT block (.bg-status-rate-limits):
-   same border, background and outer + inner horizontal padding. */
+/* Every status-bar badge (Copilot, Claude, OAuth, PAT) is its own box. */
 .bg-status-claude {
   position: relative;
   pointer-events: auto;
