@@ -4818,6 +4818,78 @@ h5.ec-heading { font-size: 0.9375rem; }
   user-select: text;
 }
 
+.bg-copilot-raw-sum {
+  margin-bottom: 0.3rem;
+  font-size: var(--type-meta);
+}
+
+.bg-copilot-raw-tabs {
+  min-height: 0;
+  margin: 0;
+  padding: 0 0.85rem;
+}
+
+.bg-copilot-raw-tabs .tab-btn {
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+}
+
+.bg-copilot-probe {
+  margin-top: 0.5rem;
+}
+
+.bg-copilot-probe-accounts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.5rem 0;
+  font-size: var(--type-meta);
+}
+
+.bg-copilot-probe-accounts > span {
+  color: var(--text-muted);
+}
+
+.bg-copilot-probe-account--on {
+  background: var(--accent-action, #e94560);
+  border-color: transparent;
+  color: #fff;
+}
+
+.bg-copilot-probe-row {
+  display: flex;
+  gap: 0.5rem;
+  margin: 0.4rem 0;
+}
+
+.bg-copilot-probe-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.bg-copilot-probe-row select,
+.bg-copilot-probe-row input {
+  padding: 0.25rem 0.4rem;
+  border: 1px solid #1e3a5a;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.35);
+  color: inherit;
+  font: inherit;
+  font-size: var(--type-meta);
+  color-scheme: dark;
+}
+
+/* The native option list ignores the select's translucent background and would render light-grey on grey. */
+.bg-copilot-probe-row select option {
+  background: #0d1a2e;
+  color: #e0e0e0;
+}
+
+.bg-copilot-probe .bg-copilot-raw-entry {
+  margin-top: 0.6rem;
+}
+
 /* ── Right-side group (tasks + rate limits) ──────────────────────────────── */
 .bg-status-right {
   margin-left: auto;

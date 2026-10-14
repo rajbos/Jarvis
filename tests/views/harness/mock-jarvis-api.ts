@@ -232,6 +232,14 @@ function defaultResponses(f: Fixtures): Responses {
     setCopilotBudget: { ok: true, budgetCredits: null },
     listGitHubAccounts: f.githubAccounts,
     getGitHubAccountsUsage: f.githubAccountsUsage,
+    probeCopilotEndpoint: (_accountId, _source, endpoint) => ({
+      ok: true,
+      response: {
+        endpoint,
+        status: 200,
+        body: { usageItems: [{ model: 'Fixture model', grossQuantity: 120.5 }, { model: 'Fixture model 2', grossQuantity: 30 }] },
+      },
+    }),
     setGitHubAccountBudget: { ok: true, budgetCredits: null },
     addGitHubHostAccount: { ok: true, account: 'new-user@fixture.ghe.com', login: 'new-user' },
     setPrimaryGitHubAccount: ok,

@@ -267,13 +267,30 @@ describe('main window — Copilot flyout content', () => {
     await view.page.locator('.bg-status-copilot').hover();
     await button.click();
     const dialog = view.page.getByRole('dialog', { name: 'Copilot usage raw responses' });
-    await expect.poll(() => dialog.textContent()).toContain('@work-account');
-    const text = (await dialog.textContent()) ?? '';
-    expect(text).toContain('@test-user');
-    expect(text).toContain('GET /copilot_internal/user');
-    expect(text).toContain('"new_field": "surprise"');
+    await dialog.getByRole('tab', { name: '@work-account' }).click();
+    await expect.poll(() => dialog.textContent()).toContain('GET /copilot_internal/user');
+    expect(await dialog.textContent()).toContain('"new_field": "surprise"');
+    await dialog.getByRole('tab', { name: '@test-user' }).click();
+    await expect.poll(() => dialog.textContent()).toContain('fetched');
+    expect(await dialog.textContent()).not.toContain('"new_field": "surprise"');
     await view.page.keyboard.press('Escape');
     await expect.poll(() => dialog.count()).toBe(0);
+    await expectCleanRender(view);
+  });
+
+  it('runs the user report from the try-endpoints tab as the chosen account', async () => {
+    const { view } = await openFlyout([accountUsage('work-account', {})]);
+    await view.page.locator('.bg-status-copilot').hover();
+    await view.page.locator('.bg-status-copilot').getByRole('button', { name: 'Raw JSON' }).click();
+    const dialog = view.page.getByRole('dialog', { name: 'Copilot usage raw responses' });
+    await dialog.getByRole('tab', { name: 'Try endpoints' }).click();
+    await dialog.getByRole('button', { name: '@work-account' }).click();
+    expect(await dialog.getByLabel('Endpoint', { exact: true }).inputValue()).toContain('/users/work-account/settings/billing/ai_credit/usage');
+    await dialog.getByRole('button', { name: 'Run', exact: true }).click();
+    await expect.poll(() => dialog.textContent()).toContain('Σ usageItems grossQuantity: 150.5 AIC');
+    const calls = await view.calls('probeCopilotEndpoint');
+    expect(calls).toHaveLength(1);
+    expect(calls[0].args[0]).toBe('work-account');
     await expectCleanRender(view);
   });
 

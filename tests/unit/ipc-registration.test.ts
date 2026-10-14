@@ -81,6 +81,7 @@ const EXPECTED_CHANNELS = [
   // github-accounts plugin
   'github-accounts:list',
   'github-accounts:usage',
+  'github-accounts:probe',
   'github-accounts:set-budget',
   'github-accounts:add-host-account',
   'github-accounts:set-primary',

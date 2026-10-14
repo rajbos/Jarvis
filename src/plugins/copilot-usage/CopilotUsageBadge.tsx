@@ -4,6 +4,7 @@ import type { CopilotUsage, GitHubAccountUsage } from '../types';
 import { formatNumber, formatDurationUntil } from '../shared/utils';
 import { copilotBudgetLevel, copilotUsageLimit, type CopilotBudgetLevel } from './budget-level';
 import { CopilotIcon } from '../shared/BrandIcons';
+import { EndpointProbe, RawEntry, type ProbeAccount } from './EndpointProbe';
 
 const LEVEL_COLOR: Record<CopilotBudgetLevel, string> = {
   unknown: '#888',
@@ -152,8 +153,10 @@ function UsageRows({ usage, showModels = true }: UsageRowsProps) {
 }
 
 /** Full-window view of the raw GitHub API answers behind each account's usage. */
-function RawResponsesDialog({ accounts, onClose }: { accounts: Array<{ login: string; usage: CopilotUsage }>; onClose: () => void }) {
-  const [copied, setCopied] = useState<string | null>(null);
+const PROBE_TAB = '\u0000probe';
+
+function RawResponsesDialog({ accounts, onClose }: { accounts: ProbeAccount[]; onClose: () => void }) {
+  const [tab, setTab] = useState(accounts[0]?.login ?? PROBE_TAB);
 
   // Layout effect: the Esc listener must be live as soon as the dialog shows, not after the next paint.
   useLayoutEffect(() => {
@@ -162,13 +165,9 @@ function RawResponsesDialog({ accounts, onClose }: { accounts: Array<{ login: st
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const copy = async (key: string, text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(key);
-      setTimeout(() => setCopied((c) => (c === key ? null : c)), 1500);
-    } catch { /* clipboard unavailable */ }
-  };
+  // An account can drop out while the dialog is open; fall back to the first tab.
+  const active = tab === PROBE_TAB || accounts.some((a) => a.login === tab) ? tab : accounts[0]?.login ?? PROBE_TAB;
+  const current = accounts.find((a) => a.login === active);
 
   return createPortal(
     <div class="bg-copilot-raw-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
@@ -177,33 +176,43 @@ function RawResponsesDialog({ accounts, onClose }: { accounts: Array<{ login: st
           <strong>Copilot usage: raw API responses</strong>
           <button type="button" class="bg-status-claude-action" onClick={onClose}>Close</button>
         </div>
-        <div class="bg-copilot-raw-body">
-          {accounts.map(({ login, usage }) => (
-            <section key={login}>
-              <h3>@{login} <span>fetched {new Date(usage.fetchedAt).toLocaleTimeString()}</span></h3>
-              {(usage.rawResponses ?? []).length === 0 && (
+        <div class="tab-bar bg-copilot-raw-tabs" role="tablist">
+          {accounts.map((a) => (
+            <button
+              type="button"
+              role="tab"
+              key={a.login}
+              aria-selected={a.login === active}
+              class={`tab-btn${a.login === active ? ' tab-active' : ''}`}
+              onClick={() => setTab(a.login)}
+            >
+              @{a.login}
+            </button>
+          ))}
+          <button
+            type="button"
+            role="tab"
+            aria-selected={active === PROBE_TAB}
+            class={`tab-btn${active === PROBE_TAB ? ' tab-active' : ''}`}
+            onClick={() => setTab(PROBE_TAB)}
+          >
+            Try endpoints
+          </button>
+        </div>
+        <div class="bg-copilot-raw-body" role="tabpanel">
+          {current ? (
+            <section>
+              <h3>@{current.login} <span>fetched {new Date(current.usage.fetchedAt).toLocaleTimeString()}</span></h3>
+              {(current.usage.rawResponses ?? []).length === 0 && (
                 <p class="bg-copilot-raw-empty">No API response recorded for this check.</p>
               )}
-              {(usage.rawResponses ?? []).map((r, i) => {
-                const key = `${login}:${i}`;
-                const text = typeof r.body === 'string' ? r.body : JSON.stringify(r.body, null, 2);
-                return (
-                  <div class="bg-copilot-raw-entry" key={key}>
-                    <div class="bg-copilot-raw-entry-head">
-                      <code>GET {r.endpoint}</code>
-                      <span class={r.status >= 200 && r.status < 300 ? 'bg-status-claude-state--available' : 'bg-status-claude-state--warning'}>
-                        {r.status || 'no response'}
-                      </span>
-                      <button type="button" class="bg-status-claude-action" onClick={() => copy(key, text)}>
-                        {copied === key ? 'Copied' : 'Copy'}
-                      </button>
-                    </div>
-                    <pre>{text}</pre>
-                  </div>
-                );
-              })}
+              {(current.usage.rawResponses ?? []).map((r, i) => (
+                <RawEntry key={`${current.login}:${i}`} response={r} quotaCredits={current.usage.creditsUsed} />
+              ))}
             </section>
-          ))}
+          ) : (
+            <EndpointProbe accounts={accounts} />
+          )}
         </div>
       </div>
     </div>,
