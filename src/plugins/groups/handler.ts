@@ -35,6 +35,8 @@ import type { BrowserTabSession } from '../browser-companion/tab-session';
 import type { RuddrProjectMatch } from '../types';
 import { logger } from '../../services/logger';
 import { safeHandle } from '../ipc-utils';
+import { registerRuddrHoursHandlers } from './ruddr-hours-discovery';
+import type { HoursDiscoveryDeps } from './ruddr-hours-discovery';
 
 // ── Ruddr project list cache (in-memory, backed by DB for persistence) ──────────
 let ruddrProjectsCache: RuddrProjectEntry[] | null = null;
@@ -193,7 +195,7 @@ function updateRuddrBudgetScrapeAlert(db: SqlJsDatabase, broken: boolean, projec
   }
 }
 
-function getRuddrWorkspace(db: SqlJsDatabase): string {
+export function getRuddrWorkspace(db: SqlJsDatabase): string {
   return (getConfigValue(db, RUDDR_WORKSPACE_KEY) ?? '').trim();
 }
 
@@ -581,6 +583,26 @@ async function refreshLinkedProjectDetails(
   }
 }
 
+/**
+ * Dependencies for the hours discovery: projects it finds through logged hours
+ * join the in-memory project cache and raise the same "new project" banner as
+ * the project-list refresh.
+ */
+export function hoursDiscoveryDeps(db: SqlJsDatabase, getWindow: () => BrowserWindow | null): HoursDiscoveryDeps {
+  return {
+    getWorkspace: () => getRuddrWorkspace(db),
+    getWindow,
+    onNewProjects: (projects) => {
+      if (ruddrProjectsCache) {
+        const known = new Set(ruddrProjectsCache.map((e) => e.path));
+        ruddrProjectsCache = [...ruddrProjectsCache, ...projects.filter((p) => !known.has(p.path))];
+      }
+      const win = getWindow();
+      if (win && !win.isDestroyed()) win.webContents.send('groups:new-ruddr-projects', projects);
+    },
+  };
+}
+
 /** Refreshes the Ruddr project list for the main-process task scheduler. */
 export async function refreshRuddrProjectsInBackground(
   db: SqlJsDatabase,
@@ -617,6 +639,8 @@ export async function refreshRuddrProjectsInBackground(
 }
 
 export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWindow | null): void {
+  registerRuddrHoursHandlers(db, hoursDiscoveryDeps(db, _getWindow));
+
   // Make persisted budgets available to the very first dashboard query.
   seedBudgetCacheFromDb(db);
 

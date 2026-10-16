@@ -5761,3 +5761,165 @@ h5.ec-heading { font-size: 0.9375rem; }
 .ec-diag-hint--error {
   color: #f08090;
 }
+
+/* ── Ruddr hours (Groups dashboard) ────────────────────────────────────────── */
+.ruddr-hours {
+  background: #16213e;
+  border: 1px solid #0f3460;
+  border-radius: 8px;
+  padding: 0.8rem 1rem;
+  margin-bottom: 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.ruddr-hours-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+
+.ruddr-hours-head h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #e0e0e0;
+}
+
+.ruddr-hours-status,
+.ruddr-hours-fetched,
+.ruddr-hours-unlinked-meta {
+  font-size: 0.8125rem;
+  color: #8890b0;
+}
+
+.ruddr-hours-warn {
+  font-size: 0.8125rem;
+  color: #f0c060;
+  background: rgba(240, 192, 96, 0.08);
+  border-radius: 4px;
+  padding: 0.3rem 0.5rem;
+}
+
+.ruddr-hours-weeknav {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.ruddr-hours-weeklabel {
+  font-weight: 600;
+  color: #c8d0f0;
+  min-width: 11rem;
+  text-align: center;
+}
+
+.ruddr-hours-fetched {
+  flex: 1;
+}
+
+.ruddr-hours-navbtn,
+.ruddr-hours-reload,
+.ruddr-hours-link {
+  padding: 0.2rem 0.6rem;
+  background: #12183a;
+  border: 1px solid #1e2d5a;
+  border-radius: 6px;
+  color: #8898cc;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ruddr-hours-navbtn:hover:not(:disabled),
+.ruddr-hours-reload:hover:not(:disabled),
+.ruddr-hours-link:hover:not(:disabled) {
+  border-color: #3a5aaa;
+  color: #c8d0f0;
+}
+
+.ruddr-hours-navbtn:disabled,
+.ruddr-hours-reload:disabled,
+.ruddr-hours-link:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ruddr-hours-empty {
+  font-size: 0.875rem;
+  color: #8890b0;
+}
+
+.ruddr-hours-table-wrap {
+  overflow-x: auto;
+}
+
+.ruddr-hours-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.ruddr-hours-table th,
+.ruddr-hours-table td {
+  padding: 0.25rem 0.45rem;
+  text-align: right;
+  border-bottom: 1px solid #222a4a;
+  color: #c8d0f0;
+}
+
+.ruddr-hours-table th {
+  color: #8890b0;
+  font-weight: 500;
+}
+
+.ruddr-hours-table .ruddr-hours-proj {
+  text-align: left;
+  max-width: 22rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ruddr-hours-table tfoot td,
+.ruddr-hours-total {
+  font-weight: 600;
+}
+
+.ruddr-hours-client {
+  color: #8890b0;
+}
+
+.ruddr-hours-subhead {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #a0a8c0;
+  margin-top: 0.2rem;
+}
+
+.ruddr-hours-unlinked {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.ruddr-hours-unlinked-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.875rem;
+}
+
+.ruddr-hours-unlinked-name {
+  flex: 1;
+  min-width: 0;
+  color: #c8d0f0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

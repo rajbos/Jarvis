@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { DiscoveryProgress, LocalIndexProgress, LocalScanProgress, SecretsScanProgress, OAuthResult } from '../plugins/types';
+import type { DiscoveryProgress, LocalIndexProgress, LocalScanProgress, SecretsScanProgress, OAuthResult, RuddrHoursStatus } from '../plugins/types';
 import type {
   AgentSessionStartingPayload,
   AgentAnalysisCompletePayload,
@@ -258,6 +258,10 @@ contextBridge.exposeInMainWorld('jarvis', {
     ipcRenderer.invoke('groups:get-ruddr-budget', projectName, options),
   groupsGetRuddrBudgetCache: () =>
     ipcRenderer.invoke('groups:get-ruddr-budget-cache'),
+  ruddrHoursStatus: () => ipcRenderer.invoke('ruddr-hours:status'),
+  ruddrHoursSummary: () => ipcRenderer.invoke('ruddr-hours:summary'),
+  ruddrHoursWeek: (weekStart: string) => ipcRenderer.invoke('ruddr-hours:week', weekStart),
+  ruddrHoursRefreshWeek: (weekStart: string) => ipcRenderer.invoke('ruddr-hours:refresh-week', weekStart),
 
   // OneDrive
   onedriveListRoots: () => ipcRenderer.invoke('onedrive:list-roots'),
@@ -314,6 +318,11 @@ contextBridge.exposeInMainWorld('jarvis', {
     const listener = () => callback();
     ipcRenderer.on('groups:project-details-refreshed', listener);
     return () => { ipcRenderer.removeListener('groups:project-details-refreshed', listener); };
+  },
+  onRuddrHoursUpdated: (callback: (status: RuddrHoursStatus) => void) => {
+    const listener = (_event: unknown, status: RuddrHoursStatus) => callback(status);
+    ipcRenderer.on('ruddr-hours:updated', listener);
+    return () => { ipcRenderer.removeListener('ruddr-hours:updated', listener); };
   },
   // System locale (for OS-aware number formatting)
   getSystemLocale: () => ipcRenderer.invoke('app:get-system-locale'),

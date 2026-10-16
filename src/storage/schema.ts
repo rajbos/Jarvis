@@ -366,6 +366,36 @@ export function getSchema(): string {
         PRIMARY KEY (project_name)
     );
 
+    -- Ruddr hours cache: one row per fetched week (the unit of fetching)
+    CREATE TABLE IF NOT EXISTS ruddr_time_weeks (
+        week_start           TEXT PRIMARY KEY,
+        status               TEXT NOT NULL,
+        total_minutes        INTEGER NOT NULL DEFAULT 0,
+        approved_minutes     INTEGER NOT NULL DEFAULT 0,
+        billable_minutes     INTEGER,
+        non_billable_minutes INTEGER,
+        internal_minutes     INTEGER,
+        time_off_minutes     INTEGER,
+        member_id            TEXT,
+        error                TEXT,
+        fetched_at           DATETIME NOT NULL
+    );
+
+    -- Ruddr hours cache: the logged-in member's minutes per day, project and task
+    CREATE TABLE IF NOT EXISTS ruddr_time_entries (
+        entry_date   TEXT NOT NULL,
+        week_start   TEXT NOT NULL,
+        project_path TEXT NOT NULL,
+        task_path    TEXT NOT NULL DEFAULT '',
+        client_name  TEXT,
+        project_name TEXT NOT NULL,
+        task_name    TEXT,
+        minutes      INTEGER NOT NULL,
+        PRIMARY KEY (entry_date, project_path, task_path)
+    );
+    CREATE INDEX IF NOT EXISTS idx_ruddr_time_entries_week ON ruddr_time_entries(week_start);
+    CREATE INDEX IF NOT EXISTS idx_ruddr_time_entries_project ON ruddr_time_entries(project_path, entry_date);
+
     -- Browser companion: reusable automation skills
     CREATE TABLE IF NOT EXISTS browser_skills (
         id                INTEGER PRIMARY KEY AUTOINCREMENT,

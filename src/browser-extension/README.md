@@ -38,6 +38,7 @@ Each command is a JSON message `{ id, type, tabId?, payload }`; the extension an
 | `scroll-extract` | `{ selector, maxScrolls?, waitMs?, includeHref?, debug? }` | `{ items, debugLog?, hidden?, scrollable?, grewOnScroll? }` |
 | `scrape-stats` | `{ waitMs? }` | Label → value map (pairs `<small>` labels with the preceding value and, since the 2026 Ruddr redesign, leaf label elements with the following value sibling) |
 | `read-form-fields` | `{ selectors, waitMs? }` | Selector → value map |
+| `scrape-ruddr-week` | `{ date, waitMs? }` | Ruddr `/time/week` grid: day columns with totals, one row per project/task with the entered values per day, hours summary and approval totals. Reads without scrolling or focusing, so it works in a background tab |
 | `click` / `fill` | `{ selector }` / `{ selector, value }` | `{ ok }` |
 | `screenshot` | — | Data URL |
 | `list-tabs` | — | Open tabs |

@@ -1,7 +1,8 @@
 /** @jsxImportSource preact */
 import { useState, useEffect } from 'preact/hooks';
-import { isIpcError, type Group, type RuddrProjectMatch, type RuddrBudget, type RuddrProjectInfo } from '../types';
+import { isIpcError, type Group, type RuddrProjectMatch, type RuddrBudget, type RuddrProjectInfo, type RuddrHoursSummary, type RuddrHoursGroupTotals } from '../types';
 import { RuddrProjectsPanel } from './RuddrProjectsPanel';
+import { RuddrHoursSection, formatMinutes } from './RuddrHoursSection';
 
 // ── GroupsDashboardPanel ──────────────────────────────────────────────────────
 // A high-level dashboard view over every configured group (project).
@@ -16,6 +17,15 @@ export function GroupsDashboardPanel() {
   const [budgetData, setBudgetData] = useState<Record<string, RuddrBudget>>({});
   const [budgetChecking, setBudgetChecking] = useState<string | null>(null);
   const [newRuddrProjects, setNewRuddrProjects] = useState<Array<{ name: string; path: string }>>([]); 
+  const [hoursSummary, setHoursSummary] = useState<RuddrHoursSummary | null>(null);
+
+  const loadHours = async () => {
+    try {
+      setHoursSummary(await window.jarvis.ruddrHoursSummary());
+    } catch (err) {
+      console.error('[GroupsDashboard] Failed to load Ruddr hours:', err);
+    }
+  };
 
   /**
    * Fetches budgets one project at a time. Without `force` the main process
@@ -40,6 +50,7 @@ export function GroupsDashboardPanel() {
 
   const loadData = async () => {
     setLoading(true);
+    void loadHours();
     let groupsList: Group[];
     let initialBudgets: Record<string, RuddrBudget>;
     try {
@@ -111,6 +122,9 @@ export function GroupsDashboardPanel() {
     return () => { unsub(); };
   }, []);
 
+  // Each discovery run (scheduled or a week reload) may change the totals.
+  useEffect(() => window.jarvis.onRuddrHoursUpdated(() => { void loadHours(); }), []);
+
   // Clear the note/cloud folder fetching indicator once the background scrape finishes
   useEffect(() => window.jarvis.onRuddrProjectDetailsRefreshed(() => setDetailsLoading(false)), []);
 
@@ -135,6 +149,7 @@ export function GroupsDashboardPanel() {
     setGroups((prev) =>
       prev.map((g) => g.id === groupId ? { ...g, ruddrProjectNames: names } : g),
     );
+    void loadHours();
   };
 
   return (
@@ -205,10 +220,13 @@ export function GroupsDashboardPanel() {
             </div>
           )}
 
+          <RuddrHoursSection summary={hoursSummary} groups={groups} onChanged={() => void loadData()} />
+
           {groups.length > 0 && (
             <div class="groups-dash-grid">
               {groups.map((group) => (
                 <GroupCard key={group.id} group={group} onRuddrLinked={handleRuddrLinked}
+                  hours={hoursSummary?.groups[group.id] ?? null}
                   detailsLoading={detailsLoading}
                   budgetData={budgetData} setBudgetData={setBudgetData}
                   budgetChecking={budgetChecking} setBudgetChecking={setBudgetChecking} />
@@ -235,6 +253,7 @@ function formatFetchedAt(iso: string | null | undefined): string {
 function GroupCard(props: {
   group: Group;
   onRuddrLinked: (groupId: number, names: string[]) => void;
+  hours: RuddrHoursGroupTotals | null;
   detailsLoading: boolean;
   budgetData: Record<string, RuddrBudget>;
   setBudgetData: (fn: (prev: Record<string, RuddrBudget>) => Record<string, RuddrBudget>) => void;
@@ -419,6 +438,15 @@ function GroupCard(props: {
           <span class="groups-dash-stat-value">{group.fileCount}</span>
           <span class="groups-dash-stat-label">file{group.fileCount !== 1 ? 's' : ''}</span>
         </span>
+        {props.hours && props.hours.totalMinutes > 0 && (
+          <span class="groups-dash-stat" title={`Your logged Ruddr hours${props.hours.lastDate ? ` — last on ${props.hours.lastDate}` : ''}`}>
+            <span class="groups-dash-stat-icon">⏱</span>
+            <span class="groups-dash-stat-value">{formatMinutes(props.hours.weekMinutes)}</span>
+            <span class="groups-dash-stat-label">
+              this week · {formatMinutes(props.hours.last4WeeksMinutes)} in 4 wks · {formatMinutes(props.hours.totalMinutes)} total
+            </span>
+          </span>
+        )}
       </div>
 
       {/* ── Ruddr project section ── */}

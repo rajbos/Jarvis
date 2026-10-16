@@ -204,6 +204,9 @@ async function handleCommand(rawData) {
       case 'read-form-fields':
         data = await cmdReadFormFields(tabId, payload);
         break;
+      case 'scrape-ruddr-week':
+        data = await cmdScrapeRuddrWeek(tabId, payload ?? {});
+        break;
       case 'click':
         data = await cmdClick(tabId, payload);
         break;
@@ -633,6 +636,130 @@ async function scrapeStatsByLabel(waitMs) {
   }
 
   return stats;
+}
+
+async function cmdScrapeRuddrWeek(tabId, payload) {
+  const { date, waitMs = 15000 } = payload;
+  if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('date (YYYY-MM-DD) is required');
+  const targetTabId = await getTargetTabId(tabId);
+
+  const results = await chrome.scripting.executeScript({
+    target: { tabId: targetTabId },
+    func: scrapeRuddrWeek,
+    args: [date, waitMs],
+  });
+
+  return results[0]?.result ?? null;
+}
+
+// Runs inside the page — reads Ruddr's /time/week grid without scrolling or
+// focusing anything, so it works in a background tab. Every row is anchored on
+// its Monday input (data-testid="day-entry-Mon"); the row label is the sibling
+// block before that cell. Only entered values are read — placeholders are
+// allocations, not logged time. Returns ready: false when the requested week
+// never rendered within waitMs.
+async function scrapeRuddrWeek(date, waitMs) {
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const pathOf = (a) => (a ? (a.getAttribute('href') || '').split('?')[0].split('#')[0] : null);
+  const textOf = (el) => (el ? (el.textContent || '').replace(/\s+/g, ' ').trim() : null);
+
+  const readDays = () => [...document.querySelectorAll('a[href*="/time/day?date="]')].map((a) => {
+    const m = /[?&]date=(\d{4}-\d{2}-\d{2})/.exec(a.getAttribute('href') || '');
+    const spans = [...a.querySelectorAll('span')].map((s) => textOf(s));
+    return { day: spans[0] || '', date: m ? m[1] : '', total: spans.length > 1 ? spans[1] : null };
+  }).filter((d) => d.date);
+
+  // Wait for the requested week's header, then for the rows to stop changing.
+  const deadline = Date.now() + waitMs;
+  let days = readDays();
+  while (!days.some((d) => d.date === date) && Date.now() < deadline) {
+    await wait(250);
+    days = readDays();
+  }
+  if (!days.some((d) => d.date === date)) return { ready: false, days, rows: [], totalHours: null, billableTypes: {}, approval: {}, memberId: null };
+  // A week whose header shows hours must also show at least one filled-in cell.
+  const expectsHours = days.some((d) => d.total && /[1-9]/.test(d.total));
+  const hasValues = () => [...document.querySelectorAll('input[data-testid^="day-entry-"]')].some((i) => (i.value || '').trim());
+  let lastCount = -1;
+  let stableFor = 0;
+  while ((stableFor < 2 || (expectsHours && !hasValues())) && Date.now() < deadline) {
+    const count = document.querySelectorAll('input[data-testid^="day-entry-"]').length;
+    stableFor = count === lastCount ? stableFor + 1 : 0;
+    lastCount = count;
+    await wait(400);
+  }
+  days = readDays();
+
+  const rows = [];
+  for (const mon of document.querySelectorAll('input[data-testid="day-entry-Mon"]')) {
+    // Climb to the grid cell whose previous sibling holds the row label.
+    let cell = mon;
+    for (let i = 0; i < 8 && cell.parentElement; i++) {
+      const prev = cell.previousElementSibling;
+      if (prev && (prev.tagName === 'P' || prev.querySelector('p, a[href*="/portfolio/"]'))) break;
+      cell = cell.parentElement;
+    }
+    const labelEl = cell.previousElementSibling;
+    const clientLink = labelEl ? labelEl.querySelector('a[href*="/portfolio/clients/"]') : null;
+    const projectLink = labelEl ? [...labelEl.querySelectorAll('a[href*="/portfolio/projects/"]')].find((a) => !(a.getAttribute('href') || '').includes('/tasks/')) : null;
+    const taskLink = labelEl ? labelEl.querySelector('a[href*="/tasks/"]') : null;
+
+    // The other six inputs follow the Monday one in document order.
+    const hours = {};
+    let el = cell;
+    for (const day of DAYS) {
+      const input = day === 'Mon' ? mon : (el ? el.querySelector(`input[data-testid="day-entry-${day}"]`) : null);
+      hours[day] = input ? (input.value || '').trim() : '';
+      if (day !== 'Sun' && el) el = el.nextElementSibling;
+    }
+
+    rows.push({
+      clientName: textOf(clientLink),
+      clientPath: pathOf(clientLink),
+      projectName: textOf(projectLink),
+      projectPath: pathOf(projectLink),
+      taskName: textOf(taskLink),
+      taskPath: pathOf(taskLink),
+      label: textOf(labelEl) || '',
+      hours,
+    });
+  }
+
+  // "Total Hours" header: the value span sits next to its label span.
+  let totalHours = null;
+  for (const span of document.querySelectorAll('span')) {
+    if (textOf(span) === 'Total Hours' && span.nextElementSibling) {
+      totalHours = textOf(span.nextElementSibling);
+      break;
+    }
+  }
+
+  // Hours summary links carry machine ids in their query strings.
+  const byQuery = (param) => {
+    const out = {};
+    for (const a of document.querySelectorAll(`a[href*="${param}="]`)) {
+      const m = new RegExp(`[?&]${param}=([a-z_]+)`).exec(a.getAttribute('href') || '');
+      if (!m) continue;
+      const leaves = [...a.querySelectorAll('div')].filter((d) => d.children.length === 0).map((d) => textOf(d));
+      const value = leaves.find((v) => /^[\d.,:]+$/.test(v || '')) || (/^[\d.,:]+$/.test(textOf(a) || '') ? textOf(a) : null);
+      if (value !== null && value !== undefined) out[m[1]] = value;
+    }
+    return out;
+  };
+
+  const memberLink = document.querySelector('a[href*="memberId="]');
+  const memberMatch = memberLink ? /[?&]memberId=([^&]+)/.exec(memberLink.getAttribute('href') || '') : null;
+
+  return {
+    ready: true,
+    days,
+    rows,
+    totalHours,
+    billableTypes: byQuery('timeBillableTypeId'),
+    approval: byQuery('timeApprovalStatusId'),
+    memberId: memberMatch ? decodeURIComponent(memberMatch[1]) : null,
+  };
 }
 
 async function cmdClick(tabId, payload) {

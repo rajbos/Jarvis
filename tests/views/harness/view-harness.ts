@@ -132,7 +132,7 @@ function serve(dir: string): Promise<Server> {
  * Edge or Chrome so the tests still run on a dev machine. Set
  * JARVIS_VIEW_BROWSER_CHANNEL to force a channel.
  */
-async function launchBrowser(): Promise<Browser> {
+export async function launchBrowser(): Promise<Browser> {
   const forced = process.env.JARVIS_VIEW_BROWSER_CHANNEL;
   if (forced) return chromium.launch({ channel: forced });
   const failures: string[] = [];

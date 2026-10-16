@@ -8,6 +8,7 @@ import type { CopilotUsage, GitHubAccountInfo, GitHubAccountUsage } from '../../
 import { useViewHarness, type OpenedView } from './harness/view-harness';
 import {
   GROUP_ACME,
+  RUDDR_UNLINKED_PROJECT,
   GROUP_GLOBEX,
   ORG_ACME,
   ORG_GLOBEX,
@@ -39,7 +40,7 @@ describe('main window — tabs', () => {
   });
 
   const tabs: Array<{ name: RegExp; expected: string[]; loadedBy: Parameters<OpenedView['calls']>[0] }> = [
-    { name: /Groups Dashboard/, expected: [GROUP_ACME, GROUP_GLOBEX], loadedBy: 'groupsList' },
+    { name: /Groups Dashboard/, expected: [GROUP_ACME, GROUP_GLOBEX, 'My Ruddr hours', RUDDR_UNLINKED_PROJECT, 'in 4 wks'], loadedBy: 'groupsList' },
     { name: /Agent Sessions/, expected: ['Teach the rocket sled to brake'], loadedBy: 'getActiveSessions' },
     { name: /Browser/, expected: ['Browser Skills', 'Fixture weather check'], loadedBy: 'browserListSkills' },
     { name: /Setup/, expected: ['GitHub Account', 'Local Repositories', 'Groups', 'Ollama AI', 'Claude AI'], loadedBy: 'getGitHubOAuthStatus' },
