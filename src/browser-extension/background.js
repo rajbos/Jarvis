@@ -279,9 +279,29 @@ async function cmdNavigate(tabId, payload) {
   if (newTab === true && typeof tabId !== 'number') {
     const created = await chrome.tabs.create({ url, active: background !== true });
     if (typeof created.id !== 'number') throw new Error('Failed to create tab');
-    await waitForTabLoaded(created.id, { acceptAlreadyComplete: true });
-    const openedTab = await chrome.tabs.get(created.id);
-    return { url: openedTab.url, title: openedTab.title, tabId: created.id, createdTab: true };
+    if (background === true) {
+      // Keep a background scrape tab from being discarded (sleeping tabs) mid-run.
+      try { await chrome.tabs.update(created.id, { autoDiscardable: false }); } catch { /* older browsers */ }
+    }
+    // Never fail once the tab exists: the caller can only close a tab whose id
+    // it was given, so an error here would leak the tab. A background tab can
+    // take longer than the load timeout (browsers deprioritise them); report
+    // that and let the caller wait for the content it needs.
+    let loadTimedOut = false;
+    try {
+      await waitForTabLoaded(created.id, { acceptAlreadyComplete: true });
+    } catch {
+      loadTimedOut = true;
+    }
+    let openedTab = null;
+    try { openedTab = await chrome.tabs.get(created.id); } catch { /* tab closed meanwhile */ }
+    return {
+      url: openedTab ? (openedTab.url || openedTab.pendingUrl || url) : url,
+      title: openedTab ? openedTab.title : '',
+      tabId: created.id,
+      createdTab: true,
+      ...(loadTimedOut ? { loadTimedOut: true } : {}),
+    };
   }
 
   const targetTabId = await getTargetTabId(tabId);
@@ -643,53 +663,74 @@ async function cmdScrapeRuddrWeek(tabId, payload) {
   if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('date (YYYY-MM-DD) is required');
   const targetTabId = await getTargetTabId(tabId);
 
-  const results = await chrome.scripting.executeScript({
-    target: { tabId: targetTabId },
-    func: scrapeRuddrWeek,
-    args: [date, waitMs],
-  });
+  // Poll from the service worker rather than with timers inside the page:
+  // browsers throttle timers in background tabs hard, while the worker's run
+  // at full speed. Each read is one synchronous snapshot of the grid.
+  const read = async () => {
+    const results = await withTimeout(
+      chrome.scripting.executeScript({ target: { tabId: targetTabId }, func: readRuddrWeek, args: [date] }),
+      5000,
+      'Ruddr tab did not answer — the browser may have suspended the background tab',
+    );
+    return results[0]?.result ?? null;
+  };
 
-  return results[0]?.result ?? null;
+  const deadline = Date.now() + waitMs;
+  let snapshot = await read();
+  let lastCount = -1;
+  let stableFor = 0;
+  let polls = 1;
+  while (Date.now() < deadline) {
+    if (snapshot && snapshot.ready) {
+      stableFor = snapshot.inputCount === lastCount ? stableFor + 1 : 0;
+      lastCount = snapshot.inputCount;
+      // A week whose header shows hours must also show a filled-in cell.
+      if (stableFor >= 2 && (!snapshot.expectsHours || snapshot.hasValues)) break;
+    }
+    await new Promise((r) => setTimeout(r, 400));
+    snapshot = await read();
+    polls++;
+  }
+  if (!snapshot) throw new Error('Could not read the Ruddr week page');
+  return { ...snapshot, polls };
 }
 
-// Runs inside the page — reads Ruddr's /time/week grid without scrolling or
-// focusing anything, so it works in a background tab. Every row is anchored on
-// its Monday input (data-testid="day-entry-Mon"); the row label is the sibling
-// block before that cell. Only entered values are read — placeholders are
-// allocations, not logged time. Returns ready: false when the requested week
-// never rendered within waitMs.
-async function scrapeRuddrWeek(date, waitMs) {
-  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+function withTimeout(promise, ms, message) {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(message)), ms); }),
+  ]).finally(() => clearTimeout(timer));
+}
+
+// Runs inside the page — one synchronous snapshot of Ruddr's /time/week grid,
+// with no scrolling, focus or timers, so it works in a background tab. Every
+// row is anchored on its Monday input (data-testid="day-entry-Mon"); the row
+// label is the sibling block before that cell. Only entered values are read —
+// placeholders are allocations, not logged time. ready is false until the
+// requested week's day columns are on the page.
+function readRuddrWeek(date) {
   const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   const pathOf = (a) => (a ? (a.getAttribute('href') || '').split('?')[0].split('#')[0] : null);
   const textOf = (el) => (el ? (el.textContent || '').replace(/\s+/g, ' ').trim() : null);
 
-  const readDays = () => [...document.querySelectorAll('a[href*="/time/day?date="]')].map((a) => {
+  const days = [...document.querySelectorAll('a[href*="/time/day?date="]')].map((a) => {
     const m = /[?&]date=(\d{4}-\d{2}-\d{2})/.exec(a.getAttribute('href') || '');
-    const spans = [...a.querySelectorAll('span')].map((s) => textOf(s));
+    const spans = [...a.querySelectorAll('span')].map((sp) => textOf(sp));
     return { day: spans[0] || '', date: m ? m[1] : '', total: spans.length > 1 ? spans[1] : null };
   }).filter((d) => d.date);
 
-  // Wait for the requested week's header, then for the rows to stop changing.
-  const deadline = Date.now() + waitMs;
-  let days = readDays();
-  while (!days.some((d) => d.date === date) && Date.now() < deadline) {
-    await wait(250);
-    days = readDays();
+  const inputs = [...document.querySelectorAll('input[data-testid^="day-entry-"]')];
+  const base = {
+    url: document.location.href,
+    days,
+    inputCount: inputs.length,
+    hasValues: inputs.some((i) => (i.value || '').trim()),
+    expectsHours: days.some((d) => d.total && /[1-9]/.test(d.total)),
+  };
+  if (!days.some((d) => d.date === date)) {
+    return { ...base, ready: false, rows: [], totalHours: null, billableTypes: {}, approval: {}, memberId: null };
   }
-  if (!days.some((d) => d.date === date)) return { ready: false, days, rows: [], totalHours: null, billableTypes: {}, approval: {}, memberId: null };
-  // A week whose header shows hours must also show at least one filled-in cell.
-  const expectsHours = days.some((d) => d.total && /[1-9]/.test(d.total));
-  const hasValues = () => [...document.querySelectorAll('input[data-testid^="day-entry-"]')].some((i) => (i.value || '').trim());
-  let lastCount = -1;
-  let stableFor = 0;
-  while ((stableFor < 2 || (expectsHours && !hasValues())) && Date.now() < deadline) {
-    const count = document.querySelectorAll('input[data-testid^="day-entry-"]').length;
-    stableFor = count === lastCount ? stableFor + 1 : 0;
-    lastCount = count;
-    await wait(400);
-  }
-  days = readDays();
 
   const rows = [];
   for (const mon of document.querySelectorAll('input[data-testid="day-entry-Mon"]')) {
@@ -705,7 +746,7 @@ async function scrapeRuddrWeek(date, waitMs) {
     const projectLink = labelEl ? [...labelEl.querySelectorAll('a[href*="/portfolio/projects/"]')].find((a) => !(a.getAttribute('href') || '').includes('/tasks/')) : null;
     const taskLink = labelEl ? labelEl.querySelector('a[href*="/tasks/"]') : null;
 
-    // The other six inputs follow the Monday one in document order.
+    // The other six day cells are the Monday cell's next siblings.
     const hours = {};
     let el = cell;
     for (const day of DAYS) {
@@ -752,8 +793,8 @@ async function scrapeRuddrWeek(date, waitMs) {
   const memberMatch = memberLink ? /[?&]memberId=([^&]+)/.exec(memberLink.getAttribute('href') || '') : null;
 
   return {
+    ...base,
     ready: true,
-    days,
     rows,
     totalHours,
     billableTypes: byQuery('timeBillableTypeId'),

@@ -4953,14 +4953,46 @@ h5.ec-heading { font-size: 0.9375rem; }
   transition: color 0.12s, border-color 0.12s;
 }
 
+/* The app-wide button rules (red hover, grey disabled) must not show through. */
 .bg-status-task-run:hover:not(:disabled) {
+  background: rgba(122, 179, 245, 0.12);
   border-color: #3a6aaa;
+  color: #a8cdfa;
+}
+
+.bg-status-task-run:active:not(:disabled) {
+  background: rgba(122, 179, 245, 0.24);
+  border-color: #5a8ad0;
+  color: #d0e4fc;
+}
+
+.bg-status-task-run:focus-visible {
+  outline: 2px solid #4fc3f7;
+  outline-offset: 1px;
 }
 
 .bg-status-task-run:disabled {
-  color: #555;
-  border-color: #1a1a2e;
+  background: transparent;
+  color: #4fc3f7;
+  border-color: #1e3a5a;
   cursor: default;
+  opacity: 0.8;
+}
+
+.bg-status-task-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.bg-status-task-error {
+  font-size: 0.6875rem;
+  color: #f08080;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 22rem;
 }
 
 /* ── Auto-dismiss summary banner ─────────────────────────────────────────── */

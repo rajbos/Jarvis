@@ -42,7 +42,9 @@ export const HOURS_WEEKS_PER_RUN = 3;
 export const HOURS_PAUSE_MIN_MS = 15_000;
 export const HOURS_PAUSE_MAX_MS = 30_000;
 const RUDDR_BASE = 'https://www.ruddr.io/app';
-const SCRAPE_TIMEOUT_MS = 30_000;
+/** How long the extension polls a week page for its grid (slow background tabs included). */
+const SCRAPE_WAIT_MS = 25_000;
+const SCRAPE_TIMEOUT_MS = SCRAPE_WAIT_MS + 20_000;
 
 type WeekOutcome = 'ok' | 'error' | 'login_required' | 'extension_outdated' | 'navigation_failed';
 
@@ -85,15 +87,17 @@ async function fetchOneWeek(
     payload: { url, ...navigatePayload(session) },
   });
   if (!nav.ok) {
-    lastError = `Navigation failed: ${nav.error ?? 'unknown'}`;
+    lastError = `${weekStart}: navigation failed: ${nav.error ?? 'unknown'}`;
+    logger.warn(`[RuddrHours] ${lastError}`);
     return 'navigation_failed';
   }
   recordNavigationTab(session, nav.data);
-  const navData = nav.data as { url?: string; tabId?: number } | null;
+  const navData = nav.data as { url?: string; tabId?: number; loadTimedOut?: boolean } | null;
+  logger.debug(`[RuddrHours] ${weekStart}: navigated tab ${navData?.tabId ?? '?'} → ${navData?.url ?? '?'}${navData?.loadTimedOut ? ' (still loading)' : ''}`);
   if ((navData?.url ?? '').includes('/login')) return 'login_required';
 
   const resp = await sendCommand(
-    { type: 'scrape-ruddr-week', tabId: session.tabId ?? navData?.tabId, payload: { date: weekStart, waitMs: 15_000 } },
+    { type: 'scrape-ruddr-week', tabId: session.tabId ?? navData?.tabId, payload: { date: weekStart, waitMs: SCRAPE_WAIT_MS } },
     SCRAPE_TIMEOUT_MS,
   );
   if (!resp.ok) {
@@ -103,7 +107,17 @@ async function fetchOneWeek(
     return 'error';
   }
 
-  const parsed = parseWeekScrape(weekStart, resp.data as RuddrWeekScrape);
+  const data = resp.data as (RuddrWeekScrape & { polls?: number; inputCount?: number; url?: string }) | null;
+  logger.debug(`[RuddrHours] ${weekStart}: scrape ready=${data?.ready} rows=${data?.rows?.length ?? 0} inputs=${data?.inputCount ?? '?'} polls=${data?.polls ?? '?'} url=${data?.url ?? '?'}`);
+  if ((data?.url ?? '').includes('/login')) return 'login_required';
+  const parsed = parseWeekScrape(weekStart, data);
+  if (!parsed.ok && parsed.error === 'page_not_ready') {
+    // The page never rendered — a browser problem, not a bad week. Stop this
+    // run without marking the week, so the next run simply tries again.
+    lastError = `${weekStart}: Ruddr week page did not render within ${SCRAPE_WAIT_MS / 1000}s (url ${data?.url ?? 'unknown'})`;
+    logger.warn(`[RuddrHours] ${lastError}`);
+    return 'navigation_failed';
+  }
   if (!parsed.ok) {
     logger.warn(`[RuddrHours] Week ${weekStart} rejected: ${parsed.error}`);
     saveWeekError(db, weekStart, parsed.error);

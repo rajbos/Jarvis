@@ -1,8 +1,9 @@
 /**
- * Runs the browser extension's in-page Ruddr week scraper (scrapeRuddrWeek in
+ * Runs the browser extension's in-page Ruddr week reader (readRuddrWeek in
  * src/browser-extension/background.js) in headless Chromium against a
- * synthetic copy of Ruddr's /time/week page, then feeds the result through the
- * same parser the main process uses.
+ * synthetic copy of Ruddr's /time/week page, polling it the way the
+ * extension's service worker does, then feeds the result through the same
+ * parser the main process uses.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import fs from 'node:fs';
@@ -15,25 +16,50 @@ import type { RuddrWeekScrape } from '../../src/services/ruddr-hours';
 
 const FIXTURE = path.resolve(__dirname, 'fixtures/ruddr-week.html');
 
-/** The scraper's source, cut out of background.js so it runs exactly as shipped. */
-function scraperSource(): string {
+type Snapshot = RuddrWeekScrape & { inputCount: number; hasValues: boolean; expectsHours: boolean };
+
+/** The reader's source, cut out of background.js so it runs exactly as shipped. */
+function readerSource(): string {
   const src = fs.readFileSync(path.resolve(__dirname, '../../src/browser-extension/background.js'), 'utf-8').replace(/\r\n/g, '\n');
-  const start = src.indexOf('async function scrapeRuddrWeek(');
+  const start = src.indexOf('function readRuddrWeek(');
   const end = src.indexOf('\n}\n', start);
-  if (start < 0 || end < 0) throw new Error('scrapeRuddrWeek not found in background.js');
+  if (start < 0 || end < 0) throw new Error('readRuddrWeek not found in background.js');
   return src.slice(start, end + 2);
 }
 
 describe('Ruddr week scraper', () => {
   let browser: Browser;
-  beforeAll(async () => { browser = await launchBrowser(); });
+  beforeAll(async () => {
+    browser = await launchBrowser();
+    // The first page of a cold browser can take many seconds; pay that here,
+    // under the hook timeout, instead of inside the first test.
+    const warm = await browser.newPage();
+    await warm.goto(pathToFileURL(FIXTURE).href);
+    await warm.close();
+  });
   afterAll(async () => { await browser?.close(); });
 
   async function scrape(date: string, waitMs = 5000): Promise<RuddrWeekScrape> {
     const page = await browser.newPage();
     try {
       await page.goto(pathToFileURL(FIXTURE).href);
-      return await page.evaluate(`(${scraperSource()})(${JSON.stringify(date)}, ${waitMs})`) as RuddrWeekScrape;
+      // Same stop rule as cmdScrapeRuddrWeek: ready, row count stable for two
+      // polls, and a filled-in cell when the header shows hours.
+      const call = `(${readerSource()})(${JSON.stringify(date)})`;
+      const deadline = Date.now() + waitMs;
+      let snapshot = await page.evaluate(call) as Snapshot;
+      let lastCount = -1;
+      let stableFor = 0;
+      while (Date.now() < deadline) {
+        if (snapshot.ready) {
+          stableFor = snapshot.inputCount === lastCount ? stableFor + 1 : 0;
+          lastCount = snapshot.inputCount;
+          if (stableFor >= 2 && (!snapshot.expectsHours || snapshot.hasValues)) break;
+        }
+        await new Promise((r) => setTimeout(r, 400));
+        snapshot = await page.evaluate(call) as Snapshot;
+      }
+      return snapshot;
     } finally {
       await page.close();
     }

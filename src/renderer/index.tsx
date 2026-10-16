@@ -1563,7 +1563,12 @@ function BackgroundStatusBar({
                     <span
                       class={`bg-status-task-dot bg-status-task-dot--${task.running ? 'running' : task.lastStatus ?? 'waiting'}`}
                     />
-                    <span class="bg-status-task-label">{task.label}</span>
+                    <span class="bg-status-task-text">
+                      <span class="bg-status-task-label">{task.label}</span>
+                      {task.lastStatus === 'failed' && task.lastError && (
+                        <span class="bg-status-task-error" title={task.lastError}>{task.lastError}</span>
+                      )}
+                    </span>
                     <button
                       class="bg-status-task-run"
                       disabled={task.running}

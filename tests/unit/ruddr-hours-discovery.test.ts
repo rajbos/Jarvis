@@ -137,6 +137,33 @@ describe('Ruddr hours discovery', () => {
     expect(getHoursStatus(db).loginRequired).toBe(true);
   });
 
+  it('stops without marking the week when the page never renders', async () => {
+    respondWith((cmd) => {
+      if (cmd.type === 'navigate') return { ok: true, data: { url: cmd.payload.url, tabId: 42, createdTab: true, loadTimedOut: true } };
+      if (cmd.type === 'scrape-ruddr-week') return { ok: true, data: { ready: false, days: [], rows: [], url: 'https://www.ruddr.io/app/fixture-ws/time/week' } };
+      return { ok: true, data: {} };
+    });
+
+    await expect(runRuddrHoursDiscovery(db, deps)).rejects.toThrow(/did not render/);
+
+    const types = sendCommand.mock.calls.map(([c]) => c.type);
+    expect(types).toEqual(['navigate', 'scrape-ruddr-week', 'close-tab']);
+    expect(loadWeekRecords(db).size).toBe(0);
+  });
+
+  it('treats a scrape that ended on the login page as login required', async () => {
+    respondWith((cmd) => {
+      if (cmd.type === 'navigate') return { ok: true, data: { url: cmd.payload.url, tabId: 42, createdTab: true, loadTimedOut: true } };
+      if (cmd.type === 'scrape-ruddr-week') return { ok: true, data: { ready: false, days: [], rows: [], url: 'https://www.ruddr.io/login' } };
+      return { ok: true, data: {} };
+    });
+
+    const result = await runRuddrHoursDiscovery(db, deps);
+
+    expect(result).toMatchObject({ skipped: true, reason: 'Ruddr login required' });
+    expect(sendCommand.mock.calls.map(([c]) => c.type)).not.toContain('focus-window');
+  });
+
   it('flags an extension that does not know the week command yet', async () => {
     respondWith((cmd) => {
       if (cmd.type === 'navigate') return { ok: true, data: { url: cmd.payload.url, tabId: 42, createdTab: true } };

@@ -304,6 +304,24 @@ describe('browser-extension background.js: handleCommand', () => {
     },
   );
 
+  it('still reports a background tab it opened when the page is slow to load', async () => {
+    const { h, send } = await connected();
+    h.chrome.tabs.create.mockResolvedValue({ id: 5 });
+    h.chrome.tabs.get.mockResolvedValue({ id: 5, status: 'loading', url: '', pendingUrl: 'https://www.ruddr.io/app/ws/time/week', title: '' });
+    const pending = send({ id: 'bg', type: 'navigate', payload: { url: 'https://www.ruddr.io/app/ws/time/week', newTab: true, background: true } });
+    await flush();
+    // Let the 15 s load timeout fire: the tab must not be leaked by an error.
+    h.timeouts.find((t) => t.ms === 15000)!.fn();
+    const res = await pending;
+    expect(res).toEqual({
+      id: 'bg',
+      ok: true,
+      data: { url: 'https://www.ruddr.io/app/ws/time/week', title: '', tabId: 5, createdTab: true, loadTimedOut: true },
+    });
+    expect(h.chrome.tabs.create).toHaveBeenCalledWith({ url: 'https://www.ruddr.io/app/ws/time/week', active: false });
+    expect(h.chrome.tabs.update).toHaveBeenCalledWith(5, { autoDiscardable: false });
+  });
+
   it('requires a url for navigate', async () => {
     const { send } = await connected();
     const res = await send({ id: 'n', type: 'navigate', tabId: 1, payload: {} });
