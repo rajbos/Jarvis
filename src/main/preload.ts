@@ -10,6 +10,7 @@ import type {
   NewRuddrProjectsPayload,
   BrowserExtensionConnectedPayload,
   UpdateState,
+  DiagnosticReport,
 } from '../types/ipc-payloads';
 
 contextBridge.exposeInMainWorld('jarvis', {
@@ -111,6 +112,11 @@ contextBridge.exposeInMainWorld('jarvis', {
     const listener = (_event: unknown, progress: SecretsScanProgress) => callback(progress);
     ipcRenderer.on('secrets:scan-progress', listener);
     return () => { ipcRenderer.removeListener('secrets:scan-progress', listener); };
+  },
+  onShowDiagnostic: (callback: (report: DiagnosticReport) => void) => {
+    const listener = (_event: unknown, report: DiagnosticReport) => callback(report);
+    ipcRenderer.on('diagnostics:show', listener);
+    return () => { ipcRenderer.removeListener('diagnostics:show', listener); };
   },
   onOpenChat: (callback: () => void) => {
     const listener = () => callback();

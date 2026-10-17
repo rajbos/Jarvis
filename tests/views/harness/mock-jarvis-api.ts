@@ -52,6 +52,7 @@ const EVENT_METHODS: Record<EventMethod, true> = {
   onChatError: true,
   onSecretsProgress: true,
   onOpenChat: true,
+  onShowDiagnostic: true,
   onOAuthComplete: true,
   onPatExpired: true,
   onPatStatusChanged: true,

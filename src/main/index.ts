@@ -14,6 +14,7 @@ import { saveDatabase } from '../storage/database';
 import { stopBridgeServer } from '../plugins/browser-companion/server';
 import { logger, setLogLevel, enableFileLogging } from '../services/logger';
 import { startStallWatchdog } from '../services/stall-watchdog';
+import { STALL_NOTIFY_THRESHOLD_MS, buildStallDiagnostic, reportFreeze, setFreezeReportSender } from './freeze-diagnostics';
 import { checkForUpdates, registerUpdateIpcHandlers, startUpdateChecks, stopUpdateChecks } from './update-checker';
 import { registerDiagnosticsIpcHandlers } from './diagnostics';
 import { safeHandle } from '../plugins/ipc-utils';
@@ -61,6 +62,8 @@ startStallWatchdog({
     const running = getBackgroundTaskScheduler()?.listTasks().filter((t) => t.running).map((t) => t.id) ?? [];
     return `running tasks: ${running.length ? running.join(', ') : 'none'}`;
   },
+  notifyThresholdMs: STALL_NOTIFY_THRESHOLD_MS,
+  onStall: (lagMs, context) => reportFreeze(buildStallDiagnostic(lagMs, context)),
 });
 
 process.on('uncaughtException', (err) => {
@@ -71,6 +74,9 @@ process.on('unhandledRejection', (reason) => {
 });
 
 let mainWindow: BrowserWindow | null = null;
+setFreezeReportSender((report) => {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('diagnostics:show', report);
+});
 let settingsWindow: BrowserWindow | null = null;
 let aboutWindow: BrowserWindow | null = null;
  
