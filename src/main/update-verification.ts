@@ -1,4 +1,4 @@
-import { createHash } from 'crypto';
+import crypto, { createHash } from 'crypto';
 import { createReadStream } from 'fs';
 import type { AppUpdater } from 'electron-updater';
 import { bundleFromJSON } from '@sigstore/bundle';
@@ -34,6 +34,26 @@ export interface AttestationPolicy {
 }
 
 type TrustedRoot = Awaited<ReturnType<typeof getTrustedRoot>>;
+
+/**
+ * Electron ships BoringSSL, where `crypto.verify(undefined, ...)` throws
+ * NO_DEFAULT_DIGEST for EC keys (OpenSSL in plain Node defaults to SHA-256).
+ * tuf-js verifies the TUF root with exactly that call, swallows the error, and
+ * reports "root was signed by 0/3 keys", so the trust root never loads in the
+ * packaged app. Default the digest to SHA-256 (what Sigstore's ECDSA P-256 TUF
+ * keys use) while the trust root is loaded, then restore the original.
+ */
+export async function withDefaultEcDigest<T>(run: () => Promise<T>): Promise<T> {
+  const original = crypto.verify;
+  const patched = ((algorithm: string | null | undefined, ...rest: unknown[]) =>
+    (original as (...args: unknown[]) => boolean)(algorithm ?? 'sha256', ...rest)) as typeof crypto.verify;
+  crypto.verify = patched;
+  try {
+    return await run();
+  } finally {
+    if (crypto.verify === patched) crypto.verify = original;
+  }
+}
 
 export interface AttestationDeps {
   fetch?: typeof fetch;
@@ -120,7 +140,7 @@ export async function verifyAttestationBundles(
   const expectedIdentity = `https://github.com/${policy.repo}/${policy.workflowPath}@refs/tags/v${expectedVersion}`;
   let verifier: Verifier;
   try {
-    const root = await (deps.loadTrustedRoot ?? (() => getTrustedRoot({ cachePath: policy.tufCachePath })))();
+    const root = await (deps.loadTrustedRoot ?? (() => withDefaultEcDigest(() => getTrustedRoot({ cachePath: policy.tufCachePath }))))();
     verifier = new Verifier(toTrustMaterial(root));
   } catch (error) {
     return `the Sigstore trust root could not be loaded (${error instanceof Error ? error.message : String(error)})`;
