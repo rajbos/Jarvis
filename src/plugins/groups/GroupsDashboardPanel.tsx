@@ -541,8 +541,8 @@ function GroupCard(props: {
                         <span class="groups-dash-budget-error">
                           {budgetData[name].error === 'ruddr_no_projects_found'
                             ? 'Ruddr project list is empty — browser extension may not have loaded the page yet. Click 💰 to retry.'
-                            : budgetData[name].error === 'ruddr_dom_changed'
-                            ? 'The Ruddr page layout changed — Jarvis could not read it. The scraper needs an update.'
+                            : budgetData[name].error === 'ruddr_api_changed'
+                            ? 'Ruddr answered in a format Jarvis does not recognise — Jarvis needs an update.'
                             : budgetData[name].error === 'project_url_unknown'
                             ? 'Run "Find Ruddr project" first to cache the project URL'
                             : budgetData[name].error === 'project_not_in_ruddr'

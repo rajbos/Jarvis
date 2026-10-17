@@ -207,6 +207,9 @@ async function handleCommand(rawData) {
       case 'fetch-ruddr-week-entries':
         data = await cmdFetchRuddrWeekEntries(tabId, payload ?? {});
         break;
+      case 'ruddr-api-get':
+        data = await cmdRuddrApiGet(tabId, payload ?? {});
+        break;
       case 'click':
         data = await cmdClick(tabId, payload);
         break;
@@ -673,12 +676,52 @@ async function cmdFetchRuddrWeekEntries(tabId, payload) {
   return results[0]?.result ?? null;
 }
 
+// Paths under /api/www/workspaces/<id>/ — letters, digits and URL query
+// punctuation only, never ".." or "//", so a command can't reach outside the workspace.
+const RUDDR_API_PATH = /^[a-z0-9][a-z0-9\-/_.?=&:%,]*$/i;
+
+async function cmdRuddrApiGet(tabId, payload) {
+  const { workspace, paths } = payload;
+  if (typeof workspace !== 'string' || !/^[a-z0-9-]+$/i.test(workspace)) throw new Error('workspace key is required');
+  if (!Array.isArray(paths) || paths.length === 0 || paths.length > 25) throw new Error('paths must be 1-25 workspace API paths');
+  for (const p of paths) {
+    if (typeof p !== 'string' || !RUDDR_API_PATH.test(p) || p.includes('..') || p.includes('//')) throw new Error(`invalid Ruddr API path: ${String(p)}`);
+  }
+  const targetTabId = await getTargetTabId(tabId);
+  const results = await withTimeout(
+    chrome.scripting.executeScript({ target: { tabId: targetTabId }, func: ruddrApiGet, args: [workspace, paths] }),
+    45000,
+    'Ruddr tab did not answer — the browser may have suspended the background tab',
+  );
+  return results[0]?.result ?? null;
+}
+
 function withTimeout(promise, ms, message) {
   let timer;
   return Promise.race([
     promise,
     new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(message)), ms); }),
   ]).finally(() => clearTimeout(timer));
+}
+
+// Runs inside a ruddr.io page — read-only GETs against Ruddr's own API for
+// the workspace, with the user's session, one after the other. Each path is
+// relative to /api/www/workspaces/<workspace id>/.
+async function ruddrApiGet(workspaceKey, paths) {
+  const get = async (path) => {
+    const res = await globalThis.fetch(path, { credentials: 'include', headers: { accept: 'application/json' } });
+    let body;
+    try { body = res.ok ? await res.json() : null; } catch { body = null; }
+    return { status: res.status, body };
+  };
+  const here = document.location.href;
+  const ws = await get(`/api/www/workspaces/${encodeURIComponent(workspaceKey)}`);
+  if (!ws.body || typeof ws.body.id !== 'string') {
+    return { ok: false, status: ws.status, error: `workspace lookup failed (HTTP ${ws.status})`, url: here };
+  }
+  const responses = [];
+  for (const p of paths) responses.push(await get(`/api/www/workspaces/${encodeURIComponent(ws.body.id)}/${p}`));
+  return { ok: true, status: ws.status, responses, url: here };
 }
 
 // Runs inside a ruddr.io page — asks Ruddr's own API for the member's time

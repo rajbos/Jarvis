@@ -54,15 +54,15 @@ function callHandler(channel: string, ...args: unknown[]): unknown {
   return handler(fakeEvent, ...args);
 }
 
-/** Scrape payload the browser extension returns for a project overview page. */
-const SCRAPED_STATS = {
-  'Actual Billable Hours': '20',
-  'Actual Non-Billable Hours': '1',
-  'Actual Total Hours': '21',
-  'Budget': '100',
-  'Budget Left': '79',
-  'Notes': 'fresh note',
-  '_cloud_folder_url': 'https://example.com/fresh',
+const PROJECT_API_PATH = 'clients/client-a/projects/project-a';
+const KPI_API_PATH = 'projects/p-1/kpi/hours';
+
+/** Ruddr API answers per workspace-relative path, as the extension's `ruddr-api-get` returns them. */
+type ApiAnswers = Record<string, { status: number; body: unknown }>;
+
+const HEALTHY_API: ApiAnswers = {
+  [PROJECT_API_PATH]: { status: 200, body: { id: 'p-1', description: 'fresh note', cloudFolderUrl: 'https://example.com/fresh' } },
+  [KPI_API_PATH]: { status: 200, body: { actual: { billable: 20, nonBillable: 1, total: 21 }, budget: { billable: 100, nonBillable: 0, total: 100 } } },
 };
 
 describe('Groups plugin — Ruddr budget cache', () => {
@@ -79,16 +79,27 @@ describe('Groups plugin — Ruddr budget cache', () => {
     db = new SQL.Database();
     db.run(getSchema());
     db.run("INSERT INTO config (key, value) VALUES ('ruddr_workspace', 'test-workspace')");
-    saveRuddrProjectsToDb(db, [{ name: 'Project A', path: '/app/test-workspace/portfolio/projects/a' }]);
+    saveRuddrProjectsToDb(db, [{ name: 'Project A', path: '/app/test-workspace/portfolio/projects/client-a/project-a' }]);
 
     bridge = await import('../../src/plugins/browser-companion/server');
     vi.mocked(bridge.getBridgeStatus).mockReturnValue({ running: true, port: 35789, connectedClients: 1 });
+    mockRuddrApi(HEALTHY_API);
+  });
+
+  /** Bridge mock: one Ruddr tab, then API answers looked up by path. */
+  function mockRuddrApi(answers: ApiAnswers): void {
     vi.mocked(bridge.sendCommand).mockImplementation(async (command) => {
-      if (command.type === 'navigate') return { id: 'cmd-1', ok: true, data: { url: 'https://www.ruddr.io/overview', tabId: 7 } };
-      if (command.type === 'scrape-stats') return { id: 'cmd-1', ok: true, data: SCRAPED_STATS };
+      if (command.type === 'navigate') {
+        return { id: 'cmd-1', ok: true, data: { url: 'https://www.ruddr.io/app/test-workspace/time/week', tabId: 7, createdTab: true } };
+      }
+      if (command.type === 'ruddr-api-get') {
+        const paths = (command.payload as { paths: string[] }).paths;
+        return { id: 'cmd-1', ok: true, data: { ok: true, status: 200, responses: paths.map((p) => answers[p] ?? { status: 404, body: null }) } };
+      }
+      if (command.type === 'close-tab') return { id: 'cmd-1', ok: true, data: { closed: true } };
       return { id: 'cmd-1', ok: true, data: null };
     });
-  });
+  }
 
   /**
    * Registers the handlers against the current DB. Called after each test has
@@ -234,107 +245,68 @@ describe('Groups plugin — Ruddr budget cache', () => {
     expect(result).toEqual({ ok: false, error: 'groups table missing' });
   });
 
-  // ── 2026 Ruddr redesign: budgets moved to the Settings > Budget page ─────────
+  // ── Ruddr API ────────────────────────────────────────────────────────────────
 
-  /**
-   * Bridge mock serving per-page scrape payloads keyed off the last navigated
-   * URL, so repeated handler invocations keep getting the right page's stats.
-   */
-  function mockTwoPageScrape(overviewStats: Record<string, string>, budgetPageStats: Record<string, string>): void {
-    let currentUrl = 'https://www.ruddr.io/overview';
-    vi.mocked(bridge.sendCommand).mockImplementation(async (command) => {
-      if (command.type === 'navigate') {
-        currentUrl = (command.payload as { url?: string }).url ?? currentUrl;
-        return { id: 'cmd-1', ok: true, data: { url: currentUrl, tabId: 7, createdTab: true } };
-      }
-      if (command.type === 'scrape-stats') {
-        return {
-          id: 'cmd-1',
-          ok: true,
-          data: currentUrl.includes('/settings/budget') ? budgetPageStats : overviewStats,
-        };
-      }
-      if (command.type === 'close-tab') return { id: 'cmd-1', ok: true, data: { closed: true } };
-      return { id: 'cmd-1', ok: true, data: null };
-    });
-  }
-
-  it('reads budget hours from the settings/budget page when the overview has none', async () => {
-    mockTwoPageScrape(
-      { 'Actual Billable Hours': '174', 'Actual Total Hours': '174' },
-      {
-        'Budget Hours': '514,00',
-        'Budget Billable Hours': '514,00',
-        'Budget Non-Billable Hours': '0,00',
-        'Budget Revenue': '€\u00a087.350,00',
-      },
-    );
-
+  it('reads the budget from the project and hours KPI API calls, without scraping pages', async () => {
     await register();
 
     const result = await callHandler('groups:get-ruddr-budget', 'Project A', { force: true }) as Record<string, unknown>;
 
-    expect(result.ok).toBe(true);
-    expect(result.budget).toBe('514');
-    expect(result.budgetLeft).toBe('340'); // 514 budget − 174 actual total
-    expect(result.actualBillableHours).toBe('174');
-    expect(result.scrapeBroken).toBeUndefined();
-
-    const stored = db.exec('SELECT budget, budget_left FROM ruddr_budgets');
-    expect(stored[0].values[0][0]).toBe('514');
-    expect(stored[0].values[0][1]).toBe('340');
+    expect(result).toMatchObject({
+      ok: true, actualBillableHours: '20', actualNonBillableHours: '1', actualTotalHours: '21',
+      budget: '100', budgetLeft: '79', note: 'fresh note', cloudFolderUrl: 'https://example.com/fresh',
+      projectUrl: 'https://www.ruddr.io/app/test-workspace/portfolio/projects/client-a/project-a/overview',
+    });
+    const types = vi.mocked(bridge.sendCommand).mock.calls.map(([c]) => c.type);
+    expect(types).toEqual(['navigate', 'ruddr-api-get', 'ruddr-api-get', 'close-tab']);
+    expect(types).not.toContain('scrape-stats');
+    const stored = db.exec('SELECT budget, budget_left, note FROM ruddr_budgets');
+    expect(stored[0].values[0]).toEqual(['100', '79', 'fresh note']);
   });
 
-  it('flags scrapeBroken and notifies the user once when readable pages yield no budget figures', async () => {
-    mockTwoPageScrape(
-      { 'Actual Billable Hours': '174' },
-      { 'Budget Revenue': '€\u00a087.350,00' }, // readable page, but no hours-budget labels
-    );
-
+  it('reports a project without a budget as budget 0', async () => {
+    mockRuddrApi({
+      ...HEALTHY_API,
+      [KPI_API_PATH]: { status: 200, body: { actual: { billable: 174, nonBillable: 0, total: 174 }, budget: { billable: 0, nonBillable: 0, total: 0 } } },
+    });
     await register();
 
-    const first = await callHandler('groups:get-ruddr-budget', 'Project A', { force: true }) as Record<string, unknown>;
-    expect(first.ok).toBe(true);
-    expect(first.scrapeBroken).toBe(true);
-    expect(first.budget).toBeNull();
-    expect(mockNotification).toHaveBeenCalledTimes(1);
-    expect(db.exec("SELECT value FROM config WHERE key = 'ruddr_budget_alert_at'").length).toBe(1);
+    const result = await callHandler('groups:get-ruddr-budget', 'Project A', { force: true }) as Record<string, unknown>;
 
-    // A second scrape during the same outage must not re-notify.
-    const second = await callHandler('groups:get-ruddr-budget', 'Project A', { force: true }) as Record<string, unknown>;
-    expect(second.scrapeBroken).toBe(true);
-    expect(mockNotification).toHaveBeenCalledTimes(1);
-
-    // Recovery: a readable budget clears the alert again.
-    mockTwoPageScrape({ 'Actual Billable Hours': '10', 'Actual Total Hours': '10' }, { 'Budget Hours': '100,00' });
-    const healthy = await callHandler('groups:get-ruddr-budget', 'Project A', { force: true }) as Record<string, unknown>;
-    expect(healthy.scrapeBroken).toBeUndefined();
-    expect(healthy.budget).toBe('100');
-    expect(db.exec("SELECT value FROM config WHERE key = 'ruddr_budget_alert_at'").length).toBe(0);
+    expect(result).toMatchObject({ ok: true, budget: '0', budgetLeft: '-174', actualBillableHours: '174' });
   });
 
-  it('keeps cached figures and reports ruddr_dom_changed when no stats can be found at all', async () => {
+  it('reports project_not_in_ruddr when Ruddr does not know the project', async () => {
+    mockRuddrApi({});
+    await register();
+
+    const result = await callHandler('groups:get-ruddr-budget', 'Project A', { force: true }) as Record<string, unknown>;
+
+    expect(result).toMatchObject({ ok: false, error: 'project_not_in_ruddr' });
+  });
+
+  it('keeps cached figures, reports ruddr_api_changed and notifies once when the API answer is unreadable', async () => {
     saveRuddrBudgetToDb(db, {
       projectName: 'Project A',
       actualBillableHours: '10', actualNonBillableHours: '0', actualTotalHours: '10',
       budget: '100', budgetLeft: '90', projectUrl: '/a', note: null, cloudFolderUrl: null,
     });
     db.run("UPDATE ruddr_budgets SET fetched_at = datetime('now', '-10 hours')");
-    mockTwoPageScrape({}, {});
-
+    mockRuddrApi({ ...HEALTHY_API, [KPI_API_PATH]: { status: 200, body: { something: 'else' } } });
     await register();
 
     const result = await callHandler('groups:get-ruddr-budget', 'Project A') as Record<string, unknown>;
-
-    expect(result.ok).toBe(true);
-    expect(result.cached).toBe(true);
-    expect(result.budgetLeft).toBe('90');
-    expect(result.refreshError).toBe('ruddr_dom_changed');
+    expect(result).toMatchObject({ ok: true, cached: true, budgetLeft: '90', refreshError: 'ruddr_api_changed' });
     expect(mockNotification).toHaveBeenCalledTimes(1);
 
-    // A forced refresh surfaces the detection error directly.
+    // Same outage: no second notification. A forced refresh reports the error itself.
     const forced = await callHandler('groups:get-ruddr-budget', 'Project A', { force: true }) as Record<string, unknown>;
-    expect(forced.ok).toBe(false);
-    expect(forced.error).toBe('ruddr_dom_changed');
+    expect(forced).toMatchObject({ ok: false, error: 'ruddr_api_changed' });
+    expect(mockNotification).toHaveBeenCalledTimes(1);
+
+    // Recovery clears the alert.
+    mockRuddrApi(HEALTHY_API);
+    await callHandler('groups:get-ruddr-budget', 'Project A', { force: true });
+    expect(db.exec("SELECT value FROM config WHERE key = 'ruddr_budget_alert_at'").length).toBe(0);
   });
 });

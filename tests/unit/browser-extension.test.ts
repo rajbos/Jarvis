@@ -432,6 +432,50 @@ describe('browser-extension background.js: fetchRuddrWeekEntries', () => {
   });
 });
 
+describe('browser-extension background.js: ruddr-api-get', () => {
+  it('GETs each path under the workspace, in order, with the user session', async () => {
+    const h = await loadBackground('t');
+    const calls: Array<{ url: string; init: unknown }> = [];
+    h.ctx.document = { location: { href: 'https://www.ruddr.io/app/ws/time/week' } };
+    h.ctx.fetch = vi.fn(async (url: string, init: unknown) => {
+      calls.push({ url, init });
+      const body = url.endsWith('/workspaces/xebia-ws') ? { id: 'ws-uuid' } : { url };
+      return { ok: true, status: 200, json: async () => body };
+    });
+
+    const result = await (h.ctx.ruddrApiGet as (ws: string, paths: string[]) => Promise<unknown>)(
+      'xebia-ws', ['projects?page=0&size=100', 'projects/p1/kpi/hours'],
+    );
+
+    expect(calls.map((c) => c.url)).toEqual([
+      '/api/www/workspaces/xebia-ws',
+      '/api/www/workspaces/ws-uuid/projects?page=0&size=100',
+      '/api/www/workspaces/ws-uuid/projects/p1/kpi/hours',
+    ]);
+    expect(calls.every((c) => (c.init as { credentials?: string }).credentials === 'include')).toBe(true);
+    expect(result).toEqual({
+      ok: true, status: 200, url: 'https://www.ruddr.io/app/ws/time/week',
+      responses: [
+        { status: 200, body: { url: '/api/www/workspaces/ws-uuid/projects?page=0&size=100' } },
+        { status: 200, body: { url: '/api/www/workspaces/ws-uuid/projects/p1/kpi/hours' } },
+      ],
+    });
+  });
+
+  it.each([
+    ['../../session', 'invalid Ruddr API path: ../../session'],
+    ['/api/www/workspaces', 'invalid Ruddr API path: /api/www/workspaces'],
+    ['https://evil.example/x', 'invalid Ruddr API path: https://evil.example/x'],
+  ])('refuses the path %s before touching the page', async (path, error) => {
+    const h = await loadBackground('t');
+    const sock = FakeWebSocket.instances[0];
+    sock.readyState = FakeWebSocket.OPEN;
+    await h.ctx.handleCommand(JSON.stringify({ id: 'r', type: 'ruddr-api-get', tabId: 1, payload: { workspace: 'ws', paths: [path] } }));
+    expect(JSON.parse(sock.sent.at(-1)!)).toEqual({ id: 'r', ok: false, error });
+    expect(h.chrome.scripting.executeScript).not.toHaveBeenCalled();
+  });
+});
+
 describe('browser-extension background.js: executeInstructions', () => {
   const run = async (instr: string, testMode: boolean, els: Record<string, FakeElement>) => {
     const h = await loadBackground(undefined, els);

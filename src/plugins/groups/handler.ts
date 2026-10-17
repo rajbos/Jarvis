@@ -26,13 +26,12 @@ import type { RuddrProjectEntry } from '../../services/groups';
 import { sendCommand, getBridgeStatus } from '../browser-companion/server';
 import {
   createTabSession,
-  navigatePayload,
-  recordNavigationTab,
   keepSessionTabOpen,
   closeSessionTab,
 } from '../browser-companion/tab-session';
 import type { BrowserTabSession } from '../browser-companion/tab-session';
 import type { RuddrProjectMatch } from '../types';
+import { ruddrApiGet, projectKeysFromPath, projectPath } from './ruddr-api';
 import { logger } from '../../services/logger';
 import { safeHandle } from '../ipc-utils';
 import { registerRuddrHoursHandlers } from './ruddr-hours-discovery';
@@ -120,55 +119,28 @@ function withCacheMeta(cached: CachedBudget, extra: Record<string, unknown> = {}
   };
 }
 
-const RUDDR_BASE = 'https://www.ruddr.io/app';
 /** Config key for the Ruddr workspace slug (e.g. "xebia-xms-benelux"). */
 const RUDDR_WORKSPACE_KEY = 'ruddr_workspace';
 
-// ── Ruddr figure parsing + scrape health ─────────────────────────────────────
+// ── Ruddr API health ─────────────────────────────────────────────────────────
 
-/** Overview-page stat labels that carry a project's actual hours. */
-const RUDDR_ACTUAL_LABELS = ['Actual Billable Hours', 'Actual Non-Billable Hours', 'Actual Total Hours'] as const;
-/**
- * Stat labels that carry budget figures, old and new Ruddr layouts. The 2026
- * redesign moved budgets to the Settings > Budget page and dropped the
- * overview "Budget"/"Budget Left" stats, so the scraper falls back to
- * "Budget Hours" and friends there.
- */
-const RUDDR_BUDGET_LABELS = [
-  'Budget', 'Budget Left',
-  'Budget Hours', 'Budget Total Hours', 'Budget Billable Hours', 'Budget Non-Billable Hours',
-] as const;
 /**
  * Config key holding the epoch ms of the last "cannot read Ruddr budgets"
- * alert. Set when a scrape of readable Ruddr pages yields no budget figures,
+ * alert. Set when Ruddr's API answers with a shape Jarvis can't read,
  * cleared again as soon as a budget is found — so the end user is notified
  * once per outage instead of once per project.
  */
 const RUDDR_BUDGET_ALERT_KEY = 'ruddr_budget_alert_at';
 
-/**
- * Parses a Ruddr figure into a number. Ruddr renders amounts with Dutch
- * formatting ("514,00", "€ 87.350,00", "-", "174"): dot = thousands separator,
- * comma = decimal separator. Returns null for anything non-numeric.
- */
-export function parseRuddrFigure(raw: string | null | undefined): number | null {
-  if (raw == null) return null;
-  const cleaned = raw.replace(/\u00a0/g, '').replace(/€/g, '').replace(/\s+/g, '');
-  if (!cleaned || !/[0-9]/.test(cleaned)) return null;
-  const normalized = cleaned.replace(/\./g, '').replace(/,/g, '.');
-  const n = parseFloat(normalized);
-  return Number.isFinite(n) ? n : null;
-}
-
-/** Formats a parsed Ruddr figure back to the plain string the dashboard expects ("514", "-174", "340.5"). */
+/** Formats Ruddr hours as the plain string the dashboard expects ("514", "-174", "340.5"). */
 export function formatRuddrHours(hours: number): string {
   return String(Math.round(hours * 100) / 100);
 }
 
 /** Desktop notification for the "Ruddr budgets are unreadable" state. */
 function notifyRuddrBudgetScrapeBroken(projectName: string): void {
-  const body = `The Ruddr page layout appears to have changed — no budget figures were found for "${projectName}". Budgets will show as unreadable until the Jarvis scraper is updated.`;
-  logger.warn(`[Groups] Ruddr budget scrape broken for "${projectName}" — the Ruddr DOM may have changed.`);
+  const body = `Ruddr's API answered in a format Jarvis doesn't recognise — no budget figures could be read for "${projectName}". Budgets keep their last known values until Jarvis is updated.`;
+  logger.warn(`[Groups] Ruddr budget API unreadable for "${projectName}" — Ruddr may have changed its API.`);
   try {
     if (!Notification.isSupported()) return;
     new Notification({ title: 'Jarvis cannot read Ruddr budgets', body }).show();
@@ -199,19 +171,6 @@ export function getRuddrWorkspace(db: SqlJsDatabase): string {
   return (getConfigValue(db, RUDDR_WORKSPACE_KEY) ?? '').trim();
 }
 
-function getRuddrProjectsUrl(db: SqlJsDatabase): string {
-  const ws = getRuddrWorkspace(db);
-  return ws ? `${RUDDR_BASE}/${ws}/portfolio/projects` : '';
-}
-
-function getRuddrMyProjectsUrl(db: SqlJsDatabase): string {
-  const ws = getRuddrWorkspace(db);
-  return ws ? `${RUDDR_BASE}/${ws}/my-projects` : '';
-}
-// Project anchors — select the <a> tag directly so we also capture the href.
-// 'cell-name' is a stable non-hashed class applied by Ruddr to the name column.
-const RUDDR_PROJECT_SELECTOR = '.cell-name a';
-
 function normalize(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
 }
@@ -233,59 +192,34 @@ function scoreMatch(query: string, candidate: string): number {
   return 0;
 }
 
-type RuddrListScrape =
-  | {
-      ok: true;
-      items: Array<{ text: string; href?: string }>;
-      /** Tab visibility during the scrape; undefined for extension builds that don't report it. */
-      hidden?: boolean;
-      scrollable?: boolean;
-      grewOnScroll?: boolean;
-    }
-  | { ok: false; error: string };
-
-/** Scrolls through the Ruddr project list in the given tab and collects every row. */
-async function scrapeRuddrProjectList(tabId: number | undefined): Promise<RuddrListScrape> {
-  const extractResp = await sendCommand({
-    type: 'scroll-extract',
-    tabId,
-    payload: { selector: RUDDR_PROJECT_SELECTOR, maxScrolls: 80, waitMs: 1500, includeHref: true, debug: true },
-  }, 180_000).catch((err) => {
-    logger.warn(`[Groups] scroll-extract failed: ${err instanceof Error ? err.message : String(err)}`);
-    return { ok: false, error: err instanceof Error ? err.message : String(err) } as { ok: false; error: string };
-  });
-  if (!extractResp.ok) return { ok: false, error: extractResp.error ?? 'unknown' };
-
-  type Item = { text: string; href?: string };
-  const rawData = extractResp.data as
-    | { items: Item[]; debugLog?: string[]; hidden?: boolean; scrollable?: boolean; grewOnScroll?: boolean }
-    | Item[]
-    | null;
-  // Handle both old format (array) and new format (object with items + debugLog)
-  if (Array.isArray(rawData)) return { ok: true, items: rawData };
-  if (rawData?.debugLog && rawData.debugLog.length > 0) {
-    logger.debug(`[Groups] Ruddr scroll debug:\n  ${rawData.debugLog.join('\n  ')}`);
-  }
-  return {
-    ok: true,
-    items: rawData?.items ?? [],
-    hidden: rawData?.hidden,
-    scrollable: rawData?.scrollable,
-    grewOnScroll: rawData?.grewOnScroll,
-  };
-}
+/** Projects per API page; Ruddr's own list asks for 25. */
+const RUDDR_PROJECT_PAGE_SIZE = 100;
+const RUDDR_PROJECT_MAX_PAGES = 20;
 
 /**
- * True when an unfocused scrape looks like the hidden tab stalled the virtual
- * list: nothing found, far fewer rows than the last run, or a scrollable list
- * that never produced a new row. A scrape of a visible tab is taken as is.
+ * The workspace's active projects from Ruddr's paged projects API — the call
+ * behind the Portfolio → Projects list — instead of scrolling that list.
  */
-function scrapeLooksThrottled(scrape: RuddrListScrape & { ok: true }, oldLen: number): boolean {
-  if (scrape.hidden === false) return false;
-  const count = scrape.items.length;
-  if (count === 0) return true;
-  if (oldLen > 0 && count < oldLen * 0.75) return true;
-  return scrape.scrollable === true && scrape.grewOnScroll === false;
+async function fetchRuddrProjectList(
+  session: BrowserTabSession,
+  workspace: string,
+): Promise<{ ok: true; projects: Array<{ name: string; path: string }> } | { ok: false; error: string }> {
+  const projects: Array<{ name: string; path: string }> = [];
+  for (let page = 0; page < RUDDR_PROJECT_MAX_PAGES; page++) {
+    const res = await ruddrApiGet(session, workspace, [
+      `projects?page=${page}&size=${RUDDR_PROJECT_PAGE_SIZE}&sort=name:asc&projectRecordStatusId=active`,
+    ]);
+    if (!res.ok) return { ok: false, error: res.reason === 'login_required' ? 'login_required' : res.error };
+    const { status, body } = res.responses[0] ?? { status: 0, body: null };
+    const data = body as { results?: Array<{ name?: string; key?: string; client?: { key?: string } }>; total?: number } | null;
+    if (status !== 200 || !Array.isArray(data?.results)) return { ok: false, error: `Ruddr projects request failed (HTTP ${status})` };
+    for (const p of data.results) {
+      if (p.name && p.key && p.client?.key) projects.push({ name: p.name.trim(), path: projectPath(workspace, p.client.key, p.key) });
+    }
+    if (data.results.length < RUDDR_PROJECT_PAGE_SIZE || (typeof data.total === 'number' && projects.length >= data.total)) break;
+  }
+  logger.debug(`[Groups] Ruddr projects API returned ${projects.length} active projects`);
+  return { ok: true, projects };
 }
 
 /**
@@ -306,75 +240,27 @@ async function ensureRuddrCache(
   if (!status.running || status.connectedClients === 0)
     return 'No browser extension connected. Open the Browser Companion tab and ensure the extension is active.';
 
-  const ruddrProjectsUrl = getRuddrProjectsUrl(db);
-  if (!ruddrProjectsUrl) return 'ruddr_workspace_not_configured';
-
-  const navResp = await sendCommand({
-    type: 'navigate',
-    tabId: session?.tabId,
-    payload: { url: ruddrProjectsUrl, ...navigatePayload(session) },
-  });
-  if (!navResp.ok) return `Navigation failed: ${navResp.error ?? 'unknown'}`;
-  recordNavigationTab(session, navResp.data);
-
-  const navData = navResp.data as { url?: string; tabId?: number } | null;
-  let finalUrl = navData?.url ?? '';
-  if (finalUrl.includes('/login')) {
-    // The user has to log in here — leave the tab open for them.
-    keepSessionTabOpen(session);
-    sendCommand({ type: 'focus-window', tabId: navData?.tabId, payload: {} }).catch(() => { /* non-fatal */ });
-    return 'login_required';
-  }
-
-  let scrapeTabId: number | undefined = session?.tabId ?? navData?.tabId;
-  if (!finalUrl.includes('portfolio/projects')) {
-    logger.debug(`[Groups] Portfolio URL redirected to ${finalUrl} — trying my-projects fallback`);
-    const fallbackNav = await sendCommand({
-      type: 'navigate',
-      tabId: session?.tabId,
-      payload: { url: getRuddrMyProjectsUrl(db), ...navigatePayload(session) },
-    });
-    if (!fallbackNav.ok) return `Fallback navigation failed: ${fallbackNav.error ?? 'unknown'}`;
-    recordNavigationTab(session, fallbackNav.data);
-    const fallbackData = fallbackNav.data as { url?: string; tabId?: number } | null;
-    finalUrl = fallbackData?.url ?? '';
-    if (finalUrl.includes('/login')) {
-      keepSessionTabOpen(session);
-      sendCommand({ type: 'focus-window', tabId: fallbackData?.tabId, payload: {} }).catch(() => { /* non-fatal */ });
-      return 'login_required';
-    }
-    scrapeTabId = session?.tabId ?? fallbackData?.tabId ?? scrapeTabId;
-  }
+  const workspace = getRuddrWorkspace(db);
+  if (!workspace) return 'ruddr_workspace_not_configured';
 
   const oldLen = ruddrProjectsCache?.length ?? 0;
-
-  // Scrape without taking focus first. Chrome does not render hidden tabs
-  // (no native scroll events, IntersectionObservers paused), which can stall
-  // Ruddr's virtual list — so if the quiet attempt comes up short, bring the
-  // tab to the front and scrape again.
-  let scrape = await scrapeRuddrProjectList(scrapeTabId);
-  if (scrape.ok && scrapeLooksThrottled(scrape, oldLen)) {
-    logger.debug(`[Groups] Background Ruddr scrape returned ${scrape.items.length} projects — retrying with the tab focused`);
-    await sendCommand({ type: 'focus-window', tabId: scrapeTabId, payload: {} }).catch(() => { /* non-fatal */ });
-    // Reload for a clean (unscrolled) list before the second pass.
-    const reloadResp = await sendCommand({ type: 'navigate', tabId: scrapeTabId, payload: { url: finalUrl } });
-    if (!reloadResp.ok) return `Navigation failed: ${reloadResp.error ?? 'unknown'}`;
-    scrape = await scrapeRuddrProjectList(scrapeTabId);
+  const fetched = await fetchRuddrProjectList(session ?? createTabSession(), workspace);
+  if (!fetched.ok) {
+    if (fetched.error === 'login_required' && session?.tabId !== undefined) {
+      // The user has to log in here — leave the tab open for them.
+      keepSessionTabOpen(session);
+      sendCommand({ type: 'focus-window', tabId: session.tabId, payload: {} }).catch(() => { /* non-fatal */ });
+    }
+    return fetched.error;
   }
-  if (!scrape.ok) return `Extract failed: ${scrape.error}`;
-
-  const freshProjects = scrape.items
-    .map((i) => ({ name: (i.text ?? '').trim(), path: (i.href ?? '').split('?')[0].split('#')[0] }))
-    .filter((e) => e.name);
+  const freshProjects = fetched.projects;
 
   if (freshProjects.length === 0) {
     if (oldLen === 0) {
-      logger.warn(`[Groups] Ruddr scroll returned 0 projects and cache is empty — scrape may have failed.`);
+      logger.warn('[Groups] Ruddr returned 0 projects and the cache is empty.');
       return 'ruddr_no_projects_found';
     }
-    logger.warn(`[Groups] Ruddr scroll returned only ${freshProjects.length} projects — keeping old cache of ${oldLen}.`);
-  } else if (oldLen > 0 && freshProjects.length < oldLen * 0.75) {
-    logger.warn(`[Groups] Ruddr scroll returned only ${freshProjects.length} projects — keeping old cache of ${oldLen}.`);
+    logger.warn(`[Groups] Ruddr returned no projects — keeping old cache of ${oldLen}.`);
   } else {
     // Merge notes from old DB entries into the fresh list before saving
     const oldEntries = loadRuddrProjectsFromDb(db);
@@ -491,89 +377,54 @@ async function refreshLinkedProjectDetails(
 
   if (toRefresh.length === 0) return;
 
+  const workspace = getRuddrWorkspace(db);
+  if (!workspace) return;
   logger.debug(`[Groups] Auto-refreshing details for ${toRefresh.length} linked project(s) missing note/cloud folder`);
   let updated = false;
 
-  for (const entry of toRefresh) {
-    try {
-      // The edit page URL has 'edit/' inserted after '/portfolio/projects/'
-      // e.g. /app/ws/portfolio/projects/client/project → /app/ws/portfolio/projects/edit/client/project
-      const editPath = entry.path.includes('/portfolio/projects/')
-        ? entry.path.replace('/portfolio/projects/', '/portfolio/projects/edit/')
-        : entry.path;
-      const editUrl = `https://www.ruddr.io${editPath}`;
-      logger.debug(`[Groups] Refreshing "${entry.name}" → ${editUrl}`);
-
-      const navResp = await sendCommand({
-        type: 'navigate',
-        tabId: session?.tabId,
-        payload: { url: editUrl, ...navigatePayload(session) },
-      });
-      logger.debug(`[Groups]   nav ok=${navResp.ok} data=${JSON.stringify(navResp.data)}`);
-      if (!navResp.ok) {
-        logger.warn(`[Groups]   nav failed for "${entry.name}", skipping`);
-        continue;
-      }
-      recordNavigationTab(session, navResp.data);
-
-      const navData = navResp.data as { url?: string; tabId?: number } | null;
-      if ((navData?.url ?? '').includes('/login')) {
-        logger.debug('[Groups] Auto-refresh: Ruddr login required — stopping detail refresh');
-        // The user has to log in here — leave the tab open for them.
-        keepSessionTabOpen(session);
-        break;
-      }
-
-      const scrapeTabId = session?.tabId ?? navData?.tabId;
-      logger.debug(`[Groups]   Sending read-form-fields (tabId=${scrapeTabId})`);
-      const fieldsResp = await sendCommand({
-        type: 'read-form-fields',
-        tabId: scrapeTabId,
-        payload: {
-          selectors: ['textarea[name="description"]', 'input[name="cloudFolderUrl"]'],
-          waitMs: 4000,
-        },
-      });
-      logger.debug(`[Groups]   fields ok=${fieldsResp.ok} data=${JSON.stringify(fieldsResp.data)} error=${fieldsResp.error ?? ''}`);
-      if (!fieldsResp.ok) {
-        logger.warn(`[Groups]   read-form-fields failed for "${entry.name}": ${fieldsResp.error ?? 'unknown'}, skipping`);
-        continue;
-      }
-
-      const raw = fieldsResp.data as Record<string, string | null> | null;
-      const note = raw?.['textarea[name="description"]'] ?? null;
-      const cloudFolderUrl = raw?.['input[name="cloudFolderUrl"]'] ?? null;
-      logger.debug(`[Groups]   note=${note ? `"${note.slice(0, 60)}…"` : 'null'}  cloudFolderUrl=${cloudFolderUrl ?? 'null'}`);
-
-      if (note !== null || cloudFolderUrl !== null) {
-        try {
-          if (note !== null) updateRuddrProjectNote(db, entry.path, note);
-          if (cloudFolderUrl !== null) updateRuddrProjectCloudFolderUrl(db, entry.path, cloudFolderUrl);
-          if (ruddrProjectsCache) {
-            const idx = ruddrProjectsCache.findIndex((e) => e.path === entry.path);
-            if (idx !== -1) ruddrProjectsCache[idx] = {
-              ...ruddrProjectsCache[idx],
-              ...(note !== null ? { note } : {}),
-              ...(cloudFolderUrl !== null ? { cloud_folder_url: cloudFolderUrl } : {}),
-            };
-          }
-          saveDatabase();
-          updated = true;
-          logger.debug(`[Groups]   DB updated for "${entry.name}"`);
-        } catch { /* non-fatal */ }
-      } else {
-        logger.debug(`[Groups]   No values found for "${entry.name}" — both fields null`);
-      }
-    } catch (err) {
-      logger.warn(
-        `[Groups] Auto-refresh detail failed for "${entry.name}":`,
-        err instanceof Error ? err.message : String(err),
-      );
-    }
-
-    // Small delay between project scrapes to avoid hammering Ruddr
-    await new Promise<void>((r) => setTimeout(r, 1000));
+  // One API call for all of them: the project record holds the description
+  // (shown as the note) and the cloud folder URL.
+  const withKeys = toRefresh
+    .map((entry) => ({ entry, keys: projectKeysFromPath(entry.path) }))
+    .filter((x): x is { entry: RuddrProjectEntry; keys: { clientKey: string; projectKey: string } } => x.keys !== null)
+    .slice(0, 25);
+  if (withKeys.length === 0) return;
+  const res = await ruddrApiGet(
+    session ?? createTabSession(),
+    workspace,
+    withKeys.map(({ keys }) => `clients/${keys.clientKey}/projects/${keys.projectKey}`),
+  );
+  if (!res.ok) {
+    logger.debug(`[Groups] Auto-refresh details skipped: ${res.error}`);
+    if (res.reason === 'login_required') keepSessionTabOpen(session);
+    return;
   }
+
+  withKeys.forEach(({ entry }, i) => {
+    const { status, body } = res.responses[i] ?? { status: 0, body: null };
+    const project = body as { description?: unknown; cloudFolderUrl?: unknown } | null;
+    if (status !== 200 || !project) {
+      logger.warn(`[Groups]   project details for "${entry.name}" failed (HTTP ${status})`);
+      return;
+    }
+    const note = typeof project.description === 'string' ? project.description : null;
+    const cloudFolderUrl = typeof project.cloudFolderUrl === 'string' ? project.cloudFolderUrl : null;
+    if (note === null && cloudFolderUrl === null) return;
+    try {
+      if (note !== null) updateRuddrProjectNote(db, entry.path, note);
+      if (cloudFolderUrl !== null) updateRuddrProjectCloudFolderUrl(db, entry.path, cloudFolderUrl);
+      if (ruddrProjectsCache) {
+        const idx = ruddrProjectsCache.findIndex((e) => e.path === entry.path);
+        if (idx !== -1) ruddrProjectsCache[idx] = {
+          ...ruddrProjectsCache[idx],
+          ...(note !== null ? { note } : {}),
+          ...(cloudFolderUrl !== null ? { cloud_folder_url: cloudFolderUrl } : {}),
+        };
+      }
+      updated = true;
+    } catch { /* non-fatal */ }
+  });
+  if (updated) saveDatabase();
 
   if (updated) {
     const win = _getWindowFn();
@@ -819,8 +670,8 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
     if (!workspace) return cachedOr('ruddr_workspace_not_configured');
 
     // Look up the project path from the in-memory cache or DB.
-    // Do NOT trigger a full scroll-extract scrape just for a path lookup —
-    // that causes the browser to loop over all projects every time a budget is loaded.
+    // Do NOT refetch the whole project list just for a path lookup —
+    // that would hit Ruddr for every project each time a budget is loaded.
     const findEntry = () =>
       ruddrProjectsCache?.find((e) => e.name === trimmed)
       ?? ruddrProjectsCache?.find((e) => e.name.toLowerCase() === trimmed.toLowerCase())
@@ -850,96 +701,59 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
     }
 
     const overviewUrl = `https://www.ruddr.io${entry.path}/overview`;
-    // A budget scrape navigates at least twice (overview + settings/budget) —
-    // run it in a dedicated background tab instead of hijacking the tab the
-    // user is looking at.
+    const keys = projectKeysFromPath(entry.path);
+    if (!keys) return cachedOr('project_url_unknown');
+    // Two API calls in one background tab: the project record (id, note,
+    // cloud folder) and its hours KPI (actual and budgeted hours).
     const session = createTabSession();
     try {
-      const navResp = await sendCommand({
-        type: 'navigate',
-        tabId: session.tabId,
-        payload: { url: overviewUrl, ...navigatePayload(session) },
-      });
-      if (!navResp.ok) return cachedOr(`Navigation failed: ${navResp.error ?? 'unknown'}`);
-      recordNavigationTab(session, navResp.data);
-
-      const navData = navResp.data as { url?: string; tabId?: number } | null;
-      if ((navData?.url ?? '').includes('/login')) {
-        keepSessionTabOpen(session);
-        sendCommand({ type: 'focus-window', tabId: navData?.tabId, payload: {} }).catch(() => { /* non-fatal */ });
-        return cachedOr('login_required');
+      const projectRes = await ruddrApiGet(session, workspace, [`clients/${keys.clientKey}/projects/${keys.projectKey}`]);
+      if (!projectRes.ok) {
+        if (projectRes.reason === 'login_required' && session.tabId !== undefined) {
+          // The user asked for this budget — leave the tab open so they can log in.
+          keepSessionTabOpen(session);
+          sendCommand({ type: 'focus-window', tabId: session.tabId, payload: {} }).catch(() => { /* non-fatal */ });
+        }
+        return cachedOr(projectRes.error);
       }
-      const scrapeTabId = session.tabId ?? navData?.tabId;
-
-      const statsResp = await sendCommand({
-        type: 'scrape-stats',
-        tabId: scrapeTabId,
-        payload: { waitMs: 3000 },
-      });
-      if (!statsResp.ok) return cachedOr(`Scrape failed: ${statsResp.error ?? 'unknown'}`);
-
-      const raw = statsResp.data as Record<string, string> | null;
-      const note = raw?.['Notes'] ?? raw?.['Note'] ?? raw?.['Description'] ?? null;
-      const cloudFolderUrl = raw?.['_cloud_folder_url'] ?? null;
-
-      // ── Budget figures ────────────────────────────────────────────────────
-      // Legacy Ruddr exposed "Budget"/"Budget Left" stats on the overview page.
-      // The 2026 redesign moved them to the project's Settings > Budget page,
-      // so when the overview has none, scrape that page as well.
-      const overviewBudgetRaw = raw?.['Budget'] ?? null;
-      const overviewBudgetLeftRaw = raw?.['Budget Left'] ?? null;
-      let budgetHours = parseRuddrFigure(overviewBudgetRaw);
-      let budgetPageRaw: Record<string, string> | null = null;
-      if (budgetHours === null) {
-        const budgetUrl = `https://www.ruddr.io${entry.path}/settings/budget`;
-        const budgetNav = await sendCommand({ type: 'navigate', tabId: scrapeTabId, payload: { url: budgetUrl } });
-        if (!budgetNav.ok) return cachedOr(`Budget page navigation failed: ${budgetNav.error ?? 'unknown'}`);
-        const budgetStatsResp = await sendCommand({
-          type: 'scrape-stats',
-          tabId: scrapeTabId,
-          payload: { waitMs: 3000 },
-        });
-        if (!budgetStatsResp.ok) return cachedOr(`Budget page scrape failed: ${budgetStatsResp.error ?? 'unknown'}`);
-        budgetPageRaw = budgetStatsResp.data as Record<string, string> | null;
-        budgetHours =
-          parseRuddrFigure(budgetPageRaw?.['Budget Hours'])
-          ?? parseRuddrFigure(budgetPageRaw?.['Budget Total Hours'])
-          ?? parseRuddrFigure(budgetPageRaw?.['Budget Billable Hours']);
-      }
-
-      const actualTotalHours = parseRuddrFigure(raw?.['Actual Total Hours']);
-      let budgetLeftHours = parseRuddrFigure(overviewBudgetLeftRaw);
-      if (budgetLeftHours === null && budgetHours !== null && actualTotalHours !== null) {
-        budgetLeftHours = budgetHours - actualTotalHours;
-      }
-
-      // ── Scrape-health detection ───────────────────────────────────────────
-      // When neither page yields any label Jarvis recognizes, Ruddr most likely
-      // changed its DOM again — keep the cached figures and alert the user
-      // instead of caching empty budgets.
-      const sawKnownLabel =
-        RUDDR_ACTUAL_LABELS.some((l) => raw?.[l] !== undefined)
-        || RUDDR_BUDGET_LABELS.some((l) => raw?.[l] !== undefined || budgetPageRaw?.[l] !== undefined);
-      if (!sawKnownLabel) {
+      const projectResp = projectRes.responses[0];
+      if (projectResp?.status === 404) return cachedOr('project_not_in_ruddr');
+      const project = projectResp?.body as { id?: unknown; description?: unknown; cloudFolderUrl?: unknown } | null;
+      if (projectResp?.status !== 200 || typeof project?.id !== 'string') {
         updateRuddrBudgetScrapeAlert(db, true, trimmed);
-        return cachedOr('ruddr_dom_changed');
+        return cachedOr('ruddr_api_changed');
       }
-      // The pages are readable but no budget figures exist on them — flag the
-      // result so the dashboard can explain itself, and alert the user once.
-      const scrapeBroken = budgetHours === null && budgetPageRaw !== null;
-      updateRuddrBudgetScrapeAlert(db, scrapeBroken, trimmed);
+      const note = typeof project.description === 'string' ? project.description : null;
+      const cloudFolderUrl = typeof project.cloudFolderUrl === 'string' ? project.cloudFolderUrl : null;
 
+      const kpiRes = await ruddrApiGet(session, workspace, [`projects/${encodeURIComponent(project.id)}/kpi/hours`]);
+      if (!kpiRes.ok) return cachedOr(kpiRes.error);
+      type HoursSplit = { billable?: unknown; nonBillable?: unknown; total?: unknown };
+      const kpi = kpiRes.responses[0]?.body as { actual?: HoursSplit; budget?: HoursSplit } | null;
+      const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+      const actualBillable = num(kpi?.actual?.billable);
+      const actualNonBillable = num(kpi?.actual?.nonBillable);
+      const actualTotal = num(kpi?.actual?.total);
+      const budgetTotal = num(kpi?.budget?.total);
+      if (kpiRes.responses[0]?.status !== 200 || actualTotal === null) {
+        // Ruddr changed its API — keep the cached figures and tell the user once.
+        updateRuddrBudgetScrapeAlert(db, true, trimmed);
+        return cachedOr('ruddr_api_changed');
+      }
+      updateRuddrBudgetScrapeAlert(db, false, trimmed);
+
+      const fmt = (h: number | null) => (h === null ? null : formatRuddrHours(h));
       const budgetResult = {
         ok: true,
-        actualBillableHours: raw?.['Actual Billable Hours'] ?? null,
-        actualNonBillableHours: raw?.['Actual Non-Billable Hours'] ?? null,
-        actualTotalHours: raw?.['Actual Total Hours'] ?? null,
-        budget: budgetHours !== null ? formatRuddrHours(budgetHours) : overviewBudgetRaw,
-        budgetLeft: budgetLeftHours !== null ? formatRuddrHours(budgetLeftHours) : overviewBudgetLeftRaw,
+        actualBillableHours: fmt(actualBillable),
+        actualNonBillableHours: fmt(actualNonBillable),
+        actualTotalHours: fmt(actualTotal),
+        // A project without a budget reports 0, which the dashboard shows as "No budget set".
+        budget: fmt(budgetTotal ?? 0),
+        budgetLeft: fmt((budgetTotal ?? 0) - actualTotal),
         projectUrl: overviewUrl,
         note: note,
         cloudFolderUrl: cloudFolderUrl,
-        ...(scrapeBroken ? { scrapeBroken: true } : {}),
       };
       const fetchedAtMs = Date.now();
       ruddrBudgetCache.set(trimmed, { result: budgetResult, fetchedAtMs });

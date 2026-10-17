@@ -25,6 +25,7 @@ export interface BridgeCommand {
     | 'scrape-stats'
     | 'read-form-fields'
     | 'fetch-ruddr-week-entries'
+    | 'ruddr-api-get'
     | 'click'
     | 'fill'
     | 'screenshot'
