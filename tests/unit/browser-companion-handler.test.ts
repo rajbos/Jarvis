@@ -328,6 +328,31 @@ describe('Browser-companion plugin — IPC handlers', () => {
     });
   });
 
+  describe('browser:run-skill step failures', () => {
+    it('marks the run failed when a step reports ok:false', async () => {
+      db.run(
+        `INSERT INTO browser_skills (id, name, start_url, instructions)
+         VALUES (1, 'Broken Skill', 'https://example.com', 'click #gone')`,
+      );
+      vi.mocked(getBridgeStatus).mockReturnValue({ running: true, port: 35789, connectedClients: 1 });
+      vi.mocked(sendCommand)
+        .mockResolvedValueOnce({ id: 'cmd-1', ok: true, data: {} })
+        .mockResolvedValueOnce({
+          id: 'cmd-1',
+          ok: true,
+          data: { steps: [{ step: 'click #gone', ok: false, error: 'Element not found: #gone' }], testMode: false },
+        });
+
+      const result = (await callHandler('browser:run-skill', 1, false)) as Record<string, unknown>;
+      expect(result.ok).toBe(false);
+      expect(result.error).toContain('click #gone');
+      expect(result.error).toContain('Element not found');
+      const rows = db.exec("SELECT status, error FROM browser_skill_runs");
+      expect(rows[0].values[0][0]).toBe('failed');
+      expect(String(rows[0].values[0][1])).toContain('Element not found');
+    });
+  });
+
   // ── browser:focus-window ──────────────────────────────────────────────────
   // Its own try/catch was deleted during the safeHandle migration (it only
   // ever returned { ok: false, error }) — safeHandle now provides that.
