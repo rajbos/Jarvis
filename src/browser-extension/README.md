@@ -60,6 +60,12 @@ the scroll events itself there and reports `hidden`, `scrollable` and `grewOnScr
 background scrape looks stalled, Jarvis sends `focus-window` (which also activates the tab)
 and scrapes again.
 
+The extension remembers every tab it opens this way (ids kept in `chrome.storage.session`).
+A later `newTab` navigate reuses one of them once no command has targeted it for three
+minutes, instead of opening another, so a tab left open (for a Ruddr login, say) does not pile
+up. The response then also carries `reusedTab: true`; the run still owns the tab and closes it
+as usual. Tabs the user opened are never reused.
+
 Jarvis only closes a tab it was told it created, so a run that reused an existing tab —
 including one against an older extension build that ignores `newTab` — leaves the user's tab
 open. A tab that is already gone when `close-tab` arrives answers `{ closed: false,

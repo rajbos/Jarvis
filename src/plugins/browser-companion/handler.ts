@@ -11,6 +11,13 @@ import {
   regenerateBridgeToken,
   sendCommand,
 } from './server';
+import {
+  createTabSession,
+  navigatePayload,
+  recordNavigationTab,
+  tabTarget,
+  closeSessionTab,
+} from './tab-session';
 
 function findFailedStep(data: unknown): { step: string; error?: string } | null {
   const steps = (data as { steps?: unknown } | null)?.steps;
@@ -220,20 +227,26 @@ export function registerHandlers(
         runId = idResult[0]?.values[0]?.[0] as number;
       }
 
+      // Run in a dedicated background tab (reusing an idle one Jarvis opened
+      // earlier) instead of navigating the tab the user is looking at.
+      const session = createTabSession();
+
       try {
         // Step 1: Navigate to the start URL
         const navResponse = await sendCommand({
           type: 'navigate',
-          payload: { url: skill.start_url },
+          payload: { url: skill.start_url, ...navigatePayload(session) },
         });
 
         if (!navResponse.ok) {
           throw new Error(`Navigation failed: ${navResponse.error ?? 'unknown'}`);
         }
+        recordNavigationTab(session, navResponse.data);
 
         // Step 2: Execute the skill instructions in the page
         const evalResponse = await sendCommand({
           type: 'evaluate',
+          ...tabTarget(session),
           payload: {
             instructions: skill.instructions,
             testMode,
@@ -256,6 +269,7 @@ export function registerHandlers(
         if (skill.extract_selector && skill.extract_selector.trim().length > 0) {
           const extractResponse = await sendCommand({
             type: 'extract',
+            ...tabTarget(session),
             payload: { selector: skill.extract_selector },
           });
           if (extractResponse.ok) {
@@ -291,6 +305,8 @@ export function registerHandlers(
           saveDatabase();
         }
         return { ok: false, error: message, runId, testMode };
+      } finally {
+        await closeSessionTab(session);
       }
     },
   );

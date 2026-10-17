@@ -311,6 +311,44 @@ describe('Browser-companion plugin — IPC handlers', () => {
       expect(runCount[0].values[0][0]).toBe(0);
     });
 
+    it('runs in a background tab, targets it for later commands and closes it afterwards', async () => {
+      db.run(
+        `INSERT INTO browser_skills (id, name, start_url, instructions, extract_selector)
+         VALUES (1, 'Tab Skill', 'https://example.com', 'Click button', '.out')`,
+      );
+      vi.mocked(getBridgeStatus).mockReturnValue({ running: true, port: 35789, connectedClients: 1 });
+      vi.mocked(sendCommand)
+        .mockResolvedValueOnce({ id: '1', ok: true, data: { tabId: 7, createdTab: true } }) // navigate
+        .mockResolvedValueOnce({ id: '2', ok: true, data: { steps: [] } })                  // evaluate
+        .mockResolvedValueOnce({ id: '3', ok: true, data: ['x'] })                          // extract
+        .mockResolvedValueOnce({ id: '4', ok: true, data: { closed: true } });              // close-tab
+
+      const result = (await callHandler('browser:run-skill', 1, false)) as Record<string, unknown>;
+      expect(result.ok).toBe(true);
+      expect(vi.mocked(sendCommand).mock.calls.map(([c]) => c)).toEqual([
+        { type: 'navigate', payload: { url: 'https://example.com', newTab: true, background: true } },
+        { type: 'evaluate', tabId: 7, payload: { instructions: 'Click button', testMode: false } },
+        { type: 'extract', tabId: 7, payload: { selector: '.out' } },
+        { type: 'close-tab', tabId: 7, payload: {} },
+      ]);
+    });
+
+    it('closes the run tab even when a step fails', async () => {
+      db.run(
+        `INSERT INTO browser_skills (id, name, start_url, instructions)
+         VALUES (1, 'Failing Skill', 'https://example.com', 'Click button')`,
+      );
+      vi.mocked(getBridgeStatus).mockReturnValue({ running: true, port: 35789, connectedClients: 1 });
+      vi.mocked(sendCommand)
+        .mockResolvedValueOnce({ id: '1', ok: true, data: { tabId: 7, createdTab: true } })
+        .mockResolvedValueOnce({ id: '2', ok: true, data: { steps: [{ step: 'click', ok: false, error: 'nope' }] } })
+        .mockResolvedValueOnce({ id: '3', ok: true, data: { closed: true } });
+
+      const result = (await callHandler('browser:run-skill', 1, false)) as Record<string, unknown>;
+      expect(result.ok).toBe(false);
+      expect(vi.mocked(sendCommand).mock.calls.at(-1)![0]).toEqual({ type: 'close-tab', tabId: 7, payload: {} });
+    });
+
     it('creates a run record when not in test mode', async () => {
       db.run(
         `INSERT INTO browser_skills (id, name, start_url, instructions)

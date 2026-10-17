@@ -182,6 +182,7 @@ async function handleCommand(rawData) {
   if (cmd.type === 'ping') return;
 
   const { id, type, tabId, payload } = cmd;
+  touchOwnedTab(tabId);
 
   try {
     let data;
@@ -257,6 +258,58 @@ async function getTargetTabId(preferredTabId) {
   return tab.id;
 }
 
+// ── Tabs Jarvis opened ────────────────────────────────────────────────────────
+// Every tab opened for a `newTab` run is remembered here (tabId → time of the last
+// command that targeted it). A later `newTab` run reuses one of these once it has
+// been idle for OWNED_TAB_IDLE_MS, so tabs do not pile up when a run leaves its tab
+// open (e.g. for a login). Only tabs Jarvis opened itself are ever reused — a tab
+// the user opened is never taken over. The ids survive a service-worker restart in
+// chrome.storage.session; after a restart they all count as idle.
+
+const OWNED_TAB_IDLE_MS = 3 * 60 * 1000;
+const OWNED_TABS_KEY = 'jarvisOwnedTabs';
+const ownedTabs = new Map();
+
+function touchOwnedTab(tabId) {
+  if (typeof tabId === 'number' && ownedTabs.has(tabId)) ownedTabs.set(tabId, Date.now());
+}
+
+async function persistOwnedTabs() {
+  try {
+    await chrome.storage.session.set({ [OWNED_TABS_KEY]: [...ownedTabs.keys()] });
+  } catch { /* storage.session unavailable — the registry just starts empty after a restart */ }
+}
+
+function forgetOwnedTab(tabId) {
+  if (ownedTabs.delete(tabId)) persistOwnedTabs();
+}
+
+async function restoreOwnedTabs() {
+  try {
+    const stored = await chrome.storage.session.get(OWNED_TABS_KEY);
+    const ids = stored?.[OWNED_TABS_KEY];
+    if (Array.isArray(ids)) for (const id of ids) if (typeof id === 'number' && !ownedTabs.has(id)) ownedTabs.set(id, 0);
+  } catch { /* nothing to restore */ }
+}
+
+/** Returns an idle tab Jarvis opened earlier (marking it in use), or null. */
+async function claimIdleOwnedTab() {
+  for (const [id, lastUsed] of [...ownedTabs]) {
+    if (Date.now() - lastUsed < OWNED_TAB_IDLE_MS) continue;
+    try {
+      const tab = await chrome.tabs.get(id);
+      ownedTabs.set(id, Date.now());
+      return tab;
+    } catch {
+      forgetOwnedTab(id); // the user closed it
+    }
+  }
+  return null;
+}
+
+try { chrome.tabs.onRemoved.addListener((tabId) => forgetOwnedTab(tabId)); } catch { /* not available */ }
+restoreOwnedTabs();
+
 // ── Command implementations ───────────────────────────────────────────────────
 
 async function cmdNavigate(tabId, payload) {
@@ -279,9 +332,23 @@ async function cmdNavigate(tabId, payload) {
   // wins — that means the caller is continuing in a tab it already has).
   // `background` opens that tab without switching to it, so the user's current
   // tab and window focus are left alone.
+  // An idle tab Jarvis opened for an earlier run is reused instead of opening yet
+  // another one; the caller still owns it for this run (createdTab: true) and
+  // closes it when done, exactly as for a fresh tab.
   if (newTab === true && typeof tabId !== 'number') {
-    const created = await chrome.tabs.create({ url, active: background !== true });
-    if (typeof created.id !== 'number') throw new Error('Failed to create tab');
+    const reused = await claimIdleOwnedTab();
+    let created;
+    if (reused) {
+      if (reused.url === url) await chrome.tabs.reload(reused.id);
+      else await chrome.tabs.update(reused.id, { url });
+      if (background !== true) await chrome.tabs.update(reused.id, { active: true });
+      created = reused;
+    } else {
+      created = await chrome.tabs.create({ url, active: background !== true });
+      if (typeof created.id !== 'number') throw new Error('Failed to create tab');
+      ownedTabs.set(created.id, Date.now());
+      persistOwnedTabs();
+    }
     if (background === true) {
       // Keep a background scrape tab from being discarded (sleeping tabs) mid-run.
       try { await chrome.tabs.update(created.id, { autoDiscardable: false }); } catch { /* older browsers */ }
@@ -292,7 +359,7 @@ async function cmdNavigate(tabId, payload) {
     // that and let the caller wait for the content it needs.
     let loadTimedOut = false;
     try {
-      await waitForTabLoaded(created.id, { acceptAlreadyComplete: true });
+      await waitForTabLoaded(created.id, { acceptAlreadyComplete: !reused });
     } catch {
       loadTimedOut = true;
     }
@@ -303,6 +370,7 @@ async function cmdNavigate(tabId, payload) {
       title: openedTab ? openedTab.title : '',
       tabId: created.id,
       createdTab: true,
+      ...(reused ? { reusedTab: true } : {}),
       ...(loadTimedOut ? { loadTimedOut: true } : {}),
     };
   }
@@ -869,6 +937,7 @@ async function cmdCloseTab(tabId, payload) {
   const targetTabId = typeof tabId === 'number' ? tabId : payload?.tabId;
   if (typeof targetTabId !== 'number') throw new Error('tabId is required');
 
+  forgetOwnedTab(targetTabId);
   try {
     await chrome.tabs.remove(targetTabId);
   } catch (e) {
