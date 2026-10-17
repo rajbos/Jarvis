@@ -5,6 +5,7 @@ import {
   type BrowserSkillRun,
   type BrowserCompanionStatus,
 } from '../types';
+import { copyToClipboard } from '../clipboard';
 
 // ── Skill form ────────────────────────────────────────────────────────────────
 
@@ -187,7 +188,7 @@ export function BrowserCompanionPanel({ onBack }: { onBack: () => void }) {
   const [lastResult, setLastResult] = useState<{ skillId: number; ok: boolean; data?: unknown; error?: string; testMode: boolean } | null>(null);
   const [selectedSkillId, setSelectedSkillId] = useState<number | null>(null);
   const [pairingToken, setPairingToken] = useState<string | null>(null);
-  const [tokenCopied, setTokenCopied] = useState(false);
+  const [tokenCopy, setTokenCopy] = useState<'idle' | 'copied' | 'failed'>('idle');
   const [regenerating, setRegenerating] = useState(false);
 
   const loadStatus = useCallback(async () => {
@@ -318,9 +319,8 @@ export function BrowserCompanionPanel({ onBack }: { onBack: () => void }) {
 
   const handleCopyToken = async () => {
     if (!pairingToken) return;
-    await navigator.clipboard.writeText(pairingToken);
-    setTokenCopied(true);
-    setTimeout(() => setTokenCopied(false), 2000);
+    setTokenCopy(await copyToClipboard(pairingToken) ? 'copied' : 'failed');
+    setTimeout(() => setTokenCopy('idle'), 2000);
   };
 
   const handleRegenerateToken = async () => {
@@ -435,14 +435,15 @@ export function BrowserCompanionPanel({ onBack }: { onBack: () => void }) {
           <button
             onClick={() => void handleCopyToken()}
             disabled={!pairingToken}
-            title="Copy token to clipboard"
+            title={tokenCopy === 'failed' ? 'Could not copy — select the token and copy it by hand' : 'Copy token to clipboard'}
             style={{
               padding: '4px 10px', borderRadius: 4, border: 'none',
-              background: tokenCopied ? '#1b5e20' : '#333', color: tokenCopied ? '#a5d6a7' : '#ccc',
+              background: tokenCopy === 'copied' ? '#1b5e20' : tokenCopy === 'failed' ? '#5e1b1b' : '#333',
+              color: tokenCopy === 'copied' ? '#a5d6a7' : tokenCopy === 'failed' ? '#ef9a9a' : '#ccc',
               cursor: !pairingToken ? 'not-allowed' : 'pointer', fontSize: 11, whiteSpace: 'nowrap',
             }}
           >
-            {tokenCopied ? '✓ Copied' : '📋 Copy'}
+            {tokenCopy === 'copied' ? '✓ Copied' : tokenCopy === 'failed' ? '✗ Copy failed' : '📋 Copy'}
           </button>
           <button
             onClick={() => void handleRegenerateToken()}

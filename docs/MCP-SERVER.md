@@ -87,7 +87,17 @@ The index is kept out of `jarvis.db` on purpose: sql.js persists a database by r
 | `ruddr_get_project` | Look up one project by `name` (case-insensitive) or `path` |
 | `groups_with_ruddr` | List only groups that have Ruddr project associations |
 
-Budget values are scraped from ruddr.io by the Groups plugin and cached in the `ruddr_budgets` table (schema v29+). Until the app has scraped at least once, `ruddr_customer_budget` still lists the customer's projects but reports `budgetCacheAvailable: false` and null figures.
+Budget values are read from Ruddr's API by the Groups plugin (through the browser extension) and cached in the `ruddr_budgets` table (schema v29+). Until the app has fetched them at least once, `ruddr_customer_budget` still lists the customer's projects but reports `budgetCacheAvailable: false` and null figures.
+
+### Ruddr hours tools (the user's own logged time)
+
+| Tool | Description |
+|---|---|
+| `ruddr_hours` | Totals of the user's logged hours over a date range (default: this week), summed by any of `day`, `week`, `client`, `project`, `work_type`, `note`, `group` (default `project`). Filters: `from`, `to`, `client`, `project`, `group` (Jarvis group, fuzzy), `workType`. Returns rows sorted by hours, billable / non-billable / approved totals and `coverage` |
+| `ruddr_hours_entries` | The individual time entries with their notes, approval status and billable flag. Same filters, plus `note` (text contained), `status` (e.g. `approved`, `pending_approval`) and `limit` (default 200, max 2000) |
+| `ruddr_hours_status` | How far back the cache reaches: oldest and newest cached week, gaps up to the current week, failed weeks and the last fetch time |
+
+The Jarvis app caches these hours from Ruddr's time-entries API in `ruddr_time_entries` / `ruddr_time_weeks` (schema v37+), a few weeks per background run, going back in time. A range can therefore include weeks that are not cached yet: `coverage.complete` is false and `coverage.missingWeeks` lists them, so an assistant should say the data is incomplete instead of reporting zero hours. The current week refreshes at most every 4 hours.
 
 ### Group & OneNote tools
 

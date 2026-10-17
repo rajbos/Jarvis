@@ -17,10 +17,12 @@
 //     ~/.claude/projects/<enc-cwd>/<id>.jsonl transcript (tail read for activity)
 
 import { execFile } from 'child_process';
-import fs from 'fs';
+import fs, { promises as fsp } from 'fs';
 import os from 'os';
 import path from 'path';
 import type { ActiveAgentSession, AgentActivity } from '../plugins/types';
+import { logger } from './logger';
+import { PhaseTimer } from './phase-timer';
 
 export interface LocalSessionDiscoveryOptions {
   homeDir?: string;
@@ -32,11 +34,17 @@ export interface LocalSessionDiscoveryOptions {
   recentWindowMs?: number;
   /** Session-state dirs touched within this window are read for their mirrored cloud task id. */
   mirrorWindowMs?: number;
+  /** Collects per-phase timings for the sweep's debug log. */
+  timer?: PhaseTimer;
 }
 
 const DEFAULT_RECENT_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
 const DEFAULT_MIRROR_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 const TAIL_BYTES = 64 * 1024;
+/** Session-state dirs stat'ed / read at once. */
+const SCAN_CONCURRENCY = 32;
+/** How long a session dir older than the mirror window is trusted to stay old before it is stat'ed again. */
+const STALE_DIR_RECHECK_MS = 10 * 60 * 1000;
 /** Tail windows tried in turn — single events (e.g. permission prompts with a full diff) can be hundreds of KB. */
 const TAIL_WINDOWS = [TAIL_BYTES, 256 * 1024, 1024 * 1024, 4 * 1024 * 1024];
 /** A turn that ended this recently is treated as "between turns" (autopilot), not idle. */
@@ -123,23 +131,49 @@ async function lockOwnerVerifier(
   };
 }
 
-function mtimeOf(filePath: string): number | null {
+async function mtimeOf(filePath: string): Promise<number | null> {
   try {
-    return fs.statSync(filePath).mtimeMs;
+    return (await fsp.stat(filePath)).mtimeMs;
   } catch {
     return null;
   }
 }
 
-/** Read the last `maxBytes` of a file without loading it all (events logs can be tens of MB). */
-export function readTail(filePath: string, maxBytes = TAIL_BYTES): string | null {
-  let fd: number | null = null;
+async function readFileText(filePath: string): Promise<string | null> {
   try {
-    fd = fs.openSync(filePath, 'r');
-    const size = fs.fstatSync(fd).size;
+    return await fsp.readFile(filePath, 'utf-8');
+  } catch {
+    return null;
+  }
+}
+
+/** Map `items` through `fn` with at most `limit` calls in flight, keeping order. */
+async function mapLimit<T, R>(items: readonly T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out = new Array<R>(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await fn(items[i]);
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
+
+/**
+ * Read the last `maxBytes` of a file without loading it all (events logs can be
+ * tens of MB). Async, so a slow disk or a virus scanner holding the file never
+ * blocks the main thread.
+ */
+export async function readTail(filePath: string, maxBytes = TAIL_BYTES): Promise<string | null> {
+  let handle: fs.promises.FileHandle | null = null;
+  try {
+    handle = await fsp.open(filePath, 'r');
+    const { size } = await handle.stat();
     const length = Math.min(maxBytes, size);
     const buf = Buffer.alloc(length);
-    fs.readSync(fd, buf, 0, length, size - length);
+    await handle.read(buf, 0, length, size - length);
     let text = buf.toString('utf-8');
     // Drop the (probably partial) first line when we didn't start at offset 0.
     if (length < size) {
@@ -150,9 +184,7 @@ export function readTail(filePath: string, maxBytes = TAIL_BYTES): string | null
   } catch {
     return null;
   } finally {
-    if (fd !== null) {
-      try { fs.closeSync(fd); } catch { /* ignore */ }
-    }
+    await handle?.close().catch(() => undefined);
   }
 }
 
@@ -175,25 +207,109 @@ function parseJsonLines(text: string): Array<Record<string, unknown>> {
  * Parse the tail of a JSONL log, widening the window until `isConclusive`
  * accepts the entries or the whole file has been read.
  */
-export function readTailEntries(
+export async function readTailEntries(
   filePath: string,
   isConclusive: (entries: Array<Record<string, unknown>>) => boolean,
   windows: number[] = TAIL_WINDOWS,
-): Array<Record<string, unknown>> {
+): Promise<Array<Record<string, unknown>>> {
   let size: number;
   try {
-    size = fs.statSync(filePath).size;
+    size = (await fsp.stat(filePath)).size;
   } catch {
     return [];
   }
   let entries: Array<Record<string, unknown>> = [];
   for (const window of windows) {
-    const text = readTail(filePath, window);
+    const text = await readTail(filePath, window);
     if (text === null) break;
     entries = parseJsonLines(text);
     if (window >= size || isConclusive(entries)) break;
   }
   return entries;
+}
+
+// ── Incremental line scans ────────────────────────────────────────────────────
+// Session logs only grow, and a live one grows on every sweep, so a full re-read
+// each time (up to 100+ MB) would block the main thread for seconds. Scans keep
+// their position and state per file and only read the bytes appended since.
+
+/** Bytes read per step; each step is one await, so the event loop runs in between. */
+const SCAN_CHUNK_BYTES = 4 * 1024 * 1024;
+
+export interface LineScan<S> {
+  /** Bytes consumed so far (always just past a newline). */
+  offset: number;
+  /** Bytes after the last newline, waiting for the rest of their line. */
+  carry: Buffer;
+  state: S;
+}
+
+/**
+ * Feed every complete line of `filePath` that `cache` hasn't seen yet to
+ * `onLine`, then return the accumulated state. A file that shrank (rewritten or
+ * replaced) is scanned again from the start. Null when the file can't be read.
+ * Exported for tests.
+ */
+export async function scanNewLines<S>(
+  filePath: string,
+  cache: Map<string, LineScan<S>>,
+  initial: () => S,
+  onLine: (line: string, state: S) => void,
+  chunkBytes = SCAN_CHUNK_BYTES,
+): Promise<S | null> {
+  let handle: fs.promises.FileHandle | null = null;
+  try {
+    handle = await fsp.open(filePath, 'r');
+    const { size } = await handle.stat();
+    let scan = cache.get(filePath);
+    if (!scan || size < scan.offset + scan.carry.length) scan = { offset: 0, carry: Buffer.alloc(0), state: initial() };
+    let position = scan.offset + scan.carry.length;
+    while (position < size) {
+      const chunk = Buffer.alloc(Math.min(chunkBytes, size - position));
+      const { bytesRead } = await handle.read(chunk, 0, chunk.length, position);
+      if (bytesRead === 0) break;
+      position += bytesRead;
+      const data = scan.carry.length > 0 ? Buffer.concat([scan.carry, chunk.subarray(0, bytesRead)]) : chunk.subarray(0, bytesRead);
+      // A newline byte never occurs inside a multi-byte UTF-8 sequence, so whole lines decode safely.
+      const nl = data.lastIndexOf(0x0a);
+      if (nl < 0) {
+        scan.carry = data;
+        continue;
+      }
+      for (const line of data.toString('utf-8', 0, nl).split('\n')) onLine(line, scan.state);
+      scan.offset += nl + 1;
+      scan.carry = Buffer.from(data.subarray(nl + 1));
+    }
+    // A final line without a newline yet: take it once it is complete JSON.
+    if (scan.carry.length > 0) {
+      const tail = scan.carry.toString('utf-8');
+      if (isCompleteJson(tail)) {
+        onLine(tail, scan.state);
+        scan.offset += scan.carry.length;
+        scan.carry = Buffer.alloc(0);
+      }
+    }
+    cache.set(filePath, scan);
+    return scan.state;
+  } catch {
+    return null;
+  } finally {
+    await handle?.close().catch(() => undefined);
+  }
+}
+
+function isCompleteJson(text: string): boolean {
+  try {
+    JSON.parse(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Drop scan state for files that weren't looked at this sweep (sessions that ended). */
+function pruneScans(cache: Map<string, unknown>, seen: ReadonlySet<string>): void {
+  for (const key of cache.keys()) if (!seen.has(key)) cache.delete(key);
 }
 
 /** Parse the flat `key: value` workspace.yaml written by the Copilot CLI. */
@@ -301,6 +417,49 @@ export interface CopilotLocalDiscovery {
   mirroredTasks: Map<string, string>;
 }
 
+/**
+ * What a session-state dir held at a given dir mtime. Creating or deleting a
+ * file (a lock, events.jsonl) bumps the dir mtime, so an unchanged mtime means
+ * the listing and the (write-once) cloud task id are still current — thousands
+ * of old dirs then cost one stat each instead of a readdir and a file read.
+ */
+interface SessionDirInfo {
+  mtimeMs: number;
+  files: string[];
+  ws: Record<string, string>;
+}
+
+const sessionDirCache = new Map<string, SessionDirInfo>();
+/**
+ * Session dirs last seen older than the mirror window → when that was checked.
+ * Most of the thousands of dirs are this old; they are skipped without even a
+ * stat until the recheck interval passes (resuming a session touches its dir).
+ */
+const staleDirs = new Map<string, number>();
+
+async function readSessionDir(dir: string, mtimeMs: number): Promise<SessionDirInfo | null> {
+  const cached = sessionDirCache.get(dir);
+  if (cached && cached.mtimeMs === mtimeMs) return cached;
+  let files: string[];
+  try {
+    files = await fsp.readdir(dir);
+  } catch {
+    return null;
+  }
+  const yamlText = files.includes('workspace.yaml') ? await readFileText(path.join(dir, 'workspace.yaml')) : null;
+  const info = { mtimeMs, files, ws: yamlText ? parseWorkspaceYaml(yamlText) : {} };
+  sessionDirCache.set(dir, info);
+  return info;
+}
+
+/** Exposed for tests. */
+export function resetLocalSessionCaches(): void {
+  sessionDirCache.clear();
+  staleDirs.clear();
+  copilotPrScans.clear();
+  claudePrScans.clear();
+}
+
 export async function discoverCopilotLocalSessions(options: LocalSessionDiscoveryOptions = {}): Promise<CopilotLocalDiscovery> {
   const home = options.homeDir ?? os.homedir();
   const alive = options.isPidAlive ?? isPidAlive;
@@ -308,59 +467,81 @@ export async function discoverCopilotLocalSessions(options: LocalSessionDiscover
   const cutoff = now - (options.recentWindowMs ?? DEFAULT_RECENT_WINDOW_MS);
   const mirrorCutoff = Math.min(cutoff, now - (options.mirrorWindowMs ?? DEFAULT_MIRROR_WINDOW_MS));
   const root = path.join(home, '.copilot', 'session-state');
+  const timer = options.timer ?? new PhaseTimer();
+  const scanStart = Date.now();
 
   const sessions: ActiveAgentSession[] = [];
   const mirroredTasks = new Map<string, string>();
 
   let entries: fs.Dirent[];
   try {
-    entries = fs.readdirSync(root, { withFileTypes: true });
+    entries = await fsp.readdir(root, { withFileTypes: true });
   } catch {
     return { sessions, mirroredTasks };
   }
 
-  const held: Array<{ dirName: string; dir: string; files: string[]; ws: Record<string, string>; locks: LockCandidate[] }> = [];
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    const dir = path.join(root, entry.name);
-    let files: string[];
-    let mtimeMs: number;
-    try {
-      mtimeMs = fs.statSync(dir).mtimeMs;
-      if (mtimeMs < mirrorCutoff) continue;
-      files = fs.readdirSync(dir);
-    } catch {
-      continue;
+  // Thousands of dirs: stat them concurrently (in the libuv pool, off the main
+  // thread) so a cold disk cache or a virus scanner costs wall time only.
+  const dirs = entries.filter((e) => e.isDirectory()).map((e) => ({ dirName: e.name, dir: path.join(root, e.name) }));
+  let statted = 0;
+  const scanned = await mapLimit(dirs, SCAN_CONCURRENCY, async ({ dirName, dir }) => {
+    const checkedAt = staleDirs.get(dir);
+    if (checkedAt !== undefined && now - checkedAt < STALE_DIR_RECHECK_MS) return null;
+    statted++;
+    const mtimeMs = await mtimeOf(dir);
+    if (mtimeMs === null || mtimeMs < mirrorCutoff) {
+      sessionDirCache.delete(dir);
+      if (mtimeMs === null) staleDirs.delete(dir);
+      else staleDirs.set(dir, now);
+      return null;
     }
+    staleDirs.delete(dir);
+    const info = await readSessionDir(dir, mtimeMs);
+    return info ? { dirName, dir, info } : null;
+  });
+  // Forget dirs that were deleted.
+  const listed = new Set(dirs.map((d) => d.dir));
+  pruneScans(sessionDirCache, listed);
+  pruneScans(staleDirs, listed);
 
-    const yamlText = files.includes('workspace.yaml') ? readFileText(path.join(dir, 'workspace.yaml')) : null;
-    const ws = yamlText ? parseWorkspaceYaml(yamlText) : {};
-    if (ws.mc_task_id) mirroredTasks.set(ws.mc_task_id, clientLabel(ws.client_name));
-    if (mtimeMs < cutoff) continue;
+  const held: Array<{ dirName: string; dir: string; files: string[]; locks: LockCandidate[] }> = [];
+  for (const entry of scanned) {
+    if (!entry) continue;
+    const { dirName, dir, info } = entry;
+    if (info.ws.mc_task_id) mirroredTasks.set(info.ws.mc_task_id, clientLabel(info.ws.client_name));
+    if (info.mtimeMs < cutoff) continue;
 
-    const locks = files
-      .map((f) => ({ file: f, pid: f.match(/^inuse\.(\d+)\.lock$/)?.[1] }))
-      .filter((l): l is { file: string; pid: string } => l.pid !== undefined)
-      .map((l) => ({ pid: Number(l.pid), writtenAtMs: mtimeOf(path.join(dir, l.file)) }))
-      .filter((l) => alive(l.pid));
-    if (locks.length > 0) held.push({ dirName: entry.name, dir, files, ws, locks });
+    const lockFiles = info.files
+      .map((f) => ({ file: f, pid: Number(f.match(/^inuse\.(\d+)\.lock$/)?.[1]) }))
+      .filter((l) => Number.isInteger(l.pid) && alive(l.pid));
+    if (lockFiles.length === 0) continue;
+    const locks = await Promise.all(lockFiles.map(async (l) => ({ pid: l.pid, writtenAtMs: await mtimeOf(path.join(dir, l.file)) })));
+    held.push({ dirName, dir, files: info.files, locks });
   }
 
-  const ownsLock = await lockOwnerVerifier(held.flatMap((h) => h.locks), options);
+  timer.add('copilotScan', Date.now() - scanStart);
+  logger.debug(`[ActiveSessions] Copilot discovery: ${dirs.length} dir(s), ${statted} stat'ed, ${held.length} locked`);
+  const ownsLock = await timer.time('copilotPids', () => lockOwnerVerifier(held.flatMap((h) => h.locks), options));
 
-  for (const { dirName, dir, files, ws, locks } of held) {
+  const scannedLogs = new Set<string>();
+  for (const { dirName, dir, files, locks } of held) {
     const pid = locks.find(ownsLock)?.pid;
     if (pid === undefined) continue;
 
-    const events = files.includes('events.jsonl')
-      ? readTailEntries(path.join(dir, 'events.jsonl'), (evs) => deriveCopilotActivity(evs, now) !== 'unknown')
+    // A live session rewrites workspace.yaml (name, updated_at) in place, so read it fresh.
+    const yamlText = files.includes('workspace.yaml') ? await readFileText(path.join(dir, 'workspace.yaml')) : null;
+    const ws = yamlText ? parseWorkspaceYaml(yamlText) : {};
+    const eventsPath = files.includes('events.jsonl') ? path.join(dir, 'events.jsonl') : null;
+    const events = eventsPath
+      ? await timer.time('copilotTail', () => readTailEntries(eventsPath, (evs) => deriveCopilotActivity(evs, now) !== 'unknown'))
       : [];
     const sessionId = ws.id || dirName;
-    const eventsMtime = files.includes('events.jsonl') ? mtimeOf(path.join(dir, 'events.jsonl')) : null;
+    const eventsMtime = eventsPath ? await mtimeOf(eventsPath) : null;
     const wsUpdated = toIso(ws.updated_at);
     const updatedAt = eventsMtime !== null && eventsMtime > (Date.parse(wsUpdated ?? '') || 0)
       ? new Date(eventsMtime).toISOString()
       : wsUpdated;
+    if (eventsPath) scannedLogs.add(eventsPath);
 
     sessions.push({
       key: `local:copilot:${sessionId}`,
@@ -377,15 +558,47 @@ export async function discoverCopilotLocalSessions(options: LocalSessionDiscover
       updatedAt,
       cloudTaskId: ws.mc_task_id || null,
       pid,
-      linkedPr: files.includes('events.jsonl') ? findCopilotPrLink(path.join(dir, 'events.jsonl')) : null,
-      sessionFile: files.includes('events.jsonl') ? path.join(dir, 'events.jsonl') : null,
+      linkedPr: eventsPath ? await timer.time('copilotPrLink', () => findCopilotPrLink(eventsPath)) : null,
+      sessionFile: eventsPath,
     });
   }
+  pruneScans(copilotPrScans, scannedLogs);
 
   return { sessions, mirroredTasks };
 }
 
-const eventsPrCache = new Map<string, { mtimeMs: number; size: number; pr: ActiveAgentSession['linkedPr'] }>();
+interface CopilotPrScanState {
+  /** toolCallIds of `gh pr create` shell calls seen so far. */
+  createCalls: Set<string>;
+  found: ActiveAgentSession['linkedPr'];
+}
+
+const copilotPrScans = new Map<string, LineScan<CopilotPrScanState>>();
+
+function scanCopilotPrLine(line: string, state: CopilotPrScanState): void {
+  const isStart = line.includes('gh pr create');
+  const isComplete = !isStart && line.includes('/pull/') && state.createCalls.size > 0;
+  if (!isStart && !isComplete) return;
+  let ev: Record<string, unknown>;
+  try {
+    ev = JSON.parse(line) as Record<string, unknown>;
+  } catch {
+    return;
+  }
+  const data = (ev.data ?? {}) as Record<string, unknown>;
+  const id = data.toolCallId;
+  if (typeof id !== 'string') return;
+  if (ev.type === 'tool.execution_start') {
+    const command = (data.arguments as Record<string, unknown> | undefined)?.command;
+    if (typeof command === 'string' && /\bgh\s+pr\s+create\b/.test(command)) state.createCalls.add(id);
+  } else if (ev.type === 'tool.execution_complete' && state.createCalls.has(id) && data.success !== false) {
+    const content = (data.result as Record<string, unknown> | undefined)?.content;
+    const m = typeof content === 'string'
+      ? content.match(/^https:\/\/github\.com\/([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\/pull\/(\d+)\s*$/m)
+      : null;
+    if (m) state.found = { repoFullName: m[1], number: Number(m[2]) };
+  }
+}
 
 /**
  * Latest PR a Copilot session created: the output of a successful `gh pr create`
@@ -393,56 +606,15 @@ const eventsPrCache = new Map<string, { mtimeMs: number; size: number; pr: Activ
  * (reviews, comments on someone else's PR) are deliberately ignored. Exported for tests.
  */
 export function findCopilotPrLinkInText(text: string): ActiveAgentSession['linkedPr'] {
-  const createCalls = new Set<string>();
-  let found: ActiveAgentSession['linkedPr'] = null;
-  for (const line of text.split('\n')) {
-    const isStart = line.includes('gh pr create');
-    const isComplete = !isStart && line.includes('/pull/') && createCalls.size > 0;
-    if (!isStart && !isComplete) continue;
-    let ev: Record<string, unknown>;
-    try {
-      ev = JSON.parse(line) as Record<string, unknown>;
-    } catch {
-      continue;
-    }
-    const data = (ev.data ?? {}) as Record<string, unknown>;
-    const id = data.toolCallId;
-    if (typeof id !== 'string') continue;
-    if (ev.type === 'tool.execution_start') {
-      const command = (data.arguments as Record<string, unknown> | undefined)?.command;
-      if (typeof command === 'string' && /\bgh\s+pr\s+create\b/.test(command)) createCalls.add(id);
-    } else if (ev.type === 'tool.execution_complete' && createCalls.has(id) && data.success !== false) {
-      const content = (data.result as Record<string, unknown> | undefined)?.content;
-      const m = typeof content === 'string'
-        ? content.match(/^https:\/\/github\.com\/([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\/pull\/(\d+)\s*$/m)
-        : null;
-      if (m) found = { repoFullName: m[1], number: Number(m[2]) };
-    }
-  }
-  return found;
+  const state: CopilotPrScanState = { createCalls: new Set(), found: null };
+  for (const line of text.split('\n')) scanCopilotPrLine(line, state);
+  return state.found;
 }
 
-function findCopilotPrLink(eventsPath: string): ActiveAgentSession['linkedPr'] {
-  let stat: fs.Stats;
-  try {
-    stat = fs.statSync(eventsPath);
-  } catch {
-    return null;
-  }
-  const cached = eventsPrCache.get(eventsPath);
-  if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) return cached.pr;
-  const text = readFileText(eventsPath);
-  const pr = text ? findCopilotPrLinkInText(text) : null;
-  eventsPrCache.set(eventsPath, { mtimeMs: stat.mtimeMs, size: stat.size, pr });
-  return pr;
-}
-
-function readFileText(filePath: string): string | null {
-  try {
-    return fs.readFileSync(filePath, 'utf-8');
-  } catch {
-    return null;
-  }
+/** {@link findCopilotPrLinkInText} over an events log, reading only what was appended since the last call. Exported for tests. */
+export async function findCopilotPrLink(eventsPath: string): Promise<ActiveAgentSession['linkedPr']> {
+  const state = await scanNewLines(eventsPath, copilotPrScans, () => ({ createCalls: new Set<string>(), found: null }), scanCopilotPrLine);
+  return state?.found ?? null;
 }
 
 /** Claude Code stores transcripts under the cwd with every non-alphanumeric char replaced by '-'. */
@@ -503,35 +675,39 @@ export function extractClaudeTitle(entries: Array<Record<string, unknown>>): str
   return null;
 }
 
+interface ClaudePrScanState {
+  found: ActiveAgentSession['linkedPr'];
+}
+
+const claudePrScans = new Map<string, LineScan<ClaudePrScanState>>();
+
+function scanClaudePrLine(line: string, state: ClaudePrScanState): void {
+  if (!line.includes('"pr-link"')) return;
+  try {
+    const e = JSON.parse(line) as Record<string, unknown>;
+    if (e.type === 'pr-link' && typeof e.prNumber === 'number' && typeof e.prRepository === 'string') {
+      state.found = { repoFullName: e.prRepository, number: e.prNumber };
+    }
+  } catch {
+    // partial line — skip
+  }
+}
+
 /**
  * Latest PR the session reported via a `pr-link` transcript entry. These can
  * sit anywhere in the file, so unlike the activity tail this scans line by line
- * (cheap string pre-filter before parsing). Exported for tests.
+ * (cheap string pre-filter before parsing), reading only what was appended
+ * since the last call. Exported for tests.
  */
-export function findClaudePrLink(transcript: string): ActiveAgentSession['linkedPr'] {
-  let text: string;
-  try {
-    text = fs.readFileSync(transcript, 'utf-8');
-  } catch {
-    return null;
-  }
-  return findPrLinkInText(text);
+export async function findClaudePrLink(transcript: string): Promise<ActiveAgentSession['linkedPr']> {
+  const state = await scanNewLines(transcript, claudePrScans, () => ({ found: null }), scanClaudePrLine);
+  return state?.found ?? null;
 }
 
 export function findPrLinkInText(text: string): ActiveAgentSession['linkedPr'] {
-  let found: ActiveAgentSession['linkedPr'] = null;
-  for (const line of text.split('\n')) {
-    if (!line.includes('"pr-link"')) continue;
-    try {
-      const e = JSON.parse(line) as Record<string, unknown>;
-      if (e.type === 'pr-link' && typeof e.prNumber === 'number' && typeof e.prRepository === 'string') {
-        found = { repoFullName: e.prRepository, number: e.prNumber };
-      }
-    } catch {
-      // partial line — skip
-    }
-  }
-  return found;
+  const state: ClaudePrScanState = { found: null };
+  for (const line of text.split('\n')) scanClaudePrLine(line, state);
+  return state.found;
 }
 
 /** Exported for tests. */
@@ -558,7 +734,7 @@ export async function discoverClaudeLocalSessions(options: LocalSessionDiscovery
 
   let files: string[];
   try {
-    files = fs.readdirSync(sessionsDir).filter((f) => f.endsWith('.json'));
+    files = (await fsp.readdir(sessionsDir)).filter((f) => f.endsWith('.json'));
   } catch {
     return [];
   }
@@ -566,7 +742,7 @@ export async function discoverClaudeLocalSessions(options: LocalSessionDiscovery
   const candidates: Array<{ meta: Record<string, unknown>; lock: LockCandidate }> = [];
   for (const file of files) {
     const filePath = path.join(sessionsDir, file);
-    const raw = readFileText(filePath);
+    const raw = await readFileText(filePath);
     if (!raw) continue;
     let meta: Record<string, unknown>;
     try {
@@ -576,12 +752,14 @@ export async function discoverClaudeLocalSessions(options: LocalSessionDiscovery
     }
     const pid = typeof meta.pid === 'number' ? meta.pid : Number(path.basename(file, '.json'));
     if (!alive(pid)) continue;
-    candidates.push({ meta, lock: { pid, writtenAtMs: mtimeOf(filePath) } });
+    candidates.push({ meta, lock: { pid, writtenAtMs: await mtimeOf(filePath) } });
   }
 
-  const ownsLock = await lockOwnerVerifier(candidates.map((c) => c.lock), options);
+  const timer = options.timer ?? new PhaseTimer();
+  const ownsLock = await timer.time('claudePids', () => lockOwnerVerifier(candidates.map((c) => c.lock), options));
 
   const sessions: ActiveAgentSession[] = [];
+  const scannedTranscripts = new Set<string>();
   for (const { meta, lock } of candidates) {
     if (!ownsLock(lock)) continue;
     const pid = lock.pid;
@@ -595,19 +773,20 @@ export async function discoverClaudeLocalSessions(options: LocalSessionDiscovery
     let sessionFile: string | null = null;
     if (cwd) {
       const transcript = path.join(home, '.claude', 'projects', encodeClaudeProjectDir(cwd), `${sessionId}.jsonl`);
-      const mtime = mtimeOf(transcript);
+      const mtime = await mtimeOf(transcript);
       if (mtime !== null) {
         // A title entry isn't necessarily near the tail — widen the read until
         // one turns up, not just until there's enough to tell activity, or
         // titles fall back to the first prompt.
-        const entries = readTailEntries(
+        const entries = await timer.time('claudeTail', () => readTailEntries(
           transcript,
           (es) => es.some((e) => e.type === 'assistant' || e.type === 'user') && es.some(isClaudeTitleEntry),
-        );
+        ));
         activity = deriveClaudeActivity(entries, mtime, now);
         title = extractClaudeTitle(entries);
         lastActiveMs = mtime;
-        linkedPr = findClaudePrLink(transcript);
+        linkedPr = await timer.time('claudePrLink', () => findClaudePrLink(transcript));
+        scannedTranscripts.add(transcript);
         sessionFile = transcript;
       }
     }
@@ -636,5 +815,6 @@ export async function discoverClaudeLocalSessions(options: LocalSessionDiscovery
       sessionFile,
     });
   }
+  pruneScans(claudePrScans, scannedTranscripts);
   return sessions;
 }

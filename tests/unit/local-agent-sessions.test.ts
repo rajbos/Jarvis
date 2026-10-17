@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -9,11 +9,16 @@ import {
   discoverCopilotLocalSessions,
   encodeClaudeProjectDir,
   extractClaudeTitle,
+  findClaudePrLink,
+  findCopilotPrLink,
   findCopilotPrLinkInText,
   findPrLinkInText,
   parseWorkspaceYaml,
   readTail,
   readTailEntries,
+  resetLocalSessionCaches,
+  scanNewLines,
+  type LineScan,
 } from '../../src/services/local-agent-sessions';
 
 const NOW = Date.parse('2026-03-01T12:00:00Z');
@@ -144,9 +149,11 @@ describe('filesystem discovery', () => {
 
   beforeEach(() => {
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'jarvis-agent-sessions-'));
+    resetLocalSessionCaches();
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     fs.rmSync(home, { recursive: true, force: true });
   });
 
@@ -207,6 +214,53 @@ describe('filesystem discovery', () => {
     expect([...result.mirroredTasks.entries()]).toEqual([['task-old', 'Copilot app']]);
   });
 
+  it('never blocks on synchronous filesystem calls', async () => {
+    // The sweep runs on the Electron main thread: a sync stat/read over thousands
+    // of session dirs on a cold disk cache froze the app for over a minute.
+    writeCopilotSession('live', {
+      pid: 111,
+      yaml: 'id: live\ncwd: C:\\src\\repo\nmc_task_id: task-live\n',
+      events: [ev('tool.execution_start', 2000, { toolName: 'view', toolCallId: 'x' })],
+    });
+    writeCopilotSession('other', { yaml: 'id: other\nmc_task_id: task-other\n' });
+    const cwd = 'C:\\src\\repo';
+    fs.mkdirSync(path.join(home, '.claude', 'sessions'), { recursive: true });
+    fs.writeFileSync(path.join(home, '.claude', 'sessions', '555.json'), JSON.stringify({ pid: 555, sessionId: 's1', cwd }));
+    const projectDir = path.join(home, '.claude', 'projects', encodeClaudeProjectDir(cwd));
+    fs.mkdirSync(projectDir, { recursive: true });
+    fs.writeFileSync(path.join(projectDir, 's1.jsonl'), JSON.stringify({ type: 'user', message: { content: 'hi' } }) + '\n');
+
+    const syncCalls = (['statSync', 'readdirSync', 'readFileSync', 'openSync', 'readSync', 'existsSync'] as const)
+      .map((name) => vi.spyOn(fs, name));
+    const copilot = await discoverCopilotLocalSessions({ homeDir: home, isPidAlive: (pid) => pid === 111, getProcessStartTimes: startedLongAgo, now: () => NOW });
+    const claude = await discoverClaudeLocalSessions({ homeDir: home, isPidAlive: (pid) => pid === 555, getProcessStartTimes: startedLongAgo, now: () => NOW });
+
+    expect(copilot.sessions.map((s) => s.key)).toEqual(['local:copilot:live']);
+    expect(claude.map((s) => s.key)).toEqual(['local:claude:s1']);
+    for (const spy of syncCalls) expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('reuses the listing of session dirs whose mtime did not change', async () => {
+    const quiet = writeCopilotSession('quiet', { yaml: 'id: quiet\nmc_task_id: task-quiet\n' });
+    const busy = writeCopilotSession('busy', { yaml: 'id: busy\nmc_task_id: task-busy\n' });
+    const at = new Date(NOW - 60_000);
+    fs.utimesSync(quiet, at, at);
+    fs.utimesSync(busy, at, at);
+    const options = { homeDir: home, isPidAlive: () => false, now: () => NOW };
+    await discoverCopilotLocalSessions(options);
+
+    const readdir = vi.spyOn(fs.promises, 'readdir');
+    fs.writeFileSync(path.join(busy, 'workspace.yaml'), 'id: busy\nmc_task_id: task-busy-2\n');
+    const later = new Date(NOW - 30_000);
+    fs.utimesSync(busy, later, later);
+    const second = await discoverCopilotLocalSessions(options);
+
+    // The root listing plus the one dir that changed — not `quiet`.
+    const listed = readdir.mock.calls.map(([p]) => path.basename(String(p)));
+    expect(listed.sort()).toEqual(['busy', 'session-state']);
+    expect([...second.mirroredTasks.keys()].sort()).toEqual(['task-busy-2', 'task-quiet']);
+  });
+
   it('rejects locks whose pid now belongs to a process started after the lock was written (pid reuse)', async () => {
     const lockedAt = new Date(NOW - 60 * 60 * 1000);
     const stale = writeCopilotSession('stale', { pid: 111, yaml: 'id: stale\n' });
@@ -253,6 +307,54 @@ describe('filesystem discovery', () => {
     });
     const result = await discoverCopilotLocalSessions({ homeDir: home, isPidAlive: () => true, getProcessStartTimes: startedLongAgo, now: () => NOW });
     expect(result.sessions[0]?.activity).toBe('waiting_for_user');
+  });
+
+  it('re-checks a session dir past the mirror window only after the recheck interval', async () => {
+    const dir = writeCopilotSession('resumed', { pid: 111, yaml: 'id: resumed\n' });
+    const ancient = new Date(NOW - 60 * 24 * 60 * 60 * 1000);
+    fs.utimesSync(dir, ancient, ancient);
+    const discover = (at: number) => discoverCopilotLocalSessions({ homeDir: home, isPidAlive: () => true, getProcessStartTimes: startedLongAgo, now: () => at });
+    expect((await discover(NOW)).sessions).toHaveLength(0);
+
+    // Resuming the session touches its dir; the cached "old" verdict holds for a while.
+    fs.utimesSync(dir, new Date(NOW), new Date(NOW));
+    expect((await discover(NOW + 60_000)).sessions).toHaveLength(0);
+    expect((await discover(NOW + 11 * 60_000)).sessions.map((s) => s.sessionId)).toEqual(['resumed']);
+  });
+
+  it('does not re-read workspace.yaml of an unchanged dir past the live window', async () => {
+    const dir = writeCopilotSession('old', { yaml: 'id: old\nmc_task_id: task-1\n' });
+    const old = new Date(NOW - 10 * 24 * 60 * 60 * 1000);
+    fs.utimesSync(dir, old, old);
+    const discover = async () => [...(await discoverCopilotLocalSessions({ homeDir: home, isPidAlive: () => true, getProcessStartTimes: startedLongAgo, now: () => NOW })).mirroredTasks.keys()];
+    expect(await discover()).toEqual(['task-1']);
+
+    fs.writeFileSync(path.join(dir, 'workspace.yaml'), 'id: old\nmc_task_id: task-22\n');
+    fs.utimesSync(dir, old, old);
+    expect(await discover()).toEqual(['task-1']);
+
+    const touched = new Date(old.getTime() + 1000);
+    fs.utimesSync(dir, touched, touched);
+    expect(await discover()).toEqual(['task-22']);
+  });
+
+  it('picks up a new session dir on the next sweep and links the PR it created', async () => {
+    const discover = () => discoverCopilotLocalSessions({ homeDir: home, isPidAlive: () => true, getProcessStartTimes: startedLongAgo, now: () => NOW });
+    writeCopilotSession('first', { pid: 111, yaml: 'id: first\n' });
+    expect((await discover()).sessions).toHaveLength(1);
+    writeCopilotSession('second', {
+      pid: 222,
+      yaml: 'id: second\n',
+      events: [
+        { type: 'tool.execution_start', data: { toolCallId: 'c', arguments: { command: 'gh pr create --fill' } } },
+        { type: 'tool.execution_complete', data: { toolCallId: 'c', success: true, result: { content: 'https://github.com/o/r/pull/7' } } },
+      ],
+    });
+    const result = await discover();
+    expect(result.sessions.map((s) => [s.sessionId, s.linkedPr])).toEqual([
+      ['first', null],
+      ['second', { repoFullName: 'o/r', number: 7 }],
+    ]);
   });
 
   it('returns nothing when the Copilot session-state folder does not exist', async () => {
@@ -308,7 +410,7 @@ describe('filesystem discovery', () => {
 });
 
 describe('readTail', () => {
-  it('widens the tail window until the entries are conclusive', () => {
+  it('widens the tail window until the entries are conclusive', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jarvis-tail-'));
     try {
       const file = path.join(dir, 'events.jsonl');
@@ -317,30 +419,30 @@ describe('readTail', () => {
         JSON.stringify({ type: 'big', pad: 'x'.repeat(3000) }),
       ].join('\n') + '\n');
       const windows: number[] = [];
-      const entries = readTailEntries(file, (es) => {
+      const entries = await readTailEntries(file, (es) => {
         windows.push(es.length);
         return es.some((e) => e.type === 'first');
       }, [100, 1000, 10_000]);
       expect(entries.map((e) => e.type)).toEqual(['first', 'big']);
       // The 100- and 1000-byte windows only see part of the big line; the last one reads the whole file.
       expect(windows).toEqual([0, 0]);
-      expect(readTailEntries(path.join(dir, 'missing.jsonl'), () => true)).toEqual([]);
+      expect(await readTailEntries(path.join(dir, 'missing.jsonl'), () => true)).toEqual([]);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
 
-  it('returns only complete lines from the end of a large file', () => {
+  it('returns only complete lines from the end of a large file', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jarvis-tail-'));
     try {
       const file = path.join(dir, 'events.jsonl');
       const lines = Array.from({ length: 200 }, (_, i) => JSON.stringify({ i, pad: 'x'.repeat(20) }));
       fs.writeFileSync(file, lines.join('\n') + '\n');
-      const tail = readTail(file, 500)!;
+      const tail = (await readTail(file, 500))!;
       const parsed = tail.trim().split('\n').map((l) => JSON.parse(l) as { i: number });
       expect(parsed.length).toBeGreaterThan(0);
       expect(parsed[parsed.length - 1].i).toBe(199);
-      expect(readTail(path.join(dir, 'missing.jsonl'))).toBeNull();
+      expect(await readTail(path.join(dir, 'missing.jsonl'))).toBeNull();
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -380,5 +482,73 @@ describe('findCopilotPrLinkInText', () => {
   it('ignores failed creates and PR urls from other commands', () => {
     const text = [start('b', 'gh pr create'), done('b', 'https://github.com/o/r/pull/9', false), start('c', 'gh pr view 3'), done('c', 'https://github.com/o/r/pull/3')].join('\n');
     expect(findCopilotPrLinkInText(text)).toBeNull();
+  });
+});
+
+describe('incremental PR-link scans', () => {
+  let dir: string;
+  const start = (id: string, command: string) => JSON.stringify({ type: 'tool.execution_start', data: { toolCallId: id, arguments: { command } } });
+  const done = (id: string, content: string) => JSON.stringify({ type: 'tool.execution_complete', data: { toolCallId: id, success: true, result: { content } } });
+  const prLink = (n: number) => JSON.stringify({ type: 'pr-link', prNumber: n, prRepository: 'o/r', prUrl: 'u' });
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jarvis-scan-'));
+    resetLocalSessionCaches();
+  });
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('feeds each complete line once, across calls and chunk boundaries', async () => {
+    const file = path.join(dir, 'log.jsonl');
+    const cache = new Map<string, LineScan<string[]>>();
+    const scan = () => scanNewLines(file, cache, () => [] as string[], (line, seen) => { if (line) seen.push(line); }, 7);
+
+    // Multi-byte characters straddle the 7-byte chunks; the last line has no newline yet.
+    fs.writeFileSync(file, '{"a":"é€"}\n{"b":"日本"}\n{"c":');
+    expect(await scan()).toEqual(['{"a":"é€"}', '{"b":"日本"}']);
+
+    fs.appendFileSync(file, '1}\n{"d":2}');
+    // `{"d":2}` is complete JSON, so it is taken even before its newline arrives.
+    expect(await scan()).toEqual(['{"a":"é€"}', '{"b":"日本"}', '{"c":1}', '{"d":2}']);
+    expect(cache.get(file)!.offset).toBe(fs.statSync(file).size);
+
+    fs.appendFileSync(file, '\n');
+    expect(await scan()).toHaveLength(4);
+  });
+
+  it('starts over when the file shrank', async () => {
+    const file = path.join(dir, 'log.jsonl');
+    const cache = new Map<string, LineScan<string[]>>();
+    const scan = () => scanNewLines(file, cache, () => [] as string[], (line, seen) => { if (line) seen.push(line); });
+    fs.writeFileSync(file, '{"a":1}\n{"b":2}\n');
+    await scan();
+    fs.writeFileSync(file, '{"z":0}\n');
+    expect(await scan()).toEqual(['{"z":0}']);
+    expect(await scanNewLines(path.join(dir, 'missing.jsonl'), cache, () => [], () => undefined)).toBeNull();
+  });
+
+  it('finds a Copilot PR whose create call and result land in different sweeps', async () => {
+    const file = path.join(dir, 'events.jsonl');
+    fs.writeFileSync(file, `${start('a', 'gh pr create --fill')}\n`);
+    expect(await findCopilotPrLink(file)).toBeNull();
+    fs.appendFileSync(file, `${done('a', 'https://github.com/o/r/pull/7')}\n`);
+    expect(await findCopilotPrLink(file)).toEqual({ repoFullName: 'o/r', number: 7 });
+    // Nothing new: the earlier result stands without re-reading the file.
+    const read = vi.spyOn(fs.promises, 'open');
+    expect(await findCopilotPrLink(file)).toEqual({ repoFullName: 'o/r', number: 7 });
+    expect(read).toHaveBeenCalledTimes(1);
+    read.mockRestore();
+  });
+
+  it('keeps the latest Claude pr-link as the transcript grows', async () => {
+    const file = path.join(dir, 's1.jsonl');
+    fs.writeFileSync(file, `${prLink(1)}\n`);
+    expect(await findClaudePrLink(file)).toEqual({ repoFullName: 'o/r', number: 1 });
+    fs.appendFileSync(file, `{"type":"user"}\n${prLink(2)}\n`);
+    expect(await findClaudePrLink(file)).toEqual({ repoFullName: 'o/r', number: 2 });
+    fs.appendFileSync(file, '{"type":"user"}\n');
+    expect(await findClaudePrLink(file)).toEqual({ repoFullName: 'o/r', number: 2 });
   });
 });

@@ -8,6 +8,7 @@ import type { CopilotUsage, GitHubAccountInfo, GitHubAccountUsage } from '../../
 import { useViewHarness, type OpenedView } from './harness/view-harness';
 import {
   GROUP_ACME,
+  RUDDR_UNLINKED_PROJECT,
   GROUP_GLOBEX,
   ORG_ACME,
   ORG_GLOBEX,
@@ -39,7 +40,7 @@ describe('main window — tabs', () => {
   });
 
   const tabs: Array<{ name: RegExp; expected: string[]; loadedBy: Parameters<OpenedView['calls']>[0] }> = [
-    { name: /Groups Dashboard/, expected: [GROUP_ACME, GROUP_GLOBEX], loadedBy: 'groupsList' },
+    { name: /Groups Dashboard/, expected: [GROUP_ACME, GROUP_GLOBEX, 'My Ruddr hours', RUDDR_UNLINKED_PROJECT, 'in 4 wks'], loadedBy: 'groupsList' },
     { name: /Agent Sessions/, expected: ['Teach the rocket sled to brake'], loadedBy: 'getActiveSessions' },
     { name: /Browser/, expected: ['Browser Skills', 'Fixture weather check'], loadedBy: 'browserListSkills' },
     { name: /Setup/, expected: ['GitHub Account', 'Local Repositories', 'Groups', 'Ollama AI', 'Claude AI'], loadedBy: 'getGitHubOAuthStatus' },
@@ -368,6 +369,36 @@ describe('main window — driving the fake API', () => {
 
     await view.emit('onBackgroundStatus', 'Fixture background job finished');
     await expect.poll(() => page.locator('body').innerText()).toContain('Fixture background job finished');
+    await expectCleanRender(view);
+  });
+});
+
+describe('main window — Browser tab pairing token', () => {
+  async function openBrowserTab(view: OpenedView) {
+    await tab(view.page, /Browser/).click();
+    const locator = view.page.getByRole('button', { name: '📋 Copy' });
+    await expect.poll(() => locator.isEnabled()).toBe(true);
+    // Hold on to the element itself: its label changes once clicked.
+    const button = await locator.elementHandle();
+    if (!button) throw new Error('pairing token Copy button not found');
+    return button;
+  }
+
+  it('copies the token through the main-process clipboard', async () => {
+    const view = await harness.open('index');
+    const button = await openBrowserTab(view);
+    await button.click();
+    await expect.poll(() => button.innerText()).toContain('Copied');
+    const calls = await view.calls('clipboardWriteText');
+    expect(calls.map((c) => c.args)).toEqual([['fixture-token-not-a-secret']]);
+    await expectCleanRender(view);
+  });
+
+  it('shows a failure state when the copy fails', async () => {
+    const view = await harness.open('index', { responses: { clipboardWriteText: { ok: false, error: 'clipboard busy' } } });
+    const button = await openBrowserTab(view);
+    await button.click();
+    await expect.poll(() => button.innerText()).toContain('Copy failed');
     await expectCleanRender(view);
   });
 });

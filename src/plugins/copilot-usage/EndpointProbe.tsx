@@ -1,6 +1,7 @@
 import { useState } from 'preact/hooks';
 import type { CopilotRawResponse, CopilotUsage } from '../types';
 import { formatNumber } from '../shared/utils';
+import { copyToClipboard } from '../clipboard';
 import { buildProbePresets, sumUsageItems, type ProbePreset } from './probe-presets';
 
 type ProbeSource = 'gh-cli' | 'oauth' | 'pat';
@@ -33,15 +34,20 @@ function initialProbeState(usage: CopilotUsage, presets: ProbePreset[]): Account
 /** One raw API answer: request line, status, copy button and the pretty-printed body. */
 export function RawEntry({ response, quotaCredits }: { response: CopilotRawResponse; quotaCredits?: number }) {
   const [copied, setCopied] = useState(false);
+  const [copyFailed, setCopyFailed] = useState(false);
   const text = typeof response.body === 'string' ? response.body : JSON.stringify(response.body, null, 2);
   const itemsTotal = sumUsageItems(response.body);
 
   const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(text);
+    if (await copyToClipboard(text)) {
+      setCopyFailed(false);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-    } catch { /* clipboard unavailable */ }
+    } else {
+      setCopied(false);
+      setCopyFailed(true);
+      setTimeout(() => setCopyFailed(false), 2000);
+    }
   };
 
   return (
@@ -51,7 +57,7 @@ export function RawEntry({ response, quotaCredits }: { response: CopilotRawRespo
         <span class={response.status >= 200 && response.status < 300 ? 'bg-status-claude-state--available' : 'bg-status-claude-state--warning'}>
           {response.status || 'no response'}
         </span>
-        <button type="button" class="bg-status-claude-action" onClick={copy}>{copied ? 'Copied' : 'Copy'}</button>
+        <button type="button" class="bg-status-claude-action" onClick={copy}>{copied ? 'Copied' : copyFailed ? 'Copy failed' : 'Copy'}</button>
       </div>
       {itemsTotal !== null && (
         <div class="bg-copilot-raw-sum">

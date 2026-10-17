@@ -204,6 +204,12 @@ async function handleCommand(rawData) {
       case 'read-form-fields':
         data = await cmdReadFormFields(tabId, payload);
         break;
+      case 'fetch-ruddr-week-entries':
+        data = await cmdFetchRuddrWeekEntries(tabId, payload ?? {});
+        break;
+      case 'ruddr-api-get':
+        data = await cmdRuddrApiGet(tabId, payload ?? {});
+        break;
       case 'click':
         data = await cmdClick(tabId, payload);
         break;
@@ -276,9 +282,29 @@ async function cmdNavigate(tabId, payload) {
   if (newTab === true && typeof tabId !== 'number') {
     const created = await chrome.tabs.create({ url, active: background !== true });
     if (typeof created.id !== 'number') throw new Error('Failed to create tab');
-    await waitForTabLoaded(created.id, { acceptAlreadyComplete: true });
-    const openedTab = await chrome.tabs.get(created.id);
-    return { url: openedTab.url, title: openedTab.title, tabId: created.id, createdTab: true };
+    if (background === true) {
+      // Keep a background scrape tab from being discarded (sleeping tabs) mid-run.
+      try { await chrome.tabs.update(created.id, { autoDiscardable: false }); } catch { /* older browsers */ }
+    }
+    // Never fail once the tab exists: the caller can only close a tab whose id
+    // it was given, so an error here would leak the tab. A background tab can
+    // take longer than the load timeout (browsers deprioritise them); report
+    // that and let the caller wait for the content it needs.
+    let loadTimedOut = false;
+    try {
+      await waitForTabLoaded(created.id, { acceptAlreadyComplete: true });
+    } catch {
+      loadTimedOut = true;
+    }
+    let openedTab = null;
+    try { openedTab = await chrome.tabs.get(created.id); } catch { /* tab closed meanwhile */ }
+    return {
+      url: openedTab ? (openedTab.url || openedTab.pendingUrl || url) : url,
+      title: openedTab ? openedTab.title : '',
+      tabId: created.id,
+      createdTab: true,
+      ...(loadTimedOut ? { loadTimedOut: true } : {}),
+    };
   }
 
   const targetTabId = await getTargetTabId(tabId);
@@ -633,6 +659,109 @@ async function scrapeStatsByLabel(waitMs) {
   }
 
   return stats;
+}
+
+async function cmdFetchRuddrWeekEntries(tabId, payload) {
+  const { workspace, date } = payload;
+  if (typeof workspace !== 'string' || !/^[a-z0-9-]+$/i.test(workspace)) throw new Error('workspace key is required');
+  if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('date (YYYY-MM-DD) is required');
+  const targetTabId = await getTargetTabId(tabId);
+
+  // Runs in a ruddr.io tab so the request carries the user's own session.
+  const results = await withTimeout(
+    chrome.scripting.executeScript({ target: { tabId: targetTabId }, func: fetchRuddrWeekEntries, args: [workspace, date] }),
+    20000,
+    'Ruddr tab did not answer — the browser may have suspended the background tab',
+  );
+  return results[0]?.result ?? null;
+}
+
+// Paths under /api/www/workspaces/<id>/ — letters, digits and URL query
+// punctuation only, never ".." or "//", so a command can't reach outside the workspace.
+const RUDDR_API_PATH = /^[a-z0-9][a-z0-9\-/_.?=&:%,]*$/i;
+
+async function cmdRuddrApiGet(tabId, payload) {
+  const { workspace, paths } = payload;
+  if (typeof workspace !== 'string' || !/^[a-z0-9-]+$/i.test(workspace)) throw new Error('workspace key is required');
+  if (!Array.isArray(paths) || paths.length === 0 || paths.length > 25) throw new Error('paths must be 1-25 workspace API paths');
+  for (const p of paths) {
+    if (typeof p !== 'string' || !RUDDR_API_PATH.test(p) || p.includes('..') || p.includes('//')) throw new Error(`invalid Ruddr API path: ${String(p)}`);
+  }
+  const targetTabId = await getTargetTabId(tabId);
+  const results = await withTimeout(
+    chrome.scripting.executeScript({ target: { tabId: targetTabId }, func: ruddrApiGet, args: [workspace, paths] }),
+    45000,
+    'Ruddr tab did not answer — the browser may have suspended the background tab',
+  );
+  return results[0]?.result ?? null;
+}
+
+function withTimeout(promise, ms, message) {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(message)), ms); }),
+  ]).finally(() => clearTimeout(timer));
+}
+
+// Runs inside a ruddr.io page — read-only GETs against Ruddr's own API for
+// the workspace, with the user's session, one after the other. Each path is
+// relative to /api/www/workspaces/<workspace id>/.
+async function ruddrApiGet(workspaceKey, paths) {
+  const get = async (path) => {
+    const res = await globalThis.fetch(path, { credentials: 'include', headers: { accept: 'application/json' } });
+    let body;
+    try { body = res.ok ? await res.json() : null; } catch { body = null; }
+    return { status: res.status, body };
+  };
+  const here = document.location.href;
+  const ws = await get(`/api/www/workspaces/${encodeURIComponent(workspaceKey)}`);
+  if (!ws.body || typeof ws.body.id !== 'string') {
+    return { ok: false, status: ws.status, error: `workspace lookup failed (HTTP ${ws.status})`, url: here };
+  }
+  const responses = [];
+  for (const p of paths) responses.push(await get(`/api/www/workspaces/${encodeURIComponent(ws.body.id)}/${p}`));
+  return { ok: true, status: ws.status, responses, url: here };
+}
+
+// Runs inside a ruddr.io page — asks Ruddr's own API for the member's time
+// entries of the week containing `date`, exactly as the week page does, and
+// returns them trimmed to the fields Jarvis stores (including each note).
+async function fetchRuddrWeekEntries(workspaceKey, date) {
+  const get = async (path) => {
+    const res = await globalThis.fetch(path, { credentials: 'include', headers: { accept: 'application/json' } });
+    let body;
+    try { body = res.ok ? await res.json() : null; } catch { body = null; }
+    return { status: res.status, body };
+  };
+  const here = document.location.href;
+  const ws = await get(`/api/www/workspaces/${encodeURIComponent(workspaceKey)}`);
+  if (!ws.body || typeof ws.body.id !== 'string') {
+    return { ok: false, status: ws.status, error: `workspace lookup failed (HTTP ${ws.status})`, url: here };
+  }
+  const week = await get(`/api/www/workspaces/${encodeURIComponent(ws.body.id)}/time-entries/week?date=${encodeURIComponent(date)}`);
+  if (!Array.isArray(week.body)) {
+    return { ok: false, status: week.status, error: `time entries request failed (HTTP ${week.status})`, url: here };
+  }
+  const entries = week.body.map((e) => ({
+    id: e.id,
+    date: e.date,
+    minutes: e.minutes,
+    notes: e.notes ?? null,
+    statusId: e.statusId ?? null,
+    typeId: e.typeId ?? null,
+    isBillable: typeof e.isActuallyBillable === 'boolean' ? e.isActuallyBillable : (typeof e.isBillable === 'boolean' ? e.isBillable : null),
+    project: e.project ? {
+      name: e.project.name,
+      key: e.project.key,
+      clientName: e.project.client ? e.project.client.name : null,
+      clientKey: e.project.client ? e.project.client.key : null,
+      clientIsInternal: e.project.client ? e.project.client.isInternal === true : null,
+    } : null,
+    task: e.task ? { name: e.task.name, number: e.task.number } : null,
+    timeOffType: e.timeOffType ? (e.timeOffType.name ?? null) : null,
+  }));
+  return { ok: true, status: week.status, entries, url: here };
 }
 
 async function cmdClick(tabId, payload) {

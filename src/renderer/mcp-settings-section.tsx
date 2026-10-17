@@ -3,6 +3,7 @@
 // copyable config snippets, and the state of the local file index the
 // server searches.
 import { useEffect, useState } from 'preact/hooks';
+import { copyToClipboard } from '../plugins/clipboard';
 
 export interface McpClientConfigView {
   claudeDesktop: string;
@@ -59,6 +60,7 @@ export function McpServerSection({ api }: { api: McpSectionApi }) {
   const [config, setConfig] = useState<McpClientConfigView | null>(null);
   const [tab, setTab] = useState<SnippetKey>('claudeDesktop');
   const [copied, setCopied] = useState(false);
+  const [copyFailed, setCopyFailed] = useState(false);
   const [index, setIndex] = useState<IndexStatusView | null>(null);
   const [progress, setProgress] = useState<IndexProgressView | null>(null);
   const [starting, setStarting] = useState(false);
@@ -81,11 +83,10 @@ export function McpServerSection({ api }: { api: McpSectionApi }) {
 
   const handleCopy = async () => {
     if (!config) return;
-    try {
-      await navigator.clipboard.writeText(config[tab]);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch { /* clipboard unavailable */ }
+    const ok = await copyToClipboard(config[tab]);
+    setCopied(ok);
+    setCopyFailed(!ok);
+    setTimeout(() => { setCopied(false); setCopyFailed(false); }, ok ? 1500 : 2000);
   };
 
   const handleIndexNow = async () => {
@@ -132,7 +133,7 @@ export function McpServerSection({ api }: { api: McpSectionApi }) {
       <pre class="mcp-snippet" id="mcp-snippet">{config ? config[tab] : 'Loading…'}</pre>
       <div class="btn-row" style={{ marginTop: '0.4rem' }}>
         <button class="btn-save" onClick={() => void handleCopy()} disabled={!config}>
-          {copied ? '✓ Copied' : 'Copy'}
+          {copied ? '✓ Copied' : copyFailed ? '✗ Copy failed' : 'Copy'}
         </button>
       </div>
 

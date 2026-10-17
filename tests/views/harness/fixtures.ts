@@ -33,6 +33,8 @@ import type {
   Repo,
   RepoSecret,
   RuddrBudget,
+  RuddrHoursSummary,
+  RuddrHoursWeek,
   ScanFolder,
   StoredNotification,
   WorkflowRunSummary,
@@ -50,6 +52,7 @@ export const LOCAL_ROOT = 'C:\\fixtures\\src';
 export const GROUP_ACME = 'Acme Retainer';
 export const GROUP_GLOBEX = 'Globex Pilot';
 export const RUDDR_PROJECT = 'ACME-001 Platform Migration';
+export const RUDDR_UNLINKED_PROJECT = 'Initech | Pipeline Assessment';
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -512,7 +515,65 @@ export function createFixtures(now: number) {
     indexExists: true,
   };
 
+  // Ruddr hours for the week containing `now` (weeks start on Monday, UTC dates).
+  const dayMs = 86_400_000;
+  const nowDay = Math.floor(now / dayMs) * dayMs;
+  const weekStartMs = nowDay - ((new Date(nowDay).getUTCDay() + 6) % 7) * dayMs;
+  const ymd = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+  const weekStart = ymd(weekStartMs);
+  const acmePath = '/app/fixture-workspace/portfolio/projects/acme/acme-001-platform-migration';
+  const initechPath = '/app/fixture-workspace/portfolio/projects/initech/initech-pipeline-assessment';
+  const day = (i: number) => ymd(weekStartMs + i * dayMs);
+  const discovery = `${acmePath}/tasks/1/details`;
+  const build = `${acmePath}/tasks/2/details`;
+  const internalPath = '/app/fixture-workspace/portfolio/projects/internal/internal-work';
+  const undefinedTask = `${internalPath}/tasks/31/details`;
+  const ruddrHoursEntries = [
+    { id: 'e1', date: day(0), projectPath: acmePath, taskPath: discovery, minutes: 240, notes: 'Kick-off workshop', statusId: 'approved' },
+    { id: 'e2', date: day(1), projectPath: acmePath, taskPath: build, minutes: 240, notes: null, statusId: 'approved' },
+    { id: 'e3', date: day(2), projectPath: acmePath, taskPath: discovery, minutes: 120, notes: 'Interviews', statusId: 'approved' },
+    { id: 'e4', date: day(2), projectPath: initechPath, taskPath: '', minutes: 360, notes: 'Pipeline review', statusId: 'pending_approval' },
+    { id: 'e5', date: day(1), projectPath: internalPath, taskPath: undefinedTask, minutes: 60, notes: 'Tech Officer sync', statusId: 'approved' },
+    { id: 'e6', date: day(3), projectPath: internalPath, taskPath: undefinedTask, minutes: 120, notes: 'Tech Officer sync', statusId: 'approved' },
+    { id: 'e7', date: day(3), projectPath: internalPath, taskPath: undefinedTask, minutes: 60, notes: 'Recruitment interview', statusId: 'approved' },
+  ];
+  const ruddrHoursWeek: RuddrHoursWeek = {
+    weekStart,
+    fetchedAt: ymd(now) + ' 09:00:00',
+    status: 'ok',
+    error: null,
+    totalMinutes: 1200,
+    approvedMinutes: 840,
+    rows: [
+      { date: day(0), projectPath: acmePath, projectName: RUDDR_PROJECT, clientName: 'Acme', taskPath: discovery, taskName: 'Discovery', minutes: 240 },
+      { date: day(1), projectPath: acmePath, projectName: RUDDR_PROJECT, clientName: 'Acme', taskPath: build, taskName: 'Build', minutes: 240 },
+      { date: day(2), projectPath: acmePath, projectName: RUDDR_PROJECT, clientName: 'Acme', taskPath: discovery, taskName: 'Discovery', minutes: 120 },
+      { date: day(2), projectPath: initechPath, projectName: RUDDR_UNLINKED_PROJECT, clientName: 'Initech', taskPath: '', taskName: null, minutes: 360 },
+      { date: day(1), projectPath: internalPath, projectName: 'Internal Work', clientName: 'Internal', taskPath: undefinedTask, taskName: 'Undefined', minutes: 60 },
+      { date: day(3), projectPath: internalPath, projectName: 'Internal Work', clientName: 'Internal', taskPath: undefinedTask, taskName: 'Undefined', minutes: 180 },
+    ],
+    entries: ruddrHoursEntries,
+  };
+  const ruddrHoursSummary: RuddrHoursSummary = {
+    ok: true,
+    status: {
+      running: false, weeksCached: 12, oldestWeek: ymd(weekStartMs - 11 * 7 * dayMs), newestWeek: weekStart,
+      erroredWeeks: 0, backfillDone: false, lastRunAt: iso(now, -10 * 60 * 1000), lastError: null,
+      loginRequired: false, extensionOutdated: false,
+    },
+    groups: { 1: { weekMinutes: 480, last4WeeksMinutes: 2400, totalMinutes: 9600, lastDate: ymd(weekStartMs + dayMs) } },
+    unlinked: [
+      { projectName: RUDDR_UNLINKED_PROJECT, projectPath: initechPath, clientName: 'Initech', totalMinutes: 360, lastDate: ymd(weekStartMs + 2 * dayMs) },
+      // Logged in an earlier week only — not listed while this week is shown.
+      { projectName: 'Umbrella | Old Assessment', projectPath: '/app/fixture-workspace/portfolio/projects/umbrella/old', clientName: 'Umbrella', totalMinutes: 600, lastDate: ymd(weekStartMs - 30 * dayMs) },
+    ],
+    hidden: [
+      { projectName: 'Internal Work', projectPath: '/app/fixture-workspace/portfolio/projects/internal/internal-work', clientName: 'Internal', totalMinutes: 8820, lastDate: ymd(weekStartMs + dayMs) },
+    ],
+  };
+
   return {
+    ruddrHoursWeek, ruddrHoursSummary,
     localRepos, notifications, notificationCounts, orgs, reposByOrg, scanFolders, dashboard,
     workflowSummary, groups, groupDetails, ruddrBudget, secrets, ollama, rateLimit, claudeStatus,
     claudeRateLimit, copilotUsage, githubAccounts, githubAccountsUsage, activeSessions, autoDismissLog, autoDismissStats, backgroundTasks,

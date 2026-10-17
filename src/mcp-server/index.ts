@@ -28,6 +28,13 @@ import {
 } from './tools/onenote.js';
 import { getCustomerBudget, listRuddrBudgets } from './tools/ruddr-budgets.js';
 import {
+  HOURS_GROUP_BY,
+  getRuddrHoursStatus,
+  listRuddrHourEntries,
+  queryRuddrHours,
+  type HoursGroupBy,
+} from './tools/ruddr-hours.js';
+import {
   findAnywhere,
   listNotifications,
   listWorkflowRuns,
@@ -54,7 +61,10 @@ Tool families:
               (built by the app into ${INDEX_DB_PATH}). Start with github_find to locate something when
               you do not know where it lives; use github_search_files to search inside files.
 - ruddr_*   : Ruddr project registry and cached budget/actuals. Use ruddr_customer_budget for
-              "what is the budget utilization for customer X".
+              "what is the budget utilization for customer X". The user's own logged hours are in
+              ruddr_hours (totals by day/week/client/project/work type/note/group),
+              ruddr_hours_entries (individual entries with notes) and ruddr_hours_status (how far
+              back the cache reaches — check it before reporting zero hours for a period).
 - groups_*  : customer/client groups that tie repos and Ruddr projects together.
 - onenote_* : cached OneNote pages (meeting notes, project documentation).`,
   },
@@ -451,6 +461,83 @@ server.registerTool(
       return { content: [{ type: 'text' as const, text: 'No cached workflow runs match the given filters.' }] };
     }
     return { content: [{ type: 'text' as const, text: JSON.stringify(runs, null, 2) }] };
+  },
+);
+
+// ── Tool: ruddr_hours ─────────────────────────────────────────────────────────
+
+const hoursFilterSchema = {
+  from: z.string().optional().describe('Start date, inclusive, YYYY-MM-DD. Default: Monday of the current week.'),
+  to: z.string().optional().describe('End date, inclusive, YYYY-MM-DD. Default: the Sunday of the `from` week.'),
+  client: z.string().optional().describe('Only clients whose name contains this (case-insensitive), e.g. "ASML".'),
+  project: z.string().optional().describe('Only projects whose name contains this (case-insensitive).'),
+  group: z.string().optional().describe('Only the Ruddr projects linked to this Jarvis group / customer (fuzzy name).'),
+  workType: z.string().optional().describe('Only work types (Ruddr tasks) containing this, e.g. "Pre-sales", "Undefined".'),
+};
+
+server.registerTool(
+  'ruddr_hours',
+  {
+    title: 'My Ruddr hours',
+    description:
+      "Totals of the user's own hours logged in Ruddr over a date range (default: this week), summed per " +
+      'the requested dimensions — e.g. groupBy ["project"] for hours per project, ["project","work_type"] to ' +
+      'split a project into its work types, ["note"] with workType "Undefined" to see what unlabelled time was. ' +
+      'Returns rows sorted by hours, totals (billable / non-billable / approved) and `coverage`: when ' +
+      '`coverage.complete` is false, some weeks in the range are not cached yet and their hours are missing.',
+    inputSchema: {
+      ...hoursFilterSchema,
+      groupBy: z.array(z.enum(HOURS_GROUP_BY)).optional()
+        .describe('Dimensions to sum by: day, week, client, project, work_type, note, group. Default ["project"].'),
+    },
+  },
+  async (args: { from?: string; to?: string; client?: string; project?: string; group?: string; workType?: string; groupBy?: HoursGroupBy[] }) => {
+    const db = await openSnapshot();
+    const result = queryRuddrHours(db, args);
+    if (!result.ok) return { content: [{ type: 'text' as const, text: result.error }] };
+    return { content: [{ type: 'text' as const, text: JSON.stringify(result.value, null, 2) }] };
+  },
+);
+
+// ── Tool: ruddr_hours_entries ─────────────────────────────────────────────────
+
+server.registerTool(
+  'ruddr_hours_entries',
+  {
+    title: 'My Ruddr time entries with notes',
+    description:
+      "The user's individual Ruddr time entries over a date range (default: this week): date, client, project, " +
+      'work type, hours, note, approval status and billable flag. Use it for the detail behind ruddr_hours ' +
+      'totals, e.g. what "Undefined" hours were about, or which entries are not approved yet.',
+    inputSchema: {
+      ...hoursFilterSchema,
+      note: z.string().optional().describe('Only entries whose note contains this (case-insensitive).'),
+      status: z.string().optional().describe('Only entries with this approval status, e.g. "approved", "pending_approval", "not_submitted".'),
+      limit: z.number().int().min(1).max(2000).optional().default(200),
+    },
+  },
+  async (args: { from?: string; to?: string; client?: string; project?: string; group?: string; workType?: string; note?: string; status?: string; limit?: number }) => {
+    const db = await openSnapshot();
+    const result = listRuddrHourEntries(db, args);
+    if (!result.ok) return { content: [{ type: 'text' as const, text: result.error }] };
+    return { content: [{ type: 'text' as const, text: JSON.stringify(result.value, null, 2) }] };
+  },
+);
+
+// ── Tool: ruddr_hours_status ──────────────────────────────────────────────────
+
+server.registerTool(
+  'ruddr_hours_status',
+  {
+    title: 'Ruddr hours cache status',
+    description:
+      "How far back the cached Ruddr hours reach: oldest and newest cached week, weeks not cached yet (gaps), " +
+      'weeks that failed to fetch and when the cache was last updated. Check this before concluding the user ' +
+      'logged no hours in a period.',
+  },
+  async () => {
+    const db = await openSnapshot();
+    return { content: [{ type: 'text' as const, text: JSON.stringify(getRuddrHoursStatus(db), null, 2) }] };
   },
 );
 

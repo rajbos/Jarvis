@@ -43,6 +43,7 @@ import { ipcMain } from 'electron';
 const EXPECTED_CHANNELS = [
   // config plugin
   'app:get-system-locale',
+  'clipboard:write-text',
   'app:get-about-info',
   'app:get-preferences',
   'app:set-preferences',
@@ -171,6 +172,11 @@ const EXPECTED_CHANNELS = [
   'groups:sync-ruddr-cache-now',
   'groups:get-ruddr-project-info',
   'groups:list-ruddr-projects',
+  'ruddr-hours:status',
+  'ruddr-hours:summary',
+  'ruddr-hours:week',
+  'ruddr-hours:refresh-week',
+  'ruddr-hours:set-project-hidden',
   // onedrive plugin
   'onedrive:list-roots',
   'onedrive:browse-folder',

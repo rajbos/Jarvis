@@ -38,6 +38,8 @@ Each command is a JSON message `{ id, type, tabId?, payload }`; the extension an
 | `scroll-extract` | `{ selector, maxScrolls?, waitMs?, includeHref?, debug? }` | `{ items, debugLog?, hidden?, scrollable?, grewOnScroll? }` |
 | `scrape-stats` | `{ waitMs? }` | Label → value map (pairs `<small>` labels with the preceding value and, since the 2026 Ruddr redesign, leaf label elements with the following value sibling) |
 | `read-form-fields` | `{ selectors, waitMs? }` | Selector → value map |
+| `fetch-ruddr-week-entries` | `{ workspace, date }` | The member's Ruddr time entries for the week containing `date` (id, date, minutes, note, status, project, client, work type), read from Ruddr's own API inside a ruddr.io tab so it uses the user's session |
+| `ruddr-api-get` | `{ workspace, paths }` | Read-only GETs against Ruddr's API inside a ruddr.io tab (each path relative to `/api/www/workspaces/<id>/`, e.g. `projects?page=0&size=100`): `{ ok, status, responses: [{ status, body }] }`. Used for the project list, project details and budgets |
 | `click` / `fill` | `{ selector }` / `{ selector, value }` | `{ ok }` |
 | `screenshot` | — | Data URL |
 | `list-tabs` | — | Open tabs |

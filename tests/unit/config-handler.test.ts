@@ -28,6 +28,7 @@ vi.mock('electron', () => ({
     getSystemLocale: vi.fn().mockReturnValue('en-US'),
     setLoginItemSettings: vi.fn(),
   },
+  clipboard: { writeText: vi.fn() },
 }));
 
 vi.mock('../../src/services/about', () => ({
@@ -52,7 +53,7 @@ vi.mock('../../src/agent/config', () => ({
 
 import { registerHandlers } from '../../src/plugins/config/handler';
 import { loadConfig, saveConfig } from '../../src/agent/config';
-import { app } from 'electron';
+import { app, clipboard } from 'electron';
 import { getAboutInfo } from '../../src/services/about';
 
 // ── Helper ────────────────────────────────────────────────────────────────────
@@ -97,6 +98,28 @@ describe('Config plugin — IPC handlers', () => {
       const result = callHandler('app:get-system-locale');
       expect(app.getSystemLocale).toHaveBeenCalled();
       expect(result).toBe('en-US');
+    });
+  });
+
+  // ── clipboard:write-text ──────────────────────────────────────────────────
+
+  describe('clipboard:write-text', () => {
+    it('writes the text with the main-process clipboard', () => {
+      const result = callHandler('clipboard:write-text', 'pairing-token');
+      expect(clipboard.writeText).toHaveBeenCalledWith('pairing-token');
+      expect(result).toEqual({ ok: true });
+    });
+
+    it('rejects non-string input without touching the clipboard', () => {
+      const result = callHandler('clipboard:write-text', { text: 'x' });
+      expect(clipboard.writeText).not.toHaveBeenCalled();
+      expect(result).toEqual({ ok: false, error: 'text must be a string' });
+    });
+
+    it('returns an error payload when the clipboard throws', () => {
+      vi.mocked(clipboard.writeText).mockImplementationOnce(() => { throw new Error('clipboard busy'); });
+      const result = callHandler('clipboard:write-text', 'x');
+      expect(result).toEqual({ ok: false, error: 'clipboard busy' });
     });
   });
 

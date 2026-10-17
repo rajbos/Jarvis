@@ -31,6 +31,11 @@ vi.mock('../../src/plugins/notifications/handler', () => ({
 vi.mock('../../src/plugins/groups/handler', () => ({
   refreshRuddrProjectsInBackground: vi.fn(async () => undefined),
   prewarmRuddrCache: vi.fn(async () => undefined),
+  hoursDiscoveryDeps: vi.fn(() => ({})),
+}));
+
+vi.mock('../../src/plugins/groups/ruddr-hours-discovery', () => ({
+  runRuddrHoursDiscovery: vi.fn(async () => ({ skipped: true })),
 }));
 
 import {
