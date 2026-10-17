@@ -80,7 +80,7 @@ describe('runDueSkills', () => {
   });
 
   it('refuses a second concurrent run of the same skill', async () => {
-    let release: (v: unknown) => void = () => {};
+    let release: (v: { id: string; ok: boolean; data: unknown }) => void = () => {};
     vi.mocked(sendCommand).mockImplementation(
       () => new Promise((resolve) => { release = resolve; }),
     );
