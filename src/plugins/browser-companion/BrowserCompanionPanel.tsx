@@ -554,7 +554,7 @@ export function BrowserCompanionPanel({ onBack }: { onBack: () => void }) {
                         <select
                           aria-label="Run automatically"
                           value={skill.interval_minutes ?? ''}
-                          onChange={(e) => void handleSetInterval(skill.id, e.target.value === '' ? null : Number(e.target.value))}
+                          onChange={(e) => void handleSetInterval(skill.id, e.currentTarget.value === '' ? null : Number(e.currentTarget.value))}
                           style={{ background: '#1e1e1e', color: '#ccc', border: '1px solid #444', borderRadius: 3, fontSize: 11 }}
                         >
                           <option value="">Never</option>
