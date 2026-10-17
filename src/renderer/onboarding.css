@@ -3203,8 +3203,67 @@ h5.ec-heading { font-size: 0.9375rem; }
 }
 
 .groups-dash-card:hover {
-  border-color: #e94560;
-  box-shadow: 0 2px 8px rgba(233, 69, 96, 0.15);
+  border-color: #3a4a78;
+  background: #16213e;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+/* ── New Ruddr project banners: compact rows, subtle buttons ──────────────── */
+.groups-dash-new-projects {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-bottom: 0.75rem;
+}
+
+.groups-dash-new-project-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #16213e;
+  border: 1px solid #2c3d6a;
+  border-radius: 6px;
+  padding: 0.3rem 0.6rem;
+  font-size: 0.9375rem;
+  color: #e0e0e0;
+}
+
+.groups-dash-new-project-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.groups-dash-new-project-edit,
+.groups-dash-new-project-dismiss {
+  background: transparent;
+  border: 1px solid #3a4a78;
+  border-radius: 4px;
+  color: #a0a8c8;
+  font-size: 0.8125rem;
+  line-height: 1.3;
+  padding: 0.15rem 0.5rem;
+  flex-shrink: 0;
+}
+
+.groups-dash-new-project-edit:hover,
+.groups-dash-new-project-dismiss:hover {
+  background: #1f2d52;
+  border-color: #5a7ab0;
+  color: #e0e0e0;
+}
+
+/* Icon-only buttons in group cards: lighter-background hover, never the global red */
+.groups-dash-ruddr-unlink:hover,
+.groups-dash-ruddr-budget-btn:hover:not(:disabled),
+.groups-dash-ruddr-open-btn:hover,
+.groups-dash-ruddr-edit-btn:hover,
+.groups-dash-note-toggle:hover,
+.groups-dash-ruddr-manual-close:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
 }
 
 .groups-dash-card-name {
