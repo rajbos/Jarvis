@@ -28,6 +28,7 @@ import {
   HOURS_WEEKS_PER_RUN,
   HOURS_PAUSE_MIN_MS,
   _resetHoursDiscoveryState,
+  setProjectHidden,
 } from '../../src/plugins/groups/ruddr-hours-discovery';
 import type { HoursDiscoveryDeps } from '../../src/plugins/groups/ruddr-hours-discovery';
 import { addDays, loadWeekRecords, localToday, mondayOf } from '../../src/services/ruddr-hours';
@@ -216,6 +217,14 @@ describe('Ruddr hours discovery', () => {
 
     let summary = getHoursSummary(db);
     expect(summary.unlinked).toMatchObject([{ projectName: 'Acme | Rollout', totalMinutes: 360 }]);
+
+    // Hidden projects move out of the list for good, and can be shown again.
+    setProjectHidden(db, PROJECT_PATH, true);
+    summary = getHoursSummary(db);
+    expect(summary.unlinked).toEqual([]);
+    expect(summary.hidden).toMatchObject([{ projectPath: PROJECT_PATH }]);
+    setProjectHidden(db, PROJECT_PATH, false);
+    expect(getHoursSummary(db).unlinked).toHaveLength(1);
 
     const id = createGroup(db, 'Acme');
     db.run('UPDATE groups SET ruddr_project_name = ? WHERE id = ?', [JSON.stringify(['Acme | Rollout']), id]);

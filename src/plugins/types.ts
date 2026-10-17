@@ -1336,6 +1336,8 @@ export interface RuddrHoursSummary {
   groups: Record<number, RuddrHoursGroupTotals>;
   /** Projects with logged hours that are not linked to any group. */
   unlinked: Array<{ projectName: string; projectPath: string; clientName: string | null; totalMinutes: number; lastDate: string }>;
+  /** Projects without a group that the user chose to hide from that list. */
+  hidden: Array<{ projectName: string; projectPath: string; clientName: string | null; totalMinutes: number; lastDate: string }>;
 }
 // ── Auto-dismiss types ────────────────────────────────────────────────────────
 export type AutoDismissReason =
@@ -1757,6 +1759,8 @@ export interface JarvisApi {
   /** Re-fetches one week from Ruddr now, bypassing the cache. */
   ruddrHoursRefreshWeek(weekStart: string): Promise<{ ok: true; result: Record<string, unknown>; week: RuddrHoursWeek } | { ok: false; error: string }>;
   onRuddrHoursUpdated(callback: (status: RuddrHoursStatus) => void): () => void;
+  /** Hide (or show again) a project in the "not in a group" list. */
+  ruddrHoursSetProjectHidden(projectPath: string, hidden: boolean): Promise<{ ok: boolean; error?: string }>;
 
   // OneDrive
 

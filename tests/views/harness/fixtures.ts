@@ -545,7 +545,14 @@ export function createFixtures(now: number) {
       loginRequired: false, extensionOutdated: false,
     },
     groups: { 1: { weekMinutes: 480, last4WeeksMinutes: 2400, totalMinutes: 9600, lastDate: ymd(weekStartMs + dayMs) } },
-    unlinked: [{ projectName: RUDDR_UNLINKED_PROJECT, projectPath: initechPath, clientName: 'Initech', totalMinutes: 360, lastDate: ymd(weekStartMs + 2 * dayMs) }],
+    unlinked: [
+      { projectName: RUDDR_UNLINKED_PROJECT, projectPath: initechPath, clientName: 'Initech', totalMinutes: 360, lastDate: ymd(weekStartMs + 2 * dayMs) },
+      // Logged in an earlier week only — not listed while this week is shown.
+      { projectName: 'Umbrella | Old Assessment', projectPath: '/app/fixture-workspace/portfolio/projects/umbrella/old', clientName: 'Umbrella', totalMinutes: 600, lastDate: ymd(weekStartMs - 30 * dayMs) },
+    ],
+    hidden: [
+      { projectName: 'Internal Work', projectPath: '/app/fixture-workspace/portfolio/projects/internal/internal-work', clientName: 'Internal', totalMinutes: 8820, lastDate: ymd(weekStartMs + dayMs) },
+    ],
   };
 
   return {

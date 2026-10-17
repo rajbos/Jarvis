@@ -262,6 +262,8 @@ contextBridge.exposeInMainWorld('jarvis', {
   ruddrHoursSummary: () => ipcRenderer.invoke('ruddr-hours:summary'),
   ruddrHoursWeek: (weekStart: string) => ipcRenderer.invoke('ruddr-hours:week', weekStart),
   ruddrHoursRefreshWeek: (weekStart: string) => ipcRenderer.invoke('ruddr-hours:refresh-week', weekStart),
+  ruddrHoursSetProjectHidden: (projectPath: string, hidden: boolean) =>
+    ipcRenderer.invoke('ruddr-hours:set-project-hidden', projectPath, hidden),
 
   // OneDrive
   onedriveListRoots: () => ipcRenderer.invoke('onedrive:list-roots'),

@@ -174,6 +174,7 @@ const EXPECTED_CHANNELS = [
   'ruddr-hours:summary',
   'ruddr-hours:week',
   'ruddr-hours:refresh-week',
+  'ruddr-hours:set-project-hidden',
   // onedrive plugin
   'onedrive:list-roots',
   'onedrive:browse-folder',

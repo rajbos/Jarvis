@@ -9,7 +9,7 @@
 // prompt just pauses discovery until the user has logged in themselves.
 import type { Database as SqlJsDatabase } from 'sql.js';
 import type { BrowserWindow } from 'electron';
-import { saveDatabase } from '../../storage/database';
+import { saveDatabase, getConfigValue, setConfigValue } from '../../storage/database';
 import { sendCommand, getBridgeStatus } from '../browser-companion/server';
 import {
   createTabSession,
@@ -43,6 +43,25 @@ export const HOURS_PAUSE_MIN_MS = 15_000;
 export const HOURS_PAUSE_MAX_MS = 30_000;
 const RUDDR_BASE = 'https://www.ruddr.io/app';
 /** How long the extension polls a week page for its grid (slow background tabs included). */
+/** Config key: JSON array of project paths hidden from the "not in a group" list. */
+const HIDDEN_PROJECTS_KEY = 'ruddr_hours_hidden_projects';
+
+export function getHiddenProjects(db: SqlJsDatabase): string[] {
+  try {
+    const parsed: unknown = JSON.parse(getConfigValue(db, HIDDEN_PROJECTS_KEY) ?? '[]');
+    return Array.isArray(parsed) ? parsed.filter((p): p is string => typeof p === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+export function setProjectHidden(db: SqlJsDatabase, projectPath: string, hidden: boolean): void {
+  const set = new Set(getHiddenProjects(db));
+  if (hidden) set.add(projectPath);
+  else set.delete(projectPath);
+  setConfigValue(db, HIDDEN_PROJECTS_KEY, JSON.stringify([...set].sort()));
+}
+
 const SCRAPE_WAIT_MS = 25_000;
 const SCRAPE_TIMEOUT_MS = SCRAPE_WAIT_MS + 20_000;
 
@@ -272,6 +291,8 @@ export function getHoursSummary(db: SqlJsDatabase): RuddrHoursSummary {
   const totals: Record<number, RuddrHoursGroupTotals> = {};
   const bucket = (id: number) => (totals[id] ??= { weekMinutes: 0, last4WeeksMinutes: 0, totalMinutes: 0, lastDate: null });
   const unlinked: RuddrHoursSummary['unlinked'] = [];
+  const hiddenPaths = new Set(getHiddenProjects(db));
+  const hidden: RuddrHoursSummary['hidden'] = [];
 
   for (const p of projectTotals(db)) {
     const ids = groupsFor(p.projectPath, p.projectName);
@@ -281,7 +302,8 @@ export function getHoursSummary(db: SqlJsDatabase): RuddrHoursSummary {
       if (!b.lastDate || p.lastDate > b.lastDate) b.lastDate = p.lastDate;
     }
     if (ids.length === 0 && !p.projectPath.startsWith('label:')) {
-      unlinked.push({ projectName: p.projectName, projectPath: p.projectPath, clientName: p.clientName, totalMinutes: p.minutes, lastDate: p.lastDate });
+      const entry = { projectName: p.projectName, projectPath: p.projectPath, clientName: p.clientName, totalMinutes: p.minutes, lastDate: p.lastDate };
+      (hiddenPaths.has(p.projectPath) ? hidden : unlinked).push(entry);
     }
   }
   for (const p of projectTotals(db, fourWeeksStart, addDays(weekStart, 6))) {
@@ -292,7 +314,9 @@ export function getHoursSummary(db: SqlJsDatabase): RuddrHoursSummary {
   }
   unlinked.sort((a, b) => b.lastDate.localeCompare(a.lastDate));
 
-  return { ok: true, status: getHoursStatus(db), groups: totals, unlinked };
+  hidden.sort((a, b) => a.projectName.localeCompare(b.projectName));
+
+  return { ok: true, status: getHoursStatus(db), groups: totals, unlinked, hidden };
 }
 
 export function registerRuddrHoursHandlers(db: SqlJsDatabase, deps: HoursDiscoveryDeps): void {
@@ -301,6 +325,14 @@ export function registerRuddrHoursHandlers(db: SqlJsDatabase, deps: HoursDiscove
   safeHandle('ruddr-hours:week', (_event, weekStart: unknown) => {
     if (!isWeekStart(weekStart)) return { ok: false, error: 'weekStart must be a Monday (YYYY-MM-DD)' };
     return { ok: true, week: getHoursWeek(db, weekStart) };
+  });
+  safeHandle('ruddr-hours:set-project-hidden', (_event, projectPath: unknown, hidden: unknown) => {
+    if (typeof projectPath !== 'string' || !projectPath || typeof hidden !== 'boolean') {
+      return { ok: false, error: 'projectPath (string) and hidden (boolean) are required' };
+    }
+    setProjectHidden(db, projectPath, hidden);
+    saveDatabase();
+    return { ok: true };
   });
   safeHandle('ruddr-hours:refresh-week', async (_event, weekStart: unknown) => {
     if (!isWeekStart(weekStart)) return { ok: false, error: 'weekStart must be a Monday (YYYY-MM-DD)' };

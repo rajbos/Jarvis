@@ -5970,6 +5970,29 @@ h5.ec-heading { font-size: 0.9375rem; }
   font-size: 0.875rem;
 }
 
+.ruddr-hours-hide {
+  color: #8890b0;
+}
+
+.ruddr-hours-hidden-toggle {
+  align-self: flex-start;
+  background: transparent;
+  border: none;
+  padding: 0.1rem 0;
+  font-size: 0.75rem;
+  color: #8890b0;
+  cursor: pointer;
+}
+
+.ruddr-hours-hidden-toggle:hover {
+  background: transparent;
+  color: #c8d0f0;
+}
+
+.ruddr-hours-unlinked-row--hidden {
+  opacity: 0.7;
+}
+
 .ruddr-hours-unlinked-name {
   flex: 1;
   min-width: 0;

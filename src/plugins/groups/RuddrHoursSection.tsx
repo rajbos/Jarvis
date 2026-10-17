@@ -48,6 +48,7 @@ export function RuddrHoursSection(props: {
   const [reloadError, setReloadError] = useState<string | null>(null);
   const [creatingFor, setCreatingFor] = useState<string | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [showHidden, setShowHidden] = useState(false);
 
   const loadWeek = async (ws: string) => {
     const res = await window.jarvis.ruddrHoursWeek(ws);
@@ -74,6 +75,11 @@ export function RuddrHoursSection(props: {
     } finally {
       setReloading(false);
     }
+  };
+
+  const handleSetHidden = async (projectPath: string, hidden: boolean) => {
+    await window.jarvis.ruddrHoursSetProjectHidden(projectPath, hidden);
+    onChanged();
   };
 
   const handleCreateGroup = async (projectName: string, groupName: string) => {
@@ -117,6 +123,12 @@ export function RuddrHoursSection(props: {
     || (a.task ?? '').localeCompare(b.task ?? '', undefined, { sensitivity: 'base' }));
   const dayTotals = days.map((d) => [...projects.values()].reduce((s, p) => s + (p.byDate.get(d) ?? 0), 0));
   const isFuture = weekStart > currentMonday();
+
+  // Only projects logged in the week on screen; hidden ones never show.
+  const weekMinutesByPath = new Map<string, number>();
+  for (const r of week?.rows ?? []) weekMinutesByPath.set(r.projectPath, (weekMinutesByPath.get(r.projectPath) ?? 0) + r.minutes);
+  const visibleUnlinked = (summary?.unlinked ?? []).filter((p) => weekMinutesByPath.has(p.projectPath));
+  const hiddenCount = summary?.hidden.length ?? 0;
 
   return (
     <section class="ruddr-hours">
@@ -197,16 +209,20 @@ export function RuddrHoursSection(props: {
         </div>
       )}
 
-      {summary && summary.unlinked.length > 0 && (
+      {(visibleUnlinked.length > 0 || hiddenCount > 0) && (
         <div class="ruddr-hours-unlinked">
-          <div class="ruddr-hours-subhead">Projects with your hours that are not in a group</div>
+          {visibleUnlinked.length > 0 && (
+            <div class="ruddr-hours-subhead">Projects you logged this week that are not in a group</div>
+          )}
           {createError && <div class="ruddr-hours-warn">{createError}</div>}
-          {summary.unlinked.map((p) => (
+          {visibleUnlinked.map((p) => (
             <div class="ruddr-hours-unlinked-row" key={p.projectPath}>
               <span class="ruddr-hours-unlinked-name" title={p.projectPath}>
                 {p.clientName && <span class="ruddr-hours-client">{p.clientName} / </span>}{p.projectName}
               </span>
-              <span class="ruddr-hours-unlinked-meta">{formatMinutes(p.totalMinutes)} · last {p.lastDate}</span>
+              <span class="ruddr-hours-unlinked-meta">
+                {formatMinutes(weekMinutesByPath.get(p.projectPath) ?? 0)} this week · {formatMinutes(p.totalMinutes)} total
+              </span>
               <button
                 class="ruddr-hours-link"
                 disabled={creatingFor !== null}
@@ -218,6 +234,26 @@ export function RuddrHoursSection(props: {
                 {creatingFor === p.projectName ? '…'
                   : groups.some((g) => g.name.toLowerCase() === (p.clientName ?? p.projectName).toLowerCase()) ? '+ Link' : '+ Group'}
               </button>
+              <button
+                class="ruddr-hours-link ruddr-hours-hide"
+                onClick={() => void handleSetHidden(p.projectPath, true)}
+                title="Never list this project here again"
+                aria-label={`Hide ${p.projectName}`}
+              >Hide</button>
+            </div>
+          ))}
+          {hiddenCount > 0 && (
+            <button class="ruddr-hours-hidden-toggle" onClick={() => setShowHidden((v) => !v)}>
+              {showHidden ? '▾' : '▸'} {hiddenCount} hidden project{hiddenCount !== 1 ? 's' : ''}
+            </button>
+          )}
+          {showHidden && summary?.hidden.map((p) => (
+            <div class="ruddr-hours-unlinked-row ruddr-hours-unlinked-row--hidden" key={p.projectPath}>
+              <span class="ruddr-hours-unlinked-name" title={p.projectPath}>
+                {p.clientName && <span class="ruddr-hours-client">{p.clientName} / </span>}{p.projectName}
+              </span>
+              <span class="ruddr-hours-unlinked-meta">{formatMinutes(p.totalMinutes)} total · last {p.lastDate}</span>
+              <button class="ruddr-hours-link" onClick={() => void handleSetHidden(p.projectPath, false)}>Show again</button>
             </div>
           ))}
         </div>
