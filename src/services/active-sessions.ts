@@ -29,7 +29,7 @@ import {
   type CloudAgentTask,
 } from './copilot-agent-tasks';
 import { evaluatePrReadiness, fetchPullRequests, prLookupKey, type PrLookup, type PrLookupResult } from './pr-readiness';
-import { logger } from './logger';
+import { PhaseTimer } from './phase-timer';
 
 /** A token for a repo and the account it belongs to. */
 export interface RepoAccess {
@@ -139,7 +139,11 @@ let cloudCache: CloudTaskCache | null = null;
 /** Exposed for tests. */
 export function resetCloudTaskCache(): void {
   cloudCache = null;
+  repoNameCache.clear();
 }
+
+/** Repository id → `owner/repo` for cloud tasks; ids are stable, so names are fetched once (renames show after a restart). */
+const repoNameCache = new Map<number, string>();
 
 async function listCloudTasks(
   token: string,
@@ -192,6 +196,7 @@ async function fetchWithAccounts(
   lookups: PrLookup[],
   cloud: RepoAccess | null,
   accessForRepo: (repoFullName: string) => Promise<RepoAccess | null>,
+  timer: PhaseTimer,
 ): Promise<{ results: Map<string, PrLookupResult>; accountOf: Map<string, string> }> {
   const byRepo = new Map<string, Promise<RepoAccess | null>>();
   const groups = new Map<string, { access: RepoAccess; lookups: PrLookup[] }>();
@@ -202,7 +207,7 @@ async function fetchWithAccounts(
       access = cloud;
     } else {
       const repo = lookup.repoFullName.toLowerCase();
-      if (!byRepo.has(repo)) byRepo.set(repo, accessForRepo(lookup.repoFullName).catch(() => null));
+      if (!byRepo.has(repo)) byRepo.set(repo, timer.time(`access:${repo}`, () => accessForRepo(lookup.repoFullName)).catch(() => null));
       access = await byRepo.get(repo)!;
     }
     if (!access) continue;
@@ -213,7 +218,8 @@ async function fetchWithAccounts(
   }
   const results = new Map<string, PrLookupResult>();
   for (const { access, lookups: batch } of groups.values()) {
-    for (const [key, result] of await fetchPullRequests(access.token, batch)) results.set(key, result);
+    const prs = await timer.time(`prs:${access.account || 'cloud'}`, () => fetchPullRequests(access.token, batch));
+    for (const [key, result] of prs) results.set(key, result);
 
     // Retry what this token could not see with the fallback credentials, in order.
     let failed = batch.filter((l) => results.get(prLookupKey(l))?.ok === false);
@@ -222,7 +228,7 @@ async function fetchWithAccounts(
     for (const fallback of fallbacks) {
       if (failed.length === 0) break;
       if (fallback.token === access.token) continue;
-      const retried = await fetchPullRequests(fallback.token, failed);
+      const retried = await timer.time(`prs:${fallback.account}`, () => fetchPullRequests(fallback.token, failed));
       failed = failed.filter((lookup) => {
         const key = prLookupKey(lookup);
         const result = retried.get(key);
@@ -239,6 +245,7 @@ async function fetchWithAccounts(
 export async function collectActiveSessions(options: CollectActiveSessionsOptions): Promise<ActiveSessionsSnapshot> {
   const now = options.now?.() ?? Date.now();
   const token = options.accessToken;
+  const timer = options.timer ?? new PhaseTimer();
 
   const sources: ActiveSessionsSnapshot['sources'] = {
     copilotLocal: { ok: true, count: 0 },
@@ -246,21 +253,14 @@ export async function collectActiveSessions(options: CollectActiveSessionsOption
     copilotCloud: { ok: true, count: 0 },
   };
   const fail = (err: unknown): ActiveSessionSourceStatus => ({ ok: false, count: 0, error: err instanceof Error ? err.message : String(err) });
-  // Per-phase wall-clock times, logged at the end to locate slow sweeps.
-  const phases: string[] = [];
-  let phaseStart = Date.now();
-  const phase = (name: string): void => {
-    const at = Date.now();
-    phases.push(`${name} ${at - phaseStart}ms`);
-    phaseStart = at;
-  };
 
   // ── Local sessions ──────────────────────────────────────────────────────────
   let mirroredTasks = new Map<string, string>();
   const localSessions: ActiveAgentSession[] = [];
+  const discovery = { ...options, timer };
   const [copilotResult, claudeResult] = await Promise.allSettled([
-    (async () => discoverCopilotLocalSessions(options))(),
-    (async () => discoverClaudeLocalSessions(options))(),
+    timer.time('copilotLocal', async () => discoverCopilotLocalSessions(discovery)),
+    timer.time('claudeLocal', async () => discoverClaudeLocalSessions(discovery)),
   ]);
   if (copilotResult.status === 'fulfilled') {
     mirroredTasks = copilotResult.value.mirroredTasks;
@@ -275,13 +275,12 @@ export async function collectActiveSessions(options: CollectActiveSessionsOption
   } else {
     sources.claudeLocal = fail(claudeResult.reason);
   }
-  phase('local discovery');
-  await attachLocalSessionUsage(localSessions, options.analyzeSessionFile);
-  phase('local usage');
+  await timer.time('usage', () => attachLocalSessionUsage(localSessions, options.analyzeSessionFile));
 
   const links: PendingLink[] = [];
   for (const session of localSessions) {
-    const git = session.cwd ? resolveGitContext(session.cwd) : null;
+    const cwd = session.cwd;
+    const git = cwd ? timer.sync('git', () => resolveGitContext(cwd)) : null;
     session.repoFullName = git?.repoFullName ?? null;
     session.branch = git?.branch ?? null;
     session.branchPushed = git?.branchPushed ?? null;
@@ -302,13 +301,12 @@ export async function collectActiveSessions(options: CollectActiveSessionsOption
     }
     links.push({ session, lookups, noLookupLabel: noLookupLabel(git) });
   }
-  phase('git context');
 
   // ── Cloud sessions ──────────────────────────────────────────────────────────
   if (!token) {
     sources.copilotCloud = { ok: true, count: 0, skipped: true, error: 'Not signed in to GitHub' };
   } else {
-    const listed = await listCloudTasks(token, now, options.cloudFullListIntervalMs ?? DEFAULT_FULL_LIST_INTERVAL_MS);
+    const listed = await timer.time('cloudList', () => listCloudTasks(token, now, options.cloudFullListIntervalMs ?? DEFAULT_FULL_LIST_INTERVAL_MS));
     if (!listed.ok) {
       sources.copilotCloud = { ok: false, count: 0, error: listed.error };
     } else {
@@ -330,12 +328,12 @@ export async function collectActiveSessions(options: CollectActiveSessionsOption
       const stale = tasks
         .filter((t) => !mirroredTasks.has(t.id) && details.get(t.id)?.updatedAt !== t.updatedAt)
         .sort((a, b) => (Date.parse(b.updatedAt ?? '') || 0) - (Date.parse(a.updatedAt ?? '') || 0));
-      const detailResults = await Promise.all(
+      const detailResults = await timer.time('cloudDetails', () => Promise.all(
         stale.slice(0, detailLimit).map(async (task) => ({
           task,
           result: await fetchCopilotTaskSessions(token, task.id),
         })),
-      );
+      ));
       for (const { task, result } of detailResults) {
         if (result.ok) details.set(task.id, { updatedAt: task.updatedAt, sessions: result.sessions });
       }
@@ -350,7 +348,13 @@ export async function collectActiveSessions(options: CollectActiveSessionsOption
         const lookups: PrLookup[] = task.pullRequestNodeIds.map((nodeId) => ({ kind: 'node', nodeId }));
         if (task.repositoryId !== null) {
           if (!repoNames.has(task.repositoryId)) {
-            repoNames.set(task.repositoryId, await fetchRepoFullNameById(token, task.repositoryId));
+            const repositoryId = task.repositoryId;
+            let name = repoNameCache.get(repositoryId) ?? null;
+            if (!name) {
+              name = await timer.time('cloudRepoNames', () => fetchRepoFullNameById(token, repositoryId));
+              if (name) repoNameCache.set(repositoryId, name);
+            }
+            repoNames.set(repositoryId, name);
           }
           session.repoFullName = repoNames.get(task.repositoryId) ?? null;
           if (lookups.length === 0 && session.repoFullName && task.headRef) {
@@ -362,16 +366,14 @@ export async function collectActiveSessions(options: CollectActiveSessionsOption
     }
   }
 
-  phase('cloud tasks');
-
   // ── PR linking + readiness ──────────────────────────────────────────────────
   const cloudAccess: RepoAccess | null = token ? { token, account: options.accessAccount ?? '' } : null;
   const { results, accountOf } = await fetchWithAccounts(
     links.flatMap((l) => l.lookups),
     cloudAccess,
     options.accessForRepo ?? (async () => cloudAccess),
+    timer,
   );
-  phase('PR lookups');
   const checkedAt = new Date(now).toISOString();
 
   const entries: ActiveSessionEntry[] = [];
@@ -393,7 +395,8 @@ export async function collectActiveSessions(options: CollectActiveSessionsOption
         continue;
       }
       if (result.pr) {
-        pr = evaluatePrReadiness(result.pr, checkedAt);
+        const found = result.pr;
+        pr = timer.sync('readiness', () => evaluatePrReadiness(found, checkedAt));
         prAccount = accountOf.get(key) || null;
         prError = null;
         break;
@@ -434,7 +437,6 @@ export async function collectActiveSessions(options: CollectActiveSessionsOption
   }
 
   sortEntries(entries);
-  logger.debug(`[ActiveSessions] Collected ${localSessions.length} local + ${links.length - localSessions.length} cloud session(s): ${phases.join(', ')}`);
   return {
     entries,
     sources,

@@ -354,3 +354,33 @@ describe('main window — driving the fake API', () => {
     await expectCleanRender(view);
   });
 });
+
+describe('main window — Browser tab pairing token', () => {
+  async function openBrowserTab(view: OpenedView) {
+    await tab(view.page, /Browser/).click();
+    const locator = view.page.getByRole('button', { name: '📋 Copy' });
+    await expect.poll(() => locator.isEnabled()).toBe(true);
+    // Hold on to the element itself: its label changes once clicked.
+    const button = await locator.elementHandle();
+    if (!button) throw new Error('pairing token Copy button not found');
+    return button;
+  }
+
+  it('copies the token through the main-process clipboard', async () => {
+    const view = await harness.open('index');
+    const button = await openBrowserTab(view);
+    await button.click();
+    await expect.poll(() => button.innerText()).toContain('Copied');
+    const calls = await view.calls('clipboardWriteText');
+    expect(calls.map((c) => c.args)).toEqual([['fixture-token-not-a-secret']]);
+    await expectCleanRender(view);
+  });
+
+  it('shows a failure state when the copy fails', async () => {
+    const view = await harness.open('index', { responses: { clipboardWriteText: { ok: false, error: 'clipboard busy' } } });
+    const button = await openBrowserTab(view);
+    await button.click();
+    await expect.poll(() => button.innerText()).toContain('Copy failed');
+    await expectCleanRender(view);
+  });
+});

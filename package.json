@@ -38,18 +38,18 @@
     "@eslint/js": "^10.0.1",
     "@joplin/onenote-converter": "^3.7.1",
     "@sigstore/protobuf-specs": "^0.5.2",
-    "@types/node": "^26.6.4",
+    "@types/node": "^26.6.5",
     "@types/ws": "^8.18.2",
     "@vitest/coverage-v8": "^5.0.3",
     "concurrently": "^10.0.6",
-    "electron": "^44.5.1",
+    "electron": "^44.7.0",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
     "eslint": "^10.12.0",
-    "knip": "^6.39.0",
-    "playwright": "^1.63.0",
+    "knip": "^6.41.0",
+    "playwright": "^1.64.0",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.71.0",
+    "typescript-eslint": "^8.71.1",
     "vitest": "^5.0.0"
   },
   "dependencies": {
@@ -59,10 +59,10 @@
     "@sigstore/tuf": "^5.0.0",
     "@sigstore/verify": "^4.1.2",
     "electron-updater": "^6.8.9",
-    "preact": "^11.0.0",
+    "preact": "^11.0.1",
     "sql.js": "^1.14.2",
     "ws": "^8.22.0",
-    "zod": "^4.6.5"
+    "zod": "^4.6.6"
   },
   "allowScripts": {
     "electron": true,

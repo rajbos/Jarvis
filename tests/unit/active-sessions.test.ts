@@ -279,6 +279,23 @@ describe('collectActiveSessions', () => {
     expect(lookups).toContainEqual({ kind: 'branch', repoFullName: 'me/repo', branch: 'copilot/y' });
   });
 
+  it('resolves each cloud repo id once across sweeps, retrying ids that did not resolve', async () => {
+    vi.mocked(fetchRepoFullNameById).mockImplementation(async (_token, id) => (id === 1 ? 'me/repo' : null));
+    vi.mocked(listCopilotAgentTasks).mockResolvedValue({
+      ok: true,
+      tasks: [
+        { id: 'a', name: 'A', state: 'in_progress', createdAt: null, updatedAt: null, repositoryId: 1, pullRequestNodeIds: [], headRef: 'copilot/a', baseRef: 'main' },
+        { id: 'b', name: 'B', state: 'in_progress', createdAt: null, updatedAt: null, repositoryId: 2, pullRequestNodeIds: [], headRef: 'copilot/b', baseRef: 'main' },
+      ],
+    });
+
+    await collectActiveSessions({ accessToken: 'tok', now: () => NOW });
+    const second = await collectActiveSessions({ accessToken: 'tok', now: () => NOW + 120_000 });
+
+    expect(vi.mocked(fetchRepoFullNameById).mock.calls.map(([, id]) => id)).toEqual([1, 2, 2]);
+    expect(second.entries.find((e) => e.session.sessionId === 'a')?.session.repoFullName).toBe('me/repo');
+  });
+
   it('lists mirrored app sessions whose local process is gone as idle app sessions, without detail calls', async () => {
     vi.mocked(discoverCopilotLocalSessions).mockResolvedValue({ sessions: [], mirroredTasks: new Map([['app-1', 'Copilot app']]) });
     vi.mocked(listCopilotAgentTasks).mockResolvedValue({

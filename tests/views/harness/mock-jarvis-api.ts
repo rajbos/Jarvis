@@ -101,6 +101,7 @@ function defaultResponses(f: Fixtures): Responses {
     getSystemLocale: 'en-US',
     openSettings: undefined,
     shellOpenUrl: ok,
+    clipboardWriteText: ok,
     // GitHub auth + discovery
     startGitHubOAuth: { login: FIXTURE_USER },
     getGitHubOAuthStatus: { authenticated: true, login: FIXTURE_USER },

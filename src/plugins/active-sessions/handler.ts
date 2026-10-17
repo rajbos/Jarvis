@@ -13,6 +13,7 @@ import { logger } from '../../services/logger';
 import { accessForPrimary, accessForRepo, ghCliFallbacks } from '../../services/github-repo-access';
 import { DEFAULT_HOST } from '../../services/github-host';
 import { collectActiveSessions } from '../../services/active-sessions';
+import { PhaseTimer } from '../../services/phase-timer';
 import { saveDatabase } from '../../storage/database';
 import type { ActiveSessionsSnapshot, PrReadiness } from '../types';
 
@@ -99,10 +100,11 @@ export async function refreshActiveSessions(
     // Cloud agent tasks belong to the primary account; each local session's PR is
     // looked up with the account that serves its repo (assignment, git config,
     // discovery), so org repos are checked with the org account.
-    const t0 = Date.now();
-    const primary = await accessForPrimary(db);
-    const tPrimary = Date.now();
+    const timer = new PhaseTimer();
+    const startedAt = Date.now();
+    const primary = await timer.time('primary', () => accessForPrimary(db));
     const snapshot = await collectActiveSessions({
+      timer,
       accessToken: primary?.token ?? null,
       accessAccount: primary?.id ?? null,
       // When that account's token can't see the repo (e.g. not SSO-authorized for
@@ -118,7 +120,6 @@ export async function refreshActiveSessions(
       },
     });
 
-    const tCollect = Date.now();
     const openPrs = new Map<string, PrReadiness>();
     const holdNotify = new Set<string>();
     for (const entry of snapshot.entries) {
@@ -128,8 +129,8 @@ export async function refreshActiveSessions(
       if (STILL_PUSHING.has(entry.session.activity)) holdNotify.add(key);
     }
     try {
-      const newlyReady = recordReadiness(db, [...openPrs.values()], holdNotify);
-      if (openPrs.size > 0) saveDatabase();
+      const newlyReady = timer.sync('recordReadiness', () => recordReadiness(db, [...openPrs.values()], holdNotify));
+      if (openPrs.size > 0) timer.sync('saveDatabase', () => saveDatabase());
       try {
         notifyReady(newlyReady);
       } catch (err) {
@@ -142,10 +143,8 @@ export async function refreshActiveSessions(
     latestSnapshot = snapshot;
     const win = getWindow();
     if (win && !win.isDestroyed()) win.webContents.send('active-sessions:updated', snapshot);
-    logger.debug(
-      `[ActiveSessions] ${snapshot.entries.length} session(s), ${snapshot.readyCount} ready for review — `
-      + `primary account ${tPrimary - t0}ms, collect ${tCollect - tPrimary}ms, readiness ${Date.now() - tCollect}ms`,
-    );
+    logger.debug(`[ActiveSessions] ${snapshot.entries.length} session(s), ${snapshot.readyCount} ready for review`);
+    logger.debug(`[ActiveSessions] sweep took ${Date.now() - startedAt}ms: ${timer.summary()}`);
     return snapshot;
   })();
   try {

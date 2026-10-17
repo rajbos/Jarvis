@@ -1,6 +1,7 @@
 // ── Settings: GitHub device-flow code, ready to paste ────────────────────────
 import { useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
+import { copyToClipboard } from '../plugins/clipboard';
 
 /**
  * Shows the GitHub device code prominently. The main process copies the code to
@@ -10,19 +11,19 @@ export function DeviceCodePrompt({
   userCode, verificationUri, copied: copiedByMain, children,
 }: { userCode: string; verificationUri?: string; copied?: boolean; children?: ComponentChildren }) {
   const [copied, setCopied] = useState(copiedByMain === true);
+  const [copyFailed, setCopyFailed] = useState(false);
 
   const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(userCode);
-      setCopied(true);
-    } catch { /* clipboard unavailable */ }
+    const ok = await copyToClipboard(userCode);
+    setCopied(ok);
+    setCopyFailed(!ok);
   };
 
   return (
     <div class="device-code">
       <div class="device-code-row">
         <code class="device-code-value">{userCode}</code>
-        <button class="btn-secondary" onClick={() => void copy()}>{copied ? '✓ Copied' : 'Copy code'}</button>
+        <button class="btn-secondary" onClick={() => void copy()}>{copied ? '✓ Copied' : copyFailed ? '✗ Copy failed' : 'Copy code'}</button>
         {verificationUri && (
           <button class="btn-secondary" onClick={() => void window.jarvis.shellOpenUrl(verificationUri)}>
             Open GitHub
