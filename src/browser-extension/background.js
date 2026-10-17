@@ -714,11 +714,18 @@ function readRuddrWeek(date) {
   const pathOf = (a) => (a ? (a.getAttribute('href') || '').split('?')[0].split('#')[0] : null);
   const textOf = (el) => (el ? (el.textContent || '').replace(/\s+/g, ' ').trim() : null);
 
-  const days = [...document.querySelectorAll('a[href*="/time/day?date="]')].map((a) => {
+  // Day column headers link to the day view and hold two spans: the day name
+  // and its hours. Other links to the day view (the Month/Week/Day/List
+  // switcher's "Day" tab) have no spans and are skipped.
+  const seen = new Set();
+  const days = [];
+  for (const a of document.querySelectorAll('a[href*="/time/day?date="]')) {
     const m = /[?&]date=(\d{4}-\d{2}-\d{2})/.exec(a.getAttribute('href') || '');
     const spans = [...a.querySelectorAll('span')].map((sp) => textOf(sp));
-    return { day: spans[0] || '', date: m ? m[1] : '', total: spans.length > 1 ? spans[1] : null };
-  }).filter((d) => d.date);
+    if (!m || spans.length < 2 || seen.has(m[1])) continue;
+    seen.add(m[1]);
+    days.push({ day: spans[0] || '', date: m[1], total: spans[1] });
+  }
 
   const inputs = [...document.querySelectorAll('input[data-testid^="day-entry-"]')];
   const base = {
