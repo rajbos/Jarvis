@@ -5943,6 +5943,28 @@ h5.ec-heading { font-size: 0.9375rem; }
   color: #8890b0;
 }
 
+/* A project split into work types: the summed row, then one row per type. */
+.ruddr-hours-table .ruddr-hours-row--parent td {
+  border-bottom-color: #263055;
+}
+
+.ruddr-hours-table .ruddr-hours-row--worktype td {
+  color: #a0a8c8;
+  font-size: 0.75rem;
+  padding-top: 0.15rem;
+  padding-bottom: 0.15rem;
+  border-bottom-color: #263055;
+}
+
+.ruddr-hours-worktype {
+  padding-left: 1.1rem;
+}
+
+/* Close a split project with the normal row rule before the next project. */
+.ruddr-hours-table .ruddr-hours-row--worktype + tr:not(.ruddr-hours-row--worktype) td {
+  border-top: 1px solid #34406c;
+}
+
 .ruddr-hours-task {
   display: block;
   font-size: 0.75rem;

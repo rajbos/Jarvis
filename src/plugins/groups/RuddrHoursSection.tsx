@@ -106,21 +106,30 @@ export function RuddrHoursSection(props: {
 
   const status = summary?.status;
   const days = DAY_LABELS.map((_, i) => addDays(weekStart, i));
-  // One row per project and task, like Ruddr's week view (e.g. Internal Work
-  // split into Pre-sales and Tech Officer).
-  const projects = new Map<string, { name: string; client: string | null; task: string | null; byDate: Map<string, number>; total: number }>();
+  // One row per project. A project logged on more than one work type (Ruddr's
+  // tasks, e.g. Internal Work → Pre-sales and Tech Officer) this week gets a
+  // sub-row per work type under its summed row.
+  type Hours = { byDate: Map<string, number>; total: number };
+  const addHours = (h: Hours, date: string, minutes: number) => {
+    h.byDate.set(date, (h.byDate.get(date) ?? 0) + minutes);
+    h.total += minutes;
+  };
+  const projects = new Map<string, Hours & { name: string; client: string | null; workTypes: Map<string, Hours & { name: string | null }> }>();
   for (const r of week?.rows ?? []) {
-    const key = `${r.projectPath}|${r.taskPath}`;
-    const p = projects.get(key) ?? { name: r.projectName, client: r.clientName, task: r.taskName, byDate: new Map(), total: 0 };
-    p.byDate.set(r.date, (p.byDate.get(r.date) ?? 0) + r.minutes);
-    p.total += r.minutes;
-    projects.set(key, p);
+    const p = projects.get(r.projectPath)
+      ?? { name: r.projectName, client: r.clientName, workTypes: new Map(), byDate: new Map(), total: 0 };
+    addHours(p, r.date, r.minutes);
+    const w = p.workTypes.get(r.taskPath) ?? { name: r.taskName, byDate: new Map(), total: 0 };
+    addHours(w, r.date, r.minutes);
+    p.workTypes.set(r.taskPath, w);
+    projects.set(r.projectPath, p);
   }
-  // Alphabetical by "client / project", as the rows read.
+  // Alphabetical by "client / project", as the rows read; work types by name.
   const rowLabel = (p: { name: string; client: string | null }) => (p.client ? `${p.client} / ${p.name}` : p.name);
-  const sortedProjects = [...projects.entries()].sort(([, a], [, b]) =>
-    rowLabel(a).localeCompare(rowLabel(b), undefined, { sensitivity: 'base' })
-    || (a.task ?? '').localeCompare(b.task ?? '', undefined, { sensitivity: 'base' }));
+  const byName = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: 'base' });
+  const sortedProjects = [...projects.entries()].sort(([, a], [, b]) => byName(rowLabel(a), rowLabel(b)));
+  const sortedWorkTypes = (p: { workTypes: Map<string, Hours & { name: string | null }> }) =>
+    [...p.workTypes.entries()].sort(([, a], [, b]) => byName(a.name ?? '', b.name ?? ''));
   const dayTotals = days.map((d) => [...projects.values()].reduce((s, p) => s + (p.byDate.get(d) ?? 0), 0));
   const isFuture = weekStart > currentMonday();
 
@@ -187,16 +196,31 @@ export function RuddrHoursSection(props: {
               </tr>
             </thead>
             <tbody>
-              {sortedProjects.map(([path, p]) => (
-                <tr key={path}>
-                  <td class="ruddr-hours-proj" title={`${rowLabel(p)}${p.task ? ` — ${p.task}` : ''}`}>
-                    {p.client && <span class="ruddr-hours-client">{p.client} / </span>}{p.name}
-                    {p.task && <span class="ruddr-hours-task">📄 {p.task}</span>}
-                  </td>
-                  {days.map((d) => <td key={d}>{p.byDate.get(d) ? formatMinutes(p.byDate.get(d)!) : ''}</td>)}
-                  <td class="ruddr-hours-total">{formatMinutes(p.total)}</td>
-                </tr>
-              ))}
+              {sortedProjects.flatMap(([path, p]) => {
+                const workTypes = sortedWorkTypes(p);
+                const split = workTypes.length > 1;
+                // With one work type, its name sits under the project like on Ruddr.
+                const onlyWorkType = !split ? workTypes[0]?.[1].name : null;
+                return [
+                  <tr key={path} class={split ? 'ruddr-hours-row--parent' : undefined}>
+                    <td class="ruddr-hours-proj" title={`${rowLabel(p)}${onlyWorkType ? ` — ${onlyWorkType}` : ''}`}>
+                      {p.client && <span class="ruddr-hours-client">{p.client} / </span>}{p.name}
+                      {onlyWorkType && <span class="ruddr-hours-task">📄 {onlyWorkType}</span>}
+                    </td>
+                    {days.map((d) => <td key={d}>{p.byDate.get(d) ? formatMinutes(p.byDate.get(d)!) : ''}</td>)}
+                    <td class="ruddr-hours-total">{formatMinutes(p.total)}</td>
+                  </tr>,
+                  ...(split ? workTypes.map(([taskPath, w]) => (
+                    <tr key={`${path}|${taskPath}`} class="ruddr-hours-row--worktype">
+                      <td class="ruddr-hours-proj" title={`${rowLabel(p)} — ${w.name ?? 'no work type'}`}>
+                        <span class="ruddr-hours-worktype">📄 {w.name ?? 'No work type'}</span>
+                      </td>
+                      {days.map((d) => <td key={d}>{w.byDate.get(d) ? formatMinutes(w.byDate.get(d)!) : ''}</td>)}
+                      <td>{formatMinutes(w.total)}</td>
+                    </tr>
+                  )) : []),
+                ];
+              })}
             </tbody>
             <tfoot>
               <tr>
