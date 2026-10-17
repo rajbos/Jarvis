@@ -16,7 +16,7 @@ import { logger, setLogLevel, enableFileLogging } from '../services/logger';
 import { startStallWatchdog } from '../services/stall-watchdog';
 import { checkForUpdates, registerUpdateIpcHandlers, startUpdateChecks, stopUpdateChecks } from './update-checker';
 import { registerDiagnosticsIpcHandlers } from './diagnostics';
-import { safeHandle } from '../plugins/ipc-utils';
+import { registerAppWindowIpcHandlers } from './app-window-ipc';
 if (process.env.JARVIS_CONFIG_DIR) {
   app.setPath('userData', path.join(process.env.JARVIS_CONFIG_DIR, 'electron'));
 } else if (!app.isPackaged) {
@@ -93,9 +93,7 @@ async function initialize(): Promise<void> {
   registerUpdateIpcHandlers(() => mainWindow);
   registerDiagnosticsIpcHandlers();
   // Let the renderer open the Settings window (e.g. from the "PAT expired" banner)
-  safeHandle('app:open-settings', () => {
-    showSettingsWindow();
-  });
+  registerAppWindowIpcHandlers(showSettingsWindow);
   startupStep('IPC handlers registered');
   // Validate the stored GitHub PAT on startup; warn clearly when it has
   // expired or been revoked instead of silently failing API calls later.

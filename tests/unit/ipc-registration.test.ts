@@ -29,6 +29,11 @@ vi.mock('electron', () => ({
   },
 }));
 
+// update-checker imports electron-updater at module load
+vi.mock('electron-updater', () => ({
+  autoUpdater: { on: vi.fn(), autoDownload: false, checkForUpdates: vi.fn(), quitAndInstall: vi.fn() },
+}));
+
 // Mock saveDatabase so no file I/O happens
 vi.mock('../../src/storage/database', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/storage/database')>();
@@ -36,10 +41,15 @@ vi.mock('../../src/storage/database', async (importOriginal) => {
 });
 
 import { registerIpcHandlers } from '../../src/main/ipc-handlers';
+import { registerUpdateIpcHandlers } from '../../src/main/update-checker';
+import { registerDiagnosticsIpcHandlers } from '../../src/main/diagnostics';
+import { registerAppWindowIpcHandlers } from '../../src/main/app-window-ipc';
 import { ipcMain } from 'electron';
 
 // ── Expected IPC channel catalogue ───────────────────────────────────────────
 // Add new channels here as new plugins are created.
+// This must cover every register*IpcHandlers() call made in src/main/index.ts
+// initialize(); wire any new one into beforeEach below as well.
 const EXPECTED_CHANNELS = [
   // config plugin
   'app:get-system-locale',
@@ -207,6 +217,13 @@ const EXPECTED_CHANNELS = [
   'tasks:list',
   'tasks:recent-failures',
   'tasks:run-now',
+  // registered from src/main/index.ts alongside registerIpcHandlers()
+  'updates:get-state',
+  'updates:check',
+  'updates:install',
+  'diagnostics:log-tail',
+  'diagnostics:open-log',
+  'app:open-settings',
 ] as const;
 
 describe('IPC handler registration', () => {
@@ -223,6 +240,9 @@ describe('IPC handler registration', () => {
 
     const getWindow = () => null;
     registerIpcHandlers(db, getWindow);
+    registerUpdateIpcHandlers(getWindow);
+    registerDiagnosticsIpcHandlers();
+    registerAppWindowIpcHandlers(() => {});
 
     // Collect every channel name passed to ipcMain.handle()
     registeredChannels = (ipcMain.handle as ReturnType<typeof vi.fn>).mock.calls.map(
