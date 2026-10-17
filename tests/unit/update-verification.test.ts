@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import crypto from 'crypto';
 import type { AppUpdater } from 'electron-updater';
 import { TrustedRoot } from '@sigstore/protobuf-specs';
 import {
@@ -11,6 +12,7 @@ import {
   sha256File,
   verifyAttestationBundles,
   verifyReleaseAttestation,
+  withDefaultEcDigest,
   type AttestationPolicy,
 } from '../../src/main/update-verification';
 
@@ -185,5 +187,29 @@ describe('build provenance attestation fallback for unsigned builds', () => {
 
     await expect(updater.verifySignature(file)).resolves.toContain('does not cover this file');
     expect(digest).not.toBe(REAL_DIGEST);
+  });
+});
+
+describe('withDefaultEcDigest', () => {
+  it('defaults the digest to sha256 only while running, then restores crypto.verify', async () => {
+    const original = crypto.verify;
+    const spy = vi.fn(() => true);
+    crypto.verify = spy as unknown as typeof crypto.verify;
+    try {
+      await withDefaultEcDigest(async () => {
+        (crypto.verify as (...args: unknown[]) => boolean)(undefined, Buffer.alloc(0), 'key', Buffer.alloc(0));
+        (crypto.verify as (...args: unknown[]) => boolean)('sha512', Buffer.alloc(0), 'key', Buffer.alloc(0));
+      });
+      expect(spy.mock.calls.map((c) => (c as unknown[])[0])).toEqual(['sha256', 'sha512']);
+      expect(crypto.verify).toBe(spy);
+    } finally {
+      crypto.verify = original;
+    }
+  });
+
+  it('restores crypto.verify when the callback throws', async () => {
+    const original = crypto.verify;
+    await expect(withDefaultEcDigest(async () => { throw new Error('boom'); })).rejects.toThrow('boom');
+    expect(crypto.verify).toBe(original);
   });
 });
