@@ -450,6 +450,40 @@ export function projectDayRows(db: SqlJsDatabase, from: string, to: string): Rud
   return out;
 }
 
+export interface RuddrHoursTaskDayRow extends RuddrHoursDayRow {
+  /** Ruddr task path, '' when the row has no task. */
+  taskPath: string;
+  taskName: string | null;
+}
+
+/** Hours per project, task and day over [from, to] — the split Ruddr's week view shows. */
+export function taskDayRows(db: SqlJsDatabase, from: string, to: string): RuddrHoursTaskDayRow[] {
+  const stmt = db.prepare(`
+    SELECT entry_date, project_path, task_path, project_name, client_name, task_name, minutes
+    FROM ruddr_time_entries
+    WHERE entry_date >= ? AND entry_date <= ?
+    ORDER BY entry_date, project_name COLLATE NOCASE, task_name COLLATE NOCASE`);
+  const out: RuddrHoursTaskDayRow[] = [];
+  try {
+    stmt.bind([from, to]);
+    while (stmt.step()) {
+      const r = stmt.getAsObject() as Record<string, string | number | null>;
+      out.push({
+        date: String(r.entry_date),
+        projectPath: String(r.project_path),
+        projectName: String(r.project_name),
+        clientName: r.client_name === null ? null : String(r.client_name),
+        taskPath: String(r.task_path ?? ''),
+        taskName: r.task_name === null ? null : String(r.task_name),
+        minutes: Number(r.minutes),
+      });
+    }
+  } finally {
+    stmt.free();
+  }
+  return out;
+}
+
 /** Distinct real Ruddr projects (not label rows) seen in the hours cache. */
 export function projectsWithHours(db: SqlJsDatabase): Array<{ name: string; path: string }> {
   const res = db.exec(`SELECT project_path, MAX(project_name) FROM ruddr_time_entries

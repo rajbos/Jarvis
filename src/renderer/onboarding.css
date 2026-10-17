@@ -5943,6 +5943,13 @@ h5.ec-heading { font-size: 0.9375rem; }
   color: #8890b0;
 }
 
+.ruddr-hours-task {
+  display: block;
+  font-size: 0.75rem;
+  color: #8890b0;
+  padding-left: 0.1rem;
+}
+
 .ruddr-hours-subhead {
   font-size: 0.8125rem;
   font-weight: 600;

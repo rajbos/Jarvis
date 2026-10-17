@@ -528,12 +528,13 @@ export function createFixtures(now: number) {
     fetchedAt: ymd(now) + ' 09:00:00',
     status: 'ok',
     error: null,
-    totalMinutes: 840,
+    totalMinutes: 960,
     approvedMinutes: 0,
     rows: [
-      { date: weekStart, projectPath: acmePath, projectName: RUDDR_PROJECT, clientName: 'Acme', minutes: 240 },
-      { date: ymd(weekStartMs + dayMs), projectPath: acmePath, projectName: RUDDR_PROJECT, clientName: 'Acme', minutes: 240 },
-      { date: ymd(weekStartMs + 2 * dayMs), projectPath: initechPath, projectName: RUDDR_UNLINKED_PROJECT, clientName: 'Initech', minutes: 360 },
+      { date: weekStart, projectPath: acmePath, projectName: RUDDR_PROJECT, clientName: 'Acme', taskPath: `${acmePath}/tasks/1/details`, taskName: 'Discovery', minutes: 240 },
+      { date: ymd(weekStartMs + dayMs), projectPath: acmePath, projectName: RUDDR_PROJECT, clientName: 'Acme', taskPath: `${acmePath}/tasks/2/details`, taskName: 'Build', minutes: 240 },
+      { date: ymd(weekStartMs + 2 * dayMs), projectPath: acmePath, projectName: RUDDR_PROJECT, clientName: 'Acme', taskPath: `${acmePath}/tasks/1/details`, taskName: 'Discovery', minutes: 120 },
+      { date: ymd(weekStartMs + 2 * dayMs), projectPath: initechPath, projectName: RUDDR_UNLINKED_PROJECT, clientName: 'Initech', taskPath: '', taskName: null, minutes: 360 },
     ],
   };
   const ruddrHoursSummary: RuddrHoursSummary = {

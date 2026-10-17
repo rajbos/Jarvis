@@ -1306,6 +1306,9 @@ export interface RuddrHoursDayRow {
   projectPath: string;
   projectName: string;
   clientName: string | null;
+  /** Ruddr task path, '' when the row has no task. */
+  taskPath: string;
+  taskName: string | null;
   minutes: number;
 }
 

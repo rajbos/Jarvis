@@ -100,17 +100,21 @@ export function RuddrHoursSection(props: {
 
   const status = summary?.status;
   const days = DAY_LABELS.map((_, i) => addDays(weekStart, i));
-  const projects = new Map<string, { name: string; client: string | null; byDate: Map<string, number>; total: number }>();
+  // One row per project and task, like Ruddr's week view (e.g. Internal Work
+  // split into Pre-sales and Tech Officer).
+  const projects = new Map<string, { name: string; client: string | null; task: string | null; byDate: Map<string, number>; total: number }>();
   for (const r of week?.rows ?? []) {
-    const p = projects.get(r.projectPath) ?? { name: r.projectName, client: r.clientName, byDate: new Map(), total: 0 };
+    const key = `${r.projectPath}|${r.taskPath}`;
+    const p = projects.get(key) ?? { name: r.projectName, client: r.clientName, task: r.taskName, byDate: new Map(), total: 0 };
     p.byDate.set(r.date, (p.byDate.get(r.date) ?? 0) + r.minutes);
     p.total += r.minutes;
-    projects.set(r.projectPath, p);
+    projects.set(key, p);
   }
   // Alphabetical by "client / project", as the rows read.
   const rowLabel = (p: { name: string; client: string | null }) => (p.client ? `${p.client} / ${p.name}` : p.name);
   const sortedProjects = [...projects.entries()].sort(([, a], [, b]) =>
-    rowLabel(a).localeCompare(rowLabel(b), undefined, { sensitivity: 'base' }));
+    rowLabel(a).localeCompare(rowLabel(b), undefined, { sensitivity: 'base' })
+    || (a.task ?? '').localeCompare(b.task ?? '', undefined, { sensitivity: 'base' }));
   const dayTotals = days.map((d) => [...projects.values()].reduce((s, p) => s + (p.byDate.get(d) ?? 0), 0));
   const isFuture = weekStart > currentMonday();
 
@@ -173,8 +177,9 @@ export function RuddrHoursSection(props: {
             <tbody>
               {sortedProjects.map(([path, p]) => (
                 <tr key={path}>
-                  <td class="ruddr-hours-proj" title={p.client ? `${p.client} / ${p.name}` : p.name}>
+                  <td class="ruddr-hours-proj" title={`${rowLabel(p)}${p.task ? ` — ${p.task}` : ''}`}>
                     {p.client && <span class="ruddr-hours-client">{p.client} / </span>}{p.name}
+                    {p.task && <span class="ruddr-hours-task">📄 {p.task}</span>}
                   </td>
                   {days.map((d) => <td key={d}>{p.byDate.get(d) ? formatMinutes(p.byDate.get(d)!) : ''}</td>)}
                   <td class="ruddr-hours-total">{formatMinutes(p.total)}</td>

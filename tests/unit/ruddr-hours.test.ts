@@ -14,6 +14,7 @@ import {
   parseWeekScrape,
   planWeeks,
   projectDayRows,
+  taskDayRows,
   projectTotals,
   projectsWithHours,
   saveWeek,
@@ -194,6 +195,13 @@ describe('Ruddr hours storage', () => {
 
     const days = projectDayRows(db, '2026-10-05', '2026-10-11');
     expect(days.find((d) => d.date === '2026-10-07')).toMatchObject({ projectName: 'Internal Work', minutes: 300 });
+
+    // The week view keeps Internal Work's tasks apart.
+    const tasks = taskDayRows(db, '2026-10-07', '2026-10-07');
+    expect(tasks.map((t) => [t.projectName, t.taskName, t.minutes])).toEqual([
+      ['Internal Work', 'Pre-sales', 180],
+      ['Internal Work', 'Undefined', 120],
+    ]);
   });
 
   it('keeps earlier entries when a refetch fails', () => {

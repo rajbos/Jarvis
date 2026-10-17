@@ -26,7 +26,7 @@ import {
   mondayOf,
   parseWeekScrape,
   planWeeks,
-  projectDayRows,
+  taskDayRows,
   projectTotals,
   projectsWithHours,
   saveWeek,
@@ -242,7 +242,7 @@ export function getHoursWeek(db: SqlJsDatabase, weekStart: string): RuddrHoursWe
     error: record?.error ?? null,
     totalMinutes: record?.totalMinutes ?? 0,
     approvedMinutes: record?.approvedMinutes ?? 0,
-    rows: projectDayRows(db, weekStart, addDays(weekStart, 6)),
+    rows: taskDayRows(db, weekStart, addDays(weekStart, 6)),
   };
 }
 
