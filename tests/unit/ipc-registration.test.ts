@@ -43,6 +43,7 @@ import { ipcMain } from 'electron';
 const EXPECTED_CHANNELS = [
   // config plugin
   'app:get-system-locale',
+  'clipboard:write-text',
   'app:get-about-info',
   'app:get-preferences',
   'app:set-preferences',

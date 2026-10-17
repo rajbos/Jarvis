@@ -2,6 +2,7 @@ import { useState, useEffect } from 'preact/hooks';
 import type { DiagnosticReport } from '../types';
 import { isIpcError } from '../types';
 import { diagnosticToText } from './diagnostics';
+import { copyToClipboard } from '../clipboard';
 
 const LOG_TAIL_LINES = 30;
 
@@ -32,7 +33,9 @@ export function DiagnosticCard({ report, onExplain, busy }: DiagnosticCardProps)
   }, [report.id, report.logFilter]);
 
   const onCopy = () => {
-    void navigator.clipboard.writeText(diagnosticToText(report, logLines ?? [])).then(() => {
+    setActionError(null);
+    void copyToClipboard(diagnosticToText(report, logLines ?? [])).then((ok) => {
+      if (!ok) { setActionError('Could not copy the details to the clipboard'); return; }
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     });

@@ -281,6 +281,7 @@ contextBridge.exposeInMainWorld('jarvis', {
     ipcRenderer.invoke('onedrive:get-onenote-cache-for-group', groupId),
   shellOpenUrl: (url: string) =>
     ipcRenderer.invoke('shell:open-url', url),
+  clipboardWriteText: (text: string) => ipcRenderer.invoke('clipboard:write-text', text),
   // Browser Companion
   browserStatus: () => ipcRenderer.invoke('browser:status'),
   browserGetToken: () => ipcRenderer.invoke('browser:get-token'),

@@ -1,5 +1,5 @@
 // ── Config & onboarding IPC handlers ─────────────────────────────────────────
-import { app } from 'electron';
+import { app, clipboard } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import type { BrowserWindow } from 'electron';
 import { loadConfig, saveConfig } from '../../agent/config';
@@ -8,6 +8,14 @@ import { safeHandle } from '../ipc-utils';
 
 export function registerHandlers(_db: SqlJsDatabase, _getWindow: () => BrowserWindow | null): void {
   safeHandle('app:get-system-locale', () => app.getSystemLocale());
+
+  // Renderer copy buttons go through here: navigator.clipboard needs the
+  // clipboard-sanitized-write permission, which the app's permission handler denies.
+  safeHandle('clipboard:write-text', (_event, text: unknown) => {
+    if (typeof text !== 'string') return { ok: false, error: 'text must be a string' };
+    clipboard.writeText(text);
+    return { ok: true };
+  });
 
   safeHandle('app:get-about-info', async () => {
     return await getAboutInfo();
