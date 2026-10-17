@@ -989,6 +989,10 @@ export interface BrowserSkill {
 
   extract_selector: string;
 
+  /** Minutes between unattended runs; null = never scheduled. */
+
+  interval_minutes: number | null;
+
   created_at: string;
 
   updated_at: string;
@@ -1820,6 +1824,10 @@ export interface JarvisApi {
   browserUpdateSkill(id: number, name: string, description: string, startUrl: string, instructions: string, extractSelector: string): Promise<{ ok: boolean; error?: string }>;
 
   browserDeleteSkill(id: number): Promise<{ ok: boolean; error?: string }>;
+
+  /** Sets how often the skill runs unattended (minutes), or null to stop scheduling it. */
+
+  browserSetSkillInterval(id: number, intervalMinutes: number | null): Promise<{ ok: boolean; error?: string }>;
 
   browserListRuns(skillId?: number): Promise<BrowserSkillRun[] | IpcErrorResponse>;
 

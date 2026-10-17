@@ -225,6 +225,7 @@ function defaultResponses(f: Fixtures): Responses {
     browserCreateSkill: { ok: true, id: 2 },
     browserUpdateSkill: ok,
     browserDeleteSkill: ok,
+    browserSetSkillInterval: ok,
     browserListRuns: f.browserRuns,
     browserRunSkill: { ok: true, runId: 1, data: null },
     browserFocusWindow: ok,

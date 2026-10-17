@@ -304,6 +304,7 @@ contextBridge.exposeInMainWorld('jarvis', {
   browserUpdateSkill: (id: number, name: string, description: string, startUrl: string, instructions: string, extractSelector: string) =>
     ipcRenderer.invoke('browser:update-skill', id, name, description, startUrl, instructions, extractSelector),
   browserDeleteSkill: (id: number) => ipcRenderer.invoke('browser:delete-skill', id),
+  browserSetSkillInterval: (id: number, intervalMinutes: number | null) => ipcRenderer.invoke('browser:set-skill-interval', id, intervalMinutes),
   browserListRuns: (skillId?: number) => ipcRenderer.invoke('browser:list-runs', skillId),
   browserRunSkill: (skillId: number, testMode?: boolean) =>
     ipcRenderer.invoke('browser:run-skill', skillId, testMode ?? false),
