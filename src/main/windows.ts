@@ -1,8 +1,12 @@
-import { BrowserWindow, screen } from 'electron';
+import { BrowserWindow, nativeImage, screen } from 'electron';
 import path from 'path';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import { saveDatabase } from '../storage/database';
 import { logger } from '../services/logger';
+
+// Same artwork as the installer and the tray, so the taskbar and title bar match.
+const APP_ICON_PATH = path.join(__dirname, '..', '..', 'assets', 'Jarvis1024.png');
+const appIcon = () => nativeImage.createFromPath(APP_ICON_PATH);
 
 export interface WindowBounds {
   x: number;
@@ -125,6 +129,7 @@ export function createOnboardingWindow(db: SqlJsDatabase): BrowserWindow {
 
   const win = new BrowserWindow({
     ...bounds,
+    icon: appIcon(),
     title: 'Jarvis — Setup',
     resizable: true,
     show: false,
@@ -189,6 +194,7 @@ export function createSettingsWindow(): BrowserWindow {
     height: 700,
     minWidth: 400,
     minHeight: 500,
+    icon: appIcon(),
     title: 'Jarvis — Settings',
     resizable: true,
     minimizable: false,
@@ -221,6 +227,7 @@ export function createAboutWindow(): BrowserWindow {
     height: 360,
     minWidth: 360,
     minHeight: 300,
+    icon: appIcon(),
     title: 'Jarvis — About',
     resizable: false,
     minimizable: false,
