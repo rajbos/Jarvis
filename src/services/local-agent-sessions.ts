@@ -21,6 +21,7 @@ import fs, { promises as fsp } from 'fs';
 import os from 'os';
 import path from 'path';
 import type { ActiveAgentSession, AgentActivity } from '../plugins/types';
+import { logger } from './logger';
 import { PhaseTimer } from './phase-timer';
 
 export interface LocalSessionDiscoveryOptions {
@@ -42,6 +43,8 @@ const DEFAULT_MIRROR_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 const TAIL_BYTES = 64 * 1024;
 /** Session-state dirs stat'ed / read at once. */
 const SCAN_CONCURRENCY = 32;
+/** How long a session dir older than the mirror window is trusted to stay old before it is stat'ed again. */
+const STALE_DIR_RECHECK_MS = 10 * 60 * 1000;
 /** Tail windows tried in turn — single events (e.g. permission prompts with a full diff) can be hundreds of KB. */
 const TAIL_WINDOWS = [TAIL_BYTES, 256 * 1024, 1024 * 1024, 4 * 1024 * 1024];
 /** A turn that ended this recently is treated as "between turns" (autopilot), not idle. */
@@ -427,6 +430,12 @@ interface SessionDirInfo {
 }
 
 const sessionDirCache = new Map<string, SessionDirInfo>();
+/**
+ * Session dirs last seen older than the mirror window → when that was checked.
+ * Most of the thousands of dirs are this old; they are skipped without even a
+ * stat until the recheck interval passes (resuming a session touches its dir).
+ */
+const staleDirs = new Map<string, number>();
 
 async function readSessionDir(dir: string, mtimeMs: number): Promise<SessionDirInfo | null> {
   const cached = sessionDirCache.get(dir);
@@ -446,6 +455,7 @@ async function readSessionDir(dir: string, mtimeMs: number): Promise<SessionDirI
 /** Exposed for tests. */
 export function resetLocalSessionCaches(): void {
   sessionDirCache.clear();
+  staleDirs.clear();
   copilotPrScans.clear();
   claudePrScans.clear();
 }
@@ -473,15 +483,26 @@ export async function discoverCopilotLocalSessions(options: LocalSessionDiscover
   // Thousands of dirs: stat them concurrently (in the libuv pool, off the main
   // thread) so a cold disk cache or a virus scanner costs wall time only.
   const dirs = entries.filter((e) => e.isDirectory()).map((e) => ({ dirName: e.name, dir: path.join(root, e.name) }));
+  let statted = 0;
   const scanned = await mapLimit(dirs, SCAN_CONCURRENCY, async ({ dirName, dir }) => {
+    const checkedAt = staleDirs.get(dir);
+    if (checkedAt !== undefined && now - checkedAt < STALE_DIR_RECHECK_MS) return null;
+    statted++;
     const mtimeMs = await mtimeOf(dir);
     if (mtimeMs === null || mtimeMs < mirrorCutoff) {
       sessionDirCache.delete(dir);
+      if (mtimeMs === null) staleDirs.delete(dir);
+      else staleDirs.set(dir, now);
       return null;
     }
+    staleDirs.delete(dir);
     const info = await readSessionDir(dir, mtimeMs);
     return info ? { dirName, dir, info } : null;
   });
+  // Forget dirs that were deleted.
+  const listed = new Set(dirs.map((d) => d.dir));
+  pruneScans(sessionDirCache, listed);
+  pruneScans(staleDirs, listed);
 
   const held: Array<{ dirName: string; dir: string; files: string[]; locks: LockCandidate[] }> = [];
   for (const entry of scanned) {
@@ -499,6 +520,7 @@ export async function discoverCopilotLocalSessions(options: LocalSessionDiscover
   }
 
   timer.add('copilotScan', Date.now() - scanStart);
+  logger.debug(`[ActiveSessions] Copilot discovery: ${dirs.length} dir(s), ${statted} stat'ed, ${held.length} locked`);
   const ownsLock = await timer.time('copilotPids', () => lockOwnerVerifier(held.flatMap((h) => h.locks), options));
 
   const scannedLogs = new Set<string>();

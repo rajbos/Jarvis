@@ -309,6 +309,54 @@ describe('filesystem discovery', () => {
     expect(result.sessions[0]?.activity).toBe('waiting_for_user');
   });
 
+  it('re-checks a session dir past the mirror window only after the recheck interval', async () => {
+    const dir = writeCopilotSession('resumed', { pid: 111, yaml: 'id: resumed\n' });
+    const ancient = new Date(NOW - 60 * 24 * 60 * 60 * 1000);
+    fs.utimesSync(dir, ancient, ancient);
+    const discover = (at: number) => discoverCopilotLocalSessions({ homeDir: home, isPidAlive: () => true, getProcessStartTimes: startedLongAgo, now: () => at });
+    expect((await discover(NOW)).sessions).toHaveLength(0);
+
+    // Resuming the session touches its dir; the cached "old" verdict holds for a while.
+    fs.utimesSync(dir, new Date(NOW), new Date(NOW));
+    expect((await discover(NOW + 60_000)).sessions).toHaveLength(0);
+    expect((await discover(NOW + 11 * 60_000)).sessions.map((s) => s.sessionId)).toEqual(['resumed']);
+  });
+
+  it('does not re-read workspace.yaml of an unchanged dir past the live window', async () => {
+    const dir = writeCopilotSession('old', { yaml: 'id: old\nmc_task_id: task-1\n' });
+    const old = new Date(NOW - 10 * 24 * 60 * 60 * 1000);
+    fs.utimesSync(dir, old, old);
+    const discover = async () => [...(await discoverCopilotLocalSessions({ homeDir: home, isPidAlive: () => true, getProcessStartTimes: startedLongAgo, now: () => NOW })).mirroredTasks.keys()];
+    expect(await discover()).toEqual(['task-1']);
+
+    fs.writeFileSync(path.join(dir, 'workspace.yaml'), 'id: old\nmc_task_id: task-22\n');
+    fs.utimesSync(dir, old, old);
+    expect(await discover()).toEqual(['task-1']);
+
+    const touched = new Date(old.getTime() + 1000);
+    fs.utimesSync(dir, touched, touched);
+    expect(await discover()).toEqual(['task-22']);
+  });
+
+  it('picks up a new session dir on the next sweep and links the PR it created', async () => {
+    const discover = () => discoverCopilotLocalSessions({ homeDir: home, isPidAlive: () => true, getProcessStartTimes: startedLongAgo, now: () => NOW });
+    writeCopilotSession('first', { pid: 111, yaml: 'id: first\n' });
+    expect((await discover()).sessions).toHaveLength(1);
+    writeCopilotSession('second', {
+      pid: 222,
+      yaml: 'id: second\n',
+      events: [
+        { type: 'tool.execution_start', data: { toolCallId: 'c', arguments: { command: 'gh pr create --fill' } } },
+        { type: 'tool.execution_complete', data: { toolCallId: 'c', success: true, result: { content: 'https://github.com/o/r/pull/7' } } },
+      ],
+    });
+    const result = await discover();
+    expect(result.sessions.map((s) => [s.sessionId, s.linkedPr])).toEqual([
+      ['first', null],
+      ['second', { repoFullName: 'o/r', number: 7 }],
+    ]);
+  });
+
   it('returns nothing when the Copilot session-state folder does not exist', async () => {
     expect((await discoverCopilotLocalSessions({ homeDir: home })).sessions).toEqual([]);
     expect(await discoverClaudeLocalSessions({ homeDir: home })).toEqual([]);
