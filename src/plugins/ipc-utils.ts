@@ -3,7 +3,7 @@ import { logger } from '../services/logger';
 
 export type IpcErrorResponse = { ok: false; error: string };
 
-type IpcHandler = (event: Electron.IpcMainInvokeEvent, ...args: any[]) => unknown;
+type IpcHandler = (event: Electron.IpcMainInvokeEvent, ...args: never[]) => unknown;
 
 export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -13,7 +13,7 @@ export function errorMessage(error: unknown): string {
 export function safeHandle(channel: string, handler: IpcHandler): void {
   ipcMain.handle(channel, (event, ...args) => {
     try {
-      const result = handler(event, ...args);
+      const result = handler(event, ...(args as never[]));
       if (result && typeof (result as Promise<unknown>).then === 'function') {
         return (result as Promise<unknown>).catch((error: unknown) => {
           logger.error(`[IPC] ${channel} failed:`, error);
