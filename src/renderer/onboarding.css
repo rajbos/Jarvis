@@ -5899,15 +5899,31 @@ h5.ec-heading { font-size: 0.9375rem; }
 
 .ruddr-hours-table th,
 .ruddr-hours-table td {
-  padding: 0.25rem 0.45rem;
+  padding: 0.3rem 0.5rem;
   text-align: right;
-  border-bottom: 1px solid #222a4a;
+  border-bottom: 1px solid #34406c;
   color: #c8d0f0;
+}
+
+/* Faint column rules so a value lines up with its day. */
+.ruddr-hours-table td + td,
+.ruddr-hours-table th + th {
+  border-left: 1px solid #263055;
 }
 
 .ruddr-hours-table th {
   color: #8890b0;
   font-weight: 500;
+  border-bottom: 1px solid #4a5a90;
+}
+
+.ruddr-hours-table tbody tr:hover td {
+  background: rgba(122, 179, 245, 0.06);
+}
+
+.ruddr-hours-table tfoot td {
+  border-top: 1px solid #4a5a90;
+  border-bottom: none;
 }
 
 .ruddr-hours-table .ruddr-hours-proj {

@@ -107,6 +107,10 @@ export function RuddrHoursSection(props: {
     p.total += r.minutes;
     projects.set(r.projectPath, p);
   }
+  // Alphabetical by "client / project", as the rows read.
+  const rowLabel = (p: { name: string; client: string | null }) => (p.client ? `${p.client} / ${p.name}` : p.name);
+  const sortedProjects = [...projects.entries()].sort(([, a], [, b]) =>
+    rowLabel(a).localeCompare(rowLabel(b), undefined, { sensitivity: 'base' }));
   const dayTotals = days.map((d) => [...projects.values()].reduce((s, p) => s + (p.byDate.get(d) ?? 0), 0));
   const isFuture = weekStart > currentMonday();
 
@@ -167,7 +171,7 @@ export function RuddrHoursSection(props: {
               </tr>
             </thead>
             <tbody>
-              {[...projects.entries()].map(([path, p]) => (
+              {sortedProjects.map(([path, p]) => (
                 <tr key={path}>
                   <td class="ruddr-hours-proj" title={p.client ? `${p.client} / ${p.name}` : p.name}>
                     {p.client && <span class="ruddr-hours-client">{p.client} / </span>}{p.name}
