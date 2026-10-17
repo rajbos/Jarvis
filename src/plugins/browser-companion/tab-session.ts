@@ -8,6 +8,10 @@
 // (`createdTab: true`). If the extension is an older build that ignores the
 // `newTab` flag, the run reuses the active tab exactly as before and nothing is
 // closed — the user's own tab is never taken away from them.
+//
+// The extension reuses an idle tab it opened for an earlier run rather than
+// opening another one, so a tab left open (e.g. for a Ruddr login) does not
+// accumulate; the run that gets it owns it and closes it like a fresh tab.
 import { sendCommand } from './server';
 import { logger } from '../../services/logger';
 
@@ -33,6 +37,11 @@ export function navigatePayload(
   session: BrowserTabSession | undefined,
 ): { newTab?: true; background?: true } {
   return session && session.tabId === undefined ? { newTab: true, background: true } : {};
+}
+
+/** Command extras that aim a command at the session's tab (nothing before the first navigation). */
+export function tabTarget(session: BrowserTabSession | undefined): { tabId?: number } {
+  return session?.tabId !== undefined ? { tabId: session.tabId } : {};
 }
 
 /** Records the tab a `navigate` response landed on, and whether we own it. */

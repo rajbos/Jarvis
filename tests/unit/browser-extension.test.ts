@@ -66,6 +66,10 @@ function makeChrome(token?: unknown) {
         get: vi.fn().mockResolvedValue(token === undefined ? {} : { jarvisToken: token }),
         set: vi.fn().mockResolvedValue(undefined),
       },
+      session: {
+        get: vi.fn().mockResolvedValue({}),
+        set: vi.fn().mockResolvedValue(undefined),
+      },
     },
     action: { setBadgeText: vi.fn(), setBadgeBackgroundColor: vi.fn() },
     runtime: {
@@ -84,6 +88,7 @@ function makeChrome(token?: unknown) {
       captureVisibleTab: vi.fn(),
       remove: vi.fn(),
       onUpdated: { addListener: vi.fn(), removeListener: vi.fn() },
+      onRemoved: { addListener: vi.fn() },
     },
     scripting: { executeScript: vi.fn() },
     windows: { update: vi.fn() },
@@ -114,6 +119,7 @@ async function loadBackground(token?: unknown, elements: Record<string, FakeElem
     Promise,
     Array,
     Error,
+    Date,
     Event: class { constructor(public type: string, public init?: unknown) {} },
     console: { log: vi.fn(), warn: vi.fn(), error: vi.fn() },
     self: { addEventListener: vi.fn() },
@@ -320,6 +326,95 @@ describe('browser-extension background.js: handleCommand', () => {
     });
     expect(h.chrome.tabs.create).toHaveBeenCalledWith({ url: 'https://www.ruddr.io/app/ws/time/week', active: false });
     expect(h.chrome.tabs.update).toHaveBeenCalledWith(5, { autoDiscardable: false });
+  });
+
+  describe('reusing tabs Jarvis opened', () => {
+    const URL1 = 'https://www.ruddr.io/app/ws/time/week';
+    // The mocked timers never fire on their own: run the pending ones (the load
+    // wait's 300 ms settle delay) until the navigation has answered.
+    const nav = async (send: (c: unknown) => Promise<any>, h: Harness) => {
+      let done = false;
+      const pending = send({ id: 'n', type: 'navigate', payload: { url: URL1, newTab: true, background: true } })
+        .finally(() => { done = true; });
+      for (let i = 0; i < 50 && !done; i++) {
+        await flush();
+        h.timeouts.splice(0).forEach((t) => t.fn());
+      }
+      return pending;
+    };
+
+    async function openOwnedTab() {
+      const c = await connected();
+      c.h.chrome.tabs.create.mockResolvedValue({ id: 5 });
+      c.h.chrome.tabs.get.mockResolvedValue({ id: 5, status: 'complete', url: URL1, title: 'Ruddr' });
+      const res = await nav(c.send, c.h);
+      expect(res.data.createdTab).toBe(true);
+      expect(res.data.reusedTab).toBeUndefined();
+      return c;
+    }
+
+    it('remembers the tab it opens', async () => {
+      const { h } = await openOwnedTab();
+      expect(h.chrome.storage.session.set).toHaveBeenCalledWith({ jarvisOwnedTabs: [5] });
+    });
+
+    it('does not reuse a tab that is still in use by a run', async () => {
+      const { h, send } = await openOwnedTab();
+      h.chrome.tabs.create.mockResolvedValue({ id: 6 });
+      h.chrome.tabs.get.mockResolvedValue({ id: 6, status: 'complete', url: URL1, title: 'Ruddr' });
+      const res = await nav(send, h);
+      expect(res.data.tabId).toBe(6);
+      expect(h.chrome.tabs.create).toHaveBeenCalledTimes(2);
+    });
+
+    it('reuses an idle tab it opened instead of creating another', async () => {
+      const { h, send } = await openOwnedTab();
+      const now = Date.now();
+      const spy = vi.spyOn(Date, 'now');
+      spy.mockReturnValue(now + 10 * 60 * 1000);
+      try {
+        h.chrome.tabs.get.mockResolvedValue({ id: 5, status: 'complete', url: 'https://www.ruddr.io/login', title: 'Ruddr' });
+        const res = await nav(send, h);
+        expect(res.data).toMatchObject({ tabId: 5, createdTab: true, reusedTab: true });
+        expect(h.chrome.tabs.create).toHaveBeenCalledTimes(1);
+        expect(h.chrome.tabs.update).toHaveBeenCalledWith(5, { url: URL1 });
+        expect(h.chrome.tabs.update).not.toHaveBeenCalledWith(5, { active: true });
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('forgets a tab that was closed and opens a new one', async () => {
+      const { h, send } = await openOwnedTab();
+      const spy = vi.spyOn(Date, 'now');
+      spy.mockReturnValue(Date.now() + 10 * 60 * 1000);
+      try {
+        h.chrome.tabs.get.mockRejectedValueOnce(new Error('No tab with id: 5'));
+        h.chrome.tabs.create.mockResolvedValue({ id: 8 });
+        h.chrome.tabs.get.mockResolvedValue({ id: 8, status: 'complete', url: URL1, title: 'Ruddr' });
+        const res = await nav(send, h);
+        expect(res.data).toMatchObject({ tabId: 8, createdTab: true });
+        expect(res.data.reusedTab).toBeUndefined();
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('stops tracking a tab once it is closed', async () => {
+      const { h, send } = await openOwnedTab();
+      await send({ id: 'c', type: 'close-tab', tabId: 5, payload: {} });
+      expect(h.chrome.storage.session.set).toHaveBeenLastCalledWith({ jarvisOwnedTabs: [] });
+    });
+
+    it('never reuses a tab it did not open', async () => {
+      const { h, send } = await connected();
+      h.chrome.tabs.query.mockResolvedValue([{ id: 3, url: URL1, active: false }]);
+      h.chrome.tabs.create.mockResolvedValue({ id: 9 });
+      h.chrome.tabs.get.mockResolvedValue({ id: 9, status: 'complete', url: URL1, title: '' });
+      const res = await nav(send, h);
+      expect(res.data.tabId).toBe(9);
+      expect(h.chrome.tabs.update).not.toHaveBeenCalledWith(3, expect.anything());
+    });
   });
 
   it('requires a url for navigate', async () => {
