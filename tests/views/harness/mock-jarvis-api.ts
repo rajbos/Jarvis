@@ -199,7 +199,7 @@ function defaultResponses(f: Fixtures): Responses {
     groupsGetRuddrBudget: f.ruddrBudget,
     ruddrHoursStatus: f.ruddrHoursSummary.status,
     ruddrHoursSummary: f.ruddrHoursSummary,
-    ruddrHoursWeek: (weekStart: string) => ({ ok: true as const, week: weekStart === f.ruddrHoursWeek.weekStart ? f.ruddrHoursWeek : { ...f.ruddrHoursWeek, weekStart, fetchedAt: null, status: null, totalMinutes: 0, rows: [] } }),
+    ruddrHoursWeek: (weekStart: string) => ({ ok: true as const, week: weekStart === f.ruddrHoursWeek.weekStart ? f.ruddrHoursWeek : { ...f.ruddrHoursWeek, weekStart, fetchedAt: null, status: null, totalMinutes: 0, rows: [], entries: [] } }),
     ruddrHoursSetProjectHidden: ok,
     ruddrHoursRefreshWeek: (weekStart: string) => ({ ok: true as const, result: { fetched: 1 }, week: { ...f.ruddrHoursWeek, weekStart } }),
     groupsGetRuddrBudgetCache: { ok: true, budgets: Object.fromEntries(f.groups.flatMap((g) => g.ruddrProjectNames).map((n) => [n, f.ruddrBudget])) },

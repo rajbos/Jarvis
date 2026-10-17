@@ -368,6 +368,70 @@ describe('browser-extension background.js: handleCommand', () => {
   });
 });
 
+describe('browser-extension background.js: fetchRuddrWeekEntries', () => {
+  type FetchResult = {
+    ok: boolean; status: number; error?: string; url: string;
+    entries?: Array<Record<string, unknown>>;
+  };
+
+  async function run(responses: Record<string, { status: number; body?: unknown }>) {
+    const h = await loadBackground('t');
+    const calls: string[] = [];
+    h.ctx.document = { location: { href: 'https://www.ruddr.io/app/ws/time/week?date=2026-10-05' } };
+    h.ctx.fetch = vi.fn(async (url: string) => {
+      calls.push(url);
+      const r = responses[url] ?? { status: 404 };
+      return { ok: r.status >= 200 && r.status < 300, status: r.status, json: async () => r.body };
+    });
+    const result = await (h.ctx.fetchRuddrWeekEntries as (ws: string, d: string) => Promise<FetchResult>)('xebia-ws', '2026-10-05');
+    return { result, calls };
+  }
+
+  it('looks up the workspace id, then returns the week\'s entries with their notes', async () => {
+    const { result, calls } = await run({
+      '/api/www/workspaces/xebia-ws': { status: 200, body: { id: 'ws-uuid', key: 'xebia-ws' } },
+      '/api/www/workspaces/ws-uuid/time-entries/week?date=2026-10-05': {
+        status: 200,
+        body: [{
+          id: 'e1', date: '2026-10-07', minutes: 120, notes: 'XMS - Tech Officer (intern)', statusId: 'approved',
+          typeId: 'project_time', isBillable: null, isActuallyBillable: false, createdAt: 'ignored',
+          project: { name: 'Internal Work', key: 'internal-work', client: { name: 'Internal XMS', key: 'internal-xms', isInternal: true } },
+          task: { name: 'Undefined', number: 31, taskCategory: {} },
+          timeOffType: null,
+        }],
+      },
+    });
+
+    expect(calls).toEqual(['/api/www/workspaces/xebia-ws', '/api/www/workspaces/ws-uuid/time-entries/week?date=2026-10-05']);
+    expect(result).toEqual({
+      ok: true,
+      status: 200,
+      url: 'https://www.ruddr.io/app/ws/time/week?date=2026-10-05',
+      entries: [{
+        id: 'e1', date: '2026-10-07', minutes: 120, notes: 'XMS - Tech Officer (intern)', statusId: 'approved',
+        typeId: 'project_time', isBillable: false,
+        project: { name: 'Internal Work', key: 'internal-work', clientName: 'Internal XMS', clientKey: 'internal-xms', clientIsInternal: true },
+        task: { name: 'Undefined', number: 31 },
+        timeOffType: null,
+      }],
+    });
+  });
+
+  it('reports the HTTP status when Ruddr refuses (e.g. logged out)', async () => {
+    const { result } = await run({ '/api/www/workspaces/xebia-ws': { status: 401 } });
+    expect(result).toMatchObject({ ok: false, status: 401, error: 'workspace lookup failed (HTTP 401)' });
+  });
+
+  it('rejects a bad workspace key or date before touching the page', async () => {
+    const h = await loadBackground('t');
+    const sock = FakeWebSocket.instances[0];
+    sock.readyState = FakeWebSocket.OPEN;
+    await h.ctx.handleCommand(JSON.stringify({ id: 'f', type: 'fetch-ruddr-week-entries', tabId: 1, payload: { workspace: '../x', date: '2026-10-05' } }));
+    expect(JSON.parse(sock.sent.at(-1)!)).toEqual({ id: 'f', ok: false, error: 'workspace key is required' });
+    expect(h.chrome.scripting.executeScript).not.toHaveBeenCalled();
+  });
+});
+
 describe('browser-extension background.js: executeInstructions', () => {
   const run = async (instr: string, testMode: boolean, els: Record<string, FakeElement>) => {
     const h = await loadBackground(undefined, els);

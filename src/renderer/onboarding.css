@@ -5956,6 +5956,27 @@ h5.ec-heading { font-size: 0.9375rem; }
   border-bottom-color: #263055;
 }
 
+/* A cell whose Ruddr entries carry notes: hover shows them. */
+.ruddr-hours-table td.ruddr-hours-cell--note {
+  text-decoration: underline dotted #6a7ab0;
+  text-underline-offset: 3px;
+  cursor: help;
+}
+
+/* "Undefined" work type broken down per note. */
+.ruddr-hours-table .ruddr-hours-row--note td {
+  color: #8f98ba;
+  font-size: 0.72rem;
+  padding-top: 0.1rem;
+  padding-bottom: 0.1rem;
+  border-bottom-color: #222a4a;
+}
+
+.ruddr-hours-note {
+  padding-left: 2.2rem;
+  font-style: italic;
+}
+
 .ruddr-hours-worktype {
   padding-left: 1.1rem;
 }

@@ -9,9 +9,8 @@ import {
   isWeekStart,
   loadWeekRecords,
   mondayOf,
-  normalizeRuddrPath,
-  parseRuddrDuration,
-  parseWeekScrape,
+  entryRows,
+  parseWeekEntries,
   planWeeks,
   projectDayRows,
   taskDayRows,
@@ -21,47 +20,37 @@ import {
   saveWeekError,
   BACKFILL_EMPTY_STREAK,
 } from '../../src/services/ruddr-hours';
-import type { RuddrWeekRecord, RuddrWeekScrape } from '../../src/services/ruddr-hours';
+import type { RuddrApiEntry, RuddrWeekRecord } from '../../src/services/ruddr-hours';
 import { saveRuddrProjectsToDb, loadRuddrProjectsFromDb, upsertDiscoveredRuddrProjects } from '../../src/services/groups';
 
 const WS = '/app/fixture-ws/portfolio/projects';
 
-function scrape(overrides: Partial<RuddrWeekScrape> = {}): RuddrWeekScrape {
-  const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  return {
-    ready: true,
-    days: days.map((day, i) => ({ day, date: addDays('2026-10-05', i), total: ['1:00', '5:00', '5:00', '8:00', '0:00', '0:00', '0:00'][i] })),
-    rows: [
-      {
-        clientName: 'Acme', clientPath: '/app/fixture-ws/portfolio/clients/acme',
-        projectName: 'Acme | Rollout', projectPath: `${WS}/acme/acme-rollout`,
-        taskName: null, taskPath: null, label: 'Acme / Acme | Rollout',
-        hours: { Thu: '8:00' },
-      },
-      {
-        clientName: 'Internal', clientPath: '/app/fixture-ws/portfolio/clients/internal',
-        projectName: 'Internal Work', projectPath: `${WS}/internal/internal-work?tab=x`,
-        taskName: 'Pre-sales', taskPath: `${WS}/internal/internal-work/tasks/23/details`, label: 'Internal / Internal Work Pre-sales',
-        hours: { Mon: '1:00', Tue: '4:00', Wed: '3:00' },
-      },
-      {
-        clientName: 'Internal', clientPath: '/app/fixture-ws/portfolio/clients/internal',
-        projectName: 'Internal Work', projectPath: `${WS}/internal/internal-work`,
-        taskName: 'Undefined', taskPath: `${WS}/internal/internal-work/tasks/31/details`, label: 'Internal / Internal Work Undefined',
-        hours: { Tue: '1:00', Wed: '2:00' },
-      },
-      {
-        // Allocation-only row: placeholders are never read, so every value is empty.
-        clientName: 'Globex', clientPath: null, projectName: 'Globex Pilot', projectPath: `${WS}/globex/pilot`,
-        taskName: null, taskPath: null, label: 'Globex / Globex Pilot', hours: {},
-      },
-    ],
-    totalHours: '19,00',
-    billableTypes: { billable: '8,00', non_billable: '0,00', internal: '11,00', time_off: '0,00' },
-    approval: { approved: '19,00' },
-    memberId: 'member-1',
-    ...overrides,
-  };
+const ACME = { name: 'Acme | Rollout', key: 'acme-rollout', clientName: 'Acme', clientKey: 'acme', clientIsInternal: false };
+const INTERNAL = { name: 'Internal Work', key: 'internal-work', clientName: 'Internal', clientKey: 'internal', clientIsInternal: true };
+const PRESALES = { name: 'Pre-sales', number: 23 };
+const UNDEFINED = { name: 'Undefined', number: 31 };
+
+/** One week of Ruddr API entries (Mon 2026-10-05 … Sun 2026-10-11), 19 h in total. */
+function apiEntries(): RuddrApiEntry[] {
+  const e = (id: string, date: string, minutes: number, project: typeof ACME, task: typeof PRESALES | null, notes: string | null, isBillable = false): RuddrApiEntry => ({
+    id, date, minutes, notes, statusId: 'approved', typeId: 'project_time', isBillable, project, task, timeOffType: null,
+  });
+  return [
+    e('a1', '2026-10-08', 480, ACME, null, 'Rollout work-packages', true),
+    e('i1', '2026-10-05', 60, INTERNAL, PRESALES, 'LBG - Dennis'),
+    e('i2', '2026-10-06', 240, INTERNAL, PRESALES, null),
+    // Two entries in one cell, with different notes.
+    e('i3', '2026-10-07', 120, INTERNAL, PRESALES, 'LBG - Dennis'),
+    e('i4', '2026-10-07', 60, INTERNAL, PRESALES, 'Syncore - Wesley'),
+    e('u1', '2026-10-06', 60, INTERNAL, UNDEFINED, 'XMS - Tech Officer (intern)'),
+    e('u2', '2026-10-07', 120, INTERNAL, UNDEFINED, 'XMS - Tech Officer (intern)'),
+  ];
+}
+
+function parsedWeek() {
+  const res = parseWeekEntries('2026-10-05', 'fixture-ws', apiEntries());
+  if (!res.ok) throw new Error(res.error);
+  return res.week;
 }
 
 function record(weekStart: string, fetchedAt: string, extra: Partial<RuddrWeekRecord> = {}): RuddrWeekRecord {
@@ -72,20 +61,6 @@ function record(weekStart: string, fetchedAt: string, extra: Partial<RuddrWeekRe
 }
 
 describe('Ruddr hours parsing', () => {
-  it('parses clock, decimal and empty durations', () => {
-    expect(parseRuddrDuration('8:00')).toBe(480);
-    expect(parseRuddrDuration('0:45')).toBe(45);
-    expect(parseRuddrDuration('35,00')).toBe(2100);
-    expect(parseRuddrDuration('1.5')).toBe(90);
-    expect(parseRuddrDuration('')).toBe(0);
-    expect(parseRuddrDuration('n/a')).toBeNull();
-  });
-
-  it('normalizes links to the ruddr_projects path format', () => {
-    expect(normalizeRuddrPath('https://www.ruddr.io/app/ws/portfolio/projects/a/b?x=1#y')).toBe('/app/ws/portfolio/projects/a/b');
-    expect(normalizeRuddrPath(null)).toBeNull();
-  });
-
   it('finds Mondays across a year boundary', () => {
     expect(mondayOf('2026-10-16')).toBe('2026-10-12');
     expect(mondayOf('2026-10-12')).toBe('2026-10-12');
@@ -95,38 +70,34 @@ describe('Ruddr hours parsing', () => {
     expect(isWeekStart('../etc')).toBe(false);
   });
 
-  it('turns a week scrape into per day, project and task entries', () => {
-    const res = parseWeekScrape('2026-10-05', scrape());
-    expect(res.ok).toBe(true);
-    if (!res.ok) return;
-    expect(res.week.totalMinutes).toBe(19 * 60);
-    expect(res.week.approvedMinutes).toBe(19 * 60);
-    expect(res.week.internalMinutes).toBe(11 * 60);
-    expect(res.week.entries).toHaveLength(6);
-    expect(res.week.entries).toContainEqual({
-      date: '2026-10-07', clientName: 'Internal', projectName: 'Internal Work', projectPath: `${WS}/internal/internal-work`,
-      taskName: 'Pre-sales', taskPath: `${WS}/internal/internal-work/tasks/23/details`, minutes: 180,
+  it('maps API entries onto Ruddr-style project and work type paths', () => {
+    const week = parsedWeek();
+    expect(week.totalMinutes).toBe(19 * 60);
+    expect(week.approvedMinutes).toBe(19 * 60);
+    expect(week.internalMinutes).toBe(11 * 60);
+    expect(week.billableMinutes).toBe(8 * 60);
+    expect(week.entries).toHaveLength(7);
+    expect(week.entries.find((x) => x.id === 'u1')).toEqual({
+      id: 'u1', date: '2026-10-06', clientName: 'Internal', projectName: 'Internal Work',
+      projectPath: `${WS}/internal/internal-work`, taskName: 'Undefined', taskPath: `${WS}/internal/internal-work/tasks/31/details`,
+      minutes: 60, notes: 'XMS - Tech Officer (intern)', statusId: 'approved', typeId: 'project_time', isBillable: false,
     });
-    expect(res.week.entries.some((e) => e.projectName === 'Globex Pilot')).toBe(false);
+    expect(week.entries.find((x) => x.id === 'a1')).toMatchObject({ projectPath: `${WS}/acme/acme-rollout`, taskPath: '' });
   });
 
-  it('rejects a scrape whose rows do not add up to the page totals', () => {
-    const bad = scrape();
-    bad.rows = bad.rows.slice(1);
-    expect(parseWeekScrape('2026-10-05', bad)).toEqual({ ok: false, error: 'totals_mismatch_2026-10-08' });
+  it('skips entries outside the week and keys time off by its type', () => {
+    const raw = apiEntries();
+    raw.push({ ...raw[0], id: 'x', date: '2026-10-12' });
+    raw.push({ id: 't1', date: '2026-10-09', minutes: 480, notes: null, statusId: 'approved', typeId: 'time_off', isBillable: false, project: null, task: null, timeOffType: 'Vacation' });
+    const res = parseWeekEntries('2026-10-05', 'fixture-ws', raw);
+    expect(res.ok && res.week.entries.map((x) => x.id)).not.toContain('x');
+    expect(res.ok && res.week.entries.find((x) => x.id === 't1')).toMatchObject({ projectPath: 'label:Time Off / Vacation', projectName: 'Time Off / Vacation' });
+    expect(res.ok && res.week.timeOffMinutes).toBe(480);
   });
 
-  it('rejects a page that never rendered or shows a different week', () => {
-    expect(parseWeekScrape('2026-10-05', scrape({ ready: false }))).toEqual({ ok: false, error: 'page_not_ready' });
-    expect(parseWeekScrape('2026-10-12', scrape())).toEqual({ ok: false, error: 'week_mismatch' });
-  });
-
-  it('keys rows without a project link by their label', () => {
-    const s = scrape({ totalHours: '27,00' });
-    s.days[4].total = '8:00';
-    s.rows.push({ clientName: null, clientPath: null, projectName: null, projectPath: null, taskName: null, taskPath: null, label: 'Time Off / Vacation', hours: { Fri: '8:00' } });
-    const res = parseWeekScrape('2026-10-05', s);
-    expect(res.ok && res.week.entries.find((e) => e.date === '2026-10-09')).toMatchObject({ projectPath: 'label:Time Off / Vacation', projectName: 'Time Off / Vacation' });
+  it('rejects a response that is not a list of entries', () => {
+    expect(parseWeekEntries('2026-10-05', 'fixture-ws', null)).toEqual({ ok: false, error: 'no_data' });
+    expect(parseWeekEntries('2026-10-05', 'fixture-ws', [{} as RuddrApiEntry])).toEqual({ ok: false, error: 'unexpected_entry_shape' });
   });
 });
 
@@ -181,10 +152,8 @@ describe('Ruddr hours storage', () => {
   beforeEach(async () => { db = await createMemoryDatabase(); });
 
   it('replaces a week atomically and rolls entries up per project', () => {
-    const parsed = parseWeekScrape('2026-10-05', scrape());
-    if (!parsed.ok) throw new Error(parsed.error);
-    saveWeek(db, parsed.week);
-    saveWeek(db, parsed.week);
+    saveWeek(db, parsedWeek());
+    saveWeek(db, parsedWeek());
 
     const records = loadWeekRecords(db);
     expect(records.get('2026-10-05')).toMatchObject({ status: 'ok', totalMinutes: 1140, approvedMinutes: 1140 });
@@ -202,21 +171,24 @@ describe('Ruddr hours storage', () => {
       ['Internal Work', 'Pre-sales', 180],
       ['Internal Work', 'Undefined', 120],
     ]);
+
+    // Each entry keeps its own note.
+    expect(entryRows(db, '2026-10-07', '2026-10-07').map((e) => [e.id, e.minutes, e.notes])).toEqual([
+      ['i3', 120, 'LBG - Dennis'],
+      ['i4', 60, 'Syncore - Wesley'],
+      ['u2', 120, 'XMS - Tech Officer (intern)'],
+    ]);
   });
 
   it('keeps earlier entries when a refetch fails', () => {
-    const parsed = parseWeekScrape('2026-10-05', scrape());
-    if (!parsed.ok) throw new Error(parsed.error);
-    saveWeek(db, parsed.week);
+    saveWeek(db, parsedWeek());
     saveWeekError(db, '2026-10-05', 'totals_mismatch_week');
     expect(loadWeekRecords(db).get('2026-10-05')).toMatchObject({ status: 'error', error: 'totals_mismatch_week' });
     expect(projectTotals(db)).toHaveLength(2);
   });
 
   it('adds projects found through hours and keeps them across a project-list refresh', () => {
-    const parsed = parseWeekScrape('2026-10-05', scrape());
-    if (!parsed.ok) throw new Error(parsed.error);
-    saveWeek(db, parsed.week);
+    saveWeek(db, parsedWeek());
     saveRuddrProjectsToDb(db, [{ name: 'Acme | Rollout', path: `${WS}/acme/acme-rollout` }]);
 
     const added = upsertDiscoveredRuddrProjects(db, projectsWithHours(db));

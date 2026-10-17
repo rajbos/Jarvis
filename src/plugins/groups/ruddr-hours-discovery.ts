@@ -24,7 +24,8 @@ import {
   loadWeekRecords,
   localToday,
   mondayOf,
-  parseWeekScrape,
+  parseWeekEntries,
+  entryRows,
   planWeeks,
   taskDayRows,
   projectTotals,
@@ -32,7 +33,7 @@ import {
   saveWeek,
   saveWeekError,
 } from '../../services/ruddr-hours';
-import type { RuddrWeekScrape } from '../../services/ruddr-hours';
+import type { RuddrApiEntry } from '../../services/ruddr-hours';
 import { listGroups, loadRuddrProjectsFromDb, upsertDiscoveredRuddrProjects } from '../../services/groups';
 import type { RuddrHoursStatus, RuddrHoursSummary, RuddrHoursWeek, RuddrHoursGroupTotals } from '../types';
 import { logger } from '../../services/logger';
@@ -42,7 +43,6 @@ export const HOURS_WEEKS_PER_RUN = 3;
 export const HOURS_PAUSE_MIN_MS = 15_000;
 export const HOURS_PAUSE_MAX_MS = 30_000;
 const RUDDR_BASE = 'https://www.ruddr.io/app';
-/** How long the extension polls a week page for its grid (slow background tabs included). */
 /** Config key: JSON array of project paths hidden from the "not in a group" list. */
 const HIDDEN_PROJECTS_KEY = 'ruddr_hours_hidden_projects';
 
@@ -62,8 +62,8 @@ export function setProjectHidden(db: SqlJsDatabase, projectPath: string, hidden:
   setConfigValue(db, HIDDEN_PROJECTS_KEY, JSON.stringify([...set].sort()));
 }
 
-const SCRAPE_WAIT_MS = 25_000;
-const SCRAPE_TIMEOUT_MS = SCRAPE_WAIT_MS + 20_000;
+/** The extension gives a week's API calls 20 s; allow for the round trip on top. */
+const FETCH_TIMEOUT_MS = 30_000;
 
 type WeekOutcome = 'ok' | 'error' | 'login_required' | 'extension_outdated' | 'navigation_failed';
 
@@ -93,50 +93,60 @@ export interface HoursDiscoveryDeps {
 
 const defaultSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+/**
+ * Opens (once per run) a Ruddr page in the run's background tab, so the
+ * API calls below carry the user's own Ruddr session.
+ */
+async function ensureRuddrTab(
+  session: BrowserTabSession,
+  workspace: string,
+  weekStart: string,
+): Promise<'ok' | 'login_required' | 'navigation_failed'> {
+  if (session.tabId !== undefined) return 'ok';
+  const url = `${RUDDR_BASE}/${workspace}/time/week?date=${weekStart}`;
+  const nav = await sendCommand({ type: 'navigate', payload: { url, ...navigatePayload(session) } });
+  if (!nav.ok) {
+    lastError = `navigation failed: ${nav.error ?? 'unknown'}`;
+    logger.warn(`[RuddrHours] ${lastError}`);
+    return 'navigation_failed';
+  }
+  recordNavigationTab(session, nav.data);
+  const navData = nav.data as { url?: string; tabId?: number; loadTimedOut?: boolean } | null;
+  logger.debug(`[RuddrHours] opened tab ${navData?.tabId ?? '?'} → ${navData?.url ?? '?'}${navData?.loadTimedOut ? ' (still loading)' : ''}`);
+  if ((navData?.url ?? '').includes('/login')) return 'login_required';
+  return 'ok';
+}
+
 async function fetchOneWeek(
   db: SqlJsDatabase,
   session: BrowserTabSession,
   workspace: string,
   weekStart: string,
 ): Promise<WeekOutcome> {
-  const url = `${RUDDR_BASE}/${workspace}/time/week?date=${weekStart}`;
-  const nav = await sendCommand({
-    type: 'navigate',
-    tabId: session.tabId,
-    payload: { url, ...navigatePayload(session) },
-  });
-  if (!nav.ok) {
-    lastError = `${weekStart}: navigation failed: ${nav.error ?? 'unknown'}`;
-    logger.warn(`[RuddrHours] ${lastError}`);
-    return 'navigation_failed';
-  }
-  recordNavigationTab(session, nav.data);
-  const navData = nav.data as { url?: string; tabId?: number; loadTimedOut?: boolean } | null;
-  logger.debug(`[RuddrHours] ${weekStart}: navigated tab ${navData?.tabId ?? '?'} → ${navData?.url ?? '?'}${navData?.loadTimedOut ? ' (still loading)' : ''}`);
-  if ((navData?.url ?? '').includes('/login')) return 'login_required';
+  const tab = await ensureRuddrTab(session, workspace, weekStart);
+  if (tab !== 'ok') return tab;
 
   const resp = await sendCommand(
-    { type: 'scrape-ruddr-week', tabId: session.tabId ?? navData?.tabId, payload: { date: weekStart, waitMs: SCRAPE_WAIT_MS } },
-    SCRAPE_TIMEOUT_MS,
+    { type: 'fetch-ruddr-week-entries', tabId: session.tabId, payload: { workspace, date: weekStart } },
+    FETCH_TIMEOUT_MS,
   );
   if (!resp.ok) {
     if ((resp.error ?? '').includes('Unknown command type')) return 'extension_outdated';
-    saveWeekError(db, weekStart, resp.error ?? 'scrape_failed');
-    lastError = `${weekStart}: ${resp.error ?? 'scrape failed'}`;
-    return 'error';
-  }
-
-  const data = resp.data as (RuddrWeekScrape & { polls?: number; inputCount?: number; url?: string }) | null;
-  logger.debug(`[RuddrHours] ${weekStart}: scrape ready=${data?.ready} rows=${data?.rows?.length ?? 0} inputs=${data?.inputCount ?? '?'} polls=${data?.polls ?? '?'} url=${data?.url ?? '?'}`);
-  if ((data?.url ?? '').includes('/login')) return 'login_required';
-  const parsed = parseWeekScrape(weekStart, data);
-  if (!parsed.ok && parsed.error === 'page_not_ready') {
-    // The page never rendered — a browser problem, not a bad week. Stop this
-    // run without marking the week, so the next run simply tries again.
-    lastError = `${weekStart}: Ruddr week page did not render within ${SCRAPE_WAIT_MS / 1000}s (url ${data?.url ?? 'unknown'})`;
+    // The tab itself failed (suspended, closed): a browser problem, retried next run.
+    lastError = `${weekStart}: ${resp.error ?? 'fetch failed'}`;
     logger.warn(`[RuddrHours] ${lastError}`);
     return 'navigation_failed';
   }
+
+  const data = resp.data as { ok: boolean; status?: number; error?: string; url?: string; entries?: RuddrApiEntry[] } | null;
+  logger.debug(`[RuddrHours] ${weekStart}: api ok=${data?.ok} status=${data?.status ?? '?'} entries=${data?.entries?.length ?? 0}`);
+  if (!data?.ok) {
+    if (data?.status === 401 || data?.status === 403 || (data?.url ?? '').includes('/login')) return 'login_required';
+    saveWeekError(db, weekStart, data?.error ?? 'fetch_failed');
+    lastError = `${weekStart}: ${data?.error ?? 'fetch failed'}`;
+    return 'error';
+  }
+  const parsed = parseWeekEntries(weekStart, workspace, data.entries);
   if (!parsed.ok) {
     logger.warn(`[RuddrHours] Week ${weekStart} rejected: ${parsed.error}`);
     saveWeekError(db, weekStart, parsed.error);
@@ -206,7 +216,7 @@ async function fetchWeeks(
 
   const values = Object.values(outcomes);
   if (loginRequired) return { skipped: true, reason: 'Ruddr login required', outcomes };
-  if (extensionOutdated) return { skipped: true, reason: 'Browser extension needs reloading (scrape-ruddr-week unknown)', outcomes };
+  if (extensionOutdated) return { skipped: true, reason: 'Browser extension needs reloading (fetch-ruddr-week-entries unknown)', outcomes };
   if (values.length > 0 && values.every((o) => o !== 'ok')) throw new Error(lastError ?? 'Every week failed');
   return { fetched: values.filter((o) => o === 'ok').length, outcomes, newProjects: added.length };
 }
@@ -262,6 +272,7 @@ export function getHoursWeek(db: SqlJsDatabase, weekStart: string): RuddrHoursWe
     totalMinutes: record?.totalMinutes ?? 0,
     approvedMinutes: record?.approvedMinutes ?? 0,
     rows: taskDayRows(db, weekStart, addDays(weekStart, 6)),
+    entries: entryRows(db, weekStart, addDays(weekStart, 6)),
   };
 }
 

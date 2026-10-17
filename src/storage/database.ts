@@ -94,7 +94,7 @@ export async function createMemoryDatabase(): Promise<SqlJsDatabase> {
 // of the chain in initializeSchema(). Used only to warn if a database fails to
 // reach the latest schema after migration (e.g. a gap in the version chain).
 // A unit test fails if this drifts from the version a fresh database reaches.
-export const LATEST_SCHEMA_VERSION = 36;
+export const LATEST_SCHEMA_VERSION = 37;
 
 export function initializeSchema(database: SqlJsDatabase): void {
   const result = database.exec("PRAGMA user_version");
@@ -103,7 +103,7 @@ export function initializeSchema(database: SqlJsDatabase): void {
   if (userVersion === 0) {
     database.run(getSchema());
     seedBuiltInAgents(database);
-    database.run('PRAGMA user_version = 36');
+    database.run('PRAGMA user_version = 37');
   }
 
   if (userVersion === 1) {
@@ -751,6 +751,50 @@ export function initializeSchema(database: SqlJsDatabase): void {
     database.run('CREATE INDEX IF NOT EXISTS idx_ruddr_time_entries_week ON ruddr_time_entries(week_start)');
     database.run('CREATE INDEX IF NOT EXISTS idx_ruddr_time_entries_project ON ruddr_time_entries(project_path, entry_date)');
     database.run('PRAGMA user_version = 36');
+  }
+
+  if (userVersion === 36) {
+    // Migration v36 → v37: Ruddr hours now come from Ruddr's time-entries API,
+    // one row per entry with its note, instead of one row per week-grid cell.
+    // The cell rows can't be converted (no entry ids or notes), so they are
+    // dropped and every week is fetched again by the hours discovery.
+    database.run('DROP TABLE IF EXISTS ruddr_time_entries');
+    database.run(`
+      CREATE TABLE ruddr_time_entries (
+        entry_id     TEXT PRIMARY KEY,
+        entry_date   TEXT NOT NULL,
+        week_start   TEXT NOT NULL,
+        project_path TEXT NOT NULL,
+        task_path    TEXT NOT NULL DEFAULT '',
+        client_name  TEXT,
+        project_name TEXT NOT NULL,
+        task_name    TEXT,
+        minutes      INTEGER NOT NULL,
+        notes        TEXT,
+        status_id    TEXT,
+        type_id      TEXT,
+        is_billable  INTEGER
+      )
+    `);
+    database.run('CREATE INDEX IF NOT EXISTS idx_ruddr_time_entries_week ON ruddr_time_entries(week_start)');
+    database.run('CREATE INDEX IF NOT EXISTS idx_ruddr_time_entries_project ON ruddr_time_entries(project_path, entry_date)');
+    database.run(`
+      CREATE TABLE IF NOT EXISTS ruddr_time_weeks (
+        week_start           TEXT PRIMARY KEY,
+        status               TEXT NOT NULL,
+        total_minutes        INTEGER NOT NULL DEFAULT 0,
+        approved_minutes     INTEGER NOT NULL DEFAULT 0,
+        billable_minutes     INTEGER,
+        non_billable_minutes INTEGER,
+        internal_minutes     INTEGER,
+        time_off_minutes     INTEGER,
+        member_id            TEXT,
+        error                TEXT,
+        fetched_at           DATETIME NOT NULL
+      )
+    `);
+    database.run('DELETE FROM ruddr_time_weeks');
+    database.run('PRAGMA user_version = 37');
   }
 
   const finalResult = database.exec('PRAGMA user_version');

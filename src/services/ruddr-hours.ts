@@ -1,48 +1,36 @@
 // ── Ruddr hours cache ─────────────────────────────────────────────────────────
-// The logged-in member's time entries, scraped week by week from Ruddr's
-// /time/week page and stored per project, per task, per day. Weeks are the
-// unit of fetching: a week is replaced atomically, and its row in
-// ruddr_time_weeks decides whether it ever needs fetching again.
+// The logged-in member's time entries, read week by week from Ruddr's own
+// time-entries API (through the browser extension) and stored one row per
+// entry, with its note. Weeks are the unit of fetching: a week is replaced
+// atomically, and its row in ruddr_time_weeks decides whether it ever needs
+// fetching again.
 //
 // Everything in this file is pure or DB-only — the browser side lives in
 // src/plugins/groups/ruddr-hours-discovery.ts.
 import type { Database as SqlJsDatabase } from 'sql.js';
 import { parseSqliteUtc } from './groups';
 
-export const DAY_KEYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const;
-export type DayKey = (typeof DAY_KEYS)[number];
-
-/** One time row as the extension's `scrape-ruddr-week` command returns it. */
-export interface RuddrWeekScrapeRow {
-  clientName: string | null;
-  clientPath: string | null;
-  projectName: string | null;
-  projectPath: string | null;
-  taskName: string | null;
-  taskPath: string | null;
-  /** Row label text, used when a row has no project link (e.g. time off). */
-  label: string;
-  /** Raw input values keyed by day ("8:00", "1,5", or ""). */
-  hours: Partial<Record<DayKey, string>>;
+/** One entry as the extension's `fetch-ruddr-week-entries` command returns it. */
+export interface RuddrApiEntry {
+  id: string;
+  date: string;
+  minutes: number;
+  notes: string | null;
+  statusId: string | null;
+  typeId: string | null;
+  isBillable: boolean | null;
+  project: {
+    name: string;
+    key: string;
+    clientName: string | null;
+    clientKey: string | null;
+    clientIsInternal: boolean | null;
+  } | null;
+  task: { name: string; number: number } | null;
+  timeOffType: string | null;
 }
 
-/** The raw result of the extension's `scrape-ruddr-week` command. */
-export interface RuddrWeekScrape {
-  /** False when the page never rendered the requested week within the wait. */
-  ready: boolean;
-  /** The seven day columns in display order, with the header total per day. */
-  days: Array<{ day: string; date: string; total: string | null }>;
-  rows: RuddrWeekScrapeRow[];
-  /** "Total Hours" header value. */
-  totalHours: string | null;
-  /** Hours summary by billable type id (billable, non_billable, internal, time_off). */
-  billableTypes: Record<string, string>;
-  /** Hours by approval status id (approved, pending_approval, rejected, not_submitted, …). */
-  approval: Record<string, string>;
-  memberId: string | null;
-}
-
-/** A parsed, validated week ready for storage. */
+/** A parsed week ready for storage. */
 export interface RuddrParsedWeek {
   weekStart: string;
   entries: RuddrTimeEntry[];
@@ -56,15 +44,20 @@ export interface RuddrParsedWeek {
 }
 
 export interface RuddrTimeEntry {
+  id: string;
   date: string;
   clientName: string | null;
   projectName: string;
-  /** Ruddr project URL path, or `label:<text>` for rows without a project link. */
+  /** Ruddr project URL path, or `label:<text>` for entries without a project (time off). */
   projectPath: string;
   taskName: string | null;
-  /** Ruddr task URL path, or '' when the row has no task. */
+  /** Ruddr task URL path, or '' when the entry has no work type. */
   taskPath: string;
   minutes: number;
+  notes: string | null;
+  statusId: string | null;
+  typeId: string | null;
+  isBillable: boolean | null;
 }
 
 // ── Dates ─────────────────────────────────────────────────────────────────────
@@ -103,105 +96,64 @@ export function isWeekStart(day: unknown): day is string {
 
 // ── Parsing ───────────────────────────────────────────────────────────────────
 
-/**
- * Parse a Ruddr hours value into minutes. Ruddr shows "h:mm" in entry cells and
- * "35,00" / "35.00" in totals depending on the member's locale. Empty → 0,
- * unreadable → null.
- */
-export function parseRuddrDuration(raw: string | null | undefined): number | null {
-  const s = (raw ?? '').trim();
-  if (s === '') return 0;
-  const clock = /^(\d+):(\d{1,2})$/.exec(s);
-  if (clock) return Number(clock[1]) * 60 + Number(clock[2]);
-  const dec = /^(\d+)(?:[.,](\d+))?$/.exec(s);
-  if (dec) return Math.round(Number(`${dec[1]}.${dec[2] ?? '0'}`) * 60);
-  return null;
-}
-
-/** Strip origin, query and hash from a Ruddr link so paths match ruddr_projects.path. */
-export function normalizeRuddrPath(href: string | null | undefined): string | null {
-  if (!href) return null;
-  let p = href.trim();
-  const origin = /^https?:\/\/[^/]+/i.exec(p);
-  if (origin) p = p.slice(origin[0].length);
-  p = p.split('?')[0].split('#')[0];
-  return p || null;
-}
-
 export type ParseWeekResult = { ok: true; week: RuddrParsedWeek } | { ok: false; error: string };
 
 /**
- * Turn a raw scrape into storable entries, checking it against the page's own
- * totals. A mismatch means the scraper missed rows (or Ruddr changed its
- * layout), so the week is rejected rather than cached as complete.
+ * Map Ruddr's API entries for one week onto stored entries. Paths are built
+ * in the same shape as Ruddr's own links, so they match ruddr_projects.path
+ * (`/app/<workspace>/portfolio/projects/<client>/<project>`).
  */
-export function parseWeekScrape(weekStart: string, scrape: RuddrWeekScrape | null | undefined): ParseWeekResult {
-  if (!scrape || !Array.isArray(scrape.days)) return { ok: false, error: 'no_data' };
-  if (!scrape.ready) return { ok: false, error: 'page_not_ready' };
-  if (scrape.days.length !== 7) return { ok: false, error: `unexpected_day_count_${scrape.days.length}` };
-  if (!scrape.days.some((d) => d.date === weekStart)) return { ok: false, error: 'week_mismatch' };
-
-  const dateByDay = new Map<string, string>();
-  for (const d of scrape.days) dateByDay.set(d.day.slice(0, 3).toLowerCase(), d.date);
-
-  const byKey = new Map<string, RuddrTimeEntry>();
-  const minutesByDate = new Map<string, number>();
-  for (const row of scrape.rows ?? []) {
-    const projectPath = normalizeRuddrPath(row.projectPath) ?? `label:${row.label.trim()}`;
-    const projectName = (row.projectName ?? row.label).trim();
-    const taskPath = normalizeRuddrPath(row.taskPath) ?? '';
-    for (const day of DAY_KEYS) {
-      const minutes = parseRuddrDuration(row.hours?.[day]);
-      if (minutes === null) return { ok: false, error: `unreadable_value_${row.hours?.[day]}` };
-      if (minutes === 0) continue;
-      const date = dateByDay.get(day.toLowerCase());
-      if (!date) return { ok: false, error: `missing_date_${day}` };
-      const key = `${date}|${projectPath}|${taskPath}`;
-      const existing = byKey.get(key);
-      if (existing) existing.minutes += minutes;
-      else byKey.set(key, {
-        date,
-        clientName: row.clientName?.trim() || null,
-        projectName,
-        projectPath,
-        taskName: row.taskName?.trim() || null,
-        taskPath,
-        minutes,
-      });
-      minutesByDate.set(date, (minutesByDate.get(date) ?? 0) + minutes);
-    }
+export function parseWeekEntries(
+  weekStart: string,
+  workspace: string,
+  raw: RuddrApiEntry[] | null | undefined,
+): ParseWeekResult {
+  if (!Array.isArray(raw)) return { ok: false, error: 'no_data' };
+  const weekEnd = addDays(weekStart, 6);
+  const entries: RuddrTimeEntry[] = [];
+  const internal = new Set<string>();
+  for (const e of raw) {
+    if (!e || typeof e.id !== 'string' || typeof e.date !== 'string') return { ok: false, error: 'unexpected_entry_shape' };
+    if (e.date < weekStart || e.date > weekEnd) continue;
+    const minutes = Math.round(Number(e.minutes));
+    if (!Number.isFinite(minutes) || minutes <= 0) continue;
+    const p = e.project;
+    const timeOffLabel = e.timeOffType ? `Time Off / ${e.timeOffType}` : null;
+    const projectPath = p
+      ? `/app/${workspace}/portfolio/projects/${p.clientKey ?? '_'}/${p.key}`
+      : `label:${timeOffLabel ?? e.typeId ?? 'other'}`;
+    if (p?.clientIsInternal) internal.add(e.id);
+    entries.push({
+      id: e.id,
+      date: e.date,
+      clientName: p?.clientName?.trim() || null,
+      projectName: (p?.name ?? timeOffLabel ?? 'Other time').trim(),
+      projectPath,
+      taskName: e.task?.name?.trim() || null,
+      taskPath: p && e.task ? `${projectPath}/tasks/${e.task.number}/details` : '',
+      minutes,
+      notes: e.notes?.trim() || null,
+      statusId: e.statusId ?? null,
+      typeId: e.typeId ?? null,
+      isBillable: typeof e.isBillable === 'boolean' ? e.isBillable : null,
+    });
   }
 
-  // Cross-check every day column and the week total against the header.
-  for (const d of scrape.days) {
-    if (d.total === null) continue;
-    const header = parseRuddrDuration(d.total);
-    if (header !== null && header !== (minutesByDate.get(d.date) ?? 0)) {
-      return { ok: false, error: `totals_mismatch_${d.date}` };
-    }
-  }
-  const entries = [...byKey.values()];
-  const totalMinutes = entries.reduce((sum, e) => sum + e.minutes, 0);
-  const headerTotal = scrape.totalHours === null ? null : parseRuddrDuration(scrape.totalHours);
-  if (headerTotal !== null && headerTotal !== totalMinutes) {
-    return { ok: false, error: 'totals_mismatch_week' };
-  }
-
-  const typeMinutes = (id: string): number | null =>
-    id in (scrape.billableTypes ?? {}) ? parseRuddrDuration(scrape.billableTypes[id]) : null;
-
+  const sum = (pick: (e: RuddrTimeEntry) => boolean): number =>
+    entries.reduce((acc, e) => acc + (pick(e) ? e.minutes : 0), 0);
+  const timeOff = (e: RuddrTimeEntry) => e.typeId === 'time_off';
   return {
     ok: true,
     week: {
       weekStart,
       entries,
-      totalMinutes,
-      approvedMinutes: parseRuddrDuration(scrape.approval?.approved) ?? 0,
-      billableMinutes: typeMinutes('billable'),
-      nonBillableMinutes: typeMinutes('non_billable'),
-      internalMinutes: typeMinutes('internal'),
-      timeOffMinutes: typeMinutes('time_off'),
-      memberId: scrape.memberId ?? null,
+      totalMinutes: sum(() => true),
+      approvedMinutes: sum((e) => e.statusId === 'approved'),
+      billableMinutes: sum((e) => e.isBillable === true),
+      internalMinutes: sum((e) => internal.has(e.id)),
+      nonBillableMinutes: sum((e) => e.isBillable !== true && !internal.has(e.id) && !timeOff(e)),
+      timeOffMinutes: sum(timeOff),
+      memberId: null,
     },
   };
 }
@@ -338,10 +290,12 @@ export function saveWeek(db: SqlJsDatabase, week: RuddrParsedWeek): void {
     db.run('DELETE FROM ruddr_time_entries WHERE week_start = ?', [week.weekStart]);
     for (const e of week.entries) {
       db.run(
-        `INSERT INTO ruddr_time_entries
-           (entry_date, week_start, project_path, task_path, client_name, project_name, task_name, minutes)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [e.date, week.weekStart, e.projectPath, e.taskPath, e.clientName, e.projectName, e.taskName, e.minutes],
+        `INSERT OR REPLACE INTO ruddr_time_entries
+           (entry_id, entry_date, week_start, project_path, task_path, client_name, project_name, task_name,
+            minutes, notes, status_id, type_id, is_billable)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [e.id, e.date, week.weekStart, e.projectPath, e.taskPath, e.clientName, e.projectName, e.taskName,
+          e.minutes, e.notes, e.statusId, e.typeId, e.isBillable === null ? null : e.isBillable ? 1 : 0],
       );
     }
     db.run(
@@ -459,9 +413,11 @@ export interface RuddrHoursTaskDayRow extends RuddrHoursDayRow {
 /** Hours per project, task and day over [from, to] — the split Ruddr's week view shows. */
 export function taskDayRows(db: SqlJsDatabase, from: string, to: string): RuddrHoursTaskDayRow[] {
   const stmt = db.prepare(`
-    SELECT entry_date, project_path, task_path, project_name, client_name, task_name, minutes
+    SELECT entry_date, project_path, task_path, MAX(project_name) AS project_name, MAX(client_name) AS client_name,
+           MAX(task_name) AS task_name, SUM(minutes) AS minutes
     FROM ruddr_time_entries
     WHERE entry_date >= ? AND entry_date <= ?
+    GROUP BY entry_date, project_path, task_path
     ORDER BY entry_date, project_name COLLATE NOCASE, task_name COLLATE NOCASE`);
   const out: RuddrHoursTaskDayRow[] = [];
   try {
@@ -489,4 +445,42 @@ export function projectsWithHours(db: SqlJsDatabase): Array<{ name: string; path
   const res = db.exec(`SELECT project_path, MAX(project_name) FROM ruddr_time_entries
     WHERE project_path NOT LIKE 'label:%' GROUP BY project_path`);
   return (res[0]?.values ?? []).map(([path, name]) => ({ path: String(path), name: String(name) }));
+}
+
+export interface RuddrHoursEntryRow {
+  id: string;
+  date: string;
+  projectPath: string;
+  taskPath: string;
+  minutes: number;
+  notes: string | null;
+  statusId: string | null;
+}
+
+/** The individual entries over [from, to], for notes per cell and per-note breakdowns. */
+export function entryRows(db: SqlJsDatabase, from: string, to: string): RuddrHoursEntryRow[] {
+  const stmt = db.prepare(`
+    SELECT entry_id, entry_date, project_path, task_path, minutes, notes, status_id
+    FROM ruddr_time_entries
+    WHERE entry_date >= ? AND entry_date <= ?
+    ORDER BY entry_date, entry_id`);
+  const out: RuddrHoursEntryRow[] = [];
+  try {
+    stmt.bind([from, to]);
+    while (stmt.step()) {
+      const r = stmt.getAsObject() as Record<string, string | number | null>;
+      out.push({
+        id: String(r.entry_id),
+        date: String(r.entry_date),
+        projectPath: String(r.project_path),
+        taskPath: String(r.task_path ?? ''),
+        minutes: Number(r.minutes),
+        notes: r.notes === null ? null : String(r.notes),
+        statusId: r.status_id === null ? null : String(r.status_id),
+      });
+    }
+  } finally {
+    stmt.free();
+  }
+  return out;
 }

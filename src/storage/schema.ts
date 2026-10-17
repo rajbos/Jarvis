@@ -381,8 +381,9 @@ export function getSchema(): string {
         fetched_at           DATETIME NOT NULL
     );
 
-    -- Ruddr hours cache: the logged-in member's minutes per day, project and task
+    -- Ruddr hours cache: one row per Ruddr time entry of the logged-in member
     CREATE TABLE IF NOT EXISTS ruddr_time_entries (
+        entry_id     TEXT PRIMARY KEY,
         entry_date   TEXT NOT NULL,
         week_start   TEXT NOT NULL,
         project_path TEXT NOT NULL,
@@ -391,7 +392,10 @@ export function getSchema(): string {
         project_name TEXT NOT NULL,
         task_name    TEXT,
         minutes      INTEGER NOT NULL,
-        PRIMARY KEY (entry_date, project_path, task_path)
+        notes        TEXT,
+        status_id    TEXT,
+        type_id      TEXT,
+        is_billable  INTEGER
     );
     CREATE INDEX IF NOT EXISTS idx_ruddr_time_entries_week ON ruddr_time_entries(week_start);
     CREATE INDEX IF NOT EXISTS idx_ruddr_time_entries_project ON ruddr_time_entries(project_path, entry_date);

@@ -523,19 +523,36 @@ export function createFixtures(now: number) {
   const weekStart = ymd(weekStartMs);
   const acmePath = '/app/fixture-workspace/portfolio/projects/acme/acme-001-platform-migration';
   const initechPath = '/app/fixture-workspace/portfolio/projects/initech/initech-pipeline-assessment';
+  const day = (i: number) => ymd(weekStartMs + i * dayMs);
+  const discovery = `${acmePath}/tasks/1/details`;
+  const build = `${acmePath}/tasks/2/details`;
+  const internalPath = '/app/fixture-workspace/portfolio/projects/internal/internal-work';
+  const undefinedTask = `${internalPath}/tasks/31/details`;
+  const ruddrHoursEntries = [
+    { id: 'e1', date: day(0), projectPath: acmePath, taskPath: discovery, minutes: 240, notes: 'Kick-off workshop', statusId: 'approved' },
+    { id: 'e2', date: day(1), projectPath: acmePath, taskPath: build, minutes: 240, notes: null, statusId: 'approved' },
+    { id: 'e3', date: day(2), projectPath: acmePath, taskPath: discovery, minutes: 120, notes: 'Interviews', statusId: 'approved' },
+    { id: 'e4', date: day(2), projectPath: initechPath, taskPath: '', minutes: 360, notes: 'Pipeline review', statusId: 'pending_approval' },
+    { id: 'e5', date: day(1), projectPath: internalPath, taskPath: undefinedTask, minutes: 60, notes: 'Tech Officer sync', statusId: 'approved' },
+    { id: 'e6', date: day(3), projectPath: internalPath, taskPath: undefinedTask, minutes: 120, notes: 'Tech Officer sync', statusId: 'approved' },
+    { id: 'e7', date: day(3), projectPath: internalPath, taskPath: undefinedTask, minutes: 60, notes: 'Recruitment interview', statusId: 'approved' },
+  ];
   const ruddrHoursWeek: RuddrHoursWeek = {
     weekStart,
     fetchedAt: ymd(now) + ' 09:00:00',
     status: 'ok',
     error: null,
-    totalMinutes: 960,
-    approvedMinutes: 0,
+    totalMinutes: 1200,
+    approvedMinutes: 840,
     rows: [
-      { date: weekStart, projectPath: acmePath, projectName: RUDDR_PROJECT, clientName: 'Acme', taskPath: `${acmePath}/tasks/1/details`, taskName: 'Discovery', minutes: 240 },
-      { date: ymd(weekStartMs + dayMs), projectPath: acmePath, projectName: RUDDR_PROJECT, clientName: 'Acme', taskPath: `${acmePath}/tasks/2/details`, taskName: 'Build', minutes: 240 },
-      { date: ymd(weekStartMs + 2 * dayMs), projectPath: acmePath, projectName: RUDDR_PROJECT, clientName: 'Acme', taskPath: `${acmePath}/tasks/1/details`, taskName: 'Discovery', minutes: 120 },
-      { date: ymd(weekStartMs + 2 * dayMs), projectPath: initechPath, projectName: RUDDR_UNLINKED_PROJECT, clientName: 'Initech', taskPath: '', taskName: null, minutes: 360 },
+      { date: day(0), projectPath: acmePath, projectName: RUDDR_PROJECT, clientName: 'Acme', taskPath: discovery, taskName: 'Discovery', minutes: 240 },
+      { date: day(1), projectPath: acmePath, projectName: RUDDR_PROJECT, clientName: 'Acme', taskPath: build, taskName: 'Build', minutes: 240 },
+      { date: day(2), projectPath: acmePath, projectName: RUDDR_PROJECT, clientName: 'Acme', taskPath: discovery, taskName: 'Discovery', minutes: 120 },
+      { date: day(2), projectPath: initechPath, projectName: RUDDR_UNLINKED_PROJECT, clientName: 'Initech', taskPath: '', taskName: null, minutes: 360 },
+      { date: day(1), projectPath: internalPath, projectName: 'Internal Work', clientName: 'Internal', taskPath: undefinedTask, taskName: 'Undefined', minutes: 60 },
+      { date: day(3), projectPath: internalPath, projectName: 'Internal Work', clientName: 'Internal', taskPath: undefinedTask, taskName: 'Undefined', minutes: 180 },
     ],
+    entries: ruddrHoursEntries,
   };
   const ruddrHoursSummary: RuddrHoursSummary = {
     ok: true,

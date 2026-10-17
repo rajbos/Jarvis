@@ -1297,7 +1297,7 @@ export interface RuddrHoursStatus {
   lastError: string | null;
   /** Ruddr showed a login page on the last run; discovery pauses until the user logs in. */
   loginRequired: boolean;
-  /** The browser extension does not know scrape-ruddr-week yet and needs reloading. */
+  /** The browser extension does not know fetch-ruddr-week-entries yet and needs reloading. */
   extensionOutdated: boolean;
 }
 
@@ -1320,6 +1320,18 @@ export interface RuddrHoursWeek {
   totalMinutes: number;
   approvedMinutes: number;
   rows: RuddrHoursDayRow[];
+  /** The individual Ruddr entries behind the rows, with their notes. */
+  entries: RuddrHoursEntry[];
+}
+
+export interface RuddrHoursEntry {
+  id: string;
+  date: string;
+  projectPath: string;
+  taskPath: string;
+  minutes: number;
+  notes: string | null;
+  statusId: string | null;
 }
 
 export interface RuddrHoursGroupTotals {

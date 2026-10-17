@@ -131,6 +131,54 @@ export function RuddrHoursSection(props: {
   const sortedWorkTypes = (p: { workTypes: Map<string, Hours & { name: string | null }> }) =>
     [...p.workTypes.entries()].sort(([, a], [, b]) => byName(a.name ?? '', b.name ?? ''));
   const dayTotals = days.map((d) => [...projects.values()].reduce((s, p) => s + (p.byDate.get(d) ?? 0), 0));
+
+  // The Ruddr entries behind each cell, for note tooltips (keyed per work type
+  // and per project, since a project row sums its work types).
+  const entriesByCell = new Map<string, Array<{ minutes: number; notes: string | null }>>();
+  for (const e of week?.entries ?? []) {
+    for (const key of [`${e.projectPath}|${e.taskPath}|${e.date}`, `${e.projectPath}|*|${e.date}`]) {
+      const list = entriesByCell.get(key) ?? [];
+      list.push({ minutes: e.minutes, notes: e.notes });
+      entriesByCell.set(key, list);
+    }
+  }
+  const cell = (key: string, date: string, minutes: number | undefined) => {
+    const notes = (entriesByCell.get(`${key}|${date}`) ?? []).filter((e) => e.notes);
+    return (
+      <td
+        key={date}
+        class={notes.length > 0 ? 'ruddr-hours-cell--note' : undefined}
+        title={notes.length > 0 ? notes.map((e) => `${formatMinutes(e.minutes)} — “${e.notes}”`).join('\n') : undefined}
+      >
+        {minutes ? formatMinutes(minutes) : ''}
+      </td>
+    );
+  };
+
+  // "Undefined" says nothing on its own, so its hours are broken down by note.
+  const isUndefinedWorkType = (name: string | null) => (name ?? '').trim().toLowerCase() === 'undefined';
+  const noteRows = (projectPath: string, taskPath: string) => {
+    const byNote = new Map<string, { byDate: Map<string, number>; total: number }>();
+    for (const e of week?.entries ?? []) {
+      if (e.projectPath !== projectPath || e.taskPath !== taskPath) continue;
+      const note = e.notes ?? '';
+      const n = byNote.get(note) ?? { byDate: new Map(), total: 0 };
+      n.byDate.set(e.date, (n.byDate.get(e.date) ?? 0) + e.minutes);
+      n.total += e.minutes;
+      byNote.set(note, n);
+    }
+    return [...byNote.entries()]
+      .sort(([a], [b]) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+      .map(([note, n]) => (
+        <tr key={`${projectPath}|${taskPath}|note:${note}`} class="ruddr-hours-row--note">
+          <td class="ruddr-hours-proj" title={note || 'No note'}>
+            <span class="ruddr-hours-note">{note ? `“${note}”` : '(no note)'}</span>
+          </td>
+          {days.map((d) => <td key={d}>{n.byDate.get(d) ? formatMinutes(n.byDate.get(d)!) : ''}</td>)}
+          <td>{formatMinutes(n.total)}</td>
+        </tr>
+      ));
+  };
   const isFuture = weekStart > currentMonday();
 
   // Only projects logged in the week on screen; hidden ones never show.
@@ -201,24 +249,27 @@ export function RuddrHoursSection(props: {
                 const split = workTypes.length > 1;
                 // With one work type, its name sits under the project like on Ruddr.
                 const onlyWorkType = !split ? workTypes[0]?.[1].name : null;
+                const onlyTaskPath = !split ? workTypes[0]?.[0] ?? '' : '';
                 return [
                   <tr key={path} class={split ? 'ruddr-hours-row--parent' : undefined}>
                     <td class="ruddr-hours-proj" title={`${rowLabel(p)}${onlyWorkType ? ` — ${onlyWorkType}` : ''}`}>
                       {p.client && <span class="ruddr-hours-client">{p.client} / </span>}{p.name}
                       {onlyWorkType && <span class="ruddr-hours-task">📄 {onlyWorkType}</span>}
                     </td>
-                    {days.map((d) => <td key={d}>{p.byDate.get(d) ? formatMinutes(p.byDate.get(d)!) : ''}</td>)}
+                    {days.map((d) => cell(split ? `${path}|*` : `${path}|${onlyTaskPath}`, d, p.byDate.get(d)))}
                     <td class="ruddr-hours-total">{formatMinutes(p.total)}</td>
                   </tr>,
-                  ...(split ? workTypes.map(([taskPath, w]) => (
+                  ...(!split && isUndefinedWorkType(onlyWorkType ?? null) ? noteRows(path, onlyTaskPath) : []),
+                  ...(split ? workTypes.flatMap(([taskPath, w]) => [
                     <tr key={`${path}|${taskPath}`} class="ruddr-hours-row--worktype">
                       <td class="ruddr-hours-proj" title={`${rowLabel(p)} — ${w.name ?? 'no work type'}`}>
                         <span class="ruddr-hours-worktype">📄 {w.name ?? 'No work type'}</span>
                       </td>
-                      {days.map((d) => <td key={d}>{w.byDate.get(d) ? formatMinutes(w.byDate.get(d)!) : ''}</td>)}
+                      {days.map((d) => cell(`${path}|${taskPath}`, d, w.byDate.get(d)))}
                       <td>{formatMinutes(w.total)}</td>
-                    </tr>
-                  )) : []),
+                    </tr>,
+                    ...(isUndefinedWorkType(w.name) ? noteRows(path, taskPath) : []),
+                  ]) : []),
                 ];
               })}
             </tbody>

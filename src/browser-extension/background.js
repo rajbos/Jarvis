@@ -204,8 +204,8 @@ async function handleCommand(rawData) {
       case 'read-form-fields':
         data = await cmdReadFormFields(tabId, payload);
         break;
-      case 'scrape-ruddr-week':
-        data = await cmdScrapeRuddrWeek(tabId, payload ?? {});
+      case 'fetch-ruddr-week-entries':
+        data = await cmdFetchRuddrWeekEntries(tabId, payload ?? {});
         break;
       case 'click':
         data = await cmdClick(tabId, payload);
@@ -658,41 +658,19 @@ async function scrapeStatsByLabel(waitMs) {
   return stats;
 }
 
-async function cmdScrapeRuddrWeek(tabId, payload) {
-  const { date, waitMs = 15000 } = payload;
+async function cmdFetchRuddrWeekEntries(tabId, payload) {
+  const { workspace, date } = payload;
+  if (typeof workspace !== 'string' || !/^[a-z0-9-]+$/i.test(workspace)) throw new Error('workspace key is required');
   if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('date (YYYY-MM-DD) is required');
   const targetTabId = await getTargetTabId(tabId);
 
-  // Poll from the service worker rather than with timers inside the page:
-  // browsers throttle timers in background tabs hard, while the worker's run
-  // at full speed. Each read is one synchronous snapshot of the grid.
-  const read = async () => {
-    const results = await withTimeout(
-      chrome.scripting.executeScript({ target: { tabId: targetTabId }, func: readRuddrWeek, args: [date] }),
-      5000,
-      'Ruddr tab did not answer — the browser may have suspended the background tab',
-    );
-    return results[0]?.result ?? null;
-  };
-
-  const deadline = Date.now() + waitMs;
-  let snapshot = await read();
-  let lastCount = -1;
-  let stableFor = 0;
-  let polls = 1;
-  while (Date.now() < deadline) {
-    if (snapshot && snapshot.ready) {
-      stableFor = snapshot.inputCount === lastCount ? stableFor + 1 : 0;
-      lastCount = snapshot.inputCount;
-      // A week whose header shows hours must also show a filled-in cell.
-      if (stableFor >= 2 && (!snapshot.expectsHours || snapshot.hasValues)) break;
-    }
-    await new Promise((r) => setTimeout(r, 400));
-    snapshot = await read();
-    polls++;
-  }
-  if (!snapshot) throw new Error('Could not read the Ruddr week page');
-  return { ...snapshot, polls };
+  // Runs in a ruddr.io tab so the request carries the user's own session.
+  const results = await withTimeout(
+    chrome.scripting.executeScript({ target: { tabId: targetTabId }, func: fetchRuddrWeekEntries, args: [workspace, date] }),
+    20000,
+    'Ruddr tab did not answer — the browser may have suspended the background tab',
+  );
+  return results[0]?.result ?? null;
 }
 
 function withTimeout(promise, ms, message) {
@@ -703,111 +681,44 @@ function withTimeout(promise, ms, message) {
   ]).finally(() => clearTimeout(timer));
 }
 
-// Runs inside the page — one synchronous snapshot of Ruddr's /time/week grid,
-// with no scrolling, focus or timers, so it works in a background tab. Every
-// row is anchored on its Monday input (data-testid="day-entry-Mon"); the row
-// label is the sibling block before that cell. Only entered values are read —
-// placeholders are allocations, not logged time. ready is false until the
-// requested week's day columns are on the page.
-function readRuddrWeek(date) {
-  const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  const pathOf = (a) => (a ? (a.getAttribute('href') || '').split('?')[0].split('#')[0] : null);
-  const textOf = (el) => (el ? (el.textContent || '').replace(/\s+/g, ' ').trim() : null);
-
-  // Day column headers link to the day view and hold two spans: the day name
-  // and its hours. Other links to the day view (the Month/Week/Day/List
-  // switcher's "Day" tab) have no spans and are skipped.
-  const seen = new Set();
-  const days = [];
-  for (const a of document.querySelectorAll('a[href*="/time/day?date="]')) {
-    const m = /[?&]date=(\d{4}-\d{2}-\d{2})/.exec(a.getAttribute('href') || '');
-    const spans = [...a.querySelectorAll('span')].map((sp) => textOf(sp));
-    if (!m || spans.length < 2 || seen.has(m[1])) continue;
-    seen.add(m[1]);
-    days.push({ day: spans[0] || '', date: m[1], total: spans[1] });
-  }
-
-  const inputs = [...document.querySelectorAll('input[data-testid^="day-entry-"]')];
-  const base = {
-    url: document.location.href,
-    days,
-    inputCount: inputs.length,
-    hasValues: inputs.some((i) => (i.value || '').trim()),
-    expectsHours: days.some((d) => d.total && /[1-9]/.test(d.total)),
+// Runs inside a ruddr.io page — asks Ruddr's own API for the member's time
+// entries of the week containing `date`, exactly as the week page does, and
+// returns them trimmed to the fields Jarvis stores (including each note).
+async function fetchRuddrWeekEntries(workspaceKey, date) {
+  const get = async (path) => {
+    const res = await globalThis.fetch(path, { credentials: 'include', headers: { accept: 'application/json' } });
+    let body;
+    try { body = res.ok ? await res.json() : null; } catch { body = null; }
+    return { status: res.status, body };
   };
-  if (!days.some((d) => d.date === date)) {
-    return { ...base, ready: false, rows: [], totalHours: null, billableTypes: {}, approval: {}, memberId: null };
+  const here = document.location.href;
+  const ws = await get(`/api/www/workspaces/${encodeURIComponent(workspaceKey)}`);
+  if (!ws.body || typeof ws.body.id !== 'string') {
+    return { ok: false, status: ws.status, error: `workspace lookup failed (HTTP ${ws.status})`, url: here };
   }
-
-  const rows = [];
-  for (const mon of document.querySelectorAll('input[data-testid="day-entry-Mon"]')) {
-    // Climb to the grid cell whose previous sibling holds the row label.
-    let cell = mon;
-    for (let i = 0; i < 8 && cell.parentElement; i++) {
-      const prev = cell.previousElementSibling;
-      if (prev && (prev.tagName === 'P' || prev.querySelector('p, a[href*="/portfolio/"]'))) break;
-      cell = cell.parentElement;
-    }
-    const labelEl = cell.previousElementSibling;
-    const clientLink = labelEl ? labelEl.querySelector('a[href*="/portfolio/clients/"]') : null;
-    const projectLink = labelEl ? [...labelEl.querySelectorAll('a[href*="/portfolio/projects/"]')].find((a) => !(a.getAttribute('href') || '').includes('/tasks/')) : null;
-    const taskLink = labelEl ? labelEl.querySelector('a[href*="/tasks/"]') : null;
-
-    // The other six day cells are the Monday cell's next siblings.
-    const hours = {};
-    let el = cell;
-    for (const day of DAYS) {
-      const input = day === 'Mon' ? mon : (el ? el.querySelector(`input[data-testid="day-entry-${day}"]`) : null);
-      hours[day] = input ? (input.value || '').trim() : '';
-      if (day !== 'Sun' && el) el = el.nextElementSibling;
-    }
-
-    rows.push({
-      clientName: textOf(clientLink),
-      clientPath: pathOf(clientLink),
-      projectName: textOf(projectLink),
-      projectPath: pathOf(projectLink),
-      taskName: textOf(taskLink),
-      taskPath: pathOf(taskLink),
-      label: textOf(labelEl) || '',
-      hours,
-    });
+  const week = await get(`/api/www/workspaces/${encodeURIComponent(ws.body.id)}/time-entries/week?date=${encodeURIComponent(date)}`);
+  if (!Array.isArray(week.body)) {
+    return { ok: false, status: week.status, error: `time entries request failed (HTTP ${week.status})`, url: here };
   }
-
-  // "Total Hours" header: the value span sits next to its label span.
-  let totalHours = null;
-  for (const span of document.querySelectorAll('span')) {
-    if (textOf(span) === 'Total Hours' && span.nextElementSibling) {
-      totalHours = textOf(span.nextElementSibling);
-      break;
-    }
-  }
-
-  // Hours summary links carry machine ids in their query strings.
-  const byQuery = (param) => {
-    const out = {};
-    for (const a of document.querySelectorAll(`a[href*="${param}="]`)) {
-      const m = new RegExp(`[?&]${param}=([a-z_]+)`).exec(a.getAttribute('href') || '');
-      if (!m) continue;
-      const leaves = [...a.querySelectorAll('div')].filter((d) => d.children.length === 0).map((d) => textOf(d));
-      const value = leaves.find((v) => /^[\d.,:]+$/.test(v || '')) || (/^[\d.,:]+$/.test(textOf(a) || '') ? textOf(a) : null);
-      if (value !== null && value !== undefined) out[m[1]] = value;
-    }
-    return out;
-  };
-
-  const memberLink = document.querySelector('a[href*="memberId="]');
-  const memberMatch = memberLink ? /[?&]memberId=([^&]+)/.exec(memberLink.getAttribute('href') || '') : null;
-
-  return {
-    ...base,
-    ready: true,
-    rows,
-    totalHours,
-    billableTypes: byQuery('timeBillableTypeId'),
-    approval: byQuery('timeApprovalStatusId'),
-    memberId: memberMatch ? decodeURIComponent(memberMatch[1]) : null,
-  };
+  const entries = week.body.map((e) => ({
+    id: e.id,
+    date: e.date,
+    minutes: e.minutes,
+    notes: e.notes ?? null,
+    statusId: e.statusId ?? null,
+    typeId: e.typeId ?? null,
+    isBillable: typeof e.isActuallyBillable === 'boolean' ? e.isActuallyBillable : (typeof e.isBillable === 'boolean' ? e.isBillable : null),
+    project: e.project ? {
+      name: e.project.name,
+      key: e.project.key,
+      clientName: e.project.client ? e.project.client.name : null,
+      clientKey: e.project.client ? e.project.client.key : null,
+      clientIsInternal: e.project.client ? e.project.client.isInternal === true : null,
+    } : null,
+    task: e.task ? { name: e.task.name, number: e.task.number } : null,
+    timeOffType: e.timeOffType ? (e.timeOffType.name ?? null) : null,
+  }));
+  return { ok: true, status: week.status, entries, url: here };
 }
 
 async function cmdClick(tabId, payload) {
