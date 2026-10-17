@@ -304,6 +304,24 @@ describe('browser-extension background.js: handleCommand', () => {
     },
   );
 
+  it('still reports a background tab it opened when the page is slow to load', async () => {
+    const { h, send } = await connected();
+    h.chrome.tabs.create.mockResolvedValue({ id: 5 });
+    h.chrome.tabs.get.mockResolvedValue({ id: 5, status: 'loading', url: '', pendingUrl: 'https://www.ruddr.io/app/ws/time/week', title: '' });
+    const pending = send({ id: 'bg', type: 'navigate', payload: { url: 'https://www.ruddr.io/app/ws/time/week', newTab: true, background: true } });
+    await flush();
+    // Let the 15 s load timeout fire: the tab must not be leaked by an error.
+    h.timeouts.find((t) => t.ms === 15000)!.fn();
+    const res = await pending;
+    expect(res).toEqual({
+      id: 'bg',
+      ok: true,
+      data: { url: 'https://www.ruddr.io/app/ws/time/week', title: '', tabId: 5, createdTab: true, loadTimedOut: true },
+    });
+    expect(h.chrome.tabs.create).toHaveBeenCalledWith({ url: 'https://www.ruddr.io/app/ws/time/week', active: false });
+    expect(h.chrome.tabs.update).toHaveBeenCalledWith(5, { autoDiscardable: false });
+  });
+
   it('requires a url for navigate', async () => {
     const { send } = await connected();
     const res = await send({ id: 'n', type: 'navigate', tabId: 1, payload: {} });
@@ -347,6 +365,114 @@ describe('browser-extension background.js: handleCommand', () => {
     sock.readyState = FakeWebSocket.CLOSED;
     await send({ id: 'x', type: 'bogus' });
     expect(sock.sent).toHaveLength(0);
+  });
+});
+
+describe('browser-extension background.js: fetchRuddrWeekEntries', () => {
+  type FetchResult = {
+    ok: boolean; status: number; error?: string; url: string;
+    entries?: Array<Record<string, unknown>>;
+  };
+
+  async function run(responses: Record<string, { status: number; body?: unknown }>) {
+    const h = await loadBackground('t');
+    const calls: string[] = [];
+    h.ctx.document = { location: { href: 'https://www.ruddr.io/app/ws/time/week?date=2026-10-05' } };
+    h.ctx.fetch = vi.fn(async (url: string) => {
+      calls.push(url);
+      const r = responses[url] ?? { status: 404 };
+      return { ok: r.status >= 200 && r.status < 300, status: r.status, json: async () => r.body };
+    });
+    const result = await (h.ctx.fetchRuddrWeekEntries as (ws: string, d: string) => Promise<FetchResult>)('xebia-ws', '2026-10-05');
+    return { result, calls };
+  }
+
+  it('looks up the workspace id, then returns the week\'s entries with their notes', async () => {
+    const { result, calls } = await run({
+      '/api/www/workspaces/xebia-ws': { status: 200, body: { id: 'ws-uuid', key: 'xebia-ws' } },
+      '/api/www/workspaces/ws-uuid/time-entries/week?date=2026-10-05': {
+        status: 200,
+        body: [{
+          id: 'e1', date: '2026-10-07', minutes: 120, notes: 'XMS - Tech Officer (intern)', statusId: 'approved',
+          typeId: 'project_time', isBillable: null, isActuallyBillable: false, createdAt: 'ignored',
+          project: { name: 'Internal Work', key: 'internal-work', client: { name: 'Internal XMS', key: 'internal-xms', isInternal: true } },
+          task: { name: 'Undefined', number: 31, taskCategory: {} },
+          timeOffType: null,
+        }],
+      },
+    });
+
+    expect(calls).toEqual(['/api/www/workspaces/xebia-ws', '/api/www/workspaces/ws-uuid/time-entries/week?date=2026-10-05']);
+    expect(result).toEqual({
+      ok: true,
+      status: 200,
+      url: 'https://www.ruddr.io/app/ws/time/week?date=2026-10-05',
+      entries: [{
+        id: 'e1', date: '2026-10-07', minutes: 120, notes: 'XMS - Tech Officer (intern)', statusId: 'approved',
+        typeId: 'project_time', isBillable: false,
+        project: { name: 'Internal Work', key: 'internal-work', clientName: 'Internal XMS', clientKey: 'internal-xms', clientIsInternal: true },
+        task: { name: 'Undefined', number: 31 },
+        timeOffType: null,
+      }],
+    });
+  });
+
+  it('reports the HTTP status when Ruddr refuses (e.g. logged out)', async () => {
+    const { result } = await run({ '/api/www/workspaces/xebia-ws': { status: 401 } });
+    expect(result).toMatchObject({ ok: false, status: 401, error: 'workspace lookup failed (HTTP 401)' });
+  });
+
+  it('rejects a bad workspace key or date before touching the page', async () => {
+    const h = await loadBackground('t');
+    const sock = FakeWebSocket.instances[0];
+    sock.readyState = FakeWebSocket.OPEN;
+    await h.ctx.handleCommand(JSON.stringify({ id: 'f', type: 'fetch-ruddr-week-entries', tabId: 1, payload: { workspace: '../x', date: '2026-10-05' } }));
+    expect(JSON.parse(sock.sent.at(-1)!)).toEqual({ id: 'f', ok: false, error: 'workspace key is required' });
+    expect(h.chrome.scripting.executeScript).not.toHaveBeenCalled();
+  });
+});
+
+describe('browser-extension background.js: ruddr-api-get', () => {
+  it('GETs each path under the workspace, in order, with the user session', async () => {
+    const h = await loadBackground('t');
+    const calls: Array<{ url: string; init: unknown }> = [];
+    h.ctx.document = { location: { href: 'https://www.ruddr.io/app/ws/time/week' } };
+    h.ctx.fetch = vi.fn(async (url: string, init: unknown) => {
+      calls.push({ url, init });
+      const body = url.endsWith('/workspaces/xebia-ws') ? { id: 'ws-uuid' } : { url };
+      return { ok: true, status: 200, json: async () => body };
+    });
+
+    const result = await (h.ctx.ruddrApiGet as (ws: string, paths: string[]) => Promise<unknown>)(
+      'xebia-ws', ['projects?page=0&size=100', 'projects/p1/kpi/hours'],
+    );
+
+    expect(calls.map((c) => c.url)).toEqual([
+      '/api/www/workspaces/xebia-ws',
+      '/api/www/workspaces/ws-uuid/projects?page=0&size=100',
+      '/api/www/workspaces/ws-uuid/projects/p1/kpi/hours',
+    ]);
+    expect(calls.every((c) => (c.init as { credentials?: string }).credentials === 'include')).toBe(true);
+    expect(result).toEqual({
+      ok: true, status: 200, url: 'https://www.ruddr.io/app/ws/time/week',
+      responses: [
+        { status: 200, body: { url: '/api/www/workspaces/ws-uuid/projects?page=0&size=100' } },
+        { status: 200, body: { url: '/api/www/workspaces/ws-uuid/projects/p1/kpi/hours' } },
+      ],
+    });
+  });
+
+  it.each([
+    ['../../session', 'invalid Ruddr API path: ../../session'],
+    ['/api/www/workspaces', 'invalid Ruddr API path: /api/www/workspaces'],
+    ['https://evil.example/x', 'invalid Ruddr API path: https://evil.example/x'],
+  ])('refuses the path %s before touching the page', async (path, error) => {
+    const h = await loadBackground('t');
+    const sock = FakeWebSocket.instances[0];
+    sock.readyState = FakeWebSocket.OPEN;
+    await h.ctx.handleCommand(JSON.stringify({ id: 'r', type: 'ruddr-api-get', tabId: 1, payload: { workspace: 'ws', paths: [path] } }));
+    expect(JSON.parse(sock.sent.at(-1)!)).toEqual({ id: 'r', ok: false, error });
+    expect(h.chrome.scripting.executeScript).not.toHaveBeenCalled();
   });
 });
 

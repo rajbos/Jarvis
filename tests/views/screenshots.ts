@@ -75,6 +75,26 @@ const SHOTS: Shot[] = [
     },
   },
   {
+    // Running, failed and idle tasks, with the pointer on an idle task's Run button.
+    name: 'background-tasks-flyout', view: 'index', waitFor: ['Fetch notifications'],
+    open: {
+      responses: {
+        listBackgroundTasks: [
+          { id: 'notifications', label: 'Fetch notifications', running: false, intervalMs: 900_000, lastStatus: 'success' },
+          { id: 'ruddr-hours-discovery', label: 'Ruddr hours discovery', running: true, intervalMs: 600_000, lastStatus: 'failed' },
+          {
+            id: 'ruddr-project-refresh', label: 'Ruddr project refresh', running: false, intervalMs: 3_600_000,
+            lastStatus: 'failed', lastError: '2030-01-14: Ruddr week page did not render within 25s (url https://www.ruddr.io/app/fixture-workspace/time/week)',
+          },
+        ],
+      },
+    },
+    prepare: async (page) => {
+      await page.locator('.bg-status-tasks').hover();
+      await page.locator('.bg-status-task-run').first().hover();
+    },
+  },
+  {
     name: 'pat-rate-limit-flyout', view: 'index', waitFor: ['PAT resets at', 'GraphQL % remaining'],
     prepare: (page) => page.locator('.bg-status-ratelimit').last().hover(),
   },

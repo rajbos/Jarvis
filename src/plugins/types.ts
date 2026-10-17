@@ -1282,6 +1282,75 @@ export interface RuddrProjectInfo {
   note: string | null;
   cloudFolderUrl: string | null;
 }
+
+// ── Ruddr hours cache ─────────────────────────────────────────────────────────
+export interface RuddrHoursStatus {
+  running: boolean;
+  weeksCached: number;
+  /** Monday of the oldest / newest successfully cached week. */
+  oldestWeek: string | null;
+  newestWeek: string | null;
+  erroredWeeks: number;
+  /** True once the backwards crawl has reached its end. */
+  backfillDone: boolean;
+  lastRunAt: string | null;
+  lastError: string | null;
+  /** Ruddr showed a login page on the last run; discovery pauses until the user logs in. */
+  loginRequired: boolean;
+  /** The browser extension does not know fetch-ruddr-week-entries yet and needs reloading. */
+  extensionOutdated: boolean;
+}
+
+export interface RuddrHoursDayRow {
+  date: string;
+  projectPath: string;
+  projectName: string;
+  clientName: string | null;
+  /** Ruddr task path, '' when the row has no task. */
+  taskPath: string;
+  taskName: string | null;
+  minutes: number;
+}
+
+export interface RuddrHoursWeek {
+  weekStart: string;
+  fetchedAt: string | null;
+  status: 'ok' | 'error' | null;
+  error: string | null;
+  totalMinutes: number;
+  approvedMinutes: number;
+  rows: RuddrHoursDayRow[];
+  /** The individual Ruddr entries behind the rows, with their notes. */
+  entries: RuddrHoursEntry[];
+}
+
+export interface RuddrHoursEntry {
+  id: string;
+  date: string;
+  projectPath: string;
+  taskPath: string;
+  minutes: number;
+  notes: string | null;
+  statusId: string | null;
+}
+
+export interface RuddrHoursGroupTotals {
+  weekMinutes: number;
+  last4WeeksMinutes: number;
+  totalMinutes: number;
+  lastDate: string | null;
+}
+
+export interface RuddrHoursSummary {
+  ok: boolean;
+  status: RuddrHoursStatus;
+  /** Keyed by group id. */
+  groups: Record<number, RuddrHoursGroupTotals>;
+  /** Projects with logged hours that are not linked to any group. */
+  unlinked: Array<{ projectName: string; projectPath: string; clientName: string | null; totalMinutes: number; lastDate: string }>;
+  /** Projects without a group that the user chose to hide from that list. */
+  hidden: Array<{ projectName: string; projectPath: string; clientName: string | null; totalMinutes: number; lastDate: string }>;
+}
 // ── Auto-dismiss types ────────────────────────────────────────────────────────
 export type AutoDismissReason =
   | 'recovered_workflow'
@@ -1695,6 +1764,15 @@ export interface JarvisApi {
 
   onNewRuddrProjects(callback: (payload: NewRuddrProjectsPayload) => void): () => void;
   onRuddrProjectDetailsRefreshed(callback: () => void): () => void;
+
+  ruddrHoursStatus(): Promise<RuddrHoursStatus>;
+  ruddrHoursSummary(): Promise<RuddrHoursSummary>;
+  ruddrHoursWeek(weekStart: string): Promise<{ ok: true; week: RuddrHoursWeek } | { ok: false; error: string }>;
+  /** Re-fetches one week from Ruddr now, bypassing the cache. */
+  ruddrHoursRefreshWeek(weekStart: string): Promise<{ ok: true; result: Record<string, unknown>; week: RuddrHoursWeek } | { ok: false; error: string }>;
+  onRuddrHoursUpdated(callback: (status: RuddrHoursStatus) => void): () => void;
+  /** Hide (or show again) a project in the "not in a group" list. */
+  ruddrHoursSetProjectHidden(projectPath: string, hidden: boolean): Promise<{ ok: boolean; error?: string }>;
 
   // OneDrive
 

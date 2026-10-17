@@ -5,7 +5,8 @@ import type { TaskRunRecord, TaskStatus } from './task-scheduler';
 import { getScanFolders } from '../services/local-discovery';
 import { startLocalScanIfNeeded } from '../plugins/local-repos/handler';
 import { runBootWorkflowCheck, syncGitHubNotifications, runAutoDismissSweep } from '../plugins/notifications/handler';
-import { refreshRuddrProjectsInBackground, prewarmRuddrCache } from '../plugins/groups/handler';
+import { refreshRuddrProjectsInBackground, prewarmRuddrCache, hoursDiscoveryDeps } from '../plugins/groups/handler';
+import { runRuddrHoursDiscovery } from '../plugins/groups/ruddr-hours-discovery';
 import { checkCopilotUsage } from '../plugins/copilot-usage/handler';
 import { runActiveSessionsSweep } from '../plugins/active-sessions/handler';
 import { runReadmeBatch } from '../services/github-repo-catalog';
@@ -21,6 +22,8 @@ export const LOCAL_DISCOVERY_INITIAL_DELAY_MS = 30_000;
 export const LOCAL_DISCOVERY_INTERVAL_MS = 60 * 60 * 1000;
 export const RUDDR_REFRESH_INITIAL_DELAY_MS = 30_000;
 export const RUDDR_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
+export const RUDDR_HOURS_INITIAL_DELAY_MS = 5 * 60 * 1000;
+export const RUDDR_HOURS_INTERVAL_MS = 10 * 60 * 1000;
 export const GITHUB_NOTIFICATIONS_INITIAL_DELAY_MS = 60_000;
 export const GITHUB_NOTIFICATIONS_INTERVAL_MS = 5 * 60 * 1000;
 export const GITHUB_AUTO_DISMISS_INITIAL_DELAY_MS = 90_000;
@@ -96,6 +99,16 @@ export function createBackgroundTaskScheduler(
     initialDelayMs: RUDDR_REFRESH_INITIAL_DELAY_MS,
     intervalMs: RUDDR_REFRESH_INTERVAL_MS,
     run: () => refreshRuddrProjectsInBackground(db, getWindow, true),
+  });
+
+  // Trickle-load the member's Ruddr hours: a few week pages per run in a
+  // background tab, newest weeks first, then backwards in time.
+  registerTask(taskScheduler, getWindow, {
+    id: 'ruddr-hours-discovery',
+    label: 'Ruddr hours discovery',
+    initialDelayMs: RUDDR_HOURS_INITIAL_DELAY_MS,
+    intervalMs: RUDDR_HOURS_INTERVAL_MS,
+    run: () => runRuddrHoursDiscovery(db, hoursDiscoveryDeps(db, getWindow)),
   });
 
   registerTask(taskScheduler, getWindow, {

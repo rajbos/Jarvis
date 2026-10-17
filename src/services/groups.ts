@@ -50,13 +50,43 @@ export function saveRuddrProjectsToDb(db: SqlJsDatabase, projects: RuddrProjectE
       [p.name, p.path, p.note ?? null, p.cloud_folder_url ?? null],
     );
   }
-  // Remove projects that no longer exist in Ruddr
+  // Remove projects that no longer exist in Ruddr — except those the hours
+  // cache has seen: you can log time on projects the portfolio list hides.
   if (projects.length > 0) {
+    const keepLogged = hasTable(db, 'ruddr_time_entries')
+      ? ' AND path NOT IN (SELECT DISTINCT project_path FROM ruddr_time_entries)'
+      : '';
     db.run(
-      `DELETE FROM ruddr_projects WHERE path NOT IN (${projects.map(() => '?').join(',')})`,
+      `DELETE FROM ruddr_projects WHERE path NOT IN (${projects.map(() => '?').join(',')})${keepLogged}`,
       projects.map((p) => p.path),
     );
   }
+}
+
+function hasTable(db: SqlJsDatabase, table: string): boolean {
+  const res = db.exec(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`, [table]);
+  return res.length > 0 && res[0].values.length > 0;
+}
+
+/**
+ * Add projects found outside the project list (e.g. in the hours cache)
+ * without touching or removing any existing row. Returns the ones that were new.
+ */
+export function upsertDiscoveredRuddrProjects(
+  db: SqlJsDatabase,
+  projects: Array<{ name: string; path: string }>,
+): Array<{ name: string; path: string }> {
+  const known = new Set((db.exec('SELECT path FROM ruddr_projects')[0]?.values ?? []).map(([path]) => String(path)));
+  const added = projects.filter((p) => !known.has(p.path));
+  for (const p of added) {
+    db.run(
+      `INSERT INTO ruddr_projects (name, path, cached_at, discovered_at)
+       VALUES (?, ?, datetime('now'), datetime('now'))
+       ON CONFLICT(path) DO NOTHING`,
+      [p.name, p.path],
+    );
+  }
+  return added;
 }
 
 /** Update (or clear) the note for a single project identified by its URL path. */

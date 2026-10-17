@@ -495,3 +495,23 @@ describe('Migration v34 -> v35', () => {
     expect(oldDb.exec('SELECT target_type, target_name FROM secret_scan_favorites')[0].values).toEqual([['repo', 'alice/b']]);
   });
 });
+
+describe('Migration v36 -> v37', () => {
+  it('rebuilds the Ruddr hours entries per Ruddr entry and queues every week for a re-fetch', async () => {
+    const SQL = await initSqlJs();
+    const oldDb = new SQL.Database();
+    oldDb.run(`CREATE TABLE ruddr_time_weeks (week_start TEXT PRIMARY KEY, status TEXT NOT NULL, total_minutes INTEGER, approved_minutes INTEGER, fetched_at DATETIME NOT NULL)`);
+    oldDb.run(`CREATE TABLE ruddr_time_entries (entry_date TEXT NOT NULL, week_start TEXT NOT NULL, project_path TEXT NOT NULL, task_path TEXT NOT NULL DEFAULT '', client_name TEXT, project_name TEXT NOT NULL, task_name TEXT, minutes INTEGER NOT NULL, PRIMARY KEY (entry_date, project_path, task_path))`);
+    oldDb.run(`INSERT INTO ruddr_time_weeks VALUES ('2026-10-05', 'ok', 60, 60, '2026-10-17 10:00:00')`);
+    oldDb.run(`INSERT INTO ruddr_time_entries VALUES ('2026-10-05', '2026-10-05', '/p', '', NULL, 'P', NULL, 60)`);
+    oldDb.run('PRAGMA user_version = 36');
+
+    initializeSchema(oldDb);
+
+    expect(oldDb.exec('PRAGMA user_version')[0].values[0][0]).toBe(37);
+    expect(oldDb.exec('SELECT COUNT(*) FROM ruddr_time_weeks')[0].values[0][0]).toBe(0);
+    const cols = oldDb.exec('PRAGMA table_info(ruddr_time_entries)')[0].values.map((r) => r[1]);
+    expect(cols).toEqual(expect.arrayContaining(['entry_id', 'notes', 'status_id', 'type_id', 'is_billable']));
+    expect(oldDb.exec('SELECT COUNT(*) FROM ruddr_time_entries')[0].values[0][0]).toBe(0);
+  });
+});

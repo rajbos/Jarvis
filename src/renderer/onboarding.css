@@ -4950,14 +4950,46 @@ h5.ec-heading { font-size: 0.9375rem; }
   transition: color 0.12s, border-color 0.12s;
 }
 
+/* The app-wide button rules (red hover, grey disabled) must not show through. */
 .bg-status-task-run:hover:not(:disabled) {
+  background: rgba(122, 179, 245, 0.12);
   border-color: #3a6aaa;
+  color: #a8cdfa;
+}
+
+.bg-status-task-run:active:not(:disabled) {
+  background: rgba(122, 179, 245, 0.24);
+  border-color: #5a8ad0;
+  color: #d0e4fc;
+}
+
+.bg-status-task-run:focus-visible {
+  outline: 2px solid #4fc3f7;
+  outline-offset: 1px;
 }
 
 .bg-status-task-run:disabled {
-  color: #555;
-  border-color: #1a1a2e;
+  background: transparent;
+  color: #4fc3f7;
+  border-color: #1e3a5a;
   cursor: default;
+  opacity: 0.8;
+}
+
+.bg-status-task-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.bg-status-task-error {
+  font-size: 0.6875rem;
+  color: #f08080;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 22rem;
 }
 
 /* ── Auto-dismiss summary banner ─────────────────────────────────────────── */
@@ -5757,4 +5789,255 @@ h5.ec-heading { font-size: 0.9375rem; }
 
 .ec-diag-hint--error {
   color: #f08090;
+}
+
+/* ── Ruddr hours (Groups dashboard) ────────────────────────────────────────── */
+.ruddr-hours {
+  background: #16213e;
+  border: 1px solid #0f3460;
+  border-radius: 8px;
+  padding: 0.8rem 1rem;
+  margin-bottom: 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.ruddr-hours-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+
+.ruddr-hours-head h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #e0e0e0;
+}
+
+.ruddr-hours-status,
+.ruddr-hours-fetched,
+.ruddr-hours-unlinked-meta {
+  font-size: 0.8125rem;
+  color: #8890b0;
+}
+
+.ruddr-hours-warn {
+  font-size: 0.8125rem;
+  color: #f0c060;
+  background: rgba(240, 192, 96, 0.08);
+  border-radius: 4px;
+  padding: 0.3rem 0.5rem;
+}
+
+.ruddr-hours-weeknav {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.ruddr-hours-weeklabel {
+  font-weight: 600;
+  color: #c8d0f0;
+  min-width: 11rem;
+  text-align: center;
+}
+
+.ruddr-hours-fetched {
+  flex: 1;
+}
+
+.ruddr-hours-navbtn,
+.ruddr-hours-reload,
+.ruddr-hours-link {
+  padding: 0.2rem 0.6rem;
+  background: #12183a;
+  border: 1px solid #1e2d5a;
+  border-radius: 6px;
+  color: #8898cc;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ruddr-hours-navbtn:hover:not(:disabled),
+.ruddr-hours-reload:hover:not(:disabled),
+.ruddr-hours-link:hover:not(:disabled) {
+  border-color: #3a5aaa;
+  color: #c8d0f0;
+}
+
+.ruddr-hours-navbtn:disabled,
+.ruddr-hours-reload:disabled,
+.ruddr-hours-link:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ruddr-hours-empty {
+  font-size: 0.875rem;
+  color: #8890b0;
+}
+
+.ruddr-hours-table-wrap {
+  overflow-x: auto;
+}
+
+.ruddr-hours-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.ruddr-hours-table th,
+.ruddr-hours-table td {
+  padding: 0.3rem 0.5rem;
+  text-align: right;
+  border-bottom: 1px solid #34406c;
+  color: #c8d0f0;
+}
+
+/* Faint column rules so a value lines up with its day. */
+.ruddr-hours-table td + td,
+.ruddr-hours-table th + th {
+  border-left: 1px solid #263055;
+}
+
+.ruddr-hours-table th {
+  color: #8890b0;
+  font-weight: 500;
+  border-bottom: 1px solid #4a5a90;
+}
+
+.ruddr-hours-table tbody tr:hover td {
+  background: rgba(122, 179, 245, 0.06);
+}
+
+.ruddr-hours-table tfoot td {
+  border-top: 1px solid #4a5a90;
+  border-bottom: none;
+}
+
+.ruddr-hours-table .ruddr-hours-proj {
+  text-align: left;
+  max-width: 22rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ruddr-hours-table tfoot td,
+.ruddr-hours-total {
+  font-weight: 600;
+}
+
+.ruddr-hours-client {
+  color: #8890b0;
+}
+
+/* A project split into work types: the summed row, then one row per type. */
+.ruddr-hours-table .ruddr-hours-row--parent td {
+  border-bottom-color: #263055;
+}
+
+.ruddr-hours-table .ruddr-hours-row--worktype td {
+  color: #a0a8c8;
+  font-size: 0.75rem;
+  padding-top: 0.15rem;
+  padding-bottom: 0.15rem;
+  border-bottom-color: #263055;
+}
+
+/* A cell whose Ruddr entries carry notes: hover shows them. */
+.ruddr-hours-table td.ruddr-hours-cell--note {
+  text-decoration: underline dotted #6a7ab0;
+  text-underline-offset: 3px;
+  cursor: help;
+}
+
+/* "Undefined" work type broken down per note. */
+.ruddr-hours-table .ruddr-hours-row--note td {
+  color: #8f98ba;
+  font-size: 0.72rem;
+  padding-top: 0.1rem;
+  padding-bottom: 0.1rem;
+  border-bottom-color: #222a4a;
+}
+
+.ruddr-hours-note {
+  padding-left: 2.2rem;
+  font-style: italic;
+}
+
+.ruddr-hours-worktype {
+  padding-left: 1.1rem;
+}
+
+/* Close a split project with the normal row rule before the next project. */
+.ruddr-hours-table .ruddr-hours-row--worktype + tr:not(.ruddr-hours-row--worktype) td {
+  border-top: 1px solid #34406c;
+}
+
+.ruddr-hours-task {
+  display: block;
+  font-size: 0.75rem;
+  color: #8890b0;
+  padding-left: 0.1rem;
+}
+
+.ruddr-hours-subhead {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #a0a8c0;
+  margin-top: 0.2rem;
+}
+
+.ruddr-hours-unlinked {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.ruddr-hours-unlinked-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.875rem;
+}
+
+.ruddr-hours-hide {
+  color: #8890b0;
+}
+
+.ruddr-hours-hidden-toggle {
+  align-self: flex-start;
+  background: transparent;
+  border: none;
+  padding: 0.1rem 0;
+  font-size: 0.75rem;
+  color: #8890b0;
+  cursor: pointer;
+}
+
+.ruddr-hours-hidden-toggle:hover {
+  background: transparent;
+  color: #c8d0f0;
+}
+
+.ruddr-hours-unlinked-row--hidden {
+  opacity: 0.7;
+}
+
+.ruddr-hours-unlinked-name {
+  flex: 1;
+  min-width: 0;
+  color: #c8d0f0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
