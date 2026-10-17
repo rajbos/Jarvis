@@ -13,9 +13,10 @@ vi.mock('../../src/storage/database', async (importOriginal) => {
 });
 
 const sendCommand = vi.fn();
+let connectedClients = 1;
 vi.mock('../../src/plugins/browser-companion/server', () => ({
   sendCommand: (...args: unknown[]) => sendCommand(...args),
-  getBridgeStatus: () => ({ running: true, port: 0, connectedClients: 1 }),
+  getBridgeStatus: () => ({ running: true, port: 0, connectedClients }),
 }));
 
 import { createMemoryDatabase } from '../../src/storage/database';
@@ -66,6 +67,7 @@ describe('Ruddr hours discovery', () => {
   beforeEach(async () => {
     db = await createMemoryDatabase();
     sendCommand.mockReset();
+    connectedClients = 1;
     _resetHoursDiscoveryState();
     sleeps = [];
     newProjects = [];
@@ -162,6 +164,16 @@ describe('Ruddr hours discovery', () => {
 
     expect(result).toMatchObject({ skipped: true, reason: 'Ruddr login required' });
     expect(sendCommand.mock.calls.map(([c]) => c.type)).not.toContain('focus-window');
+  });
+
+  it('says why it skipped when no browser extension is connected', async () => {
+    connectedClients = 0;
+
+    const result = await runRuddrHoursDiscovery(db, deps);
+
+    expect(result).toMatchObject({ skipped: true, reason: expect.stringContaining('No browser extension connected') });
+    expect(sendCommand).not.toHaveBeenCalled();
+    expect(getHoursStatus(db).lastError).toContain('pair the Jarvis extension');
   });
 
   it('flags an extension that does not know the week command yet', async () => {

@@ -131,6 +131,9 @@ export function RuddrHoursSection(props: {
           <button class="ruddr-hours-link" onClick={() => void window.jarvis.shellOpenUrl('https://www.ruddr.io/app')}>Open Ruddr ↗</button>
         </div>
       )}
+      {status?.lastError && !status.loginRequired && !status.extensionOutdated && !status.running && (
+        <div class="ruddr-hours-warn">⚠️ Last run: {status.lastError}</div>
+      )}
       {status?.extensionOutdated && (
         <div class="ruddr-hours-warn">
           🧩 Reload the Jarvis browser extension (edge://extensions or chrome://extensions) — it does not know how to read week pages yet.

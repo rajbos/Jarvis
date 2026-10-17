@@ -135,9 +135,19 @@ async function fetchWeeks(
   weeks: string[],
 ): Promise<Record<string, unknown>> {
   const workspace = deps.getWorkspace();
-  if (!workspace) return { skipped: true, reason: 'Ruddr workspace not configured' };
   const bridge = getBridgeStatus();
-  if (!bridge.running || bridge.connectedClients === 0) return { skipped: true, reason: 'No browser extension connected' };
+  const blocked = !workspace
+    ? 'Ruddr workspace not configured — set it under Setup → Groups'
+    : !bridge.running || bridge.connectedClients === 0
+      ? 'No browser extension connected — pair the Jarvis extension (Browser tab → Pairing Token)'
+      : null;
+  if (blocked) {
+    // Surface it on the dashboard; a skipped run is otherwise invisible.
+    lastError = blocked;
+    lastRunAt = new Date().toISOString();
+    broadcast(db, deps);
+    return { skipped: true, reason: blocked };
+  }
 
   const sleep = deps.sleep ?? defaultSleep;
   const random = deps.random ?? Math.random;
