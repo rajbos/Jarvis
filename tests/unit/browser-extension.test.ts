@@ -496,12 +496,11 @@ describe('browser-extension background.js: executeInstructions', () => {
     expect(res).toEqual([{ step: 'click #go', ok: true, testMode: false }]);
   });
 
-  it('reports a missing element without throwing and keeps going', async () => {
+  it('reports a missing element without throwing and stops at the first failure', async () => {
     const el = makeElement();
     const res = await run('click #missing\nclick #go', false, { '#go': el });
-    expect(res[0]).toEqual({ step: 'click #missing', ok: false, error: 'Element not found: #missing' });
-    expect(res[1].ok).toBe(true);
-    expect(el.click).toHaveBeenCalled();
+    expect(res).toEqual([{ step: 'click #missing', ok: false, error: 'Element not found: #missing' }]);
+    expect(el.click).not.toHaveBeenCalled();
   });
 
   it('testMode validates selectors but performs no side effects', async () => {

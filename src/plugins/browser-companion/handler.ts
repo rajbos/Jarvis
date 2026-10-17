@@ -12,6 +12,18 @@ import {
   sendCommand,
 } from './server';
 
+function findFailedStep(data: unknown): { step: string; error?: string } | null {
+  const steps = (data as { steps?: unknown } | null)?.steps;
+  if (!Array.isArray(steps)) return null;
+  for (const s of steps) {
+    if (s && typeof s === 'object' && (s as { ok?: unknown }).ok === false) {
+      const { step, error } = s as { step?: unknown; error?: unknown };
+      return { step: String(step ?? ''), error: typeof error === 'string' ? error : undefined };
+    }
+  }
+  return null;
+}
+
 export function registerHandlers(
   db: SqlJsDatabase,
   getWindow: () => BrowserWindow | null,
@@ -230,6 +242,13 @@ export function registerHandlers(
 
         if (!evalResponse.ok) {
           throw new Error(`Instruction execution failed: ${evalResponse.error ?? 'unknown'}`);
+        }
+
+        // A successful executeScript call only means the script ran; individual
+        // steps (missing selector, unknown instruction) report failure in-band.
+        const failedStep = findFailedStep(evalResponse.data);
+        if (failedStep) {
+          throw new Error(`Step failed: ${failedStep.step} (${failedStep.error ?? 'unknown error'})`);
         }
 
         // Step 3: Extract data if a selector is configured

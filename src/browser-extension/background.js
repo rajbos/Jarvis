@@ -937,6 +937,7 @@ async function executeInstructions(instructions, testMode) {
   const lines = (instructions || '').split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
   const results = [];
 
+  // Stop at the first failed step: later lines would run against unexpected page state.
   for (const line of lines) {
     const lower = line.toLowerCase();
 
@@ -945,7 +946,7 @@ async function executeInstructions(instructions, testMode) {
       const el = document.querySelector(selector);
       if (!el) {
         results.push({ step: line, ok: false, error: `Element not found: ${selector}` });
-        continue;
+        break;
       }
       if (!testMode) el.click();
       results.push({ step: line, ok: true, testMode });
@@ -959,7 +960,7 @@ async function executeInstructions(instructions, testMode) {
       const el = document.querySelector(selector);
       if (!el) {
         results.push({ step: line, ok: false, error: `Element not found: ${selector}` });
-        continue;
+        break;
       }
       if (!testMode) {
         el.value = value;
@@ -976,7 +977,7 @@ async function executeInstructions(instructions, testMode) {
       const el = document.querySelector(selector);
       if (!el) {
         results.push({ step: line, ok: false, error: `Element not found: ${selector}` });
-        continue;
+        break;
       }
       if (!testMode) {
         el.value = value;
@@ -989,7 +990,7 @@ async function executeInstructions(instructions, testMode) {
       const el = document.querySelector(selector);
       if (!el) {
         results.push({ step: line, ok: false, error: `Element not found: ${selector}` });
-        continue;
+        break;
       }
       if (!testMode) {
         if (typeof el.submit === 'function') el.submit();
@@ -1007,6 +1008,7 @@ async function executeInstructions(instructions, testMode) {
 
     } else {
       results.push({ step: line, ok: false, error: 'Unknown instruction' });
+      break;
     }
   }
 
