@@ -660,7 +660,7 @@ function GroupCard(props: {
         )}
       </div>
 
-      {/* Find / Add button — pinned to the bottom of the card */}
+      {/* Find / Add button — aligned to the bottom of the card */}
       <button
         class="groups-dash-ruddr-btn"
         onClick={() => void handleFindRuddr()}
