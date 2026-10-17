@@ -1849,6 +1849,8 @@ export interface JarvisApi {
   // Multiple GitHub accounts
   listGitHubAccounts(): Promise<{ ok: true; accounts: GitHubAccountInfo[]; assignments: GitHubAccountAssignment[] } | IpcErrorResponse>;
   getGitHubAccountsUsage(): Promise<{ ok: true; usage: GitHubAccountUsage[] } | IpcErrorResponse>;
+  /** GET one allowlisted Copilot billing/quota endpoint as an account, with the chosen token source. */
+  probeCopilotEndpoint(accountId: string, source: 'gh-cli' | 'oauth' | 'pat', endpoint: string): Promise<{ ok: true; response: CopilotRawResponse } | IpcErrorResponse>;
   setGitHubAccountBudget(accountId: string, credits: number | null): Promise<{ ok: true; budgetCredits: number | null } | IpcErrorResponse>;
   addGitHubHostAccount(host: string, pat: string): Promise<{ ok: true; account: string; login: string } | IpcErrorResponse>;
   setPrimaryGitHubAccount(login: string): Promise<{ ok: true } | IpcErrorResponse>;

@@ -345,6 +345,8 @@ contextBridge.exposeInMainWorld('jarvis', {
   // Multiple GitHub accounts
   listGitHubAccounts: () => ipcRenderer.invoke('github-accounts:list'),
   getGitHubAccountsUsage: () => ipcRenderer.invoke('github-accounts:usage'),
+  probeCopilotEndpoint: (accountId: string, source: string, endpoint: string) =>
+    ipcRenderer.invoke('github-accounts:probe', accountId, source, endpoint),
   setGitHubAccountBudget: (login: string, credits: number | null) => ipcRenderer.invoke('github-accounts:set-budget', login, credits),
   addGitHubHostAccount: (host: string, pat: string) => ipcRenderer.invoke('github-accounts:add-host-account', host, pat),
   setPrimaryGitHubAccount: (login: string) => ipcRenderer.invoke('github-accounts:set-primary', login),

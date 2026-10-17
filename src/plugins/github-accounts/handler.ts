@@ -32,6 +32,7 @@ import {
   parseHostKey,
 } from '../../services/github-host';
 import { getGhCliToken } from '../../services/copilot-usage';
+import { isProbeSource, parseProbeRequest, probeEndpoint, summarizeProbeResponse } from '../../services/copilot-probe';
 import { getConfigValue, saveDatabase, setConfigValue } from '../../storage/database';
 import { fetchAccountCopilotUsage } from '../copilot-usage/account-usage';
 import { getCopilotBudget } from '../copilot-usage/handler';
@@ -116,6 +117,37 @@ export function registerHandlers(db: SqlJsDatabase): void {
   });
 
   safeHandle('github-accounts:usage', async () => ({ ok: true, usage: await checkAllAccountsUsage(db) }));
+
+  safeHandle('github-accounts:probe', async (_event, accountId: unknown, source: unknown, endpoint: unknown) => {
+    if (typeof accountId !== 'string' || !accountId) return { ok: false, error: 'Account is required' };
+    if (!isProbeSource(source)) return { ok: false, error: 'Unknown token source' };
+    const request = parseProbeRequest(endpoint);
+    if (!request.ok) return { ok: false, error: request.error };
+
+    const ghAccounts = await listGhCliAccounts();
+    const account = listAccounts(db, ghAccounts).find((a) => sameId(a.id, accountId) || sameId(a.login, accountId));
+    if (!account) return { ok: false, error: `Unknown account ${accountId}` };
+
+    let token: string | null;
+    if (source === 'gh-cli') {
+      const viaGh = ghAccounts.some((g) => g.host === account.host && sameId(g.login, account.login));
+      token = viaGh ? await getGhCliToken(account.login, account.host) : null;
+    } else if (source === 'oauth') {
+      token = account.host === DEFAULT_HOST ? loadGitHubAuth(db, account.login)?.accessToken ?? null : null;
+    } else {
+      token = account.host === DEFAULT_HOST ? loadGitHubPat(db, account.login) : loadHostAccountPat(db, account.id);
+    }
+    if (!token) {
+      logger.warn(`[copilot-probe] @${account.login} via ${source}: no token available`);
+      return { ok: false, error: `@${account.login} has no ${source === 'gh-cli' ? 'GitHub CLI' : source === 'oauth' ? 'Jarvis sign-in' : 'PAT'} token to use` };
+    }
+
+    const response = await probeEndpoint(token, request.endpoint, apiBaseForHost(account.host));
+    const line = `[copilot-probe] @${account.login} via ${source}: ${summarizeProbeResponse(response)}`;
+    if (response.status >= 200 && response.status < 300) logger.info(line);
+    else logger.warn(line);
+    return { ok: true, response };
+  });
 
   safeHandle('github-accounts:set-budget', async (_event, accountId: unknown, credits: unknown) => {
     if (typeof accountId !== 'string' || !accountId) return { ok: false, error: 'Account is required' };
