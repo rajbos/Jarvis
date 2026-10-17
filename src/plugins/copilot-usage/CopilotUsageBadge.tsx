@@ -4,6 +4,7 @@ import type { CopilotUsage, GitHubAccountUsage } from '../types';
 import { formatNumber, formatDurationUntil } from '../shared/utils';
 import { copilotBudgetLevel, copilotUsageLimit, type CopilotBudgetLevel } from './budget-level';
 import { CopilotIcon } from '../shared/BrandIcons';
+import { copyToClipboard } from '../clipboard';
 
 const LEVEL_COLOR: Record<CopilotBudgetLevel, string> = {
   unknown: '#888',
@@ -154,6 +155,7 @@ function UsageRows({ usage, showModels = true }: UsageRowsProps) {
 /** Full-window view of the raw GitHub API answers behind each account's usage. */
 function RawResponsesDialog({ accounts, onClose }: { accounts: Array<{ login: string; usage: CopilotUsage }>; onClose: () => void }) {
   const [copied, setCopied] = useState<string | null>(null);
+  const [copyFailed, setCopyFailed] = useState<string | null>(null);
 
   // Layout effect: the Esc listener must be live as soon as the dialog shows, not after the next paint.
   useLayoutEffect(() => {
@@ -163,11 +165,15 @@ function RawResponsesDialog({ accounts, onClose }: { accounts: Array<{ login: st
   }, [onClose]);
 
   const copy = async (key: string, text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
+    if (await copyToClipboard(text)) {
+      setCopyFailed(null);
       setCopied(key);
       setTimeout(() => setCopied((c) => (c === key ? null : c)), 1500);
-    } catch { /* clipboard unavailable */ }
+    } else {
+      setCopied(null);
+      setCopyFailed(key);
+      setTimeout(() => setCopyFailed((c) => (c === key ? null : c)), 2000);
+    }
   };
 
   return createPortal(
@@ -195,7 +201,7 @@ function RawResponsesDialog({ accounts, onClose }: { accounts: Array<{ login: st
                         {r.status || 'no response'}
                       </span>
                       <button type="button" class="bg-status-claude-action" onClick={() => copy(key, text)}>
-                        {copied === key ? 'Copied' : 'Copy'}
+                        {copied === key ? 'Copied' : copyFailed === key ? 'Copy failed' : 'Copy'}
                       </button>
                     </div>
                     <pre>{text}</pre>

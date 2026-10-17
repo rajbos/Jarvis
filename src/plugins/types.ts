@@ -1722,6 +1722,9 @@ export interface JarvisApi {
 
   shellOpenUrl(url: string): Promise<{ ok: boolean; error?: string }>;
 
+  /** Writes text to the system clipboard from the main process. Use copyToClipboard() in views. */
+  clipboardWriteText(text: string): Promise<{ ok: boolean; error?: string }>;
+
   // Browser Companion
 
   browserStatus(): Promise<BrowserCompanionStatus | IpcErrorResponse>;
