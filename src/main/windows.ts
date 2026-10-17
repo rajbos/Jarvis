@@ -3,6 +3,7 @@ import path from 'path';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import { saveDatabase } from '../storage/database';
 import { logger } from '../services/logger';
+import { UNRESPONSIVE_NOTIFY_THRESHOLD_MS, buildUnresponsiveDiagnostic, reportFreeze } from './freeze-diagnostics';
 
 // Same artwork as the installer and the tray, so the taskbar and title bar match.
 const APP_ICON_PATH = path.join(__dirname, '..', '..', 'assets', 'Jarvis1024.png');
@@ -108,11 +109,19 @@ export function attachCrashHandlers(win: BrowserWindow, name: string): void {
       win.reload();
     }
   });
+  let unresponsiveSince: number | null = null;
   win.on('unresponsive', () => {
+    unresponsiveSince = Date.now();
     logger.warn(`[Window:${name}] window became unresponsive`);
   });
   win.on('responsive', () => {
     logger.info(`[Window:${name}] window is responsive again`);
+    // Reported on recovery: a hung renderer can't show anything until then anyway.
+    const duration = unresponsiveSince === null ? 0 : Date.now() - unresponsiveSince;
+    unresponsiveSince = null;
+    if (duration >= UNRESPONSIVE_NOTIFY_THRESHOLD_MS) {
+      reportFreeze(buildUnresponsiveDiagnostic(name, duration));
+    }
   });
 }
 

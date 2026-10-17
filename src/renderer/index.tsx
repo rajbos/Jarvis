@@ -14,6 +14,7 @@ import { RepoPanelView } from '../plugins/repos/RepoPanelView';
 import { OrgNotifPanel } from '../plugins/notifications/OrgNotifPanel';
 import { NotifRepoPanel } from '../plugins/notifications/NotifRepoPanel';
 import { EmbeddedChatPanel } from '../plugins/chat/EmbeddedChatPanel';
+import { showDiagnosticInChat } from '../plugins/chat/diagnostics';
 import { SearchBar } from '../plugins/search/SearchBar';
 import { UpdateButton } from '../plugins/updates/UpdateButton';
 import { LocalReposStep } from '../plugins/local-repos/LocalReposStep';
@@ -425,6 +426,11 @@ function App() {
   };
 
   // IPC listeners
+  useEffect(() => {
+    // Main-process freeze reports arrive as diagnostics and show up as a chat card.
+    return window.jarvis.onShowDiagnostic(showDiagnosticInChat);
+  }, []);
+
   useEffect(() => {
     return window.jarvis.onOpenChat(handleOpenChat);
   }, []); // run once: registers the IPC listener on mount

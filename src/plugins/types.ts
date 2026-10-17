@@ -1433,6 +1433,8 @@ export interface GroupDetail {
 
 // type-checking on window.jarvis calls without re-declaring it everywhere.
 
+import type { DiagnosticReport as DiagnosticReportPayload } from '../types/ipc-payloads';
+
 export type { OnboardingStatus } from '../agent/onboarding';
 
 import type {
@@ -1881,6 +1883,7 @@ export interface JarvisApi {
   // Diagnostics (chat panel cards)
   getDiagnosticLogTail(filter?: string, maxLines?: number): Promise<string[] | IpcErrorResponse>;
   openAppLog(): Promise<{ ok: boolean; error?: string }>;
+  onShowDiagnostic(cb: (report: DiagnosticReportPayload) => void): () => void;
 
 }
 

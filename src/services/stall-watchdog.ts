@@ -11,6 +11,10 @@ export interface StallWatchdogOptions {
   thresholdMs?: number;
   /** Describes what is running right now (e.g. active background task ids). */
   context?: () => string;
+  /** Called for stalls of at least `notifyThresholdMs` (after they are logged). */
+  onStall?: (lagMs: number, context: string) => void;
+  /** Minimum stall length that triggers `onStall`; defaults to `thresholdMs`. */
+  notifyThresholdMs?: number;
 }
 
 let timer: ReturnType<typeof setInterval> | null = null;
@@ -32,6 +36,13 @@ export function startStallWatchdog(options: StallWatchdogOptions = {}): void {
       /* context is best effort */
     }
     logger.warn(`[Stall] main thread blocked for ~${lag}ms (ended ${new Date(now).toISOString()})${ctx ? `; ${ctx}` : ''}`);
+    if (options.onStall && lag >= (options.notifyThresholdMs ?? thresholdMs)) {
+      try {
+        options.onStall(lag, ctx);
+      } catch {
+        /* notification is best effort */
+      }
+    }
   }, intervalMs);
   timer.unref?.();
 }

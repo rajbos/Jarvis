@@ -71,7 +71,7 @@ export type UpdateState =
  */
 export interface DiagnosticReport {
   id: string;
-  /** Feature that produced it, e.g. 'updates'. */
+  /** Feature that produced it, e.g. 'updates', 'stall' or 'window'. */
   source: string;
   title: string;
   /** Plain-language explanation of what happened. */
@@ -80,7 +80,7 @@ export interface DiagnosticReport {
   /** Substring used to pick the relevant lines out of the app log, e.g. '[Updates]'. */
   logFilter?: string;
   links?: Array<{ label: string; url: string }>;
-  /** Lets the card offer a retry for the action that failed. */
+  /** Lets the card offer a retry for the action that failed; unset when there is nothing to retry. */
   retry?: 'update-check';
   occurredAt: string;
 }
