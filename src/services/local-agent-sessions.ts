@@ -11,7 +11,8 @@
 //     ~/.copilot/session-state/<id>/
 //       inuse.<pid>.lock   present while a process holds the session open
 //       workspace.yaml     id, cwd, name, client_name, mc_task_id, timestamps
-//       events.jsonl       append-only event log (tail read for activity)
+//       events.jsonl       append-only event log (tail read for activity; read
+//                          incrementally for the PR link — these reach 100+ MB)
 //   Claude Code:
 //     ~/.claude/sessions/<pid>.json          { pid, sessionId, cwd, startedAt, updatedAt }
 //     ~/.claude/projects/<enc-cwd>/<id>.jsonl transcript (tail read for activity)
@@ -21,6 +22,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import type { ActiveAgentSession, AgentActivity } from '../plugins/types';
+import { logger } from './logger';
 
 export interface LocalSessionDiscoveryOptions {
   homeDir?: string;
@@ -129,6 +131,23 @@ function mtimeOf(filePath: string): number | null {
   } catch {
     return null;
   }
+}
+
+async function mtimeOfAsync(filePath: string): Promise<number | null> {
+  try {
+    return (await fs.promises.stat(filePath)).mtimeMs;
+  } catch {
+    return null;
+  }
+}
+
+/** Run `fn` over `items`, at most `limit` at a time. */
+async function forEachLimit<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < items.length) await fn(items[next++]);
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
 }
 
 /** Read the last `maxBytes` of a file without loading it all (events logs can be tens of MB). */
@@ -312,51 +331,80 @@ export async function discoverCopilotLocalSessions(options: LocalSessionDiscover
   const sessions: ActiveAgentSession[] = [];
   const mirroredTasks = new Map<string, string>();
 
+  const t0 = Date.now();
   let entries: fs.Dirent[];
   try {
-    entries = fs.readdirSync(root, { withFileTypes: true });
+    entries = await fs.promises.readdir(root, { withFileTypes: true });
   } catch {
     return { sessions, mirroredTasks };
   }
 
+  // Thousands of session dirs accumulate here. Every lookup is async (off the
+  // main thread), and a dir already known to be older than the mirror window is
+  // re-checked only every few minutes — resuming it touches the dir again.
+  const seen = new Set<string>();
+  let statted = 0;
   const held: Array<{ dirName: string; dir: string; files: string[]; ws: Record<string, string>; locks: LockCandidate[] }> = [];
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
+  await forEachLimit(entries.filter((e) => e.isDirectory()), FS_CONCURRENCY, async (entry) => {
     const dir = path.join(root, entry.name);
+    seen.add(dir);
+    const cached = sessionDirCache.get(dir);
+    if (cached && cached.mtimeMs < mirrorCutoff && now - cached.checkedAt < STALE_DIR_RECHECK_MS) return;
     let files: string[];
     let mtimeMs: number;
     try {
-      mtimeMs = fs.statSync(dir).mtimeMs;
-      if (mtimeMs < mirrorCutoff) continue;
-      files = fs.readdirSync(dir);
+      statted++;
+      mtimeMs = (await fs.promises.stat(dir)).mtimeMs;
+      if (mtimeMs < mirrorCutoff) {
+        sessionDirCache.set(dir, { mtimeMs, checkedAt: now, ws: null });
+        return;
+      }
+      files = await fs.promises.readdir(dir);
     } catch {
-      continue;
+      sessionDirCache.delete(dir);
+      return;
     }
 
-    const yamlText = files.includes('workspace.yaml') ? readFileText(path.join(dir, 'workspace.yaml')) : null;
-    const ws = yamlText ? parseWorkspaceYaml(yamlText) : {};
-    if (ws.mc_task_id) mirroredTasks.set(ws.mc_task_id, clientLabel(ws.client_name));
-    if (mtimeMs < cutoff) continue;
+    const ws = files.includes('workspace.yaml') ? await readWorkspace(path.join(dir, 'workspace.yaml'), cached?.ws ?? null) : null;
+    sessionDirCache.set(dir, { mtimeMs, checkedAt: now, ws });
+    const fields = ws?.fields ?? {};
+    if (fields.mc_task_id) mirroredTasks.set(fields.mc_task_id, clientLabel(fields.client_name));
+    if (mtimeMs < cutoff) return;
 
-    const locks = files
-      .map((f) => ({ file: f, pid: f.match(/^inuse\.(\d+)\.lock$/)?.[1] }))
-      .filter((l): l is { file: string; pid: string } => l.pid !== undefined)
-      .map((l) => ({ pid: Number(l.pid), writtenAtMs: mtimeOf(path.join(dir, l.file)) }))
-      .filter((l) => alive(l.pid));
-    if (locks.length > 0) held.push({ dirName: entry.name, dir, files, ws, locks });
-  }
+    const locks: LockCandidate[] = [];
+    for (const file of files) {
+      const pid = Number(file.match(/^inuse\.(\d+)\.lock$/)?.[1]);
+      if (!pid || !alive(pid)) continue;
+      locks.push({ pid, writtenAtMs: await mtimeOfAsync(path.join(dir, file)) });
+    }
+    if (locks.length > 0) held.push({ dirName: entry.name, dir, files, ws: fields, locks });
+  });
+  for (const dir of sessionDirCache.keys()) if (!seen.has(dir)) sessionDirCache.delete(dir);
+  held.sort((a, b) => a.dirName.localeCompare(b.dirName));
+  const tDirs = Date.now();
 
   const ownsLock = await lockOwnerVerifier(held.flatMap((h) => h.locks), options);
+  const tLocks = Date.now();
 
+  let tailMs = 0;
+  let prMs = 0;
+  const liveFiles = new Set<string>();
   for (const { dirName, dir, files, ws, locks } of held) {
     const pid = locks.find(ownsLock)?.pid;
     if (pid === undefined) continue;
 
-    const events = files.includes('events.jsonl')
-      ? readTailEntries(path.join(dir, 'events.jsonl'), (evs) => deriveCopilotActivity(evs, now) !== 'unknown')
+    const eventsPath = files.includes('events.jsonl') ? path.join(dir, 'events.jsonl') : null;
+    let t = Date.now();
+    const events = eventsPath
+      ? readTailEntries(eventsPath, (evs) => deriveCopilotActivity(evs, now) !== 'unknown')
       : [];
+    tailMs += Date.now() - t;
+    t = Date.now();
+    if (eventsPath) liveFiles.add(eventsPath);
+    const linkedPr = eventsPath ? await copilotPrScanner.find(eventsPath) : null;
+    prMs += Date.now() - t;
     const sessionId = ws.id || dirName;
-    const eventsMtime = files.includes('events.jsonl') ? mtimeOf(path.join(dir, 'events.jsonl')) : null;
+    const eventsMtime = eventsPath ? await mtimeOfAsync(eventsPath) : null;
     const wsUpdated = toIso(ws.updated_at);
     const updatedAt = eventsMtime !== null && eventsMtime > (Date.parse(wsUpdated ?? '') || 0)
       ? new Date(eventsMtime).toISOString()
@@ -377,64 +425,189 @@ export async function discoverCopilotLocalSessions(options: LocalSessionDiscover
       updatedAt,
       cloudTaskId: ws.mc_task_id || null,
       pid,
-      linkedPr: files.includes('events.jsonl') ? findCopilotPrLink(path.join(dir, 'events.jsonl')) : null,
-      sessionFile: files.includes('events.jsonl') ? path.join(dir, 'events.jsonl') : null,
+      linkedPr,
+      sessionFile: eventsPath,
     });
   }
+  copilotPrScanner.retain(liveFiles);
 
+  logger.debug(
+    `[ActiveSessions] Copilot discovery: ${entries.length} dir(s), ${statted} stat'd, ${held.length} locked, ${sessions.length} live — `
+    + `dirs ${tDirs - t0}ms, lock check ${tLocks - tDirs}ms, event tails ${tailMs}ms, PR scan ${prMs}ms, total ${Date.now() - t0}ms`,
+  );
   return { sessions, mirroredTasks };
 }
 
-const eventsPrCache = new Map<string, { mtimeMs: number; size: number; pr: ActiveAgentSession['linkedPr'] }>();
+/** Parallel fs calls while walking the session-state dirs. */
+const FS_CONCURRENCY = 32;
+/** How long a session dir older than the mirror window is trusted to stay old before it is stat'd again. */
+const STALE_DIR_RECHECK_MS = 10 * 60 * 1000;
+
+interface CachedWorkspace {
+  mtimeMs: number;
+  fields: Record<string, string>;
+}
+
+/** Last stat of each session dir, so old dirs are not stat'd every sweep. */
+const sessionDirCache = new Map<string, { mtimeMs: number; checkedAt: number; ws: CachedWorkspace | null }>();
+
+async function readWorkspace(yamlPath: string, cached: CachedWorkspace | null): Promise<CachedWorkspace | null> {
+  try {
+    const { mtimeMs } = await fs.promises.stat(yamlPath);
+    if (cached && cached.mtimeMs === mtimeMs) return cached;
+    return { mtimeMs, fields: parseWorkspaceYaml(await fs.promises.readFile(yamlPath, 'utf-8')) };
+  } catch {
+    return null;
+  }
+}
+
+type LinkedPr = ActiveAgentSession['linkedPr'];
+
+/** Folds JSONL lines, one at a time, into the latest PR link they report. */
+interface PrLinkReader {
+  readLine(line: string): void;
+  readonly pr: LinkedPr;
+}
 
 /**
  * Latest PR a Copilot session created: the output of a successful `gh pr create`
  * shell call is the new PR's URL on its own line. Other PR URLs in the log
- * (reviews, comments on someone else's PR) are deliberately ignored. Exported for tests.
+ * (reviews, comments on someone else's PR) are deliberately ignored.
  */
-export function findCopilotPrLinkInText(text: string): ActiveAgentSession['linkedPr'] {
+function copilotPrLinkReader(): PrLinkReader {
   const createCalls = new Set<string>();
-  let found: ActiveAgentSession['linkedPr'] = null;
-  for (const line of text.split('\n')) {
-    const isStart = line.includes('gh pr create');
-    const isComplete = !isStart && line.includes('/pull/') && createCalls.size > 0;
-    if (!isStart && !isComplete) continue;
-    let ev: Record<string, unknown>;
-    try {
-      ev = JSON.parse(line) as Record<string, unknown>;
-    } catch {
-      continue;
-    }
-    const data = (ev.data ?? {}) as Record<string, unknown>;
-    const id = data.toolCallId;
-    if (typeof id !== 'string') continue;
-    if (ev.type === 'tool.execution_start') {
-      const command = (data.arguments as Record<string, unknown> | undefined)?.command;
-      if (typeof command === 'string' && /\bgh\s+pr\s+create\b/.test(command)) createCalls.add(id);
-    } else if (ev.type === 'tool.execution_complete' && createCalls.has(id) && data.success !== false) {
-      const content = (data.result as Record<string, unknown> | undefined)?.content;
-      const m = typeof content === 'string'
-        ? content.match(/^https:\/\/github\.com\/([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\/pull\/(\d+)\s*$/m)
-        : null;
-      if (m) found = { repoFullName: m[1], number: Number(m[2]) };
-    }
-  }
-  return found;
+  let found: LinkedPr = null;
+  return {
+    get pr() { return found; },
+    readLine(line) {
+      const isStart = line.includes('gh pr create');
+      const isComplete = !isStart && line.includes('/pull/') && createCalls.size > 0;
+      if (!isStart && !isComplete) return;
+      let ev: Record<string, unknown>;
+      try {
+        ev = JSON.parse(line) as Record<string, unknown>;
+      } catch {
+        return;
+      }
+      const data = (ev.data ?? {}) as Record<string, unknown>;
+      const id = data.toolCallId;
+      if (typeof id !== 'string') return;
+      if (ev.type === 'tool.execution_start') {
+        const command = (data.arguments as Record<string, unknown> | undefined)?.command;
+        if (typeof command === 'string' && /\bgh\s+pr\s+create\b/.test(command)) createCalls.add(id);
+      } else if (ev.type === 'tool.execution_complete' && createCalls.has(id) && data.success !== false) {
+        createCalls.delete(id);
+        const content = (data.result as Record<string, unknown> | undefined)?.content;
+        const m = typeof content === 'string'
+          ? content.match(/^https:\/\/github\.com\/([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\/pull\/(\d+)\s*$/m)
+          : null;
+        if (m) found = { repoFullName: m[1], number: Number(m[2]) };
+      }
+    },
+  };
 }
 
-function findCopilotPrLink(eventsPath: string): ActiveAgentSession['linkedPr'] {
-  let stat: fs.Stats;
-  try {
-    stat = fs.statSync(eventsPath);
-  } catch {
-    return null;
+/** Latest PR a Claude Code session reported via a `pr-link` transcript entry. */
+function claudePrLinkReader(): PrLinkReader {
+  let found: LinkedPr = null;
+  return {
+    get pr() { return found; },
+    readLine(line) {
+      if (!line.includes('"pr-link"')) return;
+      try {
+        const e = JSON.parse(line) as Record<string, unknown>;
+        if (e.type === 'pr-link' && typeof e.prNumber === 'number' && typeof e.prRepository === 'string') {
+          found = { repoFullName: e.prRepository, number: e.prNumber };
+        }
+      } catch {
+        // partial line — skip
+      }
+    },
+  };
+}
+
+function readAllLines(reader: PrLinkReader, text: string): LinkedPr {
+  for (const line of text.split('\n')) reader.readLine(line);
+  return reader.pr;
+}
+
+/** Exported for tests. */
+export function findCopilotPrLinkInText(text: string): LinkedPr {
+  return readAllLines(copilotPrLinkReader(), text);
+}
+
+/** Exported for tests. */
+export function findPrLinkInText(text: string): LinkedPr {
+  return readAllLines(claudePrLinkReader(), text);
+}
+
+const SCAN_CHUNK_BYTES = 1024 * 1024;
+
+/**
+ * Finds the latest PR link in append-only JSONL logs that can grow to 100+ MB
+ * while a session runs. Each file is read once, in chunks with async reads, and
+ * on later calls only the bytes appended since — so a sweep never re-reads or
+ * re-parses a whole log on the main thread. Exported for tests.
+ */
+export class IncrementalPrLinkScanner {
+  private readonly files = new Map<string, { offset: number; size: number; mtimeMs: number; reader: PrLinkReader }>();
+
+  constructor(private readonly createReader: () => PrLinkReader) {}
+
+  async find(filePath: string): Promise<LinkedPr> {
+    let handle: fs.promises.FileHandle | null = null;
+    try {
+      handle = await fs.promises.open(filePath, 'r');
+      const { size, mtimeMs } = await handle.stat();
+      let state = this.files.get(filePath);
+      if (state && state.size === size && state.mtimeMs === mtimeMs) return state.reader.pr;
+      // Smaller than what was read already: the file was replaced — start over.
+      if (!state || size < state.offset) state = { offset: 0, size: 0, mtimeMs: 0, reader: this.createReader() };
+      this.files.set(filePath, state);
+
+      let carry = Buffer.alloc(0);
+      let position = state.offset;
+      while (position < size) {
+        const chunk = Buffer.alloc(Math.min(SCAN_CHUNK_BYTES, size - position));
+        const { bytesRead } = await handle.read(chunk, 0, chunk.length, position);
+        if (bytesRead === 0) break;
+        position += bytesRead;
+        const buf = carry.length > 0 ? Buffer.concat([carry, chunk.subarray(0, bytesRead)]) : chunk.subarray(0, bytesRead);
+        const lastNewline = buf.lastIndexOf(0x0a);
+        if (lastNewline === -1) {
+          carry = buf;
+          continue;
+        }
+        // Only whole lines are consumed; a line still being written is re-read next time.
+        for (const line of buf.subarray(0, lastNewline).toString('utf-8').split('\n')) state.reader.readLine(line);
+        state.offset += lastNewline + 1;
+        carry = buf.subarray(lastNewline + 1);
+      }
+      state.size = size;
+      state.mtimeMs = mtimeMs;
+      return state.reader.pr;
+    } catch {
+      this.files.delete(filePath);
+      return null;
+    } finally {
+      await handle?.close().catch(() => undefined);
+    }
   }
-  const cached = eventsPrCache.get(eventsPath);
-  if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) return cached.pr;
-  const text = readFileText(eventsPath);
-  const pr = text ? findCopilotPrLinkInText(text) : null;
-  eventsPrCache.set(eventsPath, { mtimeMs: stat.mtimeMs, size: stat.size, pr });
-  return pr;
+
+  /** Forget files that are no longer of interest (their session ended). */
+  retain(filePaths: ReadonlySet<string>): void {
+    for (const filePath of this.files.keys()) if (!filePaths.has(filePath)) this.files.delete(filePath);
+  }
+}
+
+const copilotPrScanner = new IncrementalPrLinkScanner(copilotPrLinkReader);
+const claudePrScanner = new IncrementalPrLinkScanner(claudePrLinkReader);
+
+/** Exposed for tests. */
+export function resetLocalSessionCaches(): void {
+  sessionDirCache.clear();
+  copilotPrScanner.retain(new Set());
+  claudePrScanner.retain(new Set());
 }
 
 function readFileText(filePath: string): string | null {
@@ -503,37 +676,6 @@ export function extractClaudeTitle(entries: Array<Record<string, unknown>>): str
   return null;
 }
 
-/**
- * Latest PR the session reported via a `pr-link` transcript entry. These can
- * sit anywhere in the file, so unlike the activity tail this scans line by line
- * (cheap string pre-filter before parsing). Exported for tests.
- */
-export function findClaudePrLink(transcript: string): ActiveAgentSession['linkedPr'] {
-  let text: string;
-  try {
-    text = fs.readFileSync(transcript, 'utf-8');
-  } catch {
-    return null;
-  }
-  return findPrLinkInText(text);
-}
-
-export function findPrLinkInText(text: string): ActiveAgentSession['linkedPr'] {
-  let found: ActiveAgentSession['linkedPr'] = null;
-  for (const line of text.split('\n')) {
-    if (!line.includes('"pr-link"')) continue;
-    try {
-      const e = JSON.parse(line) as Record<string, unknown>;
-      if (e.type === 'pr-link' && typeof e.prNumber === 'number' && typeof e.prRepository === 'string') {
-        found = { repoFullName: e.prRepository, number: e.prNumber };
-      }
-    } catch {
-      // partial line — skip
-    }
-  }
-  return found;
-}
-
 /** Exported for tests. */
 export function deriveClaudeActivity(
   entries: Array<Record<string, unknown>>,
@@ -555,6 +697,7 @@ export async function discoverClaudeLocalSessions(options: LocalSessionDiscovery
   const alive = options.isPidAlive ?? isPidAlive;
   const now = options.now?.() ?? Date.now();
   const sessionsDir = path.join(home, '.claude', 'sessions');
+  const t0 = Date.now();
 
   let files: string[];
   try {
@@ -579,8 +722,13 @@ export async function discoverClaudeLocalSessions(options: LocalSessionDiscovery
     candidates.push({ meta, lock: { pid, writtenAtMs: mtimeOf(filePath) } });
   }
 
+  const tFiles = Date.now();
   const ownsLock = await lockOwnerVerifier(candidates.map((c) => c.lock), options);
+  const tLocks = Date.now();
 
+  let tailMs = 0;
+  let prMs = 0;
+  const liveTranscripts = new Set<string>();
   const sessions: ActiveAgentSession[] = [];
   for (const { meta, lock } of candidates) {
     if (!ownsLock(lock)) continue;
@@ -600,14 +748,21 @@ export async function discoverClaudeLocalSessions(options: LocalSessionDiscovery
         // A title entry isn't necessarily near the tail — widen the read until
         // one turns up, not just until there's enough to tell activity, or
         // titles fall back to the first prompt.
+        let t = Date.now();
         const entries = readTailEntries(
           transcript,
           (es) => es.some((e) => e.type === 'assistant' || e.type === 'user') && es.some(isClaudeTitleEntry),
         );
+        tailMs += Date.now() - t;
         activity = deriveClaudeActivity(entries, mtime, now);
         title = extractClaudeTitle(entries);
         lastActiveMs = mtime;
-        linkedPr = findClaudePrLink(transcript);
+        // pr-link entries can sit anywhere in the transcript; the scanner reads
+        // each transcript once and then only what was appended.
+        t = Date.now();
+        linkedPr = await claudePrScanner.find(transcript);
+        prMs += Date.now() - t;
+        liveTranscripts.add(transcript);
         sessionFile = transcript;
       }
     }
@@ -636,5 +791,11 @@ export async function discoverClaudeLocalSessions(options: LocalSessionDiscovery
       sessionFile,
     });
   }
+  claudePrScanner.retain(liveTranscripts);
+
+  logger.debug(
+    `[ActiveSessions] Claude discovery: ${files.length} pid file(s), ${candidates.length} alive, ${sessions.length} live — `
+    + `pid files ${tFiles - t0}ms, lock check ${tLocks - tFiles}ms, transcript tails ${tailMs}ms, PR scan ${prMs}ms, total ${Date.now() - t0}ms`,
+  );
   return sessions;
 }

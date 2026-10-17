@@ -11,9 +11,11 @@ import {
   extractClaudeTitle,
   findCopilotPrLinkInText,
   findPrLinkInText,
+  IncrementalPrLinkScanner,
   parseWorkspaceYaml,
   readTail,
   readTailEntries,
+  resetLocalSessionCaches,
 } from '../../src/services/local-agent-sessions';
 
 const NOW = Date.parse('2026-03-01T12:00:00Z');
@@ -147,6 +149,7 @@ describe('filesystem discovery', () => {
   });
 
   afterEach(() => {
+    resetLocalSessionCaches();
     fs.rmSync(home, { recursive: true, force: true });
   });
 
@@ -253,6 +256,38 @@ describe('filesystem discovery', () => {
     });
     const result = await discoverCopilotLocalSessions({ homeDir: home, isPidAlive: () => true, getProcessStartTimes: startedLongAgo, now: () => NOW });
     expect(result.sessions[0]?.activity).toBe('waiting_for_user');
+  });
+
+  it('re-checks a session dir past the mirror window only after the recheck interval', async () => {
+    const dir = writeCopilotSession('resumed', { pid: 111, yaml: 'id: resumed\n' });
+    const ancient = new Date(NOW - 60 * 24 * 60 * 60 * 1000);
+    fs.utimesSync(dir, ancient, ancient);
+    const discover = (at: number) => discoverCopilotLocalSessions({ homeDir: home, isPidAlive: () => true, getProcessStartTimes: startedLongAgo, now: () => at });
+    expect((await discover(NOW)).sessions).toHaveLength(0);
+
+    // Resuming the session touches its dir; the cached "old" verdict holds for a while.
+    fs.utimesSync(dir, new Date(NOW), new Date(NOW));
+    expect((await discover(NOW + 60_000)).sessions).toHaveLength(0);
+    expect((await discover(NOW + 11 * 60_000)).sessions.map((s) => s.sessionId)).toEqual(['resumed']);
+  });
+
+  it('picks up a new session dir on the next sweep and links the PR it created', async () => {
+    const discover = () => discoverCopilotLocalSessions({ homeDir: home, isPidAlive: () => true, getProcessStartTimes: startedLongAgo, now: () => NOW });
+    writeCopilotSession('first', { pid: 111, yaml: 'id: first\n' });
+    expect((await discover()).sessions).toHaveLength(1);
+    writeCopilotSession('second', {
+      pid: 222,
+      yaml: 'id: second\n',
+      events: [
+        { type: 'tool.execution_start', data: { toolCallId: 'c', arguments: { command: 'gh pr create --fill' } } },
+        { type: 'tool.execution_complete', data: { toolCallId: 'c', success: true, result: { content: 'https://github.com/o/r/pull/7' } } },
+      ],
+    });
+    const result = await discover();
+    expect(result.sessions.map((s) => [s.sessionId, s.linkedPr])).toEqual([
+      ['first', null],
+      ['second', { repoFullName: 'o/r', number: 7 }],
+    ]);
   });
 
   it('returns nothing when the Copilot session-state folder does not exist', async () => {
@@ -380,5 +415,71 @@ describe('findCopilotPrLinkInText', () => {
   it('ignores failed creates and PR urls from other commands', () => {
     const text = [start('b', 'gh pr create'), done('b', 'https://github.com/o/r/pull/9', false), start('c', 'gh pr view 3'), done('c', 'https://github.com/o/r/pull/3')].join('\n');
     expect(findCopilotPrLinkInText(text)).toBeNull();
+  });
+});
+
+describe('IncrementalPrLinkScanner', () => {
+  let dir: string;
+  let file: string;
+  const start = (id: string, command: string) => JSON.stringify({ type: 'tool.execution_start', data: { toolCallId: id, arguments: { command } } });
+  const done = (id: string, content: string) => JSON.stringify({ type: 'tool.execution_complete', data: { toolCallId: id, success: true, result: { content } } });
+  const prLink = (n: number) => JSON.stringify({ type: 'pr-link', prNumber: n, prRepository: 'o/r' });
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jarvis-pr-scan-'));
+    file = path.join(dir, 'log.jsonl');
+  });
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('keeps a Copilot gh pr create call open until its result is appended', async () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'jarvis-pr-scan-home-'));
+    try {
+      const sessionDir = path.join(home, '.copilot', 'session-state', 's');
+      fs.mkdirSync(sessionDir, { recursive: true });
+      fs.writeFileSync(path.join(sessionDir, 'inuse.1.lock'), '');
+      const events = path.join(sessionDir, 'events.jsonl');
+      fs.writeFileSync(events, `${start('a', 'gh pr create --fill')}\n`);
+      const discover = () => discoverCopilotLocalSessions({ homeDir: home, isPidAlive: () => true, getProcessStartTimes: startedLongAgo, now: () => NOW });
+      expect((await discover()).sessions[0]?.linkedPr).toBeNull();
+      fs.appendFileSync(events, `${done('a', 'https://github.com/o/r/pull/21')}\n`);
+      expect((await discover()).sessions[0]?.linkedPr).toEqual({ repoFullName: 'o/r', number: 21 });
+    } finally {
+      resetLocalSessionCaches();
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it('waits for a line that is still being written, and handles lines larger than a read chunk', async () => {
+    const lines: string[] = [];
+    const scanner = new IncrementalPrLinkScanner(() => ({ pr: null, readLine: (line) => { if (line) lines.push(line); } }));
+    const big = JSON.stringify({ type: 'big', pad: 'x'.repeat(3 * 1024 * 1024) });
+    fs.writeFileSync(file, `${big}\n${prLink(1).slice(0, 10)}`);
+    await scanner.find(file);
+    expect(lines).toEqual([big]);
+    fs.appendFileSync(file, `${prLink(1).slice(10)}\n`);
+    await scanner.find(file);
+    expect(lines).toEqual([big, prLink(1)]);
+  });
+
+  it('starts over when the file was replaced by a shorter one, and forgets files not retained', async () => {
+    const lines: string[] = [];
+    const scanner = new IncrementalPrLinkScanner(() => ({ pr: null, readLine: (line) => { if (line) lines.push(line); } }));
+    fs.writeFileSync(file, `${prLink(1)}\n${prLink(2)}\n`);
+    await scanner.find(file);
+    fs.writeFileSync(file, `${prLink(3)}\n`);
+    await scanner.find(file);
+    expect(lines).toEqual([prLink(1), prLink(2), prLink(3)]);
+
+    scanner.retain(new Set());
+    await scanner.find(file);
+    expect(lines).toEqual([prLink(1), prLink(2), prLink(3), prLink(3)]);
+  });
+
+  it('returns null for a missing file', async () => {
+    const scanner = new IncrementalPrLinkScanner(() => ({ pr: null, readLine: () => undefined }));
+    expect(await scanner.find(path.join(dir, 'nope.jsonl'))).toBeNull();
   });
 });

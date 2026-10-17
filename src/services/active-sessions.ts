@@ -29,6 +29,7 @@ import {
   type CloudAgentTask,
 } from './copilot-agent-tasks';
 import { evaluatePrReadiness, fetchPullRequests, prLookupKey, type PrLookup, type PrLookupResult } from './pr-readiness';
+import { logger } from './logger';
 
 /** A token for a repo and the account it belongs to. */
 export interface RepoAccess {
@@ -245,6 +246,14 @@ export async function collectActiveSessions(options: CollectActiveSessionsOption
     copilotCloud: { ok: true, count: 0 },
   };
   const fail = (err: unknown): ActiveSessionSourceStatus => ({ ok: false, count: 0, error: err instanceof Error ? err.message : String(err) });
+  // Per-phase wall-clock times, logged at the end to locate slow sweeps.
+  const phases: string[] = [];
+  let phaseStart = Date.now();
+  const phase = (name: string): void => {
+    const at = Date.now();
+    phases.push(`${name} ${at - phaseStart}ms`);
+    phaseStart = at;
+  };
 
   // ── Local sessions ──────────────────────────────────────────────────────────
   let mirroredTasks = new Map<string, string>();
@@ -266,7 +275,9 @@ export async function collectActiveSessions(options: CollectActiveSessionsOption
   } else {
     sources.claudeLocal = fail(claudeResult.reason);
   }
+  phase('local discovery');
   await attachLocalSessionUsage(localSessions, options.analyzeSessionFile);
+  phase('local usage');
 
   const links: PendingLink[] = [];
   for (const session of localSessions) {
@@ -291,6 +302,7 @@ export async function collectActiveSessions(options: CollectActiveSessionsOption
     }
     links.push({ session, lookups, noLookupLabel: noLookupLabel(git) });
   }
+  phase('git context');
 
   // ── Cloud sessions ──────────────────────────────────────────────────────────
   if (!token) {
@@ -350,6 +362,8 @@ export async function collectActiveSessions(options: CollectActiveSessionsOption
     }
   }
 
+  phase('cloud tasks');
+
   // ── PR linking + readiness ──────────────────────────────────────────────────
   const cloudAccess: RepoAccess | null = token ? { token, account: options.accessAccount ?? '' } : null;
   const { results, accountOf } = await fetchWithAccounts(
@@ -357,6 +371,7 @@ export async function collectActiveSessions(options: CollectActiveSessionsOption
     cloudAccess,
     options.accessForRepo ?? (async () => cloudAccess),
   );
+  phase('PR lookups');
   const checkedAt = new Date(now).toISOString();
 
   const entries: ActiveSessionEntry[] = [];
@@ -419,6 +434,7 @@ export async function collectActiveSessions(options: CollectActiveSessionsOption
   }
 
   sortEntries(entries);
+  logger.debug(`[ActiveSessions] Collected ${localSessions.length} local + ${links.length - localSessions.length} cloud session(s): ${phases.join(', ')}`);
   return {
     entries,
     sources,

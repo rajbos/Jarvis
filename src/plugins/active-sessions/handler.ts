@@ -99,7 +99,9 @@ export async function refreshActiveSessions(
     // Cloud agent tasks belong to the primary account; each local session's PR is
     // looked up with the account that serves its repo (assignment, git config,
     // discovery), so org repos are checked with the org account.
+    const t0 = Date.now();
     const primary = await accessForPrimary(db);
+    const tPrimary = Date.now();
     const snapshot = await collectActiveSessions({
       accessToken: primary?.token ?? null,
       accessAccount: primary?.id ?? null,
@@ -116,6 +118,7 @@ export async function refreshActiveSessions(
       },
     });
 
+    const tCollect = Date.now();
     const openPrs = new Map<string, PrReadiness>();
     const holdNotify = new Set<string>();
     for (const entry of snapshot.entries) {
@@ -139,7 +142,10 @@ export async function refreshActiveSessions(
     latestSnapshot = snapshot;
     const win = getWindow();
     if (win && !win.isDestroyed()) win.webContents.send('active-sessions:updated', snapshot);
-    logger.debug(`[ActiveSessions] ${snapshot.entries.length} session(s), ${snapshot.readyCount} ready for review`);
+    logger.debug(
+      `[ActiveSessions] ${snapshot.entries.length} session(s), ${snapshot.readyCount} ready for review — `
+      + `primary account ${tPrimary - t0}ms, collect ${tCollect - tPrimary}ms, readiness ${Date.now() - tCollect}ms`,
+    );
     return snapshot;
   })();
   try {
