@@ -483,7 +483,7 @@ export function createFixtures(now: number) {
 
   const browserSkills: BrowserSkill[] = [{
     id: 1, name: 'Fixture weather check', description: 'Reads a forecast from a fixture page',
-    start_url: 'https://example.invalid/weather', instructions: 'Read the forecast', extract_selector: '.forecast',
+    start_url: 'https://example.invalid/weather', instructions: 'Read the forecast', extract_selector: '.forecast', interval_minutes: 60,
     created_at: iso(now, -DAY), updated_at: iso(now, -DAY),
   }];
   const browserRuns: BrowserSkillRun[] = [];

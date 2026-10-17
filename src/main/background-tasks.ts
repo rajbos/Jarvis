@@ -14,6 +14,7 @@ import { runSecretsBatch } from '../services/github-secrets';
 import { loadGitHubPat } from '../services/github-oauth';
 import { accessForPrimary } from '../services/github-repo-access';
 import { safeHandle } from '../plugins/ipc-utils';
+import { runDueSkills } from '../plugins/browser-companion/skill-runner';
 import { logger } from '../services/logger';
 import { TaskFailureAlerter, recordTaskFailure, getRecentTaskFailures } from './task-failure-log';
 import type { TaskFailureEntry } from './task-failure-log';
@@ -36,6 +37,8 @@ export const REPO_CATALOG_INITIAL_DELAY_MS = 120_000;
 export const REPO_CATALOG_INTERVAL_MS = 60 * 1000;
 export const SECRETS_SCAN_INITIAL_DELAY_MS = 180_000;
 export const SECRETS_SCAN_INTERVAL_MS = 5 * 60 * 1000;
+export const BROWSER_SKILLS_INITIAL_DELAY_MS = 60_000;
+export const BROWSER_SKILLS_INTERVAL_MS = 60 * 1000;
 
 let scheduler: TaskScheduler | null = null;
 
@@ -174,6 +177,17 @@ export function createBackgroundTaskScheduler(
       const { errors, ...result } = await runSecretsBatch(db, { ownerLogin: primary.login, patToken: loadGitHubPat(db) });
       return { ...result, errorCount: errors.length };
     },
+  });
+
+  // Run browser skills that have an interval configured. Skips quietly while
+  // no browser extension is connected; each run goes through the same
+  // background-tab path as a manual run.
+  registerTask(taskScheduler, getWindow, {
+    id: 'browser-skills-scheduled',
+    label: 'Scheduled browser skills',
+    initialDelayMs: BROWSER_SKILLS_INITIAL_DELAY_MS,
+    intervalMs: BROWSER_SKILLS_INTERVAL_MS,
+    run: async () => ({ ...(await runDueSkills(db)) }),
   });
 
   return taskScheduler;

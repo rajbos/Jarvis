@@ -408,6 +408,7 @@ export function getSchema(): string {
         start_url         TEXT NOT NULL,
         instructions      TEXT NOT NULL,
         extract_selector  TEXT,
+        interval_minutes  INTEGER,
         created_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at        DATETIME DEFAULT CURRENT_TIMESTAMP
     );

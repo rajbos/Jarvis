@@ -207,6 +207,7 @@ const EXPECTED_CHANNELS = [
   'browser:list-skills',
   'browser:create-skill',
   'browser:update-skill',
+  'browser:set-skill-interval',
   'browser:delete-skill',
   'browser:list-runs',
   'browser:run-skill',

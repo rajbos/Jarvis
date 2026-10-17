@@ -94,7 +94,7 @@ export async function createMemoryDatabase(): Promise<SqlJsDatabase> {
 // of the chain in initializeSchema(). Used only to warn if a database fails to
 // reach the latest schema after migration (e.g. a gap in the version chain).
 // A unit test fails if this drifts from the version a fresh database reaches.
-export const LATEST_SCHEMA_VERSION = 37;
+export const LATEST_SCHEMA_VERSION = 38;
 
 export function initializeSchema(database: SqlJsDatabase): void {
   const result = database.exec("PRAGMA user_version");
@@ -103,7 +103,7 @@ export function initializeSchema(database: SqlJsDatabase): void {
   if (userVersion === 0) {
     database.run(getSchema());
     seedBuiltInAgents(database);
-    database.run('PRAGMA user_version = 37');
+    database.run('PRAGMA user_version = 38');
   }
 
   if (userVersion === 1) {
@@ -795,6 +795,13 @@ export function initializeSchema(database: SqlJsDatabase): void {
     `);
     database.run('DELETE FROM ruddr_time_weeks');
     database.run('PRAGMA user_version = 37');
+  }
+
+  if (userVersion === 37) {
+    // Migration v37 → v38: optional per-skill run interval so browser skills
+    // can be run unattended by a background task (NULL = never scheduled).
+    database.run('ALTER TABLE browser_skills ADD COLUMN interval_minutes INTEGER');
+    database.run('PRAGMA user_version = 38');
   }
 
   const finalResult = database.exec('PRAGMA user_version');

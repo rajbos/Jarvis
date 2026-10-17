@@ -250,6 +250,7 @@ describe('Migration chain completeness (no orphaned user_version)', () => {
     27: `CREATE TABLE agent_definitions (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, system_prompt TEXT, updated_at DATETIME)`,
     31: `CREATE TABLE github_repos (id INTEGER PRIMARY KEY AUTOINCREMENT, full_name TEXT); CREATE TABLE github_orgs (id INTEGER PRIMARY KEY AUTOINCREMENT, login TEXT); CREATE TABLE github_notifications (id TEXT PRIMARY KEY)`,
     32: `CREATE TABLE github_repos (id INTEGER PRIMARY KEY AUTOINCREMENT, full_name TEXT); CREATE TABLE github_orgs (id INTEGER PRIMARY KEY AUTOINCREMENT, login TEXT)`,
+    37: `CREATE TABLE browser_skills (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT)`,
     30: `CREATE TABLE agent_definitions (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, system_prompt TEXT, updated_at DATETIME)`,
     34: `CREATE TABLE github_repos (id INTEGER PRIMARY KEY AUTOINCREMENT, full_name TEXT); CREATE TABLE github_orgs (id INTEGER PRIMARY KEY AUTOINCREMENT, login TEXT); CREATE TABLE repo_secrets (id INTEGER PRIMARY KEY AUTOINCREMENT, github_repo_id INTEGER, secret_name TEXT, scanned_at DATETIME); CREATE TABLE secret_scan_favorites (id INTEGER PRIMARY KEY AUTOINCREMENT, target_type TEXT, target_name TEXT)`,
   };
@@ -513,5 +514,22 @@ describe('Migration v36 -> v37', () => {
     const cols = oldDb.exec('PRAGMA table_info(ruddr_time_entries)')[0].values.map((r) => r[1]);
     expect(cols).toEqual(expect.arrayContaining(['entry_id', 'notes', 'status_id', 'type_id', 'is_billable']));
     expect(oldDb.exec('SELECT COUNT(*) FROM ruddr_time_entries')[0].values[0][0]).toBe(0);
+  });
+});
+
+describe('Migration v37 -> v38', () => {
+  it('adds a nullable interval_minutes column to browser_skills and keeps existing skills unscheduled', async () => {
+    const SQL = await initSqlJs();
+    const oldDb = new SQL.Database();
+    oldDb.run(`CREATE TABLE browser_skills (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, start_url TEXT NOT NULL, instructions TEXT NOT NULL)`);
+    oldDb.run(`INSERT INTO browser_skills (name, start_url, instructions) VALUES ('Fixture skill', 'https://example.invalid', 'wait 1')`);
+    oldDb.run('PRAGMA user_version = 37');
+
+    initializeSchema(oldDb);
+
+    expect(oldDb.exec('PRAGMA user_version')[0].values[0][0]).toBe(38);
+    const cols = oldDb.exec('PRAGMA table_info(browser_skills)')[0].values.map((r) => r[1]);
+    expect(cols).toContain('interval_minutes');
+    expect(oldDb.exec('SELECT interval_minutes FROM browser_skills')[0].values[0][0]).toBeNull();
   });
 });

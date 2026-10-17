@@ -404,3 +404,36 @@ describe('Browser-companion plugin — IPC handlers', () => {
   });
 
 });
+
+describe('Browser-companion plugin — browser:set-skill-interval', () => {
+  let db: SqlJsDatabase;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    handlers.clear();
+    const SQL = await initSqlJs();
+    db = new SQL.Database();
+    db.run(getSchema());
+    db.run(`INSERT INTO browser_skills (name, start_url, instructions) VALUES ('S', 'https://example.invalid', 'wait 1')`);
+    registerHandlers(db, () => null);
+  });
+
+  afterEach(() => db.close());
+
+  const interval = () => db.exec('SELECT interval_minutes FROM browser_skills WHERE id = 1')[0].values[0][0];
+
+  it('sets and clears the interval', () => {
+    expect(callHandler('browser:set-skill-interval', 1, 45)).toEqual({ ok: true });
+    expect(interval()).toBe(45);
+    expect(callHandler('browser:set-skill-interval', 1, null)).toEqual({ ok: true });
+    expect(interval()).toBeNull();
+  });
+
+  it('rejects invalid input', () => {
+    expect(callHandler('browser:set-skill-interval', 'x', 5)).toMatchObject({ ok: false });
+    expect(callHandler('browser:set-skill-interval', 1, 0)).toMatchObject({ ok: false });
+    expect(callHandler('browser:set-skill-interval', 1, 1.5)).toMatchObject({ ok: false });
+    expect(callHandler('browser:set-skill-interval', 1, 10_000_000)).toMatchObject({ ok: false });
+    expect(interval()).toBeNull();
+  });
+});

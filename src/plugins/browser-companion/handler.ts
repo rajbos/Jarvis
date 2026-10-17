@@ -3,7 +3,6 @@ import type { BrowserWindow } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import { safeHandle } from '../ipc-utils';
 import { saveDatabase } from '../../storage/database';
-import { logger } from '../../services/logger';
 import {
   startBridgeServer,
   getBridgeStatus,
@@ -11,25 +10,7 @@ import {
   regenerateBridgeToken,
   sendCommand,
 } from './server';
-import {
-  createTabSession,
-  navigatePayload,
-  recordNavigationTab,
-  tabTarget,
-  closeSessionTab,
-} from './tab-session';
-
-function findFailedStep(data: unknown): { step: string; error?: string } | null {
-  const steps = (data as { steps?: unknown } | null)?.steps;
-  if (!Array.isArray(steps)) return null;
-  for (const s of steps) {
-    if (s && typeof s === 'object' && (s as { ok?: unknown }).ok === false) {
-      const { step, error } = s as { step?: unknown; error?: unknown };
-      return { step: String(step ?? ''), error: typeof error === 'string' ? error : undefined };
-    }
-  }
-  return null;
-}
+import { runSkill, MIN_SKILL_INTERVAL_MINUTES, MAX_SKILL_INTERVAL_MINUTES } from './skill-runner';
 
 export function registerHandlers(
   db: SqlJsDatabase,
@@ -59,7 +40,7 @@ export function registerHandlers(
 
   safeHandle('browser:list-skills', () => {
     const result = db.exec(
-      `SELECT id, name, description, start_url, instructions, extract_selector, created_at, updated_at
+      `SELECT id, name, description, start_url, instructions, extract_selector, interval_minutes, created_at, updated_at
        FROM browser_skills ORDER BY name ASC`,
     );
     if (!result.length) return [];
@@ -185,129 +166,25 @@ export function registerHandlers(
     async (_event, skillId: number, testMode = false) => {
       if (typeof skillId !== 'number') return { ok: false, error: 'Invalid skillId' };
       if (typeof testMode !== 'boolean') return { ok: false, error: 'Invalid testMode' };
+      return runSkill(db, skillId, testMode);
+    },
+  );
 
-      // Load skill
-      const skillResult = db.exec(
-        `SELECT id, name, start_url, instructions, extract_selector
-         FROM browser_skills WHERE id = ?`,
-        [skillId],
-      );
-      if (!skillResult.length || !skillResult[0].values.length)
-        return { ok: false, error: 'Skill not found' };
-
-      const [{ columns, values }] = skillResult;
-      const skill = Object.fromEntries(
-        columns.map((col, i) => [col, values[0][i]]),
-      ) as {
-        id: number;
-        name: string;
-        start_url: string;
-        instructions: string;
-        extract_selector: string;
-      };
-
-      // Check bridge connection
-      const status = getBridgeStatus();
-      if (!status.running || status.connectedClients === 0) {
-        return {
-          ok: false,
-          error: 'No browser extension connected. Install and enable the Jarvis companion extension.',
-        };
-      }
-
-      // Create a run record (unless test mode)
-      let runId: number | null = null;
-      if (!testMode) {
-        db.run(
-          `INSERT INTO browser_skill_runs (skill_id, status) VALUES (?, 'running')`,
-          [skillId],
-        );
-        saveDatabase();
-        const idResult = db.exec('SELECT last_insert_rowid() AS id');
-        runId = idResult[0]?.values[0]?.[0] as number;
-      }
-
-      // Run in a dedicated background tab (reusing an idle one Jarvis opened
-      // earlier) instead of navigating the tab the user is looking at.
-      const session = createTabSession();
-
-      try {
-        // Step 1: Navigate to the start URL
-        const navResponse = await sendCommand({
-          type: 'navigate',
-          payload: { url: skill.start_url, ...navigatePayload(session) },
-        });
-
-        if (!navResponse.ok) {
-          throw new Error(`Navigation failed: ${navResponse.error ?? 'unknown'}`);
-        }
-        recordNavigationTab(session, navResponse.data);
-
-        // Step 2: Execute the skill instructions in the page
-        const evalResponse = await sendCommand({
-          type: 'evaluate',
-          ...tabTarget(session),
-          payload: {
-            instructions: skill.instructions,
-            testMode,
-          },
-        });
-
-        if (!evalResponse.ok) {
-          throw new Error(`Instruction execution failed: ${evalResponse.error ?? 'unknown'}`);
-        }
-
-        // A successful executeScript call only means the script ran; individual
-        // steps (missing selector, unknown instruction) report failure in-band.
-        const failedStep = findFailedStep(evalResponse.data);
-        if (failedStep) {
-          throw new Error(`Step failed: ${failedStep.step} (${failedStep.error ?? 'unknown error'})`);
-        }
-
-        // Step 3: Extract data if a selector is configured
-        let extractedData: unknown = null;
-        if (skill.extract_selector && skill.extract_selector.trim().length > 0) {
-          const extractResponse = await sendCommand({
-            type: 'extract',
-            ...tabTarget(session),
-            payload: { selector: skill.extract_selector },
-          });
-          if (extractResponse.ok) {
-            extractedData = extractResponse.data;
-          } else {
-            logger.warn('[BrowserSkill] Extract step warning:', extractResponse.error);
-          }
-        } else {
-          extractedData = evalResponse.data;
-        }
-
-        // Persist results
-        if (runId !== null) {
-          db.run(
-            `UPDATE browser_skill_runs
-             SET status = 'completed', completed_at = datetime('now'), extracted_data = ?
-             WHERE id = ?`,
-            [extractedData !== null ? JSON.stringify(extractedData) : null, runId],
-          );
-          saveDatabase();
-        }
-
-        return { ok: true, runId, data: extractedData, testMode };
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        if (runId !== null) {
-          db.run(
-            `UPDATE browser_skill_runs
-             SET status = 'failed', completed_at = datetime('now'), error = ?
-             WHERE id = ?`,
-            [message, runId],
-          );
-          saveDatabase();
-        }
-        return { ok: false, error: message, runId, testMode };
-      } finally {
-        await closeSessionTab(session);
-      }
+  safeHandle(
+    'browser:set-skill-interval',
+    (_event, id: number, intervalMinutes: number | null) => {
+      if (typeof id !== 'number') return { ok: false, error: 'Invalid id' };
+      if (
+        intervalMinutes !== null &&
+        (typeof intervalMinutes !== 'number' ||
+          !Number.isInteger(intervalMinutes) ||
+          intervalMinutes < MIN_SKILL_INTERVAL_MINUTES ||
+          intervalMinutes > MAX_SKILL_INTERVAL_MINUTES)
+      )
+        return { ok: false, error: 'Invalid intervalMinutes' };
+      db.run('UPDATE browser_skills SET interval_minutes = ? WHERE id = ?', [intervalMinutes, id]);
+      saveDatabase();
+      return { ok: true };
     },
   );
 

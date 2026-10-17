@@ -176,6 +176,24 @@ function RunResult({ run }: { run: BrowserSkillRun }) {
   );
 }
 
+const INTERVAL_PRESETS: { value: number; label: string }[] = [
+  { value: 15, label: 'Every 15 minutes' },
+  { value: 30, label: 'Every 30 minutes' },
+  { value: 60, label: 'Every hour' },
+  { value: 180, label: 'Every 3 hours' },
+  { value: 360, label: 'Every 6 hours' },
+  { value: 720, label: 'Every 12 hours' },
+  { value: 1440, label: 'Every day' },
+];
+
+/** Preset intervals, plus the skill's current value when it is not one of them. */
+function intervalOptions(current: number | null): { value: number; label: string }[] {
+  if (current && !INTERVAL_PRESETS.some((o) => o.value === current)) {
+    return [...INTERVAL_PRESETS, { value: current, label: `Every ${current} minutes` }].sort((a, b) => a.value - b.value);
+  }
+  return INTERVAL_PRESETS;
+}
+
 // ── Main panel ────────────────────────────────────────────────────────────────
 
 export function BrowserCompanionPanel({ onBack }: { onBack: () => void }) {
@@ -287,6 +305,12 @@ export function BrowserCompanionPanel({ onBack }: { onBack: () => void }) {
     if (selectedSkillId === id) setSelectedSkillId(null);
     await loadSkills();
     await loadRuns();
+  };
+
+  const handleSetInterval = async (id: number, intervalMinutes: number | null) => {
+    const result = await window.jarvis.browserSetSkillInterval(id, intervalMinutes);
+    if (!result.ok) console.warn('[BrowserCompanion] set interval error:', result.error);
+    await loadSkills();
   };
 
   const handleRunSkill = async (skillId: number, testMode: boolean) => {
@@ -523,6 +547,23 @@ export function BrowserCompanionPanel({ onBack }: { onBack: () => void }) {
                     )}
                     <div style={{ fontSize: 11, color: '#6a8caf', marginTop: 3, fontFamily: 'monospace' }}>
                       {skill.start_url}
+                    </div>
+                    <div style={{ fontSize: 11, color: '#888', marginTop: 4 }} onClick={(e) => e.stopPropagation()}>
+                      <label>
+                        Run automatically:{' '}
+                        <select
+                          aria-label="Run automatically"
+                          value={skill.interval_minutes ?? ''}
+                          onChange={(e) => void handleSetInterval(skill.id, e.target.value === '' ? null : Number(e.target.value))}
+                          style={{ background: '#1e1e1e', color: '#ccc', border: '1px solid #444', borderRadius: 3, fontSize: 11 }}
+                        >
+                          <option value="">Never</option>
+                          {intervalOptions(skill.interval_minutes).map((o) => (
+                            <option key={o.value} value={o.value}>{o.label}</option>
+                          ))}
+                        </select>
+                      </label>
+                      {skill.interval_minutes ? ' (runs in a background tab while the extension is connected)' : ''}
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 4, flexShrink: 0, marginLeft: 8 }} onClick={(e) => e.stopPropagation()}>
