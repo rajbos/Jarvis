@@ -271,6 +271,22 @@ describe('filesystem discovery', () => {
     expect((await discover(NOW + 11 * 60_000)).sessions.map((s) => s.sessionId)).toEqual(['resumed']);
   });
 
+  it('does not re-read workspace.yaml of an unchanged dir past the live window', async () => {
+    const dir = writeCopilotSession('old', { yaml: 'id: old\nmc_task_id: task-1\n' });
+    const old = new Date(NOW - 10 * 24 * 60 * 60 * 1000);
+    fs.utimesSync(dir, old, old);
+    const discover = async () => [...(await discoverCopilotLocalSessions({ homeDir: home, isPidAlive: () => true, getProcessStartTimes: startedLongAgo, now: () => NOW })).mirroredTasks.keys()];
+    expect(await discover()).toEqual(['task-1']);
+
+    fs.writeFileSync(path.join(dir, 'workspace.yaml'), 'id: old\nmc_task_id: task-22\n');
+    fs.utimesSync(dir, old, old);
+    expect(await discover()).toEqual(['task-1']);
+
+    const touched = new Date(old.getTime() + 1000);
+    fs.utimesSync(dir, touched, touched);
+    expect(await discover()).toEqual(['task-22']);
+  });
+
   it('picks up a new session dir on the next sweep and links the PR it created', async () => {
     const discover = () => discoverCopilotLocalSessions({ homeDir: home, isPidAlive: () => true, getProcessStartTimes: startedLongAgo, now: () => NOW });
     writeCopilotSession('first', { pid: 111, yaml: 'id: first\n' });

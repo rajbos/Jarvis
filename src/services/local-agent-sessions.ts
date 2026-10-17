@@ -350,15 +350,30 @@ export async function discoverCopilotLocalSessions(options: LocalSessionDiscover
     seen.add(dir);
     const cached = sessionDirCache.get(dir);
     if (cached && cached.mtimeMs < mirrorCutoff && now - cached.checkedAt < STALE_DIR_RECHECK_MS) return;
-    let files: string[];
     let mtimeMs: number;
     try {
       statted++;
       mtimeMs = (await fs.promises.stat(dir)).mtimeMs;
-      if (mtimeMs < mirrorCutoff) {
-        sessionDirCache.set(dir, { mtimeMs, checkedAt: now, ws: null });
-        return;
-      }
+    } catch {
+      sessionDirCache.delete(dir);
+      return;
+    }
+    if (mtimeMs < mirrorCutoff) {
+      sessionDirCache.set(dir, { mtimeMs, checkedAt: now, scanned: false, ws: null });
+      return;
+    }
+    // Reading ~2,500 small workspace.yaml files synchronously every sweep took
+    // 12–65 s on the main thread in the running app (each open is slow there,
+    // e.g. antivirus). A dir past the live window that hasn't changed since it
+    // was read keeps its cached workspace without another readdir or stat.
+    if (cached?.scanned && cached.mtimeMs === mtimeMs && mtimeMs < cutoff) {
+      cached.checkedAt = now;
+      const fields = cached.ws?.fields ?? {};
+      if (fields.mc_task_id) mirroredTasks.set(fields.mc_task_id, clientLabel(fields.client_name));
+      return;
+    }
+    let files: string[];
+    try {
       files = await fs.promises.readdir(dir);
     } catch {
       sessionDirCache.delete(dir);
@@ -366,7 +381,7 @@ export async function discoverCopilotLocalSessions(options: LocalSessionDiscover
     }
 
     const ws = files.includes('workspace.yaml') ? await readWorkspace(path.join(dir, 'workspace.yaml'), cached?.ws ?? null) : null;
-    sessionDirCache.set(dir, { mtimeMs, checkedAt: now, ws });
+    sessionDirCache.set(dir, { mtimeMs, checkedAt: now, scanned: true, ws });
     const fields = ws?.fields ?? {};
     if (fields.mc_task_id) mirroredTasks.set(fields.mc_task_id, clientLabel(fields.client_name));
     if (mtimeMs < cutoff) return;
@@ -445,17 +460,24 @@ const STALE_DIR_RECHECK_MS = 10 * 60 * 1000;
 
 interface CachedWorkspace {
   mtimeMs: number;
+  size: number;
   fields: Record<string, string>;
 }
 
-/** Last stat of each session dir, so old dirs are not stat'd every sweep. */
-const sessionDirCache = new Map<string, { mtimeMs: number; checkedAt: number; ws: CachedWorkspace | null }>();
+/** Last look at each session dir, so old dirs are not re-read (or even stat'd) every sweep. */
+const sessionDirCache = new Map<string, {
+  mtimeMs: number;
+  checkedAt: number;
+  /** Whether the dir's files and workspace.yaml were read at this mtime. */
+  scanned: boolean;
+  ws: CachedWorkspace | null;
+}>();
 
 async function readWorkspace(yamlPath: string, cached: CachedWorkspace | null): Promise<CachedWorkspace | null> {
   try {
-    const { mtimeMs } = await fs.promises.stat(yamlPath);
-    if (cached && cached.mtimeMs === mtimeMs) return cached;
-    return { mtimeMs, fields: parseWorkspaceYaml(await fs.promises.readFile(yamlPath, 'utf-8')) };
+    const { mtimeMs, size } = await fs.promises.stat(yamlPath);
+    if (cached && cached.mtimeMs === mtimeMs && cached.size === size) return cached;
+    return { mtimeMs, size, fields: parseWorkspaceYaml(await fs.promises.readFile(yamlPath, 'utf-8')) };
   } catch {
     return null;
   }
