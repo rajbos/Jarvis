@@ -361,7 +361,7 @@ describe('collectActiveSessions', () => {
     expect(snap.entries[1].session.cloudSessions).toBeUndefined();
   });
 
-  it('drops finished cloud tasks whose PR is already merged', async () => {
+  it('keeps finished cloud tasks whose PR is merged, with a merged verdict', async () => {
     vi.mocked(listCopilotAgentTasks).mockResolvedValue({
       ok: true,
       tasks: [{ id: 'done', name: 'Done', state: 'completed', createdAt: null, updatedAt: '2026-03-01T11:00:00Z', repositoryId: null, pullRequestNodeIds: ['PR_m'], headRef: null, baseRef: null }],
@@ -369,8 +369,21 @@ describe('collectActiveSessions', () => {
     stubPrResults([[{ kind: 'node', nodeId: 'PR_m' }, { ok: true, pr: rawPr({ state: 'MERGED' }) }]]);
 
     const snap = await collectActiveSessions({ accessToken: 'tok', now: () => NOW });
+    expect(snap.entries).toHaveLength(1);
+    expect(snap.entries[0].verdict).toBe('merged');
+    expect(snap.entries[0].verdictLabel).toBe('Merged');
+    expect(snap.sources.copilotCloud).toEqual({ ok: true, count: 1 });
+  });
+
+  it('drops finished cloud tasks whose PR was closed without merging', async () => {
+    vi.mocked(listCopilotAgentTasks).mockResolvedValue({
+      ok: true,
+      tasks: [{ id: 'done', name: 'Done', state: 'completed', createdAt: null, updatedAt: '2026-03-01T11:00:00Z', repositoryId: null, pullRequestNodeIds: ['PR_c'], headRef: null, baseRef: null }],
+    });
+    stubPrResults([[{ kind: 'node', nodeId: 'PR_c' }, { ok: true, pr: rawPr({ state: 'CLOSED' }) }]]);
+
+    const snap = await collectActiveSessions({ accessToken: 'tok', now: () => NOW });
     expect(snap.entries).toEqual([]);
-    // The source count matches the listed rows; the dropped task is reported as hidden.
     expect(snap.sources.copilotCloud).toEqual({ ok: true, count: 0, hidden: 1 });
   });
 

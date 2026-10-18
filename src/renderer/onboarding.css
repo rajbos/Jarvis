@@ -5571,6 +5571,36 @@ h5.ec-heading { font-size: 0.9375rem; }
   border-left-color: #ff9800;
 }
 
+/* Merged PRs use GitHub's merged purple instead of green. */
+.as-row--merged {
+  border-left-color: #8957e5;
+}
+
+.as-row--merged .as-light--green .as-light-dot {
+  background: #a371f7;
+  box-shadow: 0 0 6px rgba(163, 113, 247, 0.6);
+}
+
+.as-pill--merged {
+  border-color: #5b3d99;
+  color: #c9a8ff;
+  background: #1c1236;
+}
+
+.as-pill--merged:hover {
+  background: #2a1b52;
+}
+
+.as-pill--merged.as-pill--active {
+  border-color: #a371f7;
+  background: #3b2470;
+  color: #f0e6ff;
+}
+
+.as-verdict--merged {
+  color: #a371f7;
+}
+
 .as-provider {
   display: inline-flex;
   align-items: center;
