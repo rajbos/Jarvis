@@ -87,6 +87,10 @@ jobs:
             gh release create $env:GITHUB_REF_NAME $assets --verify-tag --generate-notes --title "Jarvis $env:GITHUB_REF_NAME"
           }
 
+          $releaseUrl = gh release view $env:GITHUB_REF_NAME --json url --jq .url
+          "### Release published :rocket:`n`n[Jarvis $env:GITHUB_REF_NAME]($releaseUrl)" |
+            Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+
       - name: Upload installer as workflow artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
