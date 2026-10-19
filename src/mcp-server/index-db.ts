@@ -25,7 +25,13 @@ async function getSql(): Promise<Awaited<ReturnType<typeof initSqlJs>>> {
  * The returned handle is shared; callers must NOT close it.
  */
 export async function openIndexSnapshot(): Promise<SqlJsDatabase | null> {
-  if (!fs.existsSync(INDEX_DB_PATH)) return null;
+  if (!fs.existsSync(INDEX_DB_PATH)) {
+    // Index was removed (cleared or mid-rebuild): drop the stale handle so a
+    // recreated file is always re-read, even if mtime/size happen to match.
+    cached?.db.close();
+    cached = null;
+    return null;
+  }
   const stat = fs.statSync(INDEX_DB_PATH);
   if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) return cached.db;
   const sql = await getSql();
