@@ -11,13 +11,14 @@ interface DiagnosticCardProps {
   /** Null when no model is selected; the card stays useful without one. */
   onExplain: ((report: DiagnosticReport, logLines: string[]) => void) | null;
   busy: boolean;
+  onClose: () => void;
 }
 
 /**
  * A problem reported by Jarvis itself, shown in the chat. Everything needed to
  * investigate is on the card, so it works even when Ollama is not running.
  */
-export function DiagnosticCard({ report, onExplain, busy }: DiagnosticCardProps) {
+export function DiagnosticCard({ report, onExplain, busy, onClose }: DiagnosticCardProps) {
   const [logLines, setLogLines] = useState<string[] | null>(null);
   const [showLog, setShowLog] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -57,6 +58,7 @@ export function DiagnosticCard({ report, onExplain, busy }: DiagnosticCardProps)
         <span class="ec-diag-icon" aria-hidden="true">{'⚠'}</span>
         <span class="ec-diag-title">{report.title}</span>
         <span class="ec-diag-time">{new Date(report.occurredAt).toLocaleTimeString()}</span>
+        <button class="ec-msg-close" title="Close" aria-label={`Close ${report.title}`} onClick={onClose}>&times;</button>
       </div>
       <p class="ec-diag-summary">{report.summary}</p>
       <dl class="ec-diag-facts">

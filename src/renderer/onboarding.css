@@ -2614,7 +2614,55 @@ body.onboarding {
   line-height: 1.5;
 }
 
+.ec-msg-close {
+  background: none;
+  border: none;
+  color: #8899bb;
+  font-size: 1.1rem;
+  padding: 0 0.25rem;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.ec-msg-close:hover {
+  color: #e0e0e0;
+  background: none;
+}
+
+.ec-bubble-close {
+  position: absolute;
+  top: 0.1rem;
+  right: 0.15rem;
+  opacity: 0;
+}
+
+.ec-bubble:hover .ec-bubble-close,
+.ec-bubble-close:focus-visible {
+  opacity: 1;
+}
+
+.ec-close-all {
+  align-self: flex-end;
+  background: none;
+  border: none;
+  color: #8899bb;
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 0 0.25rem;
+}
+
+.ec-close-all:hover:not(:disabled) {
+  color: #e0e0e0;
+  background: none;
+}
+
+.ec-close-all:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 .ec-bubble {
+  position: relative;
   padding: 0.5rem 0.75rem;
   border-radius: 8px;
   font-size: 0.9375rem;

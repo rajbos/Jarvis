@@ -229,7 +229,16 @@ export function EmbeddedChatPanel({ visible, selectedModel, onClose, onAgentStar
     void window.jarvis.abortChat();
   }, []);
 
-  const sendMessages = useCallback(async (newMessages: ChatMsg[]) => {
+  const handleCloseMessage = useCallback((index: number) => {
+    setMessages((msgs) => msgs.filter((_, i) => i !== index));
+  }, []);
+
+  const handleCloseAll = useCallback(() => {
+    setMessages([]);
+    setError(null);
+  }, []);
+
+  const sendMessages =useCallback(async (newMessages: ChatMsg[]) => {
     setError(null);
     setMessages(newMessages);
     setStreaming(true);
@@ -290,10 +299,17 @@ export function EmbeddedChatPanel({ visible, selectedModel, onClose, onAgentStar
               : 'Select an Ollama model first to start chatting.'}
           </div>
         )}
+        {messages.length > 0 && (
+          <button class="ec-close-all" onClick={handleCloseAll} disabled={streaming}>Close all</button>
+        )}
         {messages.map((msg, i) => (msg.role === 'diagnostic'
-          ? <DiagnosticCard key={msg.report.id} report={msg.report} busy={streaming || agentStreaming} onExplain={selectedModel ? handleExplain : null} />
-          : <div key={i} class={`ec-bubble ${msg.role === 'user' ? 'ec-user' : 'ec-assistant'}`}
-            dangerouslySetInnerHTML={{ __html: renderChatMarkdown(msg.display ?? msg.content) }} />
+          ? <DiagnosticCard key={msg.report.id} report={msg.report} busy={streaming || agentStreaming} onExplain={selectedModel ? handleExplain : null} onClose={() => handleCloseMessage(i)} />
+          : (
+            <div key={i} class={`ec-bubble ${msg.role === 'user' ? 'ec-user' : 'ec-assistant'}`}>
+              <button class="ec-msg-close ec-bubble-close" title="Close" aria-label="Close message" onClick={() => handleCloseMessage(i)}>&times;</button>
+              <span dangerouslySetInnerHTML={{ __html: renderChatMarkdown(msg.display ?? msg.content) }} />
+            </div>
+          )
         ))}
         {streaming && (
           <div class="ec-bubble ec-assistant">
