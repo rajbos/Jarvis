@@ -181,17 +181,22 @@ function sourceTooltip(description: string, s: ActiveSessionSourceStatus): strin
   const lines = [description];
   if (s.skipped) lines.push(`Skipped${s.error ? `: ${s.error}` : ''}`);
   else if (!s.ok) lines.push(`Error: ${s.error ?? 'unknown'}`);
-  if (s.hidden) lines.push(`${s.hidden} finished task(s) hidden because their PR is already merged or closed.`);
+  if (s.hidden) lines.push(`${s.hidden} finished task(s) hidden because their PR was closed without merging.`);
   return lines.join('\n');
 }
 
-function SourcePills({ snapshot, filter, onChange }: {
+function SourcePills({ snapshot, entries, filter, onChange, showMerged, mergedCount, onToggleMerged }: {
   snapshot: ActiveSessionsSnapshot;
+  /** Entries that pass the merged filter; the pill counts are based on these. */
+  entries: ActiveSessionEntry[];
   filter: SourceFilter;
   onChange: (f: SourceFilter) => void;
+  showMerged: boolean;
+  mergedCount: number;
+  onToggleMerged: () => void;
 }) {
   const counts: Record<SourceKey, number> = { copilotLocal: 0, claudeLocal: 0, copilotCloud: 0 };
-  for (const entry of snapshot.entries) counts[sourceOf(entry)]++;
+  for (const entry of entries) counts[sourceOf(entry)]++;
 
   return (
     <div class="as-pills" role="group" aria-label="Filter by source">
@@ -200,7 +205,7 @@ function SourcePills({ snapshot, filter, onChange }: {
         aria-pressed={filter === 'all'}
         onClick={() => onChange('all')}
       >
-        All <span class="as-pill-count">{snapshot.entries.length}</span>
+        All <span class="as-pill-count">{entries.length}</span>
       </button>
       {SOURCES.map(({ key, label, description }) => {
         const status = snapshot.sources[key];
@@ -222,6 +227,14 @@ function SourcePills({ snapshot, filter, onChange }: {
           </button>
         );
       })}
+      <button
+        class={`as-pill as-pill--merged${showMerged ? ' as-pill--active' : ''}`}
+        aria-pressed={showMerged}
+        title={showMerged ? 'Showing sessions whose PR is merged — click to hide them.' : 'Sessions whose PR is merged are hidden — click to show them.'}
+        onClick={onToggleMerged}
+      >
+        Merged <span class="as-pill-count">{mergedCount}</span>
+      </button>
     </div>
   );
 }
@@ -232,6 +245,7 @@ export function ActiveSessionsPanel() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<SourceFilter>('all');
+  const [showMerged, setShowMerged] = useState(false);
 
   const refresh = async () => {
     setRefreshing(true);
@@ -276,9 +290,9 @@ export function ActiveSessionsPanel() {
   const sourceErrors = snapshot
     ? Object.entries(snapshot.sources).filter(([, s]) => !s.ok && s.error).map(([name, s]) => `${name}: ${s.error}`)
     : [];
-  const visible = snapshot
-    ? snapshot.entries.filter((e) => filter === 'all' || sourceOf(e) === filter)
-    : [];
+  const mergedCount = snapshot ? snapshot.entries.filter((e) => e.verdict === 'merged').length : 0;
+  const listed = snapshot ? snapshot.entries.filter((e) => showMerged || e.verdict !== 'merged') : [];
+  const visible = listed.filter((e) => filter === 'all' || sourceOf(e) === filter);
 
   return (
     <div class="adh-panel as-panel">
@@ -287,7 +301,7 @@ export function ActiveSessionsPanel() {
           <span class="adh-title">Agent Sessions</span>
           {snapshot && (
             <span class="adh-subtitle">
-              {snapshot.entries.length} active · {snapshot.readyCount} ready for review · updated {new Date(snapshot.refreshedAt).toLocaleTimeString()}
+              {listed.length} active · {snapshot.readyCount} ready for review · updated {new Date(snapshot.refreshedAt).toLocaleTimeString()}
             </span>
           )}
         </div>
@@ -303,7 +317,17 @@ export function ActiveSessionsPanel() {
         Copilot code review is attached, Copilot has reviewed that latest commit.
       </div>
 
-      {snapshot && <SourcePills snapshot={snapshot} filter={filter} onChange={setFilter} />}
+      {snapshot && (
+        <SourcePills
+          snapshot={snapshot}
+          entries={listed}
+          filter={filter}
+          onChange={setFilter}
+          showMerged={showMerged}
+          mergedCount={mergedCount}
+          onToggleMerged={() => setShowMerged((v) => !v)}
+        />
+      )}
 
       {error && <div class="as-error">Refresh failed: {error}</div>}
       {sourceErrors.map((e) => <div key={e} class="as-error">{e}</div>)}
@@ -313,7 +337,11 @@ export function ActiveSessionsPanel() {
       ) : !snapshot || snapshot.entries.length === 0 ? (
         <div class="adh-empty">No active Copilot or Claude sessions found.</div>
       ) : visible.length === 0 ? (
-        <div class="adh-empty">No sessions from this source right now.</div>
+        <div class="adh-empty">
+          {listed.length === 0 && mergedCount > 0
+            ? `No open sessions — ${mergedCount} merged hidden.`
+            : 'No sessions from this source right now.'}
+        </div>
       ) : (
         <div class="as-list">
           {visible.map((entry) => <SessionRow key={entry.session.key} entry={entry} />)}

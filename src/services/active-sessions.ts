@@ -81,13 +81,14 @@ export function describeAgentActivity(activity: AgentActivity): ReadinessStage {
 
 function verdictFor(pr: PrReadiness | null): Pick<ActiveSessionEntry, 'verdict' | 'verdictLabel'> {
   if (!pr) return { verdict: 'no_pr', verdictLabel: 'No PR yet' };
-  if (pr.state !== 'OPEN') return { verdict: 'closed', verdictLabel: pr.state === 'MERGED' ? 'Merged' : 'Closed' };
+  if (pr.state === 'MERGED') return { verdict: 'merged', verdictLabel: 'Merged' };
+  if (pr.state !== 'OPEN') return { verdict: 'closed', verdictLabel: 'Closed' };
   if (pr.ready) return { verdict: 'ready', verdictLabel: pr.isDraft ? 'Ready for review (draft)' : 'Ready for review' };
   const parts = pr.waitingOn.map((w) => (w === 'checks' ? 'checks' : 'Copilot review'));
   return { verdict: 'waiting', verdictLabel: `Waiting on ${parts.join(' + ')}` };
 }
 
-const VERDICT_ORDER: Record<ActiveSessionEntry['verdict'], number> = { ready: 0, waiting: 1, no_pr: 2, closed: 3 };
+const VERDICT_ORDER: Record<ActiveSessionEntry['verdict'], number> = { ready: 0, waiting: 1, no_pr: 2, merged: 3, closed: 4 };
 
 function sortEntries(entries: ActiveSessionEntry[]): ActiveSessionEntry[] {
   return entries.sort((a, b) => {
@@ -407,8 +408,9 @@ export async function collectActiveSessions(options: CollectActiveSessionsOption
       session.branch = session.branch ?? pr.headRef;
     }
 
-    // A finished cloud task whose PR is already merged/closed isn't active any more.
-    if (session.origin === 'cloud' && pr && pr.state !== 'OPEN' && (session.activity === 'completed' || session.activity === 'failed')) {
+    // A finished cloud task whose PR was closed unmerged isn't active any more.
+    // Merged ones stay in the snapshot; the panel hides them unless asked.
+    if (session.origin === 'cloud' && pr && pr.state !== 'OPEN' && pr.state !== 'MERGED' && (session.activity === 'completed' || session.activity === 'failed')) {
       hiddenCloud++;
       continue;
     }
