@@ -60,4 +60,14 @@ describe('packaged MCP server dependencies', () => {
     expect(packages).toContain('@modelcontextprotocol/sdk');
     expect(packages.filter((pkg) => !isUnpacked(pkg))).toEqual([]);
   }, 20_000);
+
+  // dist/services/* files the server shares with the app are unpacked one by one, so a new
+  // relative import in one of them silently breaks the packaged server (MODULE_NOT_FOUND).
+  it('unpacks the relative modules imported by the shared service files', () => {
+    const patterns = asarUnpackPatterns();
+    const src = fs.readFileSync(path.join(ROOT, 'src', 'services', 'local-file-index.ts'), 'utf8');
+    const relative = [...src.matchAll(/from '\.\/([\w-]+)(?:\.js)?'/g)].map((m) => `dist/services/${m[1]}.js`);
+    expect(relative).toContain('dist/services/logger.js');
+    expect(relative.filter((f) => !patterns.includes(f))).toEqual([]);
+  });
 });

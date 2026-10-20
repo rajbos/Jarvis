@@ -19,6 +19,7 @@ files:
 asarUnpack:
   - dist/mcp-server/**
   - dist/services/local-file-index.js
+  - dist/services/logger.js
   - node_modules/@modelcontextprotocol/**
   - node_modules/zod/**
   - node_modules/zod-to-json-schema/**
