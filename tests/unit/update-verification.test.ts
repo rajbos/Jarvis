@@ -107,6 +107,20 @@ describe('build provenance attestation fallback for unsigned builds', () => {
       .resolves.toBeNull();
   });
 
+  it('still verifies when crypto.verify rejects an undefined digest, as BoringSSL in Electron does', async () => {
+    const original = crypto.verify;
+    crypto.verify = ((algorithm: string | null | undefined, ...rest: unknown[]) => {
+      if (algorithm == null) throw new Error('NO_DEFAULT_DIGEST');
+      return (original as (...args: unknown[]) => boolean)(algorithm, ...rest);
+    }) as typeof crypto.verify;
+    try {
+      await expect(verifyAttestationBundles(REAL_ATTESTATIONS.attestations, REAL_DIGEST, '0.2.1', POLICY, { loadTrustedRoot }))
+        .resolves.toBeNull();
+    } finally {
+      crypto.verify = original;
+    }
+  });
+
   it('rejects the real attestation when the updater announced a different version (downgrade/replay)', async () => {
     const result = await verifyAttestationBundles(REAL_ATTESTATIONS.attestations, REAL_DIGEST, '0.2.2', POLICY, { loadTrustedRoot });
     expect(result).toContain('did not verify');

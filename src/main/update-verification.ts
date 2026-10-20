@@ -146,22 +146,26 @@ export async function verifyAttestationBundles(
     return `the Sigstore trust root could not be loaded (${error instanceof Error ? error.message : String(error)})`;
   }
 
-  const failures: string[] = [];
-  for (const bundleJson of bundles) {
-    try {
-      const { payloadType, payload } = verifyWithSigstore(bundleJson, expectedIdentity, verifier);
-      if (payloadType !== IN_TOTO_PAYLOAD_TYPE) {
-        failures.push(`unexpected payload type ${payloadType}`);
-      } else if (!statementCoversDigest(payload, sha256)) {
-        failures.push('attestation does not cover this file');
-      } else {
-        return null;
+  // The transparency-log timestamp (SET) and signature checks also call
+  // crypto.verify(undefined, ...) with EC keys, so they need the same digest default.
+  return withDefaultEcDigest(async () => {
+    const failures: string[] = [];
+    for (const bundleJson of bundles) {
+      try {
+        const { payloadType, payload } = verifyWithSigstore(bundleJson, expectedIdentity, verifier);
+        if (payloadType !== IN_TOTO_PAYLOAD_TYPE) {
+          failures.push(`unexpected payload type ${payloadType}`);
+        } else if (!statementCoversDigest(payload, sha256)) {
+          failures.push('attestation does not cover this file');
+        } else {
+          return null;
+        }
+      } catch (error) {
+        failures.push(error instanceof Error ? error.message : String(error));
       }
-    } catch (error) {
-      failures.push(error instanceof Error ? error.message : String(error));
     }
-  }
-  return `the build provenance attestation for this download did not verify: ${failures.join('; ')}`;
+    return `the build provenance attestation for this download did not verify: ${failures.join('; ')}`;
+  });
 }
 
 /**
