@@ -6,6 +6,8 @@
 // estimate at Anthropic API rates (a subscription has no per-session bill).
 
 import type { ActiveAgentSession, LocalSessionUsage } from '../plugins/types';
+import path from 'path';
+import { Worker } from 'worker_threads';
 import { logger } from './logger';
 
 /** The fields Jarvis reads from the package's `SessionUsage`. */
@@ -21,21 +23,59 @@ export type AnalyzeSessionFile = (filePath: string) => Promise<ParsedSessionUsag
 
 let defaultAnalyzer: AnalyzeSessionFile | null | undefined;
 
+interface WorkerReply {
+  id: number;
+  usage?: ParsedSessionUsage | null;
+  error?: string;
+}
+
 /**
- * The package is loaded on first use with require(): tsconfig's node10 module
- * resolution can't see its `exports` subpath, while Node's require can. If it
- * fails to load, sessions simply show no usage.
+ * The parser runs in a worker thread: it loads the Copilot CLI's 90+ MB
+ * session-store.db into sql.js whenever that file changes (the CLI rewrites it
+ * constantly), which blocked the main thread for 10+ s per sweep. If the worker
+ * can't start, sessions simply show no usage.
  */
+function createWorkerAnalyzer(): AnalyzeSessionFile {
+  let worker: Worker | null = null;
+  let nextId = 1;
+  const pending = new Map<number, { resolve: (u: ParsedSessionUsage | null) => void; reject: (e: Error) => void }>();
+
+  const failAll = (err: Error): void => {
+    worker = null;
+    for (const p of pending.values()) p.reject(err);
+    pending.clear();
+  };
+
+  const start = (): Worker => {
+    const w = new Worker(path.join(__dirname, 'local-session-usage-worker.js'));
+    w.unref();
+    w.on('message', (reply: WorkerReply) => {
+      const p = pending.get(reply.id);
+      if (!p) return;
+      pending.delete(reply.id);
+      if (reply.error !== undefined) p.reject(new Error(reply.error));
+      else p.resolve(reply.usage ?? null);
+    });
+    w.on('error', (err) => failAll(err instanceof Error ? err : new Error(String(err))));
+    w.on('exit', () => failAll(new Error('session parser worker exited')));
+    return w;
+  };
+
+  return (filePath) => new Promise((resolve, reject) => {
+    try {
+      worker ??= start();
+      const id = nextId++;
+      pending.set(id, { resolve, reject });
+      worker.postMessage({ id, filePath });
+    } catch (err) {
+      reject(err instanceof Error ? err : new Error(String(err)));
+    }
+  });
+}
+
 function loadDefaultAnalyzer(): AnalyzeSessionFile | null {
   if (defaultAnalyzer !== undefined) return defaultAnalyzer;
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const lib = require('@rajbos/ai-engineering-fluency/session') as { analyzeSessionFile: AnalyzeSessionFile };
-    defaultAnalyzer = (filePath) => lib.analyzeSessionFile(filePath);
-  } catch (err) {
-    logger.warn(`[local-session-usage] session parser unavailable: ${err instanceof Error ? err.message : String(err)}`);
-    defaultAnalyzer = null;
-  }
+  defaultAnalyzer = createWorkerAnalyzer();
   return defaultAnalyzer;
 }
 
