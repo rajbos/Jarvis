@@ -60,9 +60,9 @@
     "@sigstore/verify": "^4.1.2",
     "electron-updater": "^6.8.9",
     "preact": "^11.0.1",
-    "sql.js": "^1.14.2",
+    "sql.js": "^1.15.0",
     "ws": "^8.22.0",
-    "zod": "^4.6.6"
+    "zod": "^4.6.7"
   },
   "allowScripts": {
     "electron": true,
