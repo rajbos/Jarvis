@@ -375,6 +375,25 @@ describe('collectActiveSessions', () => {
     expect(snap.sources.copilotCloud).toEqual({ ok: true, count: 1 });
   });
 
+  it('marks old idle cloud tasks without a branch or PR as stale, but not recent or PR-backed ones', async () => {
+    vi.mocked(listCopilotAgentTasks).mockResolvedValue({
+      ok: true,
+      tasks: [
+        { id: 'old', name: 'Old chat', state: 'idle', createdAt: null, updatedAt: '2026-02-20T12:00:00Z', repositoryId: null, pullRequestNodeIds: [], headRef: null, baseRef: null },
+        { id: 'recent', name: 'Recent chat', state: 'idle', createdAt: null, updatedAt: '2026-03-01T11:00:00Z', repositoryId: null, pullRequestNodeIds: [], headRef: null, baseRef: null },
+        { id: 'with-pr', name: 'Old with PR', state: 'idle', createdAt: null, updatedAt: '2026-02-20T12:00:00Z', repositoryId: null, pullRequestNodeIds: ['PR_o'], headRef: null, baseRef: null },
+      ],
+    });
+    stubPrResults([[{ kind: 'node', nodeId: 'PR_o' }, { ok: true, pr: rawPr() }]]);
+
+    const snap = await collectActiveSessions({ accessToken: 'tok', now: () => NOW });
+    const verdicts = Object.fromEntries(snap.entries.map((e) => [e.session.sessionId, e.verdict]));
+    expect(verdicts.old).toBe('stale');
+    expect(verdicts.recent).toBe('no_pr');
+    expect(verdicts['with-pr']).not.toBe('stale');
+    expect(snap.entries.find((e) => e.session.sessionId === 'old')?.verdictLabel).toMatch(/^Stale · no PR, idle \d+d$/);
+  });
+
   it('drops finished cloud tasks whose PR was closed without merging', async () => {
     vi.mocked(listCopilotAgentTasks).mockResolvedValue({
       ok: true,

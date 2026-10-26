@@ -185,7 +185,7 @@ function sourceTooltip(description: string, s: ActiveSessionSourceStatus): strin
   return lines.join('\n');
 }
 
-function SourcePills({ snapshot, entries, filter, onChange, showMerged, mergedCount, onToggleMerged }: {
+function SourcePills({ snapshot, entries, filter, onChange, showMerged, mergedCount, onToggleMerged, showStale, staleCount, onToggleStale }: {
   snapshot: ActiveSessionsSnapshot;
   /** Entries that pass the merged filter; the pill counts are based on these. */
   entries: ActiveSessionEntry[];
@@ -194,6 +194,9 @@ function SourcePills({ snapshot, entries, filter, onChange, showMerged, mergedCo
   showMerged: boolean;
   mergedCount: number;
   onToggleMerged: () => void;
+  showStale: boolean;
+  staleCount: number;
+  onToggleStale: () => void;
 }) {
   const counts: Record<SourceKey, number> = { copilotLocal: 0, claudeLocal: 0, copilotCloud: 0 };
   for (const entry of entries) counts[sourceOf(entry)]++;
@@ -235,6 +238,14 @@ function SourcePills({ snapshot, entries, filter, onChange, showMerged, mergedCo
       >
         Merged <span class="as-pill-count">{mergedCount}</span>
       </button>
+      <button
+        class={`as-pill as-pill--stale${showStale ? ' as-pill--active' : ''}`}
+        aria-pressed={showStale}
+        title={showStale ? 'Showing idle cloud sessions that never produced a PR — click to hide them.' : 'Idle cloud sessions that never produced a PR (3+ days old) are hidden — click to show them.'}
+        onClick={onToggleStale}
+      >
+        Stale <span class="as-pill-count">{staleCount}</span>
+      </button>
     </div>
   );
 }
@@ -246,6 +257,7 @@ export function ActiveSessionsPanel() {
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<SourceFilter>('all');
   const [showMerged, setShowMerged] = useState(false);
+  const [showStale, setShowStale] = useState(false);
 
   const refresh = async () => {
     setRefreshing(true);
@@ -291,7 +303,10 @@ export function ActiveSessionsPanel() {
     ? Object.entries(snapshot.sources).filter(([, s]) => !s.ok && s.error).map(([name, s]) => `${name}: ${s.error}`)
     : [];
   const mergedCount = snapshot ? snapshot.entries.filter((e) => e.verdict === 'merged').length : 0;
-  const listed = snapshot ? snapshot.entries.filter((e) => showMerged || e.verdict !== 'merged') : [];
+  const staleCount = snapshot ? snapshot.entries.filter((e) => e.verdict === 'stale').length : 0;
+  const listed = snapshot
+    ? snapshot.entries.filter((e) => (showMerged || e.verdict !== 'merged') && (showStale || e.verdict !== 'stale'))
+    : [];
   const visible = listed.filter((e) => filter === 'all' || sourceOf(e) === filter);
 
   return (
@@ -326,6 +341,9 @@ export function ActiveSessionsPanel() {
           showMerged={showMerged}
           mergedCount={mergedCount}
           onToggleMerged={() => setShowMerged((v) => !v)}
+          showStale={showStale}
+          staleCount={staleCount}
+          onToggleStale={() => setShowStale((v) => !v)}
         />
       )}
 
@@ -338,8 +356,8 @@ export function ActiveSessionsPanel() {
         <div class="adh-empty">No active Copilot or Claude sessions found.</div>
       ) : visible.length === 0 ? (
         <div class="adh-empty">
-          {listed.length === 0 && mergedCount > 0
-            ? `No open sessions — ${mergedCount} merged hidden.`
+          {listed.length === 0 && mergedCount + staleCount > 0
+            ? `No open sessions — ${mergedCount} merged and ${staleCount} stale hidden.`
             : 'No sessions from this source right now.'}
         </div>
       ) : (

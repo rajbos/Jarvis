@@ -62,6 +62,8 @@ export interface CollectActiveSessionsOptions extends LocalSessionDiscoveryOptio
   analyzeSessionFile?: AnalyzeSessionFile | null;
   /** How often to re-list every agent task; in between only changed tasks are fetched. */
   cloudFullListIntervalMs?: number;
+  /** Idle cloud tasks without a branch/PR older than this are marked stale. */
+  cloudStaleAfterMs?: number;
 }
 
 /** Branches that never carry an agent's PR — skip the lookup to save API calls. */
@@ -88,7 +90,23 @@ function verdictFor(pr: PrReadiness | null): Pick<ActiveSessionEntry, 'verdict' 
   return { verdict: 'waiting', verdictLabel: `Waiting on ${parts.join(' + ')}` };
 }
 
-const VERDICT_ORDER: Record<ActiveSessionEntry['verdict'], number> = { ready: 0, waiting: 1, no_pr: 2, merged: 3, closed: 4 };
+const VERDICT_ORDER: Record<ActiveSessionEntry['verdict'], number> = { ready: 0, waiting: 1, no_pr: 2, stale: 3, merged: 4, closed: 5 };
+
+const DEFAULT_CLOUD_STALE_AFTER_MS = 3 * 24 * 60 * 60 * 1000;
+
+/**
+ * A cloud task that sat idle (or finished) without ever producing a branch or
+ * PR, and has not changed for a while, has nothing left to track — typically
+ * a chat-style Copilot session that was never closed.
+ */
+function staleDescription(session: ActiveAgentSession, hasPrLookup: boolean, now: number, staleAfterMs: number): string | null {
+  if (session.origin !== 'cloud' || hasPrLookup || session.branch) return null;
+  if (session.activity !== 'idle' && session.activity !== 'completed') return null;
+  const updated = session.updatedAt ? Date.parse(session.updatedAt) : NaN;
+  if (!Number.isFinite(updated) || now - updated < staleAfterMs) return null;
+  const days = Math.floor((now - updated) / (24 * 60 * 60 * 1000));
+  return `Stale · no PR, idle ${days}d`;
+}
 
 function sortEntries(entries: ActiveSessionEntry[]): ActiveSessionEntry[] {
   return entries.sort((a, b) => {
@@ -415,17 +433,20 @@ export async function collectActiveSessions(options: CollectActiveSessionsOption
       continue;
     }
 
+    const stale = pr ? null : staleDescription(session, lookups.length > 0, now, options.cloudStaleAfterMs ?? DEFAULT_CLOUD_STALE_AFTER_MS);
     entries.push({
       session,
       agent: describeAgentActivity(session.activity),
       pr,
       prError,
       prAccount,
-      ...(lookups.length > 0 && !checked
-        ? { verdict: 'no_pr' as const, verdictLabel: 'Add a GitHub account to check PR' }
-        : lookups.length === 0 && emptyLabel
-          ? { verdict: 'no_pr' as const, verdictLabel: emptyLabel }
-          : verdictFor(pr)),
+      ...(stale
+        ? { verdict: 'stale' as const, verdictLabel: stale }
+        : lookups.length > 0 && !checked
+          ? { verdict: 'no_pr' as const, verdictLabel: 'Add a GitHub account to check PR' }
+          : lookups.length === 0 && emptyLabel
+            ? { verdict: 'no_pr' as const, verdictLabel: emptyLabel }
+            : verdictFor(pr)),
     });
   }
 

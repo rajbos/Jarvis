@@ -943,7 +943,7 @@ export interface PrReadiness {
   waitingOn: Array<'checks' | 'copilot_review'>;
   checkedAt: string;
 }
-export type ActiveSessionVerdict = 'ready' | 'waiting' | 'no_pr' | 'merged' | 'closed';
+export type ActiveSessionVerdict = 'ready' | 'waiting' | 'no_pr' | 'stale' | 'merged' | 'closed';
 export interface ActiveSessionEntry {
   session: ActiveAgentSession;
   agent: ReadinessStage;
