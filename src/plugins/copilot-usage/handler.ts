@@ -154,7 +154,6 @@ export async function checkCopilotUsage(
     }
   }
 
-
   if (!usage && !auth && !pat) {
     usage = { ...base, ...empty, configured: false };
   } else if (!usage) {
