@@ -123,7 +123,13 @@ export async function checkCopilotUsage(
   // flyout would show that account twice and miss the primary. Without a Jarvis
   // sign-in there is no primary, so the active CLI account is used.
   const primaryLogin = getPrimaryGitHubLogin(db);
-  const ghToken = await getGhCliToken(primaryLogin ?? undefined);
+  // `gh` is a subprocess and occasionally times out or fails once; retry before
+  // falling back to the billing report, which only sees personal-plan usage
+  // and can be a tiny fraction of the real (org/enterprise-billed) total.
+  const ghToken = (await getGhCliToken(primaryLogin ?? undefined)) ?? (await getGhCliToken(primaryLogin ?? undefined));
+  if (!ghToken) {
+    logger.warn('[copilot-usage] GitHub CLI token unavailable; falling back to billing report');
+  }
   if (ghToken) {
     const quotaResult = await fetchCopilotQuota(ghToken);
     if (quotaResult.raw) rawResponses.push(quotaResult.raw);
@@ -144,7 +150,7 @@ export async function checkCopilotUsage(
       rawResponses.push(...models.raw);
       usage = { ...usage, byModel: models.byModel };
     } else {
-      logger.debug(`[copilot-usage] GitHub CLI quota lookup failed (${quotaResult.error}); falling back to billing report`);
+      logger.warn(`[copilot-usage] GitHub CLI quota lookup failed (${quotaResult.error}); falling back to billing report`);
     }
   }
 
@@ -206,6 +212,21 @@ export async function checkCopilotUsage(
             : 'Your GitHub sign-in cannot read billing data — re-authorize GitHub and approve "Personal user data" access.',
       };
     }
+  }
+
+  // Never let a degraded source overwrite a good quota reading from the same month:
+  // keep the last gh-cli result (usage only grows within a month) and flag it stale.
+  if (
+    usage.source !== 'gh-cli' &&
+    lastUsage?.source === 'gh-cli' &&
+    !lastUsage.error &&
+    lastUsage.year === period.year &&
+    lastUsage.month === period.month
+  ) {
+    logger.warn('[copilot-usage] Keeping previous GitHub CLI quota reading; current sources returned only partial data');
+    lastUsage = { ...lastUsage, budgetCredits, stale: true };
+    broadcast(getWindow, lastUsage);
+    return lastUsage;
   }
 
   if (rawResponses.length > 0) usage = { ...usage, rawResponses };

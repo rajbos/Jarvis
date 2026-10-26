@@ -784,6 +784,8 @@ export interface CopilotUsage {
    */
   source?: 'gh-cli' | 'oauth' | 'pat';
   login?: string;
+  /** True when the latest check only got partial data, so an earlier reading is shown instead. */
+  stale?: boolean;
   /** Copilot plan reported by the quota endpoint (e.g. `enterprise`, `pro`). */
   plan?: string;
   /** Credits included in the plan this period (quota endpoint only); null when unknown/unlimited. */
