@@ -5869,8 +5869,20 @@ h5.ec-heading { font-size: 0.9375rem; }
   color: #ffb74d;
 }
 
-.as-verdict--closed {
+.as-verdict--closed,
+.as-verdict--stale {
   color: #7a8fb0;
+}
+
+.as-pill--stale {
+  border-color: #3d4f6e;
+  color: #9fb2d0;
+}
+
+.as-pill--stale.as-pill--active {
+  border-color: #7a8fb0;
+  background: #1f2c45;
+  color: #e0e9f8;
 }
 
 /* ── Chat diagnostic card ────────────────────────────────────────────────── */
