@@ -2,6 +2,7 @@
 import type { Database as SqlJsDatabase } from 'sql.js';
 import { safeHandle } from '../ipc-utils';
 import { logger } from '../../services/logger';
+import { recordCopilotCredits } from '../copilot-usage/credit-history';
 import {
   deleteGitHubAuthFor,
   getPrimaryGitHubLogin,
@@ -72,7 +73,7 @@ export async function checkAllAccountsUsage(
 ): Promise<GitHubAccountUsage[]> {
   const ghAccounts = await listGhCliAccounts();
   const accounts = listAccounts(db, ghAccounts);
-  return Promise.all(
+  const results = await Promise.all(
     accounts.map(async (account) => {
       const viaGh = ghAccounts.some((g) => g.host === account.host && sameId(g.login, account.login));
       const oauth = account.host === DEFAULT_HOST ? loadGitHubAuth(db, account.login) : null;
@@ -92,6 +93,12 @@ export async function checkAllAccountsUsage(
       return { account, usage };
     }),
   );
+  // The primary account's credits are recorded by its own usage check.
+  recordCopilotCredits(
+    results.filter((r) => !r.account.isPrimary).map((r) => ({ id: r.account.id, usage: r.usage })),
+    now.getTime(),
+  );
+  return results;
 }
 
 /** Check a PAT against a GHE.com host and return the login and avatar it belongs to. */

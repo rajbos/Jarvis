@@ -16,7 +16,7 @@ const LEVEL_COLOR: Record<CopilotBudgetLevel, string> = {
 
 const credits = (n: number) => formatNumber(Math.round(n));
 
-const COPILOT_HISTORY_SERIES = [{ key: 'credits', label: 'Credits used', color: '#64b5f6' }];
+const HISTORY_COLORS = ['#64b5f6', '#ce93d8', '#ffb74d', '#81c784', '#f06292', '#4dd0e1'];
 
 const SOURCE_LABEL: Record<NonNullable<CopilotUsage['source']>, string> = {
   'gh-cli': 'GitHub CLI',
@@ -249,6 +249,14 @@ export function CopilotUsageBadge({ usage, otherAccounts = [], onOpenSettings, o
   const closeRaw = useCallback(() => setShowRaw(false), []);
   const [showHistory, setShowHistory] = useState(false);
   const closeHistory = useCallback(() => setShowHistory(false), []);
+  // Series keys are account ids: the bare login on github.com, `login@host` on GHE.com.
+  const historySeries = [
+    ...(usage.login ? [{ key: usage.login, label: `@${usage.login}` }] : []),
+    ...configuredOthers.map(({ account }) => ({
+      key: account.id,
+      label: account.host !== 'github.com' ? `@${account.login} (${account.host})` : `@${account.login}`,
+    })),
+  ].map((s, i) => ({ ...s, color: HISTORY_COLORS[i % HISTORY_COLORS.length] }));
   const rawAccounts = [
     { login: usage.login ?? 'account', usage },
     ...configuredOthers.map((a) => ({ login: a.account.login, usage: a.usage })),
@@ -304,9 +312,9 @@ export function CopilotUsageBadge({ usage, otherAccounts = [], onOpenSettings, o
       {showRaw && <RawResponsesDialog accounts={rawAccounts} onClose={closeRaw} />}
       {showHistory && (
         <UsageHistoryDialog
-          title={`Copilot AI credits${usage.login ? ` · @${usage.login}` : ''}`}
+          title="Copilot AI credits"
           metric="copilot"
-          series={COPILOT_HISTORY_SERIES}
+          series={historySeries}
           mode="used"
           format={credits}
           initialRangeMs={30 * 24 * 60 * 60 * 1000}

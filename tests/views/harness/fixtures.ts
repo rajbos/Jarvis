@@ -337,10 +337,21 @@ export function createFixtures(now: number) {
       },
     };
   });
-  const copilotHistory: UsageHistorySample[] = pollTimes(30, 60 * 60 * 1000).map((at) => {
+  // The primary is recorded by its own check, the other accounts a minute later
+  // by the all-accounts check, so they land in separate rows as in the app.
+  const copilotHistory = pollTimes(30, 60 * 60 * 1000).flatMap((at): UsageHistorySample[] => {
     const d = new Date(at);
     const dayOfMonth = d.getUTCDate() - 1 + d.getUTCHours() / 24;
-    return { at, series: { credits: { value: Math.round(dayOfMonth * 7.8), limit: 300 } } };
+    return [
+      { at, series: { [FIXTURE_USER]: { value: Math.round(dayOfMonth * 7.8), limit: 300 } } },
+      {
+        at: at + 60_000,
+        series: {
+          'test-user-work': { value: Math.round(dayOfMonth * 140), limit: 5000 },
+          'fixture-bob@fixture.ghe.com': { value: Math.round(dayOfMonth * 1.1), limit: 300 },
+        },
+      },
+    ];
   });
   const usageStored: Record<UsageHistoryMetric, UsageHistorySample[]> = {
     'github-oauth': githubHistory('oauth'),

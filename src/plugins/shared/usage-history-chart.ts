@@ -62,8 +62,8 @@ export interface BandPoint {
 /**
  * Map downsampled slots to SVG coordinates, split into segments wherever no
  * samples were recorded for a while (the app was closed), so the line does not
- * bridge a gap it knows nothing about. `scale` is the value at the top of the
- * chart when a series has no limit of its own.
+ * bridge a gap it knows nothing about. `scale` null plots each series as a
+ * share of its own limit; a number plots raw values against that axis maximum.
  */
 export function historyBands(
   slots: UsageHistorySlot[],
@@ -73,7 +73,7 @@ export function historyBands(
   width: number,
   height: number,
   slotMs: number,
-  scale: number = 1,
+  scale: number | null = null,
 ): BandPoint[][] {
   const span = Math.max(1, end - start);
   // Long ranges bridge overnight gaps; otherwise a month of history reads as a dashed line.
@@ -101,9 +101,10 @@ export function historyBands(
   return segments;
 }
 
-/** y for a value: its share of the limit (or of `scale` without one), top = full. */
-export function chartY(value: number, limit: number | null, height: number, scale: number = 1): number {
-  const ratio = limit && limit > 0 ? value / limit : scale > 0 ? value / scale : 0;
+/** y for a value: its share of the limit, or of `scale` when one is given; top = full. */
+export function chartY(value: number, limit: number | null, height: number, scale: number | null = null): number {
+  const max = scale ?? limit;
+  const ratio = max && max > 0 ? value / max : 0;
   return (1 - Math.min(1, Math.max(0, ratio))) * height;
 }
 

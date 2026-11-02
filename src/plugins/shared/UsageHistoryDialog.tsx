@@ -104,12 +104,13 @@ export function UsageHistoryDialog({
   const view = data && data.end - data.start > 0 ? data : null;
   const visible = series.filter((s) => shown[s.key]);
 
-  // Series with a limit plot as a share of it; without one (unlimited Copilot
-  // plan) the axis runs from 0 to a round number above the highest value.
+  // Series plot as a share of their own limit. When any shown series has none
+  // (unlimited Copilot plan), every line switches to raw values on an axis from
+  // 0 to a round number above the highest one, so they stay comparable.
   const unlimited = view ? visible.some((s) => view.slots.some((slot) => slot.series[s.key] && slot.series[s.key].limit === null)) : false;
   const scale = view && unlimited
     ? niceCeil(Math.max(0, ...visible.flatMap((s) => view.slots.map((slot) => slot.series[s.key]?.max ?? 0))))
-    : 1;
+    : null;
   const yOf = (value: number, limit: number | null) => chartY(value, limit, PLOT_H, scale);
 
   const bands = view
@@ -174,7 +175,7 @@ export function UsageHistoryDialog({
                   <g key={f}>
                     <line class="bg-ratelimit-grid" x1={0} x2={PLOT_W} y1={(1 - f) * PLOT_H} y2={(1 - f) * PLOT_H} />
                     <text class="bg-rlh-ylabel" x={-6} y={(1 - f) * PLOT_H + 4}>
-                      {unlimited ? format(f * scale) : `${f * 100}%`}
+                      {scale !== null ? format(f * scale) : `${f * 100}%`}
                     </text>
                   </g>
                 ))}
