@@ -338,6 +338,7 @@ contextBridge.exposeInMainWorld('jarvis', {
   getSystemLocale: () => ipcRenderer.invoke('app:get-system-locale'),
   // GitHub rate limit
   getGitHubRateLimit: () => ipcRenderer.invoke('github:get-rate-limit'),
+  getUsageHistory: (metric: string, rangeMs: number) => ipcRenderer.invoke('usage-history:query', metric, rangeMs),
   // Claude (Claude Code OAuth) rate limit
   getClaudeStatus: () => ipcRenderer.invoke('claude:status'),
   getClaudeRateLimit: () => ipcRenderer.invoke('claude:rate-limit'),

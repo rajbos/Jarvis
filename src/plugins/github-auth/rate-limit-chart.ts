@@ -1,10 +1,13 @@
-import type { GitHubRateLimitResource, GitHubRateLimitSample, GitHubRateLimitSource } from '../types';
+import type { GitHubRateLimitResource, GitHubRateLimitSample, GitHubRateLimitSource, RateLimitBucketName } from '../types';
 
 export type ChartBucket = 'core' | 'graphql';
 
 export const CHART_BUCKETS: readonly ChartBucket[] = ['core', 'graphql'];
 
 export const CHART_WINDOW_MS = 2 * 60 * 60 * 1000;
+
+/** Buckets worth keeping; the rest of `/rate_limit` (code_scanning_upload, …) is noise. */
+export const RATE_LIMIT_TRACKED_BUCKETS: readonly RateLimitBucketName[] = ['core', 'graphql', 'search'];
 
 export interface ChartPoint {
   x: number;

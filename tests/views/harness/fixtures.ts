@@ -39,6 +39,7 @@ import type {
   StoredNotification,
   WorkflowRunSummary,
 } from '../../../src/plugins/types';
+import type { UsageHistoryMetric, UsageHistorySample } from '../../../src/plugins/types';
 
 export const FIXTURE_USER = 'test-user';
 export const ORG_ACME = 'acme-labs';
@@ -291,6 +292,61 @@ export function createFixtures(now: number) {
       tokenExpired: false,
     },
     fetchedAt: iso(now, 0),
+  };
+
+  // Stored samples for the history dialogs, polled every 2 minutes between
+  // 07:00 and 23:00 (the app is closed at night). GitHub core drains through
+  // each hour and the PAT ran dry once, two days ago at 14:00. Claude's 5-hour
+  // window climbs and hit 100% the same afternoon; the 7-day window grows all
+  // week. Copilot credits are checked hourly and reset on the 1st.
+  const pollTimes = (days: number, stepMs: number): number[] => {
+    const out: number[] = [];
+    for (let at = now - days * DAY - (now % stepMs); at <= now; at += stepMs) {
+      const hourOfDay = new Date(at).getUTCHours();
+      if (hourOfDay >= 7 && hourOfDay < 23) out.push(at);
+    }
+    return out;
+  };
+  const githubHistory = (source: 'oauth' | 'pat'): UsageHistorySample[] =>
+    pollTimes(7, 2 * 60 * 1000).map((at) => {
+      const hourOfDay = new Date(at).getUTCHours();
+      const minute = new Date(at).getUTCMinutes();
+      const daysAgo = Math.floor((now - at) / DAY);
+      const busy = source === 'pat' ? 40 + (daysAgo % 3) * 15 : 15 + (hourOfDay % 4) * 10;
+      const exhausted = source === 'pat' && daysAgo === 2 && hourOfDay === 14;
+      const core = exhausted ? Math.max(0, 5000 - minute * 140) : Math.max(0, 5000 - minute * busy);
+      const graphql = Math.max(0, 5000 - minute * (source === 'pat' ? 60 : 8));
+      return {
+        at,
+        series: {
+          core: { value: core, limit: 5000 },
+          graphql: { value: graphql, limit: 5000 },
+          search: { value: 30 - (minute % 7), limit: 30 },
+        },
+      };
+    });
+  const claudeHistory: UsageHistorySample[] = pollTimes(7, 2 * 60 * 1000).map((at) => {
+    const minutesIntoWindow = Math.floor(at / 60_000) % 300;
+    const daysAgo = Math.floor((now - at) / DAY);
+    const pace = daysAgo === 2 ? 0.45 : 0.12 + (daysAgo % 3) * 0.06;
+    return {
+      at,
+      series: {
+        five_hour: { value: Math.min(100, Math.round(minutesIntoWindow * pace)), limit: 100 },
+        seven_day: { value: Math.round(10 + ((7 * DAY - (now - at)) / (7 * DAY)) * 52), limit: 100 },
+      },
+    };
+  });
+  const copilotHistory: UsageHistorySample[] = pollTimes(30, 60 * 60 * 1000).map((at) => {
+    const d = new Date(at);
+    const dayOfMonth = d.getUTCDate() - 1 + d.getUTCHours() / 24;
+    return { at, series: { credits: { value: Math.round(dayOfMonth * 7.8), limit: 300 } } };
+  });
+  const usageStored: Record<UsageHistoryMetric, UsageHistorySample[]> = {
+    'github-oauth': githubHistory('oauth'),
+    'github-pat': githubHistory('pat'),
+    claude: claudeHistory,
+    copilot: copilotHistory,
   };
 
   const claudeStatus: ClaudeStatus = { connected: true, subscriptionType: 'pro', source: 'stored', expiresAt: now + 7 * DAY };
@@ -575,7 +631,7 @@ export function createFixtures(now: number) {
   return {
     ruddrHoursWeek, ruddrHoursSummary,
     localRepos, notifications, notificationCounts, orgs, reposByOrg, scanFolders, dashboard,
-    workflowSummary, groups, groupDetails, ruddrBudget, secrets, ollama, rateLimit, claudeStatus,
+    workflowSummary, groups, groupDetails, ruddrBudget, secrets, ollama, rateLimit, usageStored, claudeStatus,
     claudeRateLimit, copilotUsage, githubAccounts, githubAccountsUsage, activeSessions, autoDismissLog, autoDismissStats, backgroundTasks,
     browserSkills, browserRuns, agents, onedriveRoots, localIndexStatus, mcpConfig,
   };

@@ -99,6 +99,25 @@ const SHOTS: Shot[] = [
     prepare: (page) => page.locator('.bg-status-ratelimit').last().hover(),
   },
   {
+    name: 'pat-rate-limit-history', view: 'index', waitFor: ['PAT rate-limit history', 'Lowest in range'],
+    prepare: async (page) => {
+      await page.locator('.bg-status-ratelimit .bg-status-rate-limit').last().click();
+      await page.getByRole('button', { name: '7d' }).click();
+      await page.locator('.bg-rlh-chart svg').hover({ position: { x: 560, y: 120 } });
+    },
+  },
+  {
+    name: 'claude-usage-history', view: 'index', waitFor: ['Claude usage history', 'Highest in range'],
+    prepare: async (page) => {
+      await page.locator('.bg-status-rate-limit', { hasText: /^Claude/ }).click();
+      await page.getByRole('button', { name: '7d' }).click();
+    },
+  },
+  {
+    name: 'copilot-credits-history', view: 'index', waitFor: ['Copilot AI credits', 'Highest in range'],
+    prepare: (page) => page.locator('.bg-status-copilot .bg-status-rate-limit').click(),
+  },
+  {
     // Failed update check handed to the chat: the badge opens a diagnostic card.
     name: 'update-diagnostic', view: 'index',
     waitFor: ['Update could not be verified', 'Explain this', 'Open log', 'Rejecting downloaded update'],

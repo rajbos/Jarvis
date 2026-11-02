@@ -1,10 +1,16 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import initSqlJs from 'sql.js';
+
+vi.mock('../../src/storage/database', () => ({ saveDatabase: vi.fn() }));
+
 import {
   clearRateLimitHistory,
   getRateLimitHistory,
   recordRateLimitSample,
+  reloadRateLimitHistory,
   RATE_LIMIT_HISTORY_WINDOW_MS,
 } from '../../src/services/github-rate-limit-history';
+import { attachUsageHistoryStore, detachUsageHistoryStore, queryUsageHistory } from '../../src/services/usage-history';
 import { rateLimitSeries, tightestBucket, CHART_WINDOW_MS } from '../../src/plugins/github-auth/rate-limit-chart';
 import type { GitHubRateLimitSource } from '../../src/plugins/types';
 
@@ -53,5 +59,27 @@ describe('rate-limit-chart', () => {
     expect(tightestBucket(source)?.name).toBe('graphql');
     expect(tightestBucket({ configured: true, resource: res(42) })?.resource.remaining).toBe(42);
     expect(tightestBucket({ configured: true, resource: null })).toBeNull();
+  });
+});
+
+describe('github rate-limit history persistence', () => {
+  beforeEach(() => clearRateLimitHistory());
+  afterEach(() => detachUsageHistoryStore());
+
+  it('stores samples per token and reloads the in-memory window after a restart', async () => {
+    const SQL = await initSqlJs();
+    attachUsageHistoryStore(new SQL.Database());
+    const now = 100 * RATE_LIMIT_HISTORY_WINDOW_MS;
+    recordRateLimitSample('pat', { core: res(4000), graphql: res(10) }, now - 3 * RATE_LIMIT_HISTORY_WINDOW_MS);
+    recordRateLimitSample('pat', { core: res(3000) }, now - 600_000);
+
+    clearRateLimitHistory();
+    reloadRateLimitHistory(now);
+    expect(getRateLimitHistory('pat', now)).toEqual([{ at: now - 600_000, buckets: { core: { remaining: 3000, limit: 5000 } } }]);
+
+    const day = queryUsageHistory('github-pat', 24 * 60 * 60 * 1000, now);
+    expect(day.sampleCount).toBe(2);
+    expect(day.low.graphql).toEqual({ value: 10, limit: 5000, at: now - 3 * RATE_LIMIT_HISTORY_WINDOW_MS });
+    expect(queryUsageHistory('github-oauth', 24 * 60 * 60 * 1000, now).sampleCount).toBe(0);
   });
 });

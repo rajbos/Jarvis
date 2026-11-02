@@ -4,6 +4,8 @@ import type { Database as SqlJsDatabase } from 'sql.js';
 import type { BrowserWindow } from 'electron';
 import { safeHandle } from '../ipc-utils';
 import { logger } from '../../services/logger';
+import { recordUsageSample } from '../../services/usage-history';
+import type { ClaudeRateLimitWindow } from '../types';
 import {
   loadClaudeCodeCredentials,
   refreshClaudeToken,
@@ -190,6 +192,8 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
         wasLimited = probe.limited;
       }
 
+      recordClaudeUsage(probe.fiveHour, probe.sevenDay);
+
       return {
         configured: true,
         limited: probe.limited,
@@ -264,4 +268,14 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
     storeCredentials(db, creds);
     return { ok: true };
   });
+}
+
+/** Store the windows' utilization (as % used) for the status-bar history dialog. */
+function recordClaudeUsage(fiveHour: ClaudeRateLimitWindow | null, sevenDay: ClaudeRateLimitWindow | null): void {
+  const series: Record<string, { value: number; limit: number }> = {};
+  for (const [name, win] of [['five_hour', fiveHour], ['seven_day', sevenDay]] as const) {
+    if (win?.utilization != null) series[name] = { value: Math.round(win.utilization * 1000) / 10, limit: 100 };
+    else if (win?.limited) series[name] = { value: 100, limit: 100 };
+  }
+  recordUsageSample('claude', { at: Date.now(), series });
 }

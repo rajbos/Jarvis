@@ -3,6 +3,8 @@ import { Notification, BrowserWindow } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import { safeHandle } from '../ipc-utils';
 import { logger } from '../../services/logger';
+import { recordUsageSample } from '../../services/usage-history';
+import { copilotUsageLimit } from './budget-level';
 import { fetchGitHubUser, getPrimaryGitHubLogin, loadGitHubAuth, loadGitHubPat } from '../../services/github-oauth';
 import {
   currentBillingMonth,
@@ -231,7 +233,10 @@ export async function checkCopilotUsage(
 
   if (rawResponses.length > 0) usage = { ...usage, rawResponses };
   lastUsage = usage;
-  if (!usage.error && usage.configured) notifyBudgetThreshold(db, usage);
+  if (!usage.error && usage.configured) {
+    notifyBudgetThreshold(db, usage);
+    recordUsageSample('copilot', { at: now.getTime(), series: { credits: { value: usage.creditsUsed, limit: copilotUsageLimit(usage) } } });
+  }
   broadcast(getWindow, usage);
   return usage;
 }

@@ -38,6 +38,7 @@ import { ClaudeStep } from '../plugins/claude/ClaudeStep';
 import { ClaudePanel } from '../plugins/claude/ClaudePanel';
 import { CopilotUsageBadge } from '../plugins/copilot-usage/CopilotUsageBadge';
 import { GitHubRateLimitBadge } from '../plugins/github-auth/GitHubRateLimitBadge';
+import { UsageHistoryDialog, historyTriggerProps } from '../plugins/shared/UsageHistoryDialog';
 import { ClaudeIcon } from '../plugins/shared/BrandIcons';
 import { ActiveSessionsPanel } from '../plugins/active-sessions/ActiveSessionsPanel';
 
@@ -1501,6 +1502,8 @@ function BackgroundStatusBar({
 
   const message = ipcMessage ?? derivedMessage;
 
+  const [claudeHistoryOpen, setClaudeHistoryOpen] = useState(false);
+
   // Build badges for OAuth and PAT sources (only when configured)
   const oauthBadge = rateLimit?.oauth.configured ? rateLimit.oauth : null;
   const patBadge = rateLimit?.pat.configured ? rateLimit.pat : null;
@@ -1602,10 +1605,11 @@ function BackgroundStatusBar({
             />
           )}
           {claudeBadge && (
-            <span class="bg-status-claude">
+            <span class={`bg-status-claude${claudeHistoryOpen ? ' bg-status-claude--dialog-open' : ''}`}>
               <span
-                class={`bg-status-rate-limit${claudeBadge.limited ? ' bg-status-rate-limit--limited' : ''}`}
+                class={`bg-status-rate-limit bg-status-rate-limit--clickable${claudeBadge.limited ? ' bg-status-rate-limit--limited' : ''}`}
                 style={{ color: claudeBadge.error ? '#888' : claudeBadge.limited ? '#f44336' : '#4caf50' }}
+                {...historyTriggerProps(() => setClaudeHistoryOpen(true))}
               >
                 <ClaudeIcon size={13} class="bg-status-brand-icon" />
                 {claudeBadge.error
@@ -1641,9 +1645,22 @@ function BackgroundStatusBar({
                   <div class="bg-status-claude-error">Check failed: {claudeBadge.error}</div>
                 )}
                 <div class="bg-status-claude-checked">
-                  Last checked {new Date(claudeBadge.fetchedAt).toLocaleTimeString()}
+                  Last checked {new Date(claudeBadge.fetchedAt).toLocaleTimeString()} · click the badge for the full history
                 </div>
               </div>
+              {claudeHistoryOpen && (
+                <UsageHistoryDialog
+                  title="Claude usage history"
+                  metric="claude"
+                  series={CLAUDE_HISTORY_SERIES}
+                  mode="used"
+                  format={(v) => `${Math.round(v)}%`}
+                  showLimit={false}
+                  initialRangeMs={24 * 60 * 60 * 1000}
+                  footnote="sampled every 2 minutes while Jarvis runs"
+                  onClose={() => setClaudeHistoryOpen(false)}
+                />
+              )}
             </span>
           )}
           {hasAnyBadge && (oauthBadge || patBadge) && (
@@ -1657,6 +1674,11 @@ function BackgroundStatusBar({
     </div>
   );
 }
+
+const CLAUDE_HISTORY_SERIES = [
+  { key: 'five_hour', label: '5-hour window', color: '#64b5f6' },
+  { key: 'seven_day', label: '7-day window', color: '#ce93d8' },
+];
 
 // ── Mount ────────────────────────────────────────────────────────────────────
 

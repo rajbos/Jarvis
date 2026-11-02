@@ -1,12 +1,21 @@
+import { useState } from 'preact/hooks';
 import type { GitHubRateLimitSource } from '../types';
 import { formatNumber, formatDurationUntil } from '../shared/utils';
 import { CHART_BUCKETS, rateLimitSeries, tightestBucket, type ChartBucket } from './rate-limit-chart';
+import { UsageHistoryDialog, historyTriggerProps } from '../shared/UsageHistoryDialog';
 
 const CHART_W = 320;
 const CHART_H = 72;
 
 const BUCKET_LABEL: Record<string, string> = { core: 'REST', graphql: 'GraphQL', search: 'Search' };
 const BUCKET_COLOR: Record<ChartBucket, string> = { core: '#64b5f6', graphql: '#ce93d8' };
+
+const HISTORY_SERIES = [
+  { key: 'core', label: 'REST', color: BUCKET_COLOR.core },
+  { key: 'graphql', label: 'GraphQL', color: BUCKET_COLOR.graphql },
+  // Search's 30-per-minute quota swings constantly and would drown the others.
+  { key: 'search', label: 'Search', color: '#ffb74d', hidden: true },
+] as const;
 
 function rateLimitColor(remaining: number): string {
   if (remaining < 100) return '#f44336';
@@ -27,8 +36,12 @@ interface Props {
   source: GitHubRateLimitSource;
 }
 
-/** Status-bar rate-limit badge with a hover popover charting the last 2 hours. */
+/**
+ * Status-bar rate-limit badge with a hover popover charting the last 2 hours.
+ * Clicking it opens the stored history, zoomable out to 30 days.
+ */
 export function GitHubRateLimitBadge({ label, source }: Props) {
+  const [historyOpen, setHistoryOpen] = useState(false);
   const tight = tightestBucket(source);
   const now = Date.now();
   const history = source.history ?? [];
@@ -57,8 +70,14 @@ export function GitHubRateLimitBadge({ label, source }: Props) {
     .filter((s) => s.points.length > 0);
 
   return (
-    <span class="bg-status-claude bg-status-ratelimit">
-      <span class="bg-status-rate-limit" style={{ color }} tabIndex={0}>{text}</span>
+    <span class={`bg-status-claude bg-status-ratelimit${historyOpen ? ' bg-status-claude--dialog-open' : ''}`}>
+      <span
+        class="bg-status-rate-limit bg-status-rate-limit--clickable"
+        style={{ color }}
+        {...historyTriggerProps(() => setHistoryOpen(true))}
+      >
+        {text}
+      </span>
       <div class="bg-status-claude-pop" role="tooltip">
         <div class="bg-ratelimit-head">
           {tight ? (
@@ -132,10 +151,21 @@ export function GitHubRateLimitBadge({ label, source }: Props) {
           <div class="bg-status-claude-error">Check failed: {source.error}</div>
         )}
         <div class="bg-status-claude-checked">
+          Click the badge for the full history.
           Secondary (abuse) limits have no counter and don't show here.
           {source.tokenExpiresAt ? ` Token expires ${source.tokenExpiresAt}.` : ''}
         </div>
       </div>
+      {historyOpen && (
+        <UsageHistoryDialog
+          title={`${label} rate-limit history`}
+          metric={label === 'OAuth' ? 'github-oauth' : 'github-pat'}
+          series={HISTORY_SERIES}
+          mode="remaining"
+          footnote="sampled every 2 minutes while Jarvis runs"
+          onClose={() => setHistoryOpen(false)}
+        />
+      )}
     </span>
   );
 }
