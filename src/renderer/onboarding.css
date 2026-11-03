@@ -4869,8 +4869,12 @@ h5.ec-heading { font-size: 0.9375rem; }
   border-top: none;
 }
 
+/* Wrap to the width the chart and table set instead of widening the flyout. */
 .bg-status-ratelimit .bg-status-claude-checked {
   white-space: normal;
+  width: 0;
+  min-width: 100%;
+  box-sizing: border-box;
 }
 
 /* ── Copilot usage flyout ─────────────────────────────────────────────────── */
