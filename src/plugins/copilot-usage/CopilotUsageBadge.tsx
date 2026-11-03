@@ -5,6 +5,7 @@ import { formatNumber, formatDurationUntil } from '../shared/utils';
 import { copilotBudgetLevel, copilotUsageLimit, type CopilotBudgetLevel } from './budget-level';
 import { CopilotIcon } from '../shared/BrandIcons';
 import { EndpointProbe, RawEntry, type ProbeAccount } from './EndpointProbe';
+import { UsageHistoryDialog, historyTriggerProps } from '../shared/UsageHistoryDialog';
 
 const LEVEL_COLOR: Record<CopilotBudgetLevel, string> = {
   unknown: '#888',
@@ -14,6 +15,8 @@ const LEVEL_COLOR: Record<CopilotBudgetLevel, string> = {
 };
 
 const credits = (n: number) => formatNumber(Math.round(n));
+
+const HISTORY_COLORS = ['#64b5f6', '#ce93d8', '#ffb74d', '#81c784', '#f06292', '#4dd0e1'];
 
 const SOURCE_LABEL: Record<NonNullable<CopilotUsage['source']>, string> = {
   'gh-cli': 'GitHub CLI',
@@ -244,14 +247,28 @@ export function CopilotUsageBadge({ usage, otherAccounts = [], onOpenSettings, o
   const stacked = configuredOthers.length > 0;
   const [showRaw, setShowRaw] = useState(false);
   const closeRaw = useCallback(() => setShowRaw(false), []);
+  const [showHistory, setShowHistory] = useState(false);
+  const closeHistory = useCallback(() => setShowHistory(false), []);
+  // Series keys are account ids: the bare login on github.com, `login@host` on GHE.com.
+  const historySeries = [
+    ...(usage.login ? [{ key: usage.login, label: `@${usage.login}` }] : []),
+    ...configuredOthers.map(({ account }) => ({
+      key: account.id,
+      label: account.host !== 'github.com' ? `@${account.login} (${account.host})` : `@${account.login}`,
+    })),
+  ].map((s, i) => ({ ...s, color: HISTORY_COLORS[i % HISTORY_COLORS.length] }));
   const rawAccounts = [
     { login: usage.login ?? 'account', usage },
     ...configuredOthers.map((a) => ({ login: a.account.login, usage: a.usage })),
   ];
 
   return (
-    <span class="bg-status-claude bg-status-copilot">
-      <span class="bg-status-rate-limit" style={{ color: LEVEL_COLOR[level] }}>
+    <span class={`bg-status-claude bg-status-copilot${showRaw || showHistory ? ' bg-status-claude--dialog-open' : ''}`}>
+      <span
+        class="bg-status-rate-limit bg-status-rate-limit--clickable"
+        style={{ color: LEVEL_COLOR[level] }}
+        {...historyTriggerProps(() => setShowHistory(true))}
+      >
         <CopilotIcon size={13} class="bg-status-brand-icon" />
         {label}
       </span>
@@ -293,6 +310,18 @@ export function CopilotUsageBadge({ usage, otherAccounts = [], onOpenSettings, o
         </div>
       </div>
       {showRaw && <RawResponsesDialog accounts={rawAccounts} onClose={closeRaw} />}
+      {showHistory && (
+        <UsageHistoryDialog
+          title="Copilot AI credits"
+          metric="copilot"
+          series={historySeries}
+          mode="used"
+          format={credits}
+          initialRangeMs={30 * 24 * 60 * 60 * 1000}
+          footnote="recorded at every usage check (monthly totals reset on the 1st)"
+          onClose={closeHistory}
+        />
+      )}
     </span>
   );
 }

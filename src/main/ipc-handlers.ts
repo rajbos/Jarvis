@@ -10,6 +10,7 @@ import { registerHandlers as registerConfigHandlers } from '../plugins/config/ha
 import { registerHandlers as registerOllamaHandlers } from '../plugins/ollama/handler';
 import { registerHandlers as registerChatHandlers } from '../plugins/chat/handler';
 import { registerHandlers as registerGitHubAuthHandlers } from '../plugins/github-auth/handler';
+import { registerHandlers as registerUsageHistoryHandlers } from '../plugins/usage-history/handler';
 import { registerHandlers as registerDiscoveryHandlers } from '../plugins/discovery/handler';
 import { registerHandlers as registerOrgsHandlers } from '../plugins/orgs/handler';
 import { registerHandlers as registerReposHandlers } from '../plugins/repos/handler';
@@ -35,6 +36,7 @@ export function registerIpcHandlers(
   db: SqlJsDatabase,
   getWindow: () => BrowserWindow | null,
 ): void {
+  registerUsageHistoryHandlers(db);
   registerConfigHandlers(db, getWindow);
   registerOllamaHandlers(db, getWindow);
   registerChatHandlers(db, getWindow);

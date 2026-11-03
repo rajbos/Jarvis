@@ -78,6 +78,7 @@ const EXPECTED_CHANNELS = [
   'github:start-oauth-discovery',
   'github:start-oauth',
   'github:get-rate-limit',
+  'usage-history:query',
   // claude plugin
   'claude:status',
   'claude:rate-limit',

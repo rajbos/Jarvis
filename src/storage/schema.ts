@@ -477,5 +477,19 @@ export function getSchema(): string {
         failed_at  TEXT NOT NULL,
         error      TEXT NOT NULL
     );
+
+    ${USAGE_SAMPLES_TABLE_SQL};
   `;
 }
+
+/**
+ * Polled usage readings for the status-bar history dialog: GitHub rate limits
+ * per token, Claude's windows, Copilot credits. One row per metric per poll;
+ * `data` is JSON `{ series: [value, limit|null] }`, `at` is epoch ms.
+ */
+export const USAGE_SAMPLES_TABLE_SQL = `CREATE TABLE IF NOT EXISTS usage_samples (
+        metric TEXT NOT NULL,
+        at     INTEGER NOT NULL,
+        data   TEXT NOT NULL,
+        PRIMARY KEY (metric, at)
+    )`;

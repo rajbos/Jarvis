@@ -634,8 +634,48 @@ export interface GitHubRateLimitSample {
 
   at: number; // epoch ms
 
-  buckets: Partial<Record<'core' | 'graphql' | 'search', { remaining: number; limit: number }>>;
+  buckets: Partial<Record<RateLimitBucketName, { remaining: number; limit: number }>>;
 
+}
+
+export type RateLimitBucketName = 'core' | 'graphql' | 'search';
+
+// ── Stored usage history (status-bar history dialog) ─────────────────────────
+/** What a stored usage series belongs to: a GitHub token's rate limits, Claude's windows, Copilot credits. */
+export type UsageHistoryMetric = 'github-oauth' | 'github-pat' | 'claude' | 'copilot';
+
+/** One poll: a value per series, with the ceiling it counts against (null = no known ceiling). */
+export interface UsageHistorySample {
+  at: number; // epoch ms
+  series: Record<string, { value: number; limit: number | null }>;
+}
+
+/** One time slot of a downsampled history: lowest/highest/last value per series. */
+export interface UsageHistorySlot {
+  from: number; // epoch ms
+  to: number; // epoch ms
+  series: Record<string, { min: number; max: number; last: number; limit: number | null }>;
+}
+
+export interface UsageHistoryPoint {
+  value: number;
+  limit: number | null;
+  at: number;
+}
+
+/** Stored history of one metric over a time range, for the zoomable history dialog. */
+export interface UsageHistoryRange {
+  metric: UsageHistoryMetric;
+  start: number; // epoch ms
+  end: number; // epoch ms
+  /** Oldest stored sample for this metric, so the UI can say how far back data goes. */
+  oldestAt: number | null;
+  sampleCount: number;
+  slotMs: number;
+  slots: UsageHistorySlot[];
+  /** Lowest and highest value per series within the range (as a share of the limit when there is one). */
+  low: Record<string, UsageHistoryPoint>;
+  high: Record<string, UsageHistoryPoint>;
 }
 
 /** Per-token rate limit status. `configured: false` means the token is not set up. */
@@ -654,7 +694,7 @@ export interface GitHubRateLimitSource {
 
   resources?: Record<string, GitHubRateLimitResource>;
 
-  /** Snapshots from the last 2 hours, oldest first (main-process memory only). */
+  /** Snapshots from the last 2 hours, oldest first (in memory, reloaded from the database on start). */
 
   history?: GitHubRateLimitSample[];
 
@@ -1846,6 +1886,7 @@ export interface JarvisApi {
   // GitHub rate limit
 
   getGitHubRateLimit(): Promise<GitHubRateLimit | IpcErrorResponse>;
+  getUsageHistory(metric: UsageHistoryMetric, rangeMs: number): Promise<UsageHistoryRange | IpcErrorResponse>;
   // Claude (Claude Code OAuth) rate limit
   getClaudeStatus(): Promise<ClaudeStatus>;
   getClaudeRateLimit(): Promise<ClaudeRateLimit>;

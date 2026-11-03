@@ -16,6 +16,7 @@
  */
 import type { JarvisApi } from '../../../src/plugins/types';
 import { createFixtures, FIXTURE_USER, REPO_ROCKET, type Fixtures } from './fixtures';
+import { downsampleUsageHistory } from '../../../src/plugins/shared/usage-history-chart';
 
 /** Push-event subscriptions (`onChatToken(cb) => unsubscribe`) — everything that does not return a Promise. */
 export type EventMethod = { [K in keyof JarvisApi]: ReturnType<JarvisApi[K]> extends Promise<unknown> ? never : K }[keyof JarvisApi];
@@ -115,6 +116,15 @@ function defaultResponses(f: Fixtures): Responses {
     getPatStatus: { hasPat: false },
     logout: ok,
     getGitHubRateLimit: f.rateLimit,
+    getUsageHistory: (metric, rangeMs) => {
+      const end = Date.parse(f.rateLimit.fetchedAt);
+      const start = end - rangeMs;
+      const samples = f.usageStored[metric].filter((s) => s.at >= start);
+      return {
+        metric, start, end, oldestAt: f.usageStored[metric][0]?.at ?? null, sampleCount: samples.length,
+        ...downsampleUsageHistory(samples, start, end),
+      };
+    },
     // Orgs + repos
     listOrgs: f.orgs,
     setOrgEnabled: undefined,

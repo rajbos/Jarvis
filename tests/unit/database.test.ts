@@ -533,3 +533,17 @@ describe('Migration v37 -> v38', () => {
     expect(oldDb.exec('SELECT interval_minutes FROM browser_skills')[0].values[0][0]).toBeNull();
   });
 });
+
+describe('Migration v38 -> v39', () => {
+  it('adds the usage_samples table', async () => {
+    const SQL = await initSqlJs();
+    const oldDb = new SQL.Database();
+    oldDb.run('PRAGMA user_version = 38');
+
+    initializeSchema(oldDb);
+
+    expect(oldDb.exec('PRAGMA user_version')[0].values[0][0]).toBe(39);
+    const cols = oldDb.exec('PRAGMA table_info(usage_samples)')[0].values.map((r) => r[1]);
+    expect(cols).toEqual(['metric', 'at', 'data']);
+  });
+});
