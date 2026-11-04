@@ -32,11 +32,6 @@ vi.mock('electron', () => ({
   },
 }));
 
-vi.mock('../../src/storage/database', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../src/storage/database')>();
-  return { ...actual, saveDatabase: vi.fn() };
-});
-
 vi.mock('../../src/services/ollama', () => ({
   streamChat: vi.fn().mockResolvedValue(undefined),
   chatWithTools: vi.fn().mockResolvedValue({ content: 'Hello!', tool_calls: [] }),
@@ -49,9 +44,22 @@ vi.mock('../../src/plugins/chat/db-helpers', () => ({
   searchSecretsForChat: vi.fn(() => '[]'),
   searchOneNoteForChat: vi.fn(() => '[]'),
   searchProjectBudgetForChat: vi.fn(() => '[]'),
+  searchFilesForChat: vi.fn(() => 'FILES'),
 }));
 
+vi.mock('../../src/services/local-file-index', () => ({
+  getIndexDbPath: vi.fn((p: string) => p + '.index'),
+  openIndexDatabase: vi.fn(async () => ({ close: vi.fn() })),
+}));
+
+vi.mock('../../src/storage/database', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/storage/database')>();
+  return { ...actual, saveDatabase: vi.fn(), getDatabasePath: vi.fn(() => '/tmp/jarvis.db') };
+});
+
 import { registerHandlers } from '../../src/plugins/chat/handler';
+import { chatWithTools } from '../../src/services/ollama';
+import { searchFilesForChat } from '../../src/plugins/chat/db-helpers';
 
 // ── Helper ────────────────────────────────────────────────────────────────────
 
@@ -181,6 +189,31 @@ describe('Chat plugin — IPC handlers', () => {
       // Abort it
       const result = callHandler('chat:abort');
       expect(result).toEqual({ ok: true });
+    });
+  });
+
+  // ── chat:send — search_files tool ──────────────────────────────────────────
+
+  describe('chat:send — search_files tool', () => {
+    it('dispatches search_files to the file index formatter and feeds the result back to the model', async () => {
+      db.run(`INSERT OR REPLACE INTO config (key, value) VALUES ('selected_ollama_model', 'llama3')`);
+      vi.mocked(chatWithTools)
+        .mockResolvedValueOnce({
+          content: '',
+          tool_calls: [{ function: { name: 'search_files', arguments: { query: 'pipeline minutes', kind: 'script', limit: 5 } } }],
+        })
+        .mockResolvedValueOnce({ content: 'Found it', tool_calls: [] });
+
+      callHandler('chat:send', [{ role: 'user', content: 'where is the pipeline minutes script?' }]);
+      await vi.waitFor(() => expect(mockSend).toHaveBeenCalledWith('chat:done'));
+
+      expect(searchFilesForChat).toHaveBeenCalledWith(expect.anything(), 'pipeline minutes', {
+        repoPath: undefined,
+        kind: 'script',
+        limit: 5,
+      });
+      const secondCallMessages = vi.mocked(chatWithTools).mock.calls[1]![1];
+      expect(secondCallMessages.at(-1)).toMatchObject({ role: 'tool', name: 'search_files', content: 'FILES' });
     });
   });
 });

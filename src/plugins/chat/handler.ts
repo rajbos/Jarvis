@@ -9,8 +9,9 @@ import {
   type OllamaTool,
   type OllamaToolCall,
 } from '../../services/ollama';
-import { getConfigValue } from '../../storage/database';
-import { buildSystemContext, searchReposForChat, searchSecretsForChat, searchOneNoteForChat, searchProjectBudgetForChat } from './db-helpers';
+import { getConfigValue, getDatabasePath } from '../../storage/database';
+import { buildSystemContext, searchReposForChat, searchSecretsForChat, searchOneNoteForChat, searchProjectBudgetForChat, searchFilesForChat } from './db-helpers';
+import { getIndexDbPath, openIndexDatabase } from '../../services/local-file-index';
 import { safeHandle } from '../ipc-utils';
 import { readRecentLogLines } from '../../services/logger';
 
@@ -114,6 +115,39 @@ const CHAT_TOOLS: OllamaTool[] = [
   {
     type: 'function',
     function: {
+      name: 'search_files',
+      description:
+        'Full-text search over file paths and file contents of the local git clones Jarvis has indexed. ' +
+        'Use this when the user asks where a script, config or document lives, or which file does or ' +
+        'mentions something (e.g. "where is the script that does X"). All words must match (prefix ' +
+        'matching). Returns absolute paths with a snippet around the match.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: 'One or more search terms (space-separated). All terms must match.',
+          },
+          repoPath: {
+            type: 'string',
+            description: 'Optional absolute local path of one repo to restrict the search to.',
+          },
+          kind: {
+            type: 'string',
+            description: 'Optional file kind filter: script, doc, config, source or other.',
+          },
+          limit: {
+            type: 'number',
+            description: 'Maximum number of files to return. Defaults to 10, at most 20.',
+          },
+        },
+        required: ['query'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'read_app_log',
       description:
         'Read the most recent lines of the Jarvis application log. Use this when the user asks why ' +
@@ -149,7 +183,33 @@ export function readAppLogForChat(filter?: string, lines?: number): string {
   return result.join('\n');
 }
 
-function dispatchToolCall(db: SqlJsDatabase, call: OllamaToolCall): string {
+/** Open the file index read-only-in-spirit (never saved), search, and close it again. */
+export async function searchFilesFromIndex(query: string, repoPath?: string, kind?: string, limit?: number): Promise<string> {
+  const dbPath = getDatabasePath();
+  if (!dbPath) return searchFilesForChat(null, query);
+  const idx = await openIndexDatabase(getIndexDbPath(dbPath));
+  try {
+    return searchFilesForChat(idx, query, { repoPath, kind, limit });
+  } finally {
+    idx.close();
+  }
+}
+
+async function dispatchToolCall(db: SqlJsDatabase, call: OllamaToolCall): Promise<string> {
+  if (call.function.name === 'search_files') {
+    const args = call.function.arguments;
+    const limit = Number(args['limit']);
+    try {
+      return await searchFilesFromIndex(
+        String(args['query'] ?? ''),
+        args['repoPath'] != null ? String(args['repoPath']) : undefined,
+        args['kind'] != null ? String(args['kind']) : undefined,
+        Number.isFinite(limit) ? limit : undefined,
+      );
+    } catch (err) {
+      return `File search failed: ${err instanceof Error ? err.message : String(err)}`;
+    }
+  }
   if (call.function.name === 'search_repos') {
     const query = String(call.function.arguments['query'] ?? '');
     return searchReposForChat(db, query);
@@ -242,7 +302,7 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
           });
 
           for (const call of tool_calls) {
-            const result = dispatchToolCall(db, call);
+            const result = await dispatchToolCall(db, call);
             (messages as Array<ChatMessage & { name?: string }>).push({
               role: 'tool' as ChatMessage['role'],
               content: result,
