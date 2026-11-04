@@ -1,4 +1,4 @@
-import { BrowserWindow, nativeImage, screen } from 'electron';
+import { BrowserWindow, nativeImage, screen, shell } from 'electron';
 import path from 'path';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import { saveDatabase } from '../storage/database';
@@ -125,6 +125,29 @@ export function attachCrashHandlers(win: BrowserWindow, name: string): void {
   });
 }
 
+/**
+ * Route `target="_blank"` links and `window.open()` calls to the default browser.
+ * Only http(s) URLs are opened; everything else is dropped. Electron never gets
+ * to create a child window (always `deny`). Every new BrowserWindow must call this,
+ * otherwise external links in it silently do nothing.
+ */
+export function attachExternalLinkHandler(win: BrowserWindow): void {
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    let protocol: string | null = null;
+    try {
+      protocol = new URL(url).protocol;
+    } catch {
+      // unparseable URL: denied below
+    }
+    if (protocol === 'https:' || protocol === 'http:') {
+      shell.openExternal(url).catch((err: unknown) => {
+        logger.warn(`[Window] failed to open external link: ${err instanceof Error ? err.message : String(err)}`);
+      });
+    }
+    return { action: 'deny' };
+  });
+}
+
 export function createOnboardingWindow(db: SqlJsDatabase): BrowserWindow {
   const saved = loadWindowBounds(db);
   const primaryDisplay = screen.getPrimaryDisplay();
@@ -173,6 +196,7 @@ export function createOnboardingWindow(db: SqlJsDatabase): BrowserWindow {
   screen.on('display-metrics-changed', ensureCurrentBoundsVisible);
 
   attachCrashHandlers(win, 'main');
+  attachExternalLinkHandler(win);
 
   // Prevent the window from navigating to external URLs
   win.webContents.on('will-navigate', (event, url) => {
@@ -219,6 +243,7 @@ export function createSettingsWindow(): BrowserWindow {
   win.loadFile(path.join(__dirname, '..', 'renderer', 'settings.html'));
 
   attachCrashHandlers(win, 'settings');
+  attachExternalLinkHandler(win);
 
   // Prevent the window from navigating to external URLs
   win.webContents.on('will-navigate', (event, url) => {
@@ -252,6 +277,7 @@ export function createAboutWindow(): BrowserWindow {
   win.loadFile(path.join(__dirname, '..', 'renderer', 'about.html'));
 
   attachCrashHandlers(win, 'about');
+  attachExternalLinkHandler(win);
 
   // Prevent the window from navigating to external URLs
   win.webContents.on('will-navigate', (event, url) => {
