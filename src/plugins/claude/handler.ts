@@ -1,9 +1,10 @@
 // ── Claude IPC handlers ───────────────────────────────────────────────────────
-import { shell, Notification } from 'electron';
+import { shell } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import type { BrowserWindow } from 'electron';
 import { safeHandle } from '../ipc-utils';
 import { logger } from '../../services/logger';
+import { showSafeNotification } from '../../services/notifications';
 import { recordUsageSample } from '../../services/usage-history';
 import type { ClaudeRateLimitWindow } from '../types';
 import {
@@ -184,10 +185,7 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
       // tracked state, so the notification still fires on the next good probe.
       if (!probe.error || probe.status !== 0) {
         if (wasLimited && !probe.limited) {
-          new Notification({
-            title: 'Jarvis',
-            body: 'Claude rate limit lifted — your Claude account is usable again.',
-          }).show();
+          showSafeNotification('Jarvis', 'Claude rate limit lifted — your Claude account is usable again.', { tag: '[claude]' });
         }
         wasLimited = probe.limited;
       }

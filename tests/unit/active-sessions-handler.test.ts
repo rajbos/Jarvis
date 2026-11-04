@@ -15,7 +15,7 @@ vi.mock('electron', () => ({
     on: vi.fn(),
     removeHandler: vi.fn(),
   },
-  Notification: vi.fn().mockImplementation(function () { return { show: notificationShow }; }),
+  Notification: Object.assign(vi.fn().mockImplementation(function () { return { show: notificationShow }; }), { isSupported: () => true }),
 }));
 
 vi.mock('../../src/storage/database', async (importOriginal) => {

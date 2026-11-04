@@ -5,11 +5,11 @@
 // a desktop notification once per head commit when a PR becomes ready (held
 // while a linked agent is still working, since it may push more commits).
 
-import { Notification } from 'electron';
 import type { BrowserWindow } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import { safeHandle } from '../ipc-utils';
 import { logger } from '../../services/logger';
+import { showSafeNotification } from '../../services/notifications';
 import { accessForPrimary, accessForRepo, ghCliFallbacks } from '../../services/github-repo-access';
 import { DEFAULT_HOST } from '../../services/github-host';
 import { collectActiveSessions } from '../../services/active-sessions';
@@ -81,10 +81,11 @@ function notifyReady(prs: PrReadiness[]): void {
   const body = prs.length === 1
     ? `${prs[0].repoFullName}#${prs[0].prNumber} — ${prs[0].title}`
     : prs.map((p) => `${p.repoFullName}#${p.prNumber}`).join(', ');
-  new Notification({
-    title: prs.length === 1 ? 'PR ready for your review' : `${prs.length} PRs ready for your review`,
+  showSafeNotification(
+    prs.length === 1 ? 'PR ready for your review' : `${prs.length} PRs ready for your review`,
     body,
-  }).show();
+    { tag: '[ActiveSessions]' },
+  );
 }
 
 /**
