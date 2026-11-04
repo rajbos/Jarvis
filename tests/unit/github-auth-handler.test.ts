@@ -87,7 +87,7 @@ vi.mock('../../src/plugins/copilot-usage/handler', () => ({
   checkCopilotUsage: vi.fn(() => Promise.resolve()),
 }));
 
-import { registerHandlers } from '../../src/plugins/github-auth/handler';
+import { registerHandlers, checkOAuthForExpiry } from '../../src/plugins/github-auth/handler';
 import { checkCopilotUsage } from '../../src/plugins/copilot-usage/handler';
 import { saveGitHubAuth, saveGitHubPat, fetchGitHubUser, validateGitHubPat } from '../../src/services/github-oauth';
 import { clearRateLimitHistory } from '../../src/services/github-rate-limit-history';
@@ -457,6 +457,66 @@ describe('GitHub Auth plugin — IPC handlers', () => {
       expect(oauth.configured).toBe(true);
       expect(oauth.resource).toBeNull();
       expect(oauth.error as string).toContain('401');
+    });
+
+    it('marks the OAuth sign-in as expired and sends github:oauth-expired on a 401', async () => {
+      saveGitHubAuth(db, 'octocat', 'gho_revoked', 'repo');
+      const send = vi.fn();
+      registerHandlers(db, () => ({ webContents: { send } }) as never);
+      global.fetch = vi.fn().mockResolvedValueOnce({
+        ok: false, status: 401, headers: { get: () => null }, json: async () => ({}),
+      } as unknown as Response);
+
+      const result = (await callHandler('github:get-rate-limit')) as Record<string, unknown>;
+      const oauth = result.oauth as Record<string, unknown>;
+      expect(oauth.tokenExpired).toBe(true);
+      expect(send).toHaveBeenCalledWith('github:oauth-expired');
+      expect(send).not.toHaveBeenCalledWith('github:pat-expired');
+    });
+
+    it('forwards the OAuth expiry fields and sends no event when the token is valid', async () => {
+      saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo');
+      const send = vi.fn();
+      registerHandlers(db, () => ({ webContents: { send } }) as never);
+      global.fetch = vi.fn().mockResolvedValueOnce({
+        ok: true, headers: { get: () => null },
+        json: async () => ({ resources: { core: { limit: 5000, remaining: 1, reset: 1, used: 4999 } } }),
+      } as unknown as Response);
+
+      const oauth = ((await callHandler('github:get-rate-limit')) as Record<string, unknown>).oauth as Record<string, unknown>;
+      expect(oauth.tokenExpired).toBe(false);
+      expect(oauth.tokenExpiresAt).toBeNull();
+      expect(send).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('checkOAuthForExpiry', () => {
+    it('returns false without a stored sign-in and does not validate', async () => {
+      expect(await checkOAuthForExpiry(db, () => null)).toBe(false);
+      expect(validateGitHubPat).not.toHaveBeenCalled();
+    });
+
+    it('returns false and sends nothing when the token is valid', async () => {
+      saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo');
+      const send = vi.fn();
+      expect(await checkOAuthForExpiry(db, () => ({ webContents: { send } }) as never)).toBe(false);
+      expect(send).not.toHaveBeenCalled();
+    });
+
+    it('returns false when validity is unknown (network failure)', async () => {
+      saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo');
+      vi.mocked(validateGitHubPat).mockResolvedValueOnce({ status: 'unknown', error: 'offline' });
+      const send = vi.fn();
+      expect(await checkOAuthForExpiry(db, () => ({ webContents: { send } }) as never)).toBe(false);
+      expect(send).not.toHaveBeenCalled();
+    });
+
+    it('returns true and sends github:oauth-expired when GitHub rejects the token', async () => {
+      saveGitHubAuth(db, 'octocat', 'gho_revoked', 'repo');
+      vi.mocked(validateGitHubPat).mockResolvedValueOnce({ status: 'expired' });
+      const send = vi.fn();
+      expect(await checkOAuthForExpiry(db, () => ({ webContents: { send } }) as never)).toBe(true);
+      expect(send).toHaveBeenCalledWith('github:oauth-expired');
     });
   });
 });

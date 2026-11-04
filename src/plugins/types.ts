@@ -1571,6 +1571,8 @@ export interface JarvisApi {
 
   onPatExpired(cb: () => void): () => void;
 
+  onOAuthExpired(cb: () => void): () => void;
+
   onPatStatusChanged(cb: () => void): () => void;
 
   logout(): Promise<{ ok: boolean; error?: string }>;

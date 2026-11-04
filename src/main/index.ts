@@ -8,7 +8,7 @@ import { createOnboardingWindow, createSettingsWindow, createAboutWindow } from 
 import { getOnboardingStatus, completeOnboardingStep } from '../agent/onboarding';
 import { registerIpcHandlers, startDiscoveryIfAuthed } from './ipc-handlers';
 import { startBackgroundTasks, stopBackgroundTasks, getBackgroundTaskScheduler } from './background-tasks';
-import { checkPatForExpiry } from '../plugins/github-auth/handler';
+import { checkPatForExpiry, checkOAuthForExpiry } from '../plugins/github-auth/handler';
 import { checkOllama } from '../services/ollama';
 import { saveDatabase } from '../storage/database';
 import { stopBridgeServer } from '../plugins/browser-companion/server';
@@ -113,6 +113,19 @@ async function initialize(): Promise<void> {
     notification.show();
   }).catch((err) => {
     logger.warn('[PAT] Startup validity check failed:', err);
+  });
+
+  // Same for the OAuth sign-in token.
+  checkOAuthForExpiry(db, () => mainWindow).then((expired) => {
+    if (!expired) return;
+    const notification = new Notification({
+      title: 'Jarvis — GitHub sign-in expired',
+      body: 'Your GitHub sign-in has expired or been revoked. Open Jarvis and sign in again to reconnect.',
+    });
+    notification.on('click', () => showSettingsWindow());
+    notification.show();
+  }).catch((err) => {
+    logger.warn('[OAuth] Startup validity check failed:', err);
   });
 
   // Check if Ollama is available and update onboarding step accordingly

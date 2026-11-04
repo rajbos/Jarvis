@@ -62,6 +62,18 @@ const SHOTS: Shot[] = [
     name: 'setup-signed-out', view: 'index', tab: /Setup/, waitFor: ['Sign in with GitHub'],
     open: { responses: { getGitHubOAuthStatus: { authenticated: false } } },
   },
+  {
+    name: 'setup-oauth-expired', view: 'index', tab: /Setup/, waitFor: ['Sign in again'],
+    open: {
+      responses: {
+        getGitHubRateLimit: {
+          oauth: { configured: true, resource: null, error: 'HTTP 401 — token expired or revoked', tokenExpired: true },
+          pat: { configured: false, resource: null },
+          fetchedAt: '2030-01-15T12:00:00.000Z',
+        },
+      },
+    },
+  },
   { name: 'dismissed', view: 'index', tab: /Dismissed/, waitFor: ['Auto-Dismissed Notifications', 'Bump fixture-lib from 0.9.0 to 1.0.0'] },
   {
     name: 'copilot-flyout', view: 'index', waitFor: ['By model', '@test-user-work'],
