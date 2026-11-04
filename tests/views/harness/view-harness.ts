@@ -31,9 +31,10 @@ const RENDERER_SRC = path.join(ROOT, 'src', 'renderer');
 const MOCK_ENTRY = path.join(__dirname, 'mock-jarvis-api.ts');
 
 /** The HTML pages Electron loads — one per BrowserWindow — plus test-only fixture pages. */
-export type ViewName = 'index' | 'settings' | 'about' | 'error-boundary';
+export type ViewName = 'index' | 'settings' | 'about' | 'error-boundary' | 'onenote-race';
 
 const ERROR_BOUNDARY_ENTRY = path.join(__dirname, 'error-boundary-fixture.tsx');
+const ONENOTE_RACE_ENTRY = path.join(__dirname, 'onenote-race-fixture.tsx');
 
 export interface OpenViewOptions {
   /** Per-view response overrides (JSON values) for fake `window.jarvis` methods. */
@@ -90,6 +91,19 @@ async function buildViews(): Promise<BuiltViews> {
     path.join(dir, 'error-boundary.html'),
     '<!doctype html><html><head><meta charset="UTF-8"><title>ErrorBoundary fixture</title></head>' +
       '<body><div id="app"></div><script src="error-boundary.js"></script></body></html>',
+  );
+  // Test-only page: OneNote panels with a manually resolved window.jarvis (stale-response race).
+  await esbuild.build({
+    ...rendererBuildOptions,
+    entryPoints: { 'onenote-race': ONENOTE_RACE_ENTRY },
+    outdir: dir,
+    logLevel: 'warning',
+    sourcemap: 'inline',
+  });
+  await writeFile(
+    path.join(dir, 'onenote-race.html'),
+    '<!doctype html><html><head><meta charset="UTF-8"><title>OneNote race fixture</title></head>' +
+      '<body><div id="app"></div><script src="onenote-race.js"></script></body></html>',
   );
   const mock = await esbuild.build({
     entryPoints: [MOCK_ENTRY],
