@@ -94,7 +94,7 @@ export async function createMemoryDatabase(): Promise<SqlJsDatabase> {
 // of the chain in initializeSchema(). Used only to warn if a database fails to
 // reach the latest schema after migration (e.g. a gap in the version chain).
 // A unit test fails if this drifts from the version a fresh database reaches.
-export const LATEST_SCHEMA_VERSION = 39;
+export const LATEST_SCHEMA_VERSION = 40;
 
 export function initializeSchema(database: SqlJsDatabase): void {
   const result = database.exec("PRAGMA user_version");
@@ -103,7 +103,7 @@ export function initializeSchema(database: SqlJsDatabase): void {
   if (userVersion === 0) {
     database.run(getSchema());
     seedBuiltInAgents(database);
-    database.run('PRAGMA user_version = 39');
+    database.run('PRAGMA user_version = 40');
   }
 
   if (userVersion === 1) {
@@ -809,6 +809,14 @@ export function initializeSchema(database: SqlJsDatabase): void {
     // Copilot credits), kept for 30 days for the status-bar history dialog.
     database.run(USAGE_SAMPLES_TABLE_SQL);
     database.run('PRAGMA user_version = 39');
+  }
+
+  if (userVersion === 39) {
+    // Migration v39 → v40: drop the `conversations` and `task_history` tables.
+    // They were created by the base schema but never read or written by any code.
+    database.run('DROP TABLE IF EXISTS conversations');
+    database.run('DROP TABLE IF EXISTS task_history');
+    database.run('PRAGMA user_version = 40');
   }
 
   const finalResult = database.exec('PRAGMA user_version');

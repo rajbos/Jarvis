@@ -491,7 +491,7 @@ The schema in `src/storage/schema.ts` is the source of truth; do not copy table 
 
 | Area | Tables |
 |------|--------|
-| Core | `config`, `onboarding`, `conversations`, `task_history` |
+| Core | `config`, `onboarding` |
 | GitHub | `github_auth`, `github_host_accounts`, `github_account_assignments`, `github_repo_accounts`, `github_orgs`, `github_repos`, `github_notifications`, `github_workflow_runs`, `github_workflow_jobs` |
 | Local repos | `local_scan_folders`, `local_repos`, `local_repo_remotes` |
 | Agents and sessions | `agent_definitions`, `agent_sessions`, `agent_findings`, `pr_readiness` |

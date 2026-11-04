@@ -137,25 +137,6 @@ export function getSchema(): string {
     );
     CREATE INDEX IF NOT EXISTS idx_local_repo_remotes_local_repo_id ON local_repo_remotes(local_repo_id);
 
-    -- Conversation / interaction log
-    CREATE TABLE IF NOT EXISTS conversations (
-        id         INTEGER PRIMARY KEY AUTOINCREMENT,
-        timestamp  DATETIME DEFAULT CURRENT_TIMESTAMP,
-        role       TEXT NOT NULL,
-        content    TEXT NOT NULL,
-        tool_calls TEXT
-    );
-
-    -- Task history
-    CREATE TABLE IF NOT EXISTS task_history (
-        id          INTEGER PRIMARY KEY AUTOINCREMENT,
-        timestamp   DATETIME DEFAULT CURRENT_TIMESTAMP,
-        task_type   TEXT NOT NULL,
-        description TEXT,
-        status      TEXT DEFAULT 'pending',
-        result      TEXT
-    );
-
     -- GitHub notifications cache
     CREATE TABLE IF NOT EXISTS github_notifications (
         id             TEXT PRIMARY KEY,
