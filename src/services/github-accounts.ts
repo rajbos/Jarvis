@@ -27,7 +27,7 @@ import type { Database as SqlJsDatabase } from 'sql.js';
 import { parseGitHubRemote } from './local-discovery';
 import { encrypt, decryptSecret, getEncryptionKey } from '../storage/encryption';
 import { getGhCliToken } from './copilot-usage';
-import { listRepoViewers, recordRepoVisibility } from './github-repo-visibility';
+import { deleteRepoVisibilityFor, listRepoViewers, recordRepoVisibility } from './github-repo-visibility';
 import { getPrimaryGitHubLogin, listGitHubAuths, loadGitHubAuth, loadGitHubPat } from './github-oauth';
 import type { GitHubAccountInfo } from '../plugins/types';
 import {
@@ -240,7 +240,12 @@ export function setAssignment(
   );
 }
 
-export { recordRepoVisibility, listRepoViewers };
+/** Remove every owner/repo assignment that points at `account` (an account id). Other accounts' rows are untouched. */
+export function clearAssignmentsFor(db: SqlJsDatabase, account: string): void {
+  db.run('DELETE FROM github_account_assignments WHERE LOWER(login) = ?', [norm(account)]);
+}
+
+export { recordRepoVisibility, listRepoViewers, deleteRepoVisibilityFor };
 
 export interface ResolvedAccount {
   /** Account id. */
