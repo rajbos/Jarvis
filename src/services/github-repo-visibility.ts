@@ -20,3 +20,8 @@ export function listRepoViewers(db: SqlJsDatabase, repoRef: string): string[] {
   stmt.free();
   return out;
 }
+
+/** Forget every sighting by `account` (an account id), e.g. after the account is removed. */
+export function deleteRepoVisibilityFor(db: SqlJsDatabase, account: string): void {
+  db.run('DELETE FROM github_repo_accounts WHERE LOWER(account) = ?', [account.trim().toLowerCase()]);
+}

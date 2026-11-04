@@ -11,7 +11,9 @@ import {
   setPrimaryGitHubLogin,
 } from '../../services/github-oauth';
 import {
+  clearAssignmentsFor,
   deleteHostAccount,
+  deleteRepoVisibilityFor,
   listAccounts,
   listAssignments,
   listGhCliAccounts,
@@ -64,6 +66,17 @@ function setAccountBudget(db: SqlJsDatabase, accountId: string, isPrimary: boole
     else setConfigValue(db, LEGACY_BUDGET_KEY, String(credits));
   }
   saveDatabase();
+}
+
+/**
+ * Drop the data scoped to a removed account: its own budget, the assignments that
+ * point at it and the repos it was seen on. The legacy single-account budget key
+ * is shared config (it follows whichever account is primary) and is left alone.
+ */
+export function purgeAccountData(db: SqlJsDatabase, accountId: string): void {
+  db.run('DELETE FROM config WHERE key = ?', [BUDGET_KEY_PREFIX + accountId.toLowerCase()]);
+  clearAssignmentsFor(db, accountId);
+  deleteRepoVisibilityFor(db, accountId);
 }
 
 /** Month-to-date Copilot usage and budget for every tracked account. */
@@ -189,10 +202,13 @@ export function registerHandlers(db: SqlJsDatabase): void {
     return { ok: true };
   });
 
-  safeHandle('github-accounts:remove', (_event, accountId: unknown) => {
+  safeHandle('github-accounts:remove', async (_event, accountId: unknown) => {
     if (typeof accountId !== 'string' || !accountId) return { ok: false, error: 'Account is required' };
     if (listHostAccounts(db).some((a) => sameId(a.id, accountId))) deleteHostAccount(db, accountId);
     else deleteGitHubAuthFor(db, accountId);
+    // An account that is also logged in to the GitHub CLI is still listed — keep its settings.
+    const stillListed = listAccounts(db, await listGhCliAccounts()).some((a) => sameId(a.id, accountId));
+    if (!stillListed) purgeAccountData(db, accountId);
     saveDatabase();
     return { ok: true };
   });
