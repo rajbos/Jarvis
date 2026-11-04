@@ -4,7 +4,7 @@ import path from 'path';
 import { createRequire } from 'module';
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
-  encrypt, decrypt, decryptSecret, deriveKey, generateKey, getEncryptionKey, resetEncryptionKeyCache,
+  encrypt, decrypt, decryptSecret, deriveKey, generateKey, getEncryptionKey, resetEncryptionKeyCache, MAX_ARCHIVED_KEYS,
 } from '../../src/storage/encryption';
 
 const nodeRequire = createRequire(import.meta.url);
@@ -283,6 +283,70 @@ describe('Encryption', () => {
 
       expect(key2.toString('hex')).toBe(key1.toString('hex'));
       expect(archived()).toHaveLength(0);
+    });
+
+    describe('archive retention', () => {
+      const seed = (name: string, content: string | Buffer) => fs.writeFileSync(path.join(configDir, name), content);
+      const stamp = (i: number) => `2020-01-${String(i).padStart(2, '0')}T00-00-00-000Z-aaaaaaaa.bak`;
+      const dead = (i: number) => seed(`keystore.bin.${stamp(i)}`, 'garbage');
+      const usable = (i: number) => seed(`keystore.bin.${stamp(i)}`, 'installed:' + generateKey().toString('hex'));
+      const rotate = () => {
+        resetEncryptionKeyCache();
+        withMockedElectron(osKey('installed'), () => getEncryptionKey());
+        fs.writeFileSync(path.join(configDir, 'keystore.bin'), 'dev:' + generateKey().toString('hex'));
+        resetEncryptionKeyCache();
+        withMockedElectron(osKey('installed'), () => getEncryptionKey());
+      };
+
+      it('prunes unusable archives beyond the cap, keeping the newest', () => {
+        for (let i = 1; i <= 15; i++) dead(i);
+        rotate();
+        const names = archived();
+        expect(names).toHaveLength(MAX_ARCHIVED_KEYS);
+        expect(names).toContain(`keystore.bin.${stamp(15)}`);
+        expect(names).not.toContain(`keystore.bin.${stamp(1)}`);
+      });
+
+      it('never deletes archives that can still be decrypted, even over the cap', () => {
+        for (let i = 1; i <= 15; i++) usable(i);
+        rotate();
+        expect(archived()).toHaveLength(16);
+      });
+
+      it('keeps recoverable old archives while pruning dead ones', () => {
+        usable(1);
+        for (let i = 2; i <= 14; i++) dead(i);
+        rotate();
+        const names = archived();
+        expect(names).toContain(`keystore.bin.${stamp(1)}`);
+        expect(names).toHaveLength(MAX_ARCHIVED_KEYS + 1);
+      });
+
+      it('does nothing at or below the cap', () => {
+        for (let i = 1; i <= 5; i++) dead(i);
+        rotate();
+        expect(archived()).toHaveLength(6);
+      });
+
+      it('never touches the live keystore or the other key type', () => {
+        for (let i = 1; i <= 15; i++) dead(i);
+        for (let i = 1; i <= 15; i++) seed(`keystore.fallback.bin.${stamp(i)}`, 'garbage');
+        rotate();
+        expect(fs.existsSync(path.join(configDir, 'keystore.bin'))).toBe(true);
+        expect(fs.readdirSync(configDir).filter((n) => n.startsWith('keystore.fallback.bin.'))).toHaveLength(15);
+      });
+
+      it('caps fallback archives by wrong length but keeps 32-byte ones', () => {
+        const old = (i: number) => seed(`keystore.fallback.bin.${stamp(i)}`, i === 1 ? generateKey() : Buffer.from('short'));
+        for (let i = 1; i <= 14; i++) old(i);
+        seed('keystore.fallback.bin', Buffer.from('broken'));
+        resetEncryptionKeyCache();
+        getEncryptionKey();
+        const fb = fs.readdirSync(configDir).filter((n) => n.startsWith('keystore.fallback.bin.') && n.endsWith('.bak'));
+        expect(fb).toContain(`keystore.fallback.bin.${stamp(1)}`);
+        expect(fb).toHaveLength(MAX_ARCHIVED_KEYS + 1);
+        expect(fs.readFileSync(path.join(configDir, 'keystore.fallback.bin'))).toHaveLength(32);
+      });
     });
   });
 });
