@@ -17,10 +17,13 @@ const SERVER_ENTRY_MODULES = [
   'sql.js',
 ];
 
-function loadedPackages(): string[] {
+/** The bare-module imports of src/services/local-session-usage-worker.ts. */
+const USAGE_WORKER_ENTRY_MODULES = ['@rajbos/ai-engineering-fluency/session'];
+
+function loadedPackages(entryModules: string[] = SERVER_ENTRY_MODULES): string[] {
   // A fresh Node process gives a clean require cache, unaffected by Vitest's own loader.
   const script = `
-    for (const m of ${JSON.stringify(SERVER_ENTRY_MODULES)}) require(m);
+    for (const m of ${JSON.stringify(entryModules)}) require(m);
     const pkgs = new Set();
     for (const file of Object.keys(require.cache)) {
       const parts = file.split(/[\\\\/]node_modules[\\\\/]/);
@@ -59,6 +62,17 @@ describe('packaged MCP server dependencies', () => {
     const packages = loadedPackages();
     expect(packages).toContain('@modelcontextprotocol/sdk');
     expect(packages.filter((pkg) => !isUnpacked(pkg))).toEqual([]);
+  }, 20_000);
+
+  // The session-usage worker thread is a second, independent runtime: it loads the
+  // ai-engineering-fluency parser, which reads its sql-wasm.wasm from disk. Keep the
+  // worker file and its packages outside app.asar like the MCP server's.
+  it('unpacks the session-usage worker and the packages it loads', () => {
+    const patterns = asarUnpackPatterns();
+    expect(patterns).toContain('dist/services/local-session-usage-worker.js');
+    const packages = loadedPackages(USAGE_WORKER_ENTRY_MODULES);
+    expect(packages).toContain('@rajbos/ai-engineering-fluency');
+    expect(packages.filter((pkg) => !patterns.includes(`node_modules/${pkg}/**`) && !patterns.includes(`node_modules/${pkg.split('/')[0]}/**`))).toEqual([]);
   }, 20_000);
 
   // dist/services/* files the server shares with the app are unpacked one by one, so a new
