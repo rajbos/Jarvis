@@ -47,8 +47,8 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Type-check renderer and unit tests
-        # `tsc` in the build skips .tsx and tests/, and esbuild/vitest strip types without checking them
+      - name: Type-check main process, renderer and unit tests
+        # The build's `tsc` skips .tsx and tests/, and esbuild/vitest strip types without checking them
         run: npm run typecheck
 
       - name: Lint
