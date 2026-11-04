@@ -24,7 +24,7 @@ vi.mock('electron', () => ({
     removeHandler: vi.fn(),
   },
   shell: { openExternal: vi.fn() },
-  Notification: vi.fn().mockImplementation(() => ({ show: vi.fn() })),
+  Notification: Object.assign(vi.fn().mockImplementation(() => ({ show: vi.fn() })), { isSupported: () => true }),
   BrowserWindow: { getAllWindows: vi.fn(() => []) },
 }));
 

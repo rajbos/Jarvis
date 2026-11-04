@@ -1,5 +1,5 @@
 // ── GitHub OAuth + PAT IPC handlers ──────────────────────────────────────────
-import { shell, clipboard, Notification, BrowserWindow } from 'electron';
+import { shell, clipboard, BrowserWindow } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import {
   requestDeviceCode,
@@ -21,6 +21,7 @@ import { completeOnboardingStep } from '../../agent/onboarding';
 import { startDiscoveryIfAuthed } from '../discovery/handler';
 import { safeHandle } from '../ipc-utils';
 import { logger } from '../../services/logger';
+import { showSafeNotification } from '../../services/notifications';
 import { getRateLimitHistory, recordRateLimitSample } from '../../services/github-rate-limit-history';
 import type { GitHubRateLimitResource } from '../types';
 import { checkCopilotUsage } from '../copilot-usage/handler';
@@ -381,10 +382,7 @@ async function startPollingLoop(
 
       startDiscoveryIfAuthed(db, getWindow, true);
 
-      new Notification({
-        title: 'Jarvis',
-        body: `Signed in as ${user.login}. GitHub connection ready!`,
-      }).show();
+      showSafeNotification('Jarvis', `Signed in as ${user.login}. GitHub connection ready!`, { tag: '[Poll]' });
 
       broadcastOAuthComplete({
         login: user.login,

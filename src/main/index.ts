@@ -1,4 +1,5 @@
-import { app, BrowserWindow, Tray, Menu, session, Notification, crashReporter, shell } from 'electron';
+
+import { app, BrowserWindow, Tray, Menu, session, crashReporter, shell } from 'electron';
 import path from 'path';
 import { getDatabase, closeDatabase } from '../storage/database';
 import { loadConfig } from '../agent/config';
@@ -13,6 +14,7 @@ import { checkOllama } from '../services/ollama';
 import { saveDatabase } from '../storage/database';
 import { stopBridgeServer } from '../plugins/browser-companion/server';
 import { logger, setLogLevel, enableFileLogging } from '../services/logger';
+import { showSafeNotification } from '../services/notifications';
 import { startStallWatchdog } from '../services/stall-watchdog';
 import { STALL_NOTIFY_THRESHOLD_MS, buildStallDiagnostic, reportFreeze, setFreezeReportSender } from './freeze-diagnostics';
 import { checkForUpdates, registerUpdateIpcHandlers, startUpdateChecks, stopUpdateChecks } from './update-checker';
@@ -105,12 +107,11 @@ async function initialize(): Promise<void> {
   // expired or been revoked instead of silently failing API calls later.
   checkPatForExpiry(db, () => mainWindow).then((expired) => {
     if (!expired) return;
-    const notification = new Notification({
-      title: 'Jarvis — GitHub token expired',
-      body: 'Your GitHub Personal Access Token has expired or been revoked. Open Settings → GitHub Access to enter a new one.',
-    });
-    notification.on('click', () => showSettingsWindow());
-    notification.show();
+    showSafeNotification(
+      'Jarvis — GitHub token expired',
+      'Your GitHub Personal Access Token has expired or been revoked. Open Settings → GitHub Access to enter a new one.',
+      { tag: '[PAT]', onClick: () => showSettingsWindow() },
+    );
   }).catch((err) => {
     logger.warn('[PAT] Startup validity check failed:', err);
   });

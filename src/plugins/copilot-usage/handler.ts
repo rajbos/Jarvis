@@ -1,8 +1,9 @@
 // ── GitHub Copilot AI credit usage IPC handlers ──────────────────────────────
-import { Notification, BrowserWindow } from 'electron';
+import { BrowserWindow } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import { safeHandle } from '../ipc-utils';
 import { logger } from '../../services/logger';
+import { showSafeNotification } from '../../services/notifications';
 import { recordCopilotCredits } from './credit-history';
 import { fetchGitHubUser, getPrimaryGitHubLogin, loadGitHubAuth, loadGitHubPat } from '../../services/github-oauth';
 import {
@@ -64,12 +65,13 @@ function notifyBudgetThreshold(db: SqlJsDatabase, usage: CopilotUsage): void {
 
   setConfigValue(db, KEY_ALERTED, `${monthKey}:${threshold}`);
   saveDatabase();
-  new Notification({
-    title: 'Jarvis',
-    body: threshold >= 100
+  showSafeNotification(
+    'Jarvis',
+    threshold >= 100
       ? `GitHub Copilot budget reached — ${Math.round(usage.creditsUsed)} of ${usage.budgetCredits} AI credits used this month.`
       : `GitHub Copilot at ${Math.round(pct)}% of budget — ${Math.round(usage.creditsUsed)} of ${usage.budgetCredits} AI credits used this month.`,
-  }).show();
+    { tag: '[copilot-usage]' },
+  );
 }
 
 /** Push usage to every open window — the status-bar badge and the Settings window both show it. */
