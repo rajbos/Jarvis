@@ -327,6 +327,10 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
     if (patResult?.tokenExpired) {
       getWindow()?.webContents.send('github:pat-expired');
     }
+    // Same for the OAuth sign-in token.
+    if (oauthResult?.tokenExpired) {
+      getWindow()?.webContents.send('github:oauth-expired');
+    }
 
     return {
       oauth: auth
@@ -336,6 +340,8 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
             resources: oauthResult!.resources,
             history: getRateLimitHistory('oauth'),
             error: oauthResult!.error,
+            tokenExpiresAt: oauthResult!.tokenExpiresAt ?? null,
+            tokenExpired: oauthResult!.tokenExpired ?? false,
           }
         : { configured: false, resource: null },
       pat: pat
@@ -428,5 +434,23 @@ export async function checkPatForExpiry(
   if (result.status !== 'expired') return false;
   logger.warn('[PAT] Stored Personal Access Token is expired or revoked');
   getWindow()?.webContents.send('github:pat-expired');
+  return true;
+}
+
+/**
+ * Validate the stored OAuth sign-in token and, when GitHub rejects it (401 —
+ * expired or revoked), push a `github:oauth-expired` event to the renderer.
+ * Returns true when the sign-in token is expired. Used at app startup.
+ */
+export async function checkOAuthForExpiry(
+  db: SqlJsDatabase,
+  getWindow: () => BrowserWindow | null,
+): Promise<boolean> {
+  const auth = loadGitHubAuth(db);
+  if (!auth) return false;
+  const result = await validateGitHubPat(auth.accessToken);
+  if (result.status !== 'expired') return false;
+  logger.warn('[OAuth] Stored GitHub sign-in token is expired or revoked');
+  getWindow()?.webContents.send('github:oauth-expired');
   return true;
 }

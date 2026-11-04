@@ -5,6 +5,8 @@ import type { OAuthStatus, DiscoveryProgress, PatStatus } from '../types';
 interface GitHubStepProps {
   oauthStatus: OAuthStatus | null;
   patStatus: PatStatus | null;
+  /** GitHub rejected the stored sign-in token (401) — it expired or was revoked */
+  oauthExpired?: boolean;
   /** Expiry date of the PAT from the github-authentication-token-expiration header (null when it does not expire) */
   patExpiresAt?: string | null;
   deviceCode: { userCode: string; verificationUri: string } | null;
@@ -19,6 +21,7 @@ interface GitHubStepProps {
 export function GitHubStep({
   oauthStatus,
   patStatus,
+  oauthExpired,
   patExpiresAt,
   deviceCode,
   discoveryProgress,
@@ -38,9 +41,12 @@ export function GitHubStep({
     patExpiryValid && !patExpiredByDate &&
     patExpiryDate!.getTime() - Date.now() < 7 * 24 * 60 * 60 * 1000;
   const patExpired = Boolean(patStatus?.expired) || patExpiredByDate;
-  let badgeStatus: 'pending' | 'completed' | 'in-progress' = 'pending';
+  let badgeStatus: 'pending' | 'completed' | 'in-progress' | 'error' = 'pending';
   let badgeLabel = 'Pending';
-  if (authenticated) {
+  if (authenticated && oauthExpired) {
+    badgeStatus = 'error';
+    badgeLabel = 'Expired';
+  } else if (authenticated) {
     badgeStatus = 'completed';
     badgeLabel = 'Connected';
   } else if (deviceCode) {
@@ -61,7 +67,7 @@ export function GitHubStep({
         </button>
       )}
 
-      {!authenticated && deviceCode && (
+      {(!authenticated || oauthExpired) && deviceCode && (
         <div>
           <div class="user-code">{deviceCode.userCode}</div>
           <p class="code-instructions">
@@ -83,6 +89,17 @@ export function GitHubStep({
             <div class="name">{oauthStatus.login}</div>
             <div class="login">@{oauthStatus.login}</div>
           </div>
+        </div>
+      )}
+
+      {authenticated && oauthExpired && !deviceCode && (
+        <div class="pat-expired-warning" id="oauth-expired-warning">
+          ⚠️ Your GitHub sign-in has expired or been revoked. Discovery, notifications and
+          other features will fail until you sign in again.
+          <br />
+          <button onClick={onLogin} disabled={loginDisabled}>
+            {loginDisabled ? 'Starting...' : 'Sign in again'}
+          </button>
         </div>
       )}
 

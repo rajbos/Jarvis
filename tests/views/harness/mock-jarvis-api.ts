@@ -56,6 +56,7 @@ const EVENT_METHODS: Record<EventMethod, true> = {
   onShowDiagnostic: true,
   onOAuthComplete: true,
   onPatExpired: true,
+  onOAuthExpired: true,
   onPatStatusChanged: true,
   onDiscoveryProgress: true,
   onDiscoveryComplete: true,

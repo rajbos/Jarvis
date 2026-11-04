@@ -81,6 +81,7 @@ type AppTab = 'dashboard' | 'groups-dashboard' | 'agent-sessions' | 'browser' | 
 function App() {
   const [oauthStatus, setOauthStatus] = useState<OAuthStatus | null>(null);
   const [patStatus, setPatStatus] = useState<PatStatus | null>(null);
+  const [oauthExpired, setOauthExpired] = useState(false);
   const [deviceCode, setDeviceCode] = useState<{ userCode: string; verificationUri: string } | null>(null);
   const [loginDisabled, setLoginDisabled] = useState(false);
   const [discoveryProgress, setDiscoveryProgress] = useState<DiscoveryProgress | null>(null);
@@ -267,6 +268,12 @@ function App() {
     return () => { unsubExpired(); unsubChanged(); };
   }, []);
 
+  // OAuth sign-in token liveness: pushed by main on startup / rate-limit polls
+  useEffect(() => window.jarvis.onOAuthExpired(() => setOauthExpired(true)), []);
+  useEffect(() => {
+    if (rateLimit?.oauth.configured) setOauthExpired(Boolean(rateLimit.oauth.tokenExpired));
+  }, [rateLimit]);
+
   // Claude status + rate limit check on mount (independent of GitHub auth)
   useEffect(() => {
     window.jarvis.getClaudeStatus()
@@ -445,6 +452,7 @@ function App() {
         return;
       }
       setDeviceCode(null);
+      setOauthExpired(false);
       setOauthStatus({
         authenticated: true,
         login: result.login,
@@ -1074,6 +1082,7 @@ function App() {
         <GitHubStep
           oauthStatus={oauthStatus}
           patStatus={patStatus}
+          oauthExpired={oauthExpired}
           patExpiresAt={rateLimit?.pat.configured ? rateLimit.pat.tokenExpiresAt : null}
           deviceCode={deviceCode}
           discoveryProgress={discoveryProgress}

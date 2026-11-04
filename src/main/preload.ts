@@ -133,6 +133,11 @@ contextBridge.exposeInMainWorld('jarvis', {
     ipcRenderer.on('github:pat-expired', listener);
     return () => { ipcRenderer.removeListener('github:pat-expired', listener); };
   },
+  onOAuthExpired: (callback: () => void) => {
+    const listener = () => callback();
+    ipcRenderer.on('github:oauth-expired', listener);
+    return () => { ipcRenderer.removeListener('github:oauth-expired', listener); };
+  },
   onPatStatusChanged: (callback: () => void) => {
     const listener = () => callback();
     ipcRenderer.on('github:pat-status-changed', listener);
