@@ -30,8 +30,8 @@ describe('Database Schema', () => {
     expect(tableNames).toContain('github_orgs');
     expect(tableNames).toContain('github_repos');
     expect(tableNames).toContain('local_repos');
-    expect(tableNames).toContain('conversations');
-    expect(tableNames).toContain('task_history');
+    expect(tableNames).not.toContain('conversations');
+    expect(tableNames).not.toContain('task_history');
   });
 
   it('should initialize onboarding steps as pending', () => {
@@ -545,5 +545,30 @@ describe('Migration v38 -> v39', () => {
     expect(oldDb.exec('PRAGMA user_version')[0].values[0][0]).toBe(39);
     const cols = oldDb.exec('PRAGMA table_info(usage_samples)')[0].values.map((r) => r[1]);
     expect(cols).toEqual(['metric', 'at', 'data']);
+  });
+});
+
+describe('Migration v39 -> v40', () => {
+  it('drops the unused conversations and task_history tables', async () => {
+    const SQL = await initSqlJs();
+    const oldDb = new SQL.Database();
+    oldDb.run('CREATE TABLE conversations (id INTEGER PRIMARY KEY AUTOINCREMENT, role TEXT NOT NULL, content TEXT NOT NULL)');
+    oldDb.run('CREATE TABLE task_history (id INTEGER PRIMARY KEY AUTOINCREMENT, task_type TEXT NOT NULL)');
+    oldDb.run('PRAGMA user_version = 39');
+
+    initializeSchema(oldDb);
+
+    expect(oldDb.exec('PRAGMA user_version')[0].values[0][0]).toBe(40);
+    const names = oldDb.exec("SELECT name FROM sqlite_master WHERE type='table'")[0]?.values.map((r) => r[0]) ?? [];
+    expect(names).not.toContain('conversations');
+    expect(names).not.toContain('task_history');
+  });
+
+  it('succeeds when the tables are already absent', async () => {
+    const SQL = await initSqlJs();
+    const oldDb = new SQL.Database();
+    oldDb.run('PRAGMA user_version = 39');
+    expect(() => initializeSchema(oldDb)).not.toThrow();
+    expect(oldDb.exec('PRAGMA user_version')[0].values[0][0]).toBe(40);
   });
 });
