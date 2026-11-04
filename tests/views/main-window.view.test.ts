@@ -402,3 +402,28 @@ describe('main window — Browser tab pairing token', () => {
     await expectCleanRender(view);
   });
 });
+
+describe('main window — agent analysis cancellation', () => {
+  const STARTING = {
+    sessionId: 42, agentName: 'Notification Triage', scopeType: 'repo', scopeValue: 'acme/rocket-sled',
+    workflowRunCount: 3, workflowFilter: null, provider: 'ollama',
+  };
+
+  it('shows a stop control while an analysis streams and cancels the running session', async () => {
+    const view = await harness.open('index', { responses: { getSelectedOllamaModel: 'fixture-model:3b' } });
+    const { page } = view;
+
+    await view.emit('onOpenChat');
+    await expect.poll(async () => {
+      await view.emit('onAgentSessionStarting', STARTING);
+      return page.locator('.ec-agent-stop').count();
+    }).toBe(1);
+
+    await page.locator('.ec-agent-stop').click();
+    await expect.poll(async () => (await view.calls('agentsCancel')).map((c) => c.args)).toEqual([[42]]);
+
+    await view.emit('onAgentSessionCancelled', { sessionId: 42 });
+    await expect.poll(() => page.locator('.ec-agent-stop').count()).toBe(0);
+    await expectCleanRender(view);
+  });
+});

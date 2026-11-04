@@ -6,14 +6,21 @@
 import { streamChat } from '../../../services/ollama';
 import { extractJsonResult } from '../json-extract';
 import { logger } from '../../../services/logger';
-import type { AgentProvider, AgentRunCallbacks, AgentRunOutcome } from './types';
+import type { AgentProvider, AgentRunCallbacks, AgentRunOptions, AgentRunOutcome } from './types';
 
 const PHASE2_TIMEOUT_MS = 60_000;
 
 export const ollamaProvider: AgentProvider = {
   id: 'ollama',
 
-  async run(model, systemPrompt, userMessage, callbacks: AgentRunCallbacks): Promise<AgentRunOutcome> {
+  async run(
+    model,
+    systemPrompt,
+    userMessage,
+    callbacks: AgentRunCallbacks,
+    options?: AgentRunOptions,
+  ): Promise<AgentRunOutcome> {
+    const outerSignal = options?.signal;
     // ── Phase 1: stream the analysis / reasoning to the renderer ────────────
     let analysisResponse = '';
     await streamChat(
@@ -26,6 +33,7 @@ export const ollamaProvider: AgentProvider = {
         analysisResponse += token;
         callbacks.onToken(token);
       },
+      outerSignal,
     );
 
     callbacks.onAnalysisComplete();
@@ -36,7 +44,12 @@ export const ollamaProvider: AgentProvider = {
     // A 60-second timeout guards against the model hanging indefinitely.
     let jsonResponse = '';
     const phase2Controller = new AbortController();
-    const phase2Timer = setTimeout(() => phase2Controller.abort(), PHASE2_TIMEOUT_MS);
+    let timedOut = false;
+    const phase2Timer = setTimeout(() => { timedOut = true; phase2Controller.abort(); }, PHASE2_TIMEOUT_MS);
+    // Forward a user cancel to the phase-2 controller so it stops too.
+    const forwardAbort = () => phase2Controller.abort();
+    outerSignal?.addEventListener('abort', forwardAbort);
+    if (outerSignal?.aborted) forwardAbort();
     try {
       await streamChat(
         model,
@@ -55,7 +68,9 @@ export const ollamaProvider: AgentProvider = {
         phase2Controller.signal,
       );
     } catch (phase2Err) {
-      const isTimeout = phase2Controller.signal.aborted;
+      // A user cancel is not a phase-2 failure — let the runner mark the session cancelled.
+      if (outerSignal?.aborted) throw phase2Err;
+      const isTimeout = timedOut;
       const phase2Msg = isTimeout
         ? 'Phase 2 timed out after 60 s — could not extract structured findings'
         : (phase2Err instanceof Error ? phase2Err.message : String(phase2Err));
@@ -65,6 +80,7 @@ export const ollamaProvider: AgentProvider = {
       // then fall back to phase-1 text before giving up.
     } finally {
       clearTimeout(phase2Timer);
+      outerSignal?.removeEventListener('abort', forwardAbort);
     }
 
     // Parse findings from the dedicated JSON response; fall back to phase-1

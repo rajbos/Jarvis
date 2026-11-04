@@ -29,6 +29,18 @@ import {
 } from './runner';
 
 /**
+ * In-flight agent sessions, keyed by sessionId, so `agents:cancel` (and app
+ * quit) can abort them. Mirrors `activeChatAborts` in chat/handler.ts.
+ */
+const activeAgentAborts = new Map<number, AbortController>();
+
+/** Abort every in-flight agent session (used on app quit so escalation child processes get killed). */
+export function abortAllAgentSessions(): void {
+  for (const ctrl of activeAgentAborts.values()) ctrl.abort();
+  activeAgentAborts.clear();
+}
+
+/**
  * Shared escalation preflight: local clone present, Claude CLI installed,
  * account not currently rate limited. Used by both the readiness probe (so
  * the UI can disable the affordance up front) and the escalate handler
@@ -164,11 +176,18 @@ export function registerHandlers(
       });
 
       // Fire and forget — results come back via agent:session-complete event
-      void runAgentSession(db, sessionId, agentDef, scopeType, scopeValue, model, getWindow, workflowFilter).then(() => {
+      const controller = new AbortController();
+      activeAgentAborts.set(sessionId, controller);
+      void runAgentSession(
+        db, sessionId, agentDef, scopeType, scopeValue, model, getWindow, workflowFilter,
+        undefined, { signal: controller.signal },
+      ).then(() => {
         saveDatabase();
       }).catch((err: unknown) => {
         logger.error('[Agents] Session runner error:', err);
         saveDatabase();
+      }).finally(() => {
+        activeAgentAborts.delete(sessionId);
       });
 
       return { sessionId };
@@ -227,17 +246,33 @@ export function registerHandlers(
     });
 
     // Fire and forget — results come back via agent:session-complete event
+    const controller = new AbortController();
+    activeAgentAborts.set(sessionId, controller);
     void runAgentSession(
       db, sessionId, agentDef, 'repo', repoFullName, model, getWindow, undefined,
-      claudeAgentProvider, { cwd: readiness.localPath },
+      claudeAgentProvider, { cwd: readiness.localPath, signal: controller.signal },
     ).then(() => {
       saveDatabase();
     }).catch((err: unknown) => {
       logger.error('[Agents] Escalated session runner error:', err);
       saveDatabase();
+    }).finally(() => {
+      activeAgentAborts.delete(sessionId);
     });
 
     return { ok: true, sessionId };
+  });
+
+  // ── Cancel a running session ──────────────────────────────────────────────
+
+  safeHandle('agents:cancel', (_event, sessionId: number) => {
+    if (typeof sessionId !== 'number') return { ok: false, error: 'Invalid sessionId' };
+    const ctrl = activeAgentAborts.get(sessionId);
+    if (!ctrl) return { ok: false, error: 'No running session with that id' };
+    // The runner marks the session 'cancelled' and emits agent:session-cancelled.
+    ctrl.abort();
+    activeAgentAborts.delete(sessionId);
+    return { ok: true };
   });
 
   // ── Finding approval lifecycle ────────────────────────────────────────────

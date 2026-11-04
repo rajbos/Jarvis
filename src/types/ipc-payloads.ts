@@ -33,6 +33,10 @@ export interface AgentSessionErrorPayload {
   message: string;
 }
 
+export interface AgentSessionCancelledPayload {
+  sessionId: number;
+}
+
 export interface AgentDebugContextPayload {
   sessionId: number;
   systemPrompt: string;

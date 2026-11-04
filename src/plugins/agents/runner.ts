@@ -356,6 +356,11 @@ export async function runAgentSession(
 
     getWindow()?.webContents.send('agent:session-complete', { sessionId });
   } catch (err) {
+    if (providerOptions?.signal?.aborted || (err instanceof Error && err.name === 'AbortError')) {
+      updateAgentSession(db, sessionId, 'cancelled', null, null);
+      win?.webContents.send('agent:session-cancelled', { sessionId });
+      return;
+    }
     const message = err instanceof Error ? err.message : String(err);
     updateAgentSession(db, sessionId, 'failed', null, message);
     win?.webContents.send('agent:session-error', { sessionId, message });

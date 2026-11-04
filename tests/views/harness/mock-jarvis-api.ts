@@ -70,6 +70,7 @@ const EVENT_METHODS: Record<EventMethod, true> = {
   onAgentPhase2Error: true,
   onAgentSessionComplete: true,
   onAgentSessionError: true,
+  onAgentSessionCancelled: true,
   onAgentDebugContext: true,
   onBrowserExtensionConnected: true,
   onBackgroundStatus: true,
@@ -184,6 +185,7 @@ function defaultResponses(f: Fixtures): Responses {
     agentsCheckCopilotAvailability: { available: true },
     agentsEscalationReadiness: ok,
     agentsEscalate: ok,
+    agentsCancel: ok,
     // Workflows + dashboard
     githubFetchWorkflowRuns: { ok: true, count: 1 },
     githubGetWorkflowSummary: f.workflowSummary,
