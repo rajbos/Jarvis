@@ -22,9 +22,10 @@ interface DisplayBounds {
 
 const DEFAULT_WINDOW_SIZE = { width: 600, height: 500 };
 
-function loadWindowBounds(db: SqlJsDatabase): WindowBounds | null {
+function loadWindowBounds(db: SqlJsDatabase, key = 'window_bounds'): WindowBounds | null {
   try {
-    const stmt = db.prepare("SELECT value FROM config WHERE key = 'window_bounds'");
+    const stmt = db.prepare('SELECT value FROM config WHERE key = ?');
+    stmt.bind([key]);
     if (stmt.step()) {
       const row = stmt.getAsObject() as { value: string };
       stmt.free();
@@ -37,10 +38,10 @@ function loadWindowBounds(db: SqlJsDatabase): WindowBounds | null {
   return null;
 }
 
-function saveWindowBounds(db: SqlJsDatabase, bounds: WindowBounds): void {
+function saveWindowBounds(db: SqlJsDatabase, bounds: WindowBounds, key = 'window_bounds'): void {
   db.run(
-    "INSERT INTO config (key, value) VALUES ('window_bounds', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-    [JSON.stringify(bounds)],
+    'INSERT INTO config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+    [key, JSON.stringify(bounds)],
   );
   saveDatabase();
 }
@@ -221,10 +222,16 @@ export function createOnboardingWindow(db: SqlJsDatabase): BrowserWindow {
   return win;
 }
 
-export function createSettingsWindow(): BrowserWindow {
+const SETTINGS_BOUNDS_KEY = 'settings_bounds';
+const DEFAULT_SETTINGS_SIZE = { width: 1040, height: 700 };
+
+export function createSettingsWindow(db?: SqlJsDatabase): BrowserWindow {
+  const saved = db ? loadWindowBounds(db, SETTINGS_BOUNDS_KEY) : null;
+  const bounds = saved
+    ? ensureWindowBoundsVisible(saved, screen.getAllDisplays(), screen.getPrimaryDisplay())
+    : DEFAULT_SETTINGS_SIZE;
   const win = new BrowserWindow({
-    width: 1040,
-    height: 700,
+    ...bounds,
     minWidth: 400,
     minHeight: 500,
     icon: appIcon(),
@@ -244,6 +251,16 @@ export function createSettingsWindow(): BrowserWindow {
 
   attachCrashHandlers(win, 'settings');
   attachExternalLinkHandler(win);
+
+  if (db) {
+    const persistBounds = () => {
+      if (!win.isDestroyed() && !win.isMinimized()) {
+        saveWindowBounds(db, win.getBounds(), SETTINGS_BOUNDS_KEY);
+      }
+    };
+    win.on('resized', persistBounds);
+    win.on('moved', persistBounds);
+  }
 
   // Prevent the window from navigating to external URLs
   win.webContents.on('will-navigate', (event, url) => {

@@ -223,7 +223,7 @@ function showSettingsWindow(): void {
     settingsWindow.focus();
     return;
   }
-  settingsWindow = createSettingsWindow();
+  settingsWindow = createSettingsWindow(currentDb ?? undefined);
   settingsWindow.on('closed', () => {
     settingsWindow = null;
   });
