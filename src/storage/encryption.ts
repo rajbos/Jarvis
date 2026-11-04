@@ -13,6 +13,12 @@ let currentKeyCache: { file: string; key: Buffer } | null = null;
 let retiredKeysCache: { dir: string; keys: Buffer[] } | null = null;
 
 /**
+ * Archived key files per key type that are kept unconditionally. Archives past
+ * this count are only deleted when provably unusable (see {@link pruneArchives}).
+ */
+export const MAX_ARCHIVED_KEYS = 10;
+
+/**
  * Encrypts a plaintext string using AES-256-GCM.
  * Returns a base64-encoded string containing IV + ciphertext + auth tag.
  */
@@ -80,6 +86,8 @@ function getKeyFilePath(): string {
  * Moves an unreadable key file aside as `<name>.<timestamp>-<random>.bak` instead of
  * overwriting it, so the secrets it protects can still be recovered once
  * whatever broke it (e.g. another instance with a different OS key) is gone.
+ * Afterwards {@link pruneArchives} caps growth: the newest {@link MAX_ARCHIVED_KEYS}
+ * per key type are always kept; older ones are removed only if provably unusable.
  */
 function archiveKeyFile(keyFile: string): void {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -93,6 +101,64 @@ function archiveKeyFile(keyFile: string): void {
     logger.error(`[Encryption] Failed to archive ${path.basename(keyFile)}:`, err);
   }
   retiredKeysCache = null;
+  pruneArchives(keyFile, target);
+}
+
+/** True when the archive still holds a usable 32-byte key, or when that cannot be ruled out. */
+function archiveMayBeUsable(file: string, isFallback: boolean): boolean {
+  try {
+    const data = fs.readFileSync(file);
+    if (isFallback) return data.length === 32;
+    const safeStorage = loadSafeStorage();
+    // Without safeStorage we cannot tell whether the OS could unlock it, so keep it.
+    if (!safeStorage) return true;
+    return Buffer.from(safeStorage.decryptString(data), 'hex').length === 32;
+  } catch (err) {
+    // A read error is not proof of a dead key; only a failed decrypt is.
+    if ((err as NodeJS.ErrnoException)?.code) return true;
+    return false;
+  }
+}
+
+/**
+ * Bounds archive growth for one key type (`keystore.bin` or `keystore.fallback.bin`).
+ * The newest {@link MAX_ARCHIVED_KEYS} archives are always kept. Older ones are
+ * deleted only when proven unusable (wrong length, or safeStorage cannot decrypt
+ * them), because a usable archive may be the only way to recover stored tokens.
+ * Only `<keyFile>.*.bak` files are ever considered, never the live key file, and
+ * the archive just created (`justArchived`) is never touched. Failures are logged
+ * and never thrown.
+ */
+function pruneArchives(keyFile: string, justArchived: string): void {
+  try {
+    const dir = path.dirname(keyFile);
+    const base = path.basename(keyFile);
+    const isFallback = base === 'keystore.fallback.bin';
+    const prefix = `${base}.`;
+    const names = fs.readdirSync(dir)
+      .filter((n) => n.startsWith(prefix) && n.endsWith('.bak') && n.length > prefix.length + 4)
+      .sort()
+      .reverse();
+    let pruned = 0;
+    for (const name of names.slice(MAX_ARCHIVED_KEYS)) {
+      const full = path.join(dir, name);
+      if (full === justArchived || archiveMayBeUsable(full, isFallback)) continue;
+      try {
+        fs.unlinkSync(full);
+        pruned++;
+        logger.warn(`[Encryption] Removed unusable archived keystore ${name}`);
+      } catch (err) {
+        logger.error(`[Encryption] Failed to remove archived keystore ${name}:`, err);
+      }
+    }
+    if (pruned > 0) retiredKeysCache = null;
+    const remaining = names.length - pruned;
+    if (remaining > MAX_ARCHIVED_KEYS) {
+      logger.warn(`[Encryption] ${remaining} archived ${base} files present (cap ${MAX_ARCHIVED_KEYS}); the extra ones may still decrypt secrets and were kept`);
+    }
+  } catch (err) {
+    logger.error('[Encryption] Failed to prune archived keystores:', err);
+  }
 }
 
 /**
