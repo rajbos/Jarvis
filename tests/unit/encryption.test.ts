@@ -341,7 +341,9 @@ describe('Encryption', () => {
         for (let i = 1; i <= 14; i++) old(i);
         seed('keystore.fallback.bin', Buffer.from('broken'));
         resetEncryptionKeyCache();
-        getEncryptionKey();
+        // Mock electron: an unmocked require('electron') downloads the real binary on
+        // a runner without one, which blew the 5 s timeout on the Windows CI job.
+        withMockedElectron({ safeStorage: { isEncryptionAvailable: () => false } }, () => getEncryptionKey());
         const fb = fs.readdirSync(configDir).filter((n) => n.startsWith('keystore.fallback.bin.') && n.endsWith('.bak'));
         expect(fb).toContain(`keystore.fallback.bin.${stamp(1)}`);
         expect(fb).toHaveLength(MAX_ARCHIVED_KEYS + 1);
