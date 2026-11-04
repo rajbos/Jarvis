@@ -18,13 +18,15 @@ export function OneNoteCachePanel({ groupId, groupName, onClose }: Props) {
   const [error, setError] = useState('');
 
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
     setError('');
     setPages([]);
     window.jarvis.onedriveGetOneNoteCacheForGroup(groupId)
-      .then(r => { setPages(r.pages); })
-      .catch((err: unknown) => { setError(String(err)); })
-      .finally(() => { setLoading(false); });
+      .then(r => { if (!cancelled) setPages(r.pages); })
+      .catch((err: unknown) => { if (!cancelled) setError(String(err)); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [groupId]);
 
   // Group pages by section file

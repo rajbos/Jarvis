@@ -17,6 +17,7 @@ export function OneNoteSectionPanel({ filePath, onClose }: Props) {
   const [expandedPages, setExpandedPages] = useState<Set<number>>(new Set());
 
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
     setError('');
     setSection(null);
@@ -24,6 +25,7 @@ export function OneNoteSectionPanel({ filePath, onClose }: Props) {
 
     window.jarvis.onedriveReadOneNoteFile(filePath)
       .then((result) => {
+        if (cancelled) return;
         if (result.ok && result.section) {
           setSection(result.section);
         } else {
@@ -31,11 +33,12 @@ export function OneNoteSectionPanel({ filePath, onClose }: Props) {
         }
       })
       .catch((err: unknown) => {
-        setError(String(err));
+        if (!cancelled) setError(String(err));
       })
       .finally(() => {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       });
+    return () => { cancelled = true; };
   }, [filePath]);
 
   const togglePage = (pageIndex: number) => {
