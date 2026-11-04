@@ -16,10 +16,16 @@ files:
 # (and the modules it needs) must live outside app.asar. That includes the MCP
 # SDK's own runtime dependencies; tests/unit/mcp-asar-unpack.test.ts fails when
 # one is missing here.
+# The session-usage worker (dist/services/local-session-usage-worker.js, a
+# worker_threads entry) loads @rajbos/ai-engineering-fluency/session, which reads
+# its sql-wasm.wasm from disk; it is unpacked too so the worker never depends on
+# asar-transparent fs inside a worker thread. The same test covers it.
 asarUnpack:
   - dist/mcp-server/**
   - dist/services/local-file-index.js
   - dist/services/logger.js
+  - dist/services/local-session-usage-worker.js
+  - node_modules/@rajbos/ai-engineering-fluency/**
   - node_modules/@modelcontextprotocol/**
   - node_modules/zod/**
   - node_modules/zod-to-json-schema/**
