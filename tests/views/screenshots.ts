@@ -118,6 +118,20 @@ const SHOTS: Shot[] = [
     prepare: (page) => page.locator('.bg-status-copilot .bg-status-rate-limit').click(),
   },
   {
+    // Agent analysis in flight: the chat panel shows the "stop analysis" control.
+    name: 'agent-analysis-running', view: 'index', waitFor: ['Analysing acme/rocket-sled', 'stop analysis'],
+    open: { responses: { getSelectedOllamaModel: 'fixture-model:3b' } },
+    prepare: async (page) => {
+      await page.evaluate(() => {
+        window.__jarvisTest.emit('onOpenChat');
+        window.__jarvisTest.emit('onAgentSessionStarting', {
+          sessionId: 42, agentName: 'Notification Triage', scopeType: 'repo', scopeValue: 'acme/rocket-sled',
+          workflowRunCount: 3, workflowFilter: null, provider: 'ollama',
+        });
+      });
+    },
+  },
+  {
     // Failed update check handed to the chat: the badge opens a diagnostic card.
     name: 'update-diagnostic', view: 'index',
     waitFor: ['Update could not be verified', 'Explain this', 'Open log', 'Rejecting downloaded update'],

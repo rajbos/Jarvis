@@ -50,6 +50,7 @@ export function EmbeddedChatPanel({ visible, selectedModel, onClose, onAgentStar
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const agentStreamRef = useRef('');
   const agentStartedRef = useRef(false);
+  const agentSessionIdRef = useRef<number | null>(null);
 
   const [panelWidth, setPanelWidth] = useState(() => {
     const saved = localStorage.getItem('chat-panel-width');
@@ -111,7 +112,8 @@ export function EmbeddedChatPanel({ visible, selectedModel, onClose, onAgentStar
 
     // ── Agent streaming listeners ──────────────────────────────────────────
     const unsubSessionStarting = window.jarvis.onAgentSessionStarting?.((data) => {
-      const { agentName, scopeValue, workflowRunCount, provider } = data;
+      const { sessionId, agentName, scopeValue, workflowRunCount, provider } = data;
+      agentSessionIdRef.current = sessionId;
       agentStreamRef.current = '';
       agentStartedRef.current = true;
       setMessages([]);
@@ -187,15 +189,28 @@ export function EmbeddedChatPanel({ visible, selectedModel, onClose, onAgentStar
         .catch((err: unknown) => console.error('[Chat] agentsGetSession:', err));
     });
 
+    const unsubSessionCancelled = window.jarvis.onAgentSessionCancelled?.(() => {
+      agentStreamRef.current = '';
+      agentStartedRef.current = false;
+      agentSessionIdRef.current = null;
+      setAgentStreamText('');
+      setAgentStreaming(false);
+      setAgentSessionInfo(null);
+      setExtractingFindings(false);
+      setExtractingError(null);
+    });
+
     const unsubSessionError = window.jarvis.onAgentSessionError?.(({ message }) => {
       agentStreamRef.current = '';
       agentStartedRef.current = false;
+      agentSessionIdRef.current = null;
       setAgentStreamText('');
       setAgentStreaming(false);
       setError(`Agent failed: ${message}`);
     });
 
     return () => {
+      unsubSessionCancelled?.();
       unsubChatToken();
       unsubChatDone();
       unsubChatError();
@@ -407,6 +422,19 @@ export function EmbeddedChatPanel({ visible, selectedModel, onClose, onAgentStar
           {streaming ? '\u2026' : '\u2191'}
         </button>
       </div>
+      {agentStreaming && (
+        <div class="ec-hint">
+          <button
+            class="ec-agent-stop"
+            style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '0.75rem', padding: '0.25rem' }}
+            onClick={() => {
+              const id = agentSessionIdRef.current;
+              if (id !== null) void window.jarvis.agentsCancel(id);
+            }}>
+            stop analysis
+          </button>
+        </div>
+      )}
       {streaming && (
         <div class="ec-hint">
           <button

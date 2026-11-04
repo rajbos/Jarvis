@@ -7,6 +7,7 @@ import { createTray } from './tray';
 import { createOnboardingWindow, createSettingsWindow, createAboutWindow } from './windows';
 import { getOnboardingStatus, completeOnboardingStep } from '../agent/onboarding';
 import { registerIpcHandlers, startDiscoveryIfAuthed } from './ipc-handlers';
+import { abortAllAgentSessions } from '../plugins/agents/handler';
 import { startBackgroundTasks, stopBackgroundTasks, getBackgroundTaskScheduler } from './background-tasks';
 import { checkPatForExpiry } from '../plugins/github-auth/handler';
 import { checkOllama } from '../services/ollama';
@@ -294,5 +295,6 @@ app.on('before-quit', () => {
   stopUpdateChecks();
   stopBackgroundTasks();
   stopBridgeServer();
+  abortAllAgentSessions();
   closeDatabase();
 });

@@ -493,7 +493,7 @@ export interface AgentSession {
 
   scope_value: string;
 
-  status: 'pending' | 'running' | 'completed' | 'failed';
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 
   started_at: string;
 
@@ -1495,6 +1495,8 @@ import type {
 
   AgentSessionErrorPayload,
 
+  AgentSessionCancelledPayload,
+
   AgentDebugContextPayload,
   NewRuddrProjectsPayload,
   BrowserExtensionConnectedPayload,
@@ -1513,6 +1515,8 @@ export type {
   AgentSessionCompletePayload,
 
   AgentSessionErrorPayload,
+
+  AgentSessionCancelledPayload,
 
   AgentDebugContextPayload,
   BrowserExtensionEventPayload,
@@ -1742,6 +1746,8 @@ export interface JarvisApi {
 
   agentsEscalate(sourceSessionId: number): Promise<{ ok: boolean; sessionId?: number; error?: string }>;
 
+  agentsCancel(sessionId: number): Promise<{ ok: boolean; error?: string }>;
+
   onAgentSessionStarting(cb: (data: AgentSessionStartingPayload) => void): () => void;
 
   onAgentDebugContext(cb: (data: AgentDebugContextPayload) => void): () => void;
@@ -1755,6 +1761,8 @@ export interface JarvisApi {
   onAgentSessionComplete(cb: (result: AgentSessionCompletePayload) => void): () => void;
 
   onAgentSessionError(cb: (error: AgentSessionErrorPayload) => void): () => void;
+
+  onAgentSessionCancelled(cb: (data: AgentSessionCancelledPayload) => void): () => void;
 
   // Workflow data
 

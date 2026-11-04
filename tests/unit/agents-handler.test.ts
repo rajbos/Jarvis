@@ -82,7 +82,7 @@ vi.mock('../../src/services/claude-agent', async (importOriginal) => {
   };
 });
 
-import { registerHandlers } from '../../src/plugins/agents/handler';
+import { registerHandlers, abortAllAgentSessions } from '../../src/plugins/agents/handler';
 import { runAgentSession } from '../../src/plugins/agents/runner';
 import { checkClaudeRateLimit } from '../../src/services/claude';
 import { resolveAccessToken } from '../../src/plugins/claude/handler';
@@ -282,6 +282,52 @@ describe('Agents plugin — IPC handlers', () => {
 
       const result = await callHandler('agents:run', agentId, 'repo', 'owner/repo');
       expect((result as Record<string, unknown>).error).toContain('No Ollama model');
+    });
+  });
+
+  // ── agents:cancel ───────────────────────────────────────────────────────────
+
+  describe('agents:cancel', () => {
+    function seedAgent(): number {
+      db.run(
+        `INSERT INTO agent_definitions (name, description, system_prompt, tools_allowed)
+         VALUES ('Agent', 'Desc', 'Prompt', '[]')`,
+      );
+      return db.exec('SELECT last_insert_rowid() AS id')[0].values[0][0] as number;
+    }
+
+    /** Start an agents:run whose runner never settles, returning the signal it was given. */
+    async function startHangingRun(): Promise<{ sessionId: number; signal: AbortSignal }> {
+      db.run(`INSERT INTO config (key, value) VALUES ('selected_ollama_model', 'llama3')`);
+      mockRunAgentSession.mockImplementationOnce(() => new Promise<void>(() => {}));
+      const result = await callHandler('agents:run', seedAgent(), 'repo', 'owner/repo') as { sessionId: number };
+      const options = mockRunAgentSession.mock.calls[0][9] as { signal: AbortSignal };
+      return { sessionId: result.sessionId, signal: options.signal };
+    }
+
+    it('rejects a non-number sessionId', () => {
+      expect(callHandler('agents:cancel', 'bad')).toEqual({ ok: false, error: 'Invalid sessionId' });
+    });
+
+    it('reports an unknown session as not running', () => {
+      expect(callHandler('agents:cancel', 9999)).toEqual({ ok: false, error: 'No running session with that id' });
+    });
+
+    it('aborts the signal handed to the running session', async () => {
+      const { sessionId, signal } = await startHangingRun();
+      expect(signal.aborted).toBe(false);
+
+      expect(callHandler('agents:cancel', sessionId)).toEqual({ ok: true });
+      expect(signal.aborted).toBe(true);
+
+      // The controller is released, so a second cancel finds nothing to abort.
+      expect(callHandler('agents:cancel', sessionId)).toEqual({ ok: false, error: 'No running session with that id' });
+    });
+
+    it('abortAllAgentSessions aborts every in-flight session', async () => {
+      const { signal } = await startHangingRun();
+      abortAllAgentSessions();
+      expect(signal.aborted).toBe(true);
     });
   });
 
@@ -648,7 +694,7 @@ describe('Agents plugin — IPC handlers', () => {
       expect(call[3]).toBe('repo'); // scopeType
       expect(call[4]).toBe('org/repo'); // scopeValue
       expect(call[8]).toMatchObject({ id: 'claude-agent-sdk' }); // provider
-      expect(call[9]).toEqual({ cwd: '/home/user/repo' }); // providerOptions
+      expect(call[9]).toEqual({ cwd: '/home/user/repo', signal: expect.any(AbortSignal) }); // providerOptions
     });
   });
 });

@@ -691,3 +691,90 @@ describe('runAgentSession — provider seam', () => {
     expect(session!.status).toBe('completed');
   });
 });
+
+describe('runAgentSession — cancellation', () => {
+  it('marks the session cancelled and emits agent:session-cancelled when the provider aborts', async () => {
+    const controller = new AbortController();
+    const fakeProvider: AgentProvider = {
+      id: 'fake-provider',
+      run: vi.fn().mockImplementation(async () => {
+        controller.abort();
+        throw new DOMException('The operation was aborted.', 'AbortError');
+      }),
+    };
+
+    const sessionId = createAgentSession(db, agentId, 'repo', 'org/repo');
+    const mockWin = makeMockWindow();
+
+    await runAgentSession(
+      db, sessionId, agentDef(), 'repo', 'org/repo', 'm', () => mockWin as never,
+      undefined, fakeProvider, { signal: controller.signal },
+    );
+
+    expect(getAgentSession(db, sessionId)!.status).toBe('cancelled');
+    expect(mockWin.webContents.send).toHaveBeenCalledWith('agent:session-cancelled', { sessionId });
+    expect(mockWin.webContents.send).not.toHaveBeenCalledWith('agent:session-error', expect.anything());
+    expect(mockWin.webContents.send).not.toHaveBeenCalledWith('agent:session-complete', expect.anything());
+  });
+
+  it('still reports a genuine failure as failed when not aborted', async () => {
+    const fakeProvider: AgentProvider = {
+      id: 'fake-provider',
+      run: vi.fn().mockRejectedValue(new Error('boom')),
+    };
+    const sessionId = createAgentSession(db, agentId, 'repo', 'org/repo');
+    const mockWin = makeMockWindow();
+
+    await runAgentSession(
+      db, sessionId, agentDef(), 'repo', 'org/repo', 'm', () => mockWin as never,
+      undefined, fakeProvider, { signal: new AbortController().signal },
+    );
+
+    expect(getAgentSession(db, sessionId)!.status).toBe('failed');
+    expect(mockWin.webContents.send).toHaveBeenCalledWith('agent:session-error', { sessionId, message: 'boom' });
+  });
+
+  it('cancels an Ollama-tier run mid phase 1 by passing the signal to streamChat', async () => {
+    const controller = new AbortController();
+    mockStreamChat.mockImplementationOnce(async (_m, _msgs, onToken, signal) => {
+      onToken('partial');
+      controller.abort();
+      if (signal?.aborted) throw new DOMException('The operation was aborted.', 'AbortError');
+    });
+
+    const sessionId = createAgentSession(db, agentId, 'repo', 'org/repo');
+    const mockWin = makeMockWindow();
+
+    await runAgentSession(
+      db, sessionId, agentDef(), 'repo', 'org/repo', 'm', () => mockWin as never,
+      undefined, undefined, { signal: controller.signal },
+    );
+
+    expect(mockStreamChat).toHaveBeenCalledTimes(1); // phase 2 never starts
+    expect(mockStreamChat.mock.calls[0][3]).toBe(controller.signal);
+    expect(getAgentSession(db, sessionId)!.status).toBe('cancelled');
+    expect(mockWin.webContents.send).toHaveBeenCalledWith('agent:session-cancelled', { sessionId });
+  });
+
+  it('cancels during Ollama phase 2 instead of treating it as a phase-2 failure', async () => {
+    const controller = new AbortController();
+    mockStreamChat
+      .mockImplementationOnce(async (_m, _msgs, onToken) => { onToken('analysis'); })
+      .mockImplementationOnce(async (_m, _msgs, _onToken, signal) => {
+        controller.abort();
+        if (signal?.aborted) throw new DOMException('The operation was aborted.', 'AbortError');
+      });
+
+    const sessionId = createAgentSession(db, agentId, 'repo', 'org/repo');
+    const mockWin = makeMockWindow();
+
+    await runAgentSession(
+      db, sessionId, agentDef(), 'repo', 'org/repo', 'm', () => mockWin as never,
+      undefined, undefined, { signal: controller.signal },
+    );
+
+    expect(getAgentSession(db, sessionId)!.status).toBe('cancelled');
+    expect(mockWin.webContents.send).not.toHaveBeenCalledWith('agent:phase2-error', expect.anything());
+    expect(mockWin.webContents.send).toHaveBeenCalledWith('agent:session-cancelled', { sessionId });
+  });
+});

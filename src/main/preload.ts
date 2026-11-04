@@ -6,6 +6,7 @@ import type {
   AgentPhase2ErrorPayload,
   AgentSessionCompletePayload,
   AgentSessionErrorPayload,
+  AgentSessionCancelledPayload,
   AgentDebugContextPayload,
   NewRuddrProjectsPayload,
   BrowserExtensionConnectedPayload,
@@ -180,6 +181,7 @@ contextBridge.exposeInMainWorld('jarvis', {
   agentsExecuteFinding: (findingId: number) => ipcRenderer.invoke('agents:execute-finding', findingId),
   agentsEscalationReadiness: (repoFullName: string) => ipcRenderer.invoke('agents:escalation-readiness', repoFullName),
   agentsEscalate: (sourceSessionId: number) => ipcRenderer.invoke('agents:escalate', sourceSessionId),
+  agentsCancel: (sessionId: number) => ipcRenderer.invoke('agents:cancel', sessionId),
   agentsCheckCopilotAvailability: (repoFullName: string) =>
     ipcRenderer.invoke('agents:check-copilot-availability', repoFullName),
   onAgentSessionStarting: (callback: (data: AgentSessionStartingPayload) => void) => {
@@ -206,6 +208,11 @@ contextBridge.exposeInMainWorld('jarvis', {
     const listener = (_event: unknown, result: AgentSessionCompletePayload) => callback(result);
     ipcRenderer.on('agent:session-complete', listener);
     return () => { ipcRenderer.removeListener('agent:session-complete', listener); };
+  },
+  onAgentSessionCancelled: (callback: (data: AgentSessionCancelledPayload) => void) => {
+    const listener = (_event: unknown, data: AgentSessionCancelledPayload) => callback(data);
+    ipcRenderer.on('agent:session-cancelled', listener);
+    return () => { ipcRenderer.removeListener('agent:session-cancelled', listener); };
   },
   onAgentSessionError: (callback: (error: AgentSessionErrorPayload) => void) => {
     const listener = (_event: unknown, error: AgentSessionErrorPayload) => callback(error);
