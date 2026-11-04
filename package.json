@@ -21,7 +21,7 @@
     "test:views": "tsc -p tests/views && vitest run --config vitest.views.config.ts",
     "test:views:install": "playwright install chromium",
     "screenshots": "vitest run --config vitest.screenshots.config.ts",
-    "typecheck": "tsc -p src/renderer && tsc -p tests/unit",
+    "typecheck": "tsc -p tsconfig.json --noEmit --incremental false && tsc -p src/renderer && tsc -p tests/unit",
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
     "test:coverage": "vitest run --coverage",
