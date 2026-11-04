@@ -4,6 +4,7 @@
 import type { Database as SqlJsDatabase } from 'sql.js';
 import { loadGitHubAuth } from '../../services/github-oauth';
 import { listOrgs } from '../../services/github-discovery';
+import { getIndexStatus, searchIndexedFiles, type FileKind } from '../../services/local-file-index';
 
 // ── System context builder ────────────────────────────────────────────────────
 
@@ -447,4 +448,35 @@ export function searchProjectBudgetForChat(db: SqlJsDatabase, groupName: string)
     lines.push(`\nError parsing project data: ${String(e)}`);
     return lines.join('\n');
   }
+}
+
+const FILE_KINDS: readonly FileKind[] = ['script', 'doc', 'config', 'source', 'other'];
+
+/** Search the local file index and format hits as a compact text block for the model. */
+export function searchFilesForChat(
+  indexDb: SqlJsDatabase | null,
+  query: string,
+  opts: { repoPath?: string; kind?: string; limit?: number } = {},
+): string {
+  if (!query.trim()) return 'No search terms provided.';
+  const notBuilt = 'The local file index has not been built yet. Let the local repo scan finish (Local Repos step), then try again.';
+  if (!indexDb) return notBuilt;
+  const status = getIndexStatus(indexDb);
+  if (status.fileCount === 0) return notBuilt;
+
+  const kind = FILE_KINDS.find(k => k === opts.kind);
+  const hits = searchIndexedFiles(indexDb, query, {
+    repoPath: opts.repoPath || undefined,
+    kind,
+    limit: Math.min(Math.max(Math.floor(opts.limit ?? 10), 1), 20),
+  });
+  if (hits.length === 0) {
+    return `No indexed files match "${query}" (index last updated ${status.lastRunAt ?? 'unknown'}). Try fewer or different words.`;
+  }
+  const lines = [`Found ${hits.length} file${hits.length === 1 ? '' : 's'} matching "${query}" (index last updated ${status.lastRunAt ?? 'unknown'}):`];
+  for (const h of hits) {
+    const snippet = h.snippet.replace(/\s+/g, ' ').trim().slice(0, 160);
+    lines.push(`- ${h.absolutePath} [${h.repoName ?? 'unknown repo'}, ${h.kind}]${snippet ? `: ${snippet}` : ''}`);
+  }
+  return lines.join('\n');
 }
