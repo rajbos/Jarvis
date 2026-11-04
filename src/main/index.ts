@@ -119,12 +119,11 @@ async function initialize(): Promise<void> {
   // Same for the OAuth sign-in token.
   checkOAuthForExpiry(db, () => mainWindow).then((expired) => {
     if (!expired) return;
-    const notification = new Notification({
-      title: 'Jarvis — GitHub sign-in expired',
-      body: 'Your GitHub sign-in has expired or been revoked. Open Jarvis and sign in again to reconnect.',
-    });
-    notification.on('click', () => showSettingsWindow());
-    notification.show();
+    showSafeNotification(
+      'Jarvis — GitHub sign-in expired',
+      'Your GitHub sign-in has expired or been revoked. Open Jarvis and sign in again to reconnect.',
+      { tag: '[OAuth]', onClick: () => showSettingsWindow() },
+    );
   }).catch((err) => {
     logger.warn('[OAuth] Startup validity check failed:', err);
   });

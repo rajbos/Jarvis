@@ -22,7 +22,10 @@ vi.mock('electron', () => {
       setBounds: vi.fn(),
       on: vi.fn((e: string, cb: any) => { handlers[e] = cb; }),
       once: vi.fn((e: string, cb: any) => { handlers[e] = cb; }),
-      webContents: { on: vi.fn((e: string, cb: any) => { wcHandlers[e] = cb; }) },
+      webContents: {
+        on: vi.fn((e: string, cb: any) => { wcHandlers[e] = cb; }),
+        setWindowOpenHandler: vi.fn(),
+      },
     });
     h.windows.push(this);
   });
