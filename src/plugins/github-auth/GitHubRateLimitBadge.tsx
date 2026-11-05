@@ -1,4 +1,6 @@
+import { Fragment } from 'preact';
 import { useState } from 'preact/hooks';
+import { Sparkline, useUsageHistory } from '../shared/Sparkline';
 import type { GitHubRateLimitSource } from '../types';
 import { formatNumber, formatDurationUntil } from '../shared/utils';
 import { CHART_BUCKETS, rateLimitSeries, tightestBucket, type ChartBucket } from './rate-limit-chart';
@@ -9,6 +11,9 @@ const CHART_H = 72;
 
 const BUCKET_LABEL: Record<string, string> = { core: 'REST', graphql: 'GraphQL', search: 'Search' };
 const BUCKET_COLOR: Record<ChartBucket, string> = { core: '#64b5f6', graphql: '#ce93d8' };
+
+const SPARK_COLOR: Record<string, string> = { core: '#64b5f6', graphql: '#ce93d8', search: '#ffb74d' };
+const TREND_RANGE = () => 48 * 60 * 60 * 1000;
 
 const HISTORY_SERIES = [
   { key: 'core', label: 'REST', color: BUCKET_COLOR.core },
@@ -42,6 +47,7 @@ interface Props {
  */
 export function GitHubRateLimitBadge({ label, source }: Props) {
   const [historyOpen, setHistoryOpen] = useState(false);
+  const trend = useUsageHistory(label === 'OAuth' ? 'github-oauth' : 'github-pat', TREND_RANGE);
   const tight = tightestBucket(source);
   const now = Date.now();
   const history = source.history ?? [];
@@ -135,13 +141,23 @@ export function GitHubRateLimitBadge({ label, source }: Props) {
         </div>
 
         {buckets.map(([name, r]) => (
-          <div class="bg-status-claude-row" key={name}>
-            <span class="bg-status-claude-label">{BUCKET_LABEL[name]}</span>
-            <span class={`bg-status-claude-state ${stateClass(r.remaining, r.limit)}`}>
-              {formatNumber(r.remaining)} / {formatNumber(r.limit)}
-            </span>
-            <span class="bg-status-claude-reset">{formatDurationUntil(r.reset, now)} · {clock(r.reset)}</span>
-          </div>
+          <Fragment key={name}>
+            <div class="bg-status-claude-row">
+              <span class="bg-status-claude-label">{BUCKET_LABEL[name]}</span>
+              <span class={`bg-status-claude-state ${stateClass(r.remaining, r.limit)}`}>
+                {formatNumber(r.remaining)} / {formatNumber(r.limit)}
+              </span>
+              <span class="bg-status-claude-reset">{formatDurationUntil(r.reset, now)} · {clock(r.reset)}</span>
+            </div>
+            <Sparkline
+              history={trend}
+              series={name}
+              color={SPARK_COLOR[name] ?? '#64b5f6'}
+              mode="remaining"
+              caption="48h"
+              title={`${BUCKET_LABEL[name]} % remaining, last 48 hours (lowest per time slot)`}
+            />
+          </Fragment>
         ))}
 
         {source.tokenExpired && (

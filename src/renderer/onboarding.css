@@ -4524,6 +4524,32 @@ h5.ec-heading { font-size: 0.9375rem; }
   white-space: nowrap;
 }
 
+.bg-sparkline {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 26px;
+  padding: 0 0.85rem;
+  color: var(--text-muted);
+  font-size: var(--type-meta);
+}
+
+.bg-sparkline-caption {
+  flex: none;
+  width: 2.2rem;
+}
+
+.bg-sparkline svg {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+}
+
+.bg-sparkline-empty {
+  font-style: italic;
+}
+
+.bg-sparkline + .bg-status-claude-row,
 .bg-status-claude-row + .bg-status-claude-row {
   border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
