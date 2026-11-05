@@ -16,7 +16,7 @@ interface Props {
   metric: UsageHistoryMetric;
   series: readonly SparklineSeries[];
   /** Changes whenever a new reading was stored, so the chart reloads with it. */
-  refreshKey?: number;
+  refreshKey?: number | string;
   rangeMs?: number;
   /** Text for the legend after each label, e.g. "% used". */
   legendSuffix?: string;
