@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => {
   const { EventEmitter } = require('node:events') as typeof import('node:events');
@@ -262,5 +262,35 @@ describe('update checker', () => {
     });
 
     expect(install()).toEqual({ ok: false, error: 'install failed' });
+  });
+
+  describe('resume from sleep', () => {
+    afterEach(() => vi.useRealTimers());
+
+    it('runs a catch-up check when more than a full interval elapsed', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+      const { startUpdateChecks, onUpdateCheckResume, stopUpdateChecks } = await import('../../src/main/update-checker');
+      startUpdateChecks();
+
+      vi.setSystemTime(Date.now() + 7 * 3600_000);
+      onUpdateCheckResume();
+
+      expect(autoUpdater.checkForUpdates).toHaveBeenCalledOnce();
+      stopUpdateChecks();
+    });
+
+    it('does nothing when the last check was recent', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+      const { startUpdateChecks, onUpdateCheckResume, stopUpdateChecks } = await import('../../src/main/update-checker');
+      startUpdateChecks();
+
+      vi.setSystemTime(Date.now() + 3600_000);
+      onUpdateCheckResume();
+
+      expect(autoUpdater.checkForUpdates).not.toHaveBeenCalled();
+      stopUpdateChecks();
+    });
   });
 });

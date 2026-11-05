@@ -42,6 +42,9 @@ interface RegisteredTask extends TaskDefinition {
   lastRun?: TaskRunRecord;
 }
 
+/** Gap between catch-up runs after resume, to avoid a burst of API calls. */
+export const RESUME_STAGGER_MS = 2_000;
+
 function nowIso(): string {
   return new Date().toISOString();
 }
@@ -102,6 +105,20 @@ export class TaskScheduler {
     const task = this.tasks.get(id);
     if (!task) throw new Error(`Unknown task: ${id}`);
     return this.runTask(task);
+  }
+
+  /**
+   * Call after the machine wakes from sleep: tasks whose next run time passed
+   * while suspended run now, staggered so they don't hit APIs in one burst.
+   */
+  onResume(): void {
+    if (!this.started) return;
+    const now = Date.now();
+    const overdue = [...this.tasks.values()].filter(
+      (t) => t.nextRunAt !== undefined && Date.parse(t.nextRunAt) <= now,
+    );
+    logger.info(`[Tasks] Resume detected — ${overdue.length} task(s) had next-run times in the past`);
+    overdue.forEach((task, i) => this.scheduleNext(task.id, i * RESUME_STAGGER_MS));
   }
 
   private scheduleNext(id: string, delayMs: number): void {

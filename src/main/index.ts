@@ -1,5 +1,5 @@
 
-import { app, BrowserWindow, Tray, Menu, session, crashReporter, shell } from 'electron';
+import { app, BrowserWindow, Tray, Menu, session, crashReporter, shell, powerMonitor } from 'electron';
 import path from 'path';
 import { getDatabase, closeDatabase } from '../storage/database';
 import { loadConfig } from '../agent/config';
@@ -18,7 +18,8 @@ import { logger, setLogLevel, enableFileLogging } from '../services/logger';
 import { showSafeNotification } from '../services/notifications';
 import { startStallWatchdog } from '../services/stall-watchdog';
 import { STALL_NOTIFY_THRESHOLD_MS, buildStallDiagnostic, reportFreeze, setFreezeReportSender } from './freeze-diagnostics';
-import { checkForUpdates, registerUpdateIpcHandlers, startUpdateChecks, stopUpdateChecks } from './update-checker';
+import { checkForUpdates, registerUpdateIpcHandlers, startUpdateChecks, stopUpdateChecks, onUpdateCheckResume } from './update-checker';
+import { registerPowerResumeHandler } from './power-resume';
 import { registerDiagnosticsIpcHandlers } from './diagnostics';
 import { registerAppWindowIpcHandlers } from './app-window-ipc';
 if (process.env.JARVIS_CONFIG_DIR) {
@@ -104,29 +105,38 @@ async function initialize(): Promise<void> {
   // Let the renderer open the Settings window (e.g. from the "PAT expired" banner)
   registerAppWindowIpcHandlers(showSettingsWindow);
   startupStep('IPC handlers registered');
-  // Validate the stored GitHub PAT on startup; warn clearly when it has
-  // expired or been revoked instead of silently failing API calls later.
-  checkPatForExpiry(db, () => mainWindow).then((expired) => {
-    if (!expired) return;
-    showSafeNotification(
-      'Jarvis — GitHub token expired',
-      'Your GitHub Personal Access Token has expired or been revoked. Open Settings → GitHub Access to enter a new one.',
-      { tag: '[PAT]', onClick: () => showSettingsWindow() },
-    );
-  }).catch((err) => {
-    logger.warn('[PAT] Startup validity check failed:', err);
-  });
+  // Validate the stored GitHub PAT / OAuth token on startup and after resume
+  // from sleep; warn clearly when it has expired or been revoked instead of
+  // silently failing API calls later.
+  const runAuthExpiryChecks = (when: string): void => {
+    checkPatForExpiry(db, () => mainWindow).then((expired) => {
+      if (!expired) return;
+      showSafeNotification(
+        'Jarvis — GitHub token expired',
+        'Your GitHub Personal Access Token has expired or been revoked. Open Settings → GitHub Access to enter a new one.',
+        { tag: '[PAT]', onClick: () => showSettingsWindow() },
+      );
+    }).catch((err) => {
+      logger.warn(`[PAT] ${when} validity check failed:`, err);
+    });
 
-  // Same for the OAuth sign-in token.
-  checkOAuthForExpiry(db, () => mainWindow).then((expired) => {
-    if (!expired) return;
-    showSafeNotification(
-      'Jarvis — GitHub sign-in expired',
-      'Your GitHub sign-in has expired or been revoked. Open Jarvis and sign in again to reconnect.',
-      { tag: '[OAuth]', onClick: () => showSettingsWindow() },
-    );
-  }).catch((err) => {
-    logger.warn('[OAuth] Startup validity check failed:', err);
+    checkOAuthForExpiry(db, () => mainWindow).then((expired) => {
+      if (!expired) return;
+      showSafeNotification(
+        'Jarvis — GitHub sign-in expired',
+        'Your GitHub sign-in has expired or been revoked. Open Jarvis and sign in again to reconnect.',
+        { tag: '[OAuth]', onClick: () => showSettingsWindow() },
+      );
+    }).catch((err) => {
+      logger.warn(`[OAuth] ${when} validity check failed:`, err);
+    });
+  };
+  runAuthExpiryChecks('Startup');
+
+  registerPowerResumeHandler(powerMonitor, () => {
+    runAuthExpiryChecks('Resume');
+    onUpdateCheckResume();
+    getBackgroundTaskScheduler()?.onResume();
   });
 
   // Check if Ollama is available and update onboarding step accordingly

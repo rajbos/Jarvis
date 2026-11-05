@@ -15,6 +15,9 @@ let initialCheckTimer: NodeJS.Timeout | null = null;
 let periodicCheckTimer: NodeJS.Timeout | null = null;
 let upToDateTimer: NodeJS.Timeout | null = null;
 let manualCheckInFlight = false;
+// Wall-clock time of the last check (or of startUpdateChecks); setInterval pauses
+// while the machine sleeps, so resume compares against this.
+let lastCheckAt = 0;
 let listenersRegistered = false;
 // Version announced by the latest 'update-available'; the download must carry
 // build provenance from exactly this release tag.
@@ -151,6 +154,7 @@ export async function checkForUpdates(manual = false): Promise<void> {
   }
 
   registerListeners();
+  lastCheckAt = Date.now();
   if (manual) manualCheckInFlight = true;
 
   try {
@@ -180,6 +184,7 @@ export function registerUpdateIpcHandlers(getWindow: () => BrowserWindow | null)
 
 export function startUpdateChecks(): void {
   if (!app.isPackaged || initialCheckTimer || periodicCheckTimer) return;
+  lastCheckAt = Date.now();
 
   initialCheckTimer = setTimeout(() => {
     initialCheckTimer = null;
@@ -189,6 +194,15 @@ export function startUpdateChecks(): void {
 
   periodicCheckTimer = setInterval(() => { void checkForUpdates(); }, CHECK_INTERVAL_MS);
   periodicCheckTimer.unref();
+}
+
+/** Run a catch-up check after resume when a full interval passed while asleep. */
+export function onUpdateCheckResume(): void {
+  if (!app.isPackaged || !periodicCheckTimer) return;
+  const elapsedMs = Date.now() - lastCheckAt;
+  if (elapsedMs <= CHECK_INTERVAL_MS) return;
+  logger.info(`[Updates] Resumed from sleep — ${(elapsedMs / 3_600_000).toFixed(1)} hours since last check, running catch-up check`);
+  void checkForUpdates();
 }
 
 export function stopUpdateChecks(): void {

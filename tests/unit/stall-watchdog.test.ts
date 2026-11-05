@@ -54,4 +54,32 @@ describe('stall watchdog', () => {
     vi.advanceTimersByTime(2000);
     expect(onStall).not.toHaveBeenCalled();
   });
+
+  it('treats a gap above maxPlausibleStallMs as a sleep, not a stall', () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    const info = vi.spyOn(logger, 'info').mockImplementation(() => {});
+    const onStall = vi.fn();
+    startStallWatchdog({ intervalMs: 100, thresholdMs: 1000, maxPlausibleStallMs: 60_000, onStall });
+
+    vi.setSystemTime(Date.now() + 8 * 3600_000);
+    vi.advanceTimersByTime(100);
+
+    expect(warn).not.toHaveBeenCalled();
+    expect(onStall).not.toHaveBeenCalled();
+    expect(info.mock.calls[0][0]).toMatch(/\[Power\] Resumed after ~480min sleep gap/);
+  });
+
+  it('still reports a stall just under maxPlausibleStallMs', () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    const onStall = vi.fn();
+    startStallWatchdog({ intervalMs: 100, thresholdMs: 1000, maxPlausibleStallMs: 60_000, onStall });
+
+    vi.setSystemTime(Date.now() + 50_000);
+    vi.advanceTimersByTime(100);
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(onStall).toHaveBeenCalledTimes(1);
+  });
 });

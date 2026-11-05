@@ -15,6 +15,11 @@ export interface StallWatchdogOptions {
   onStall?: (lagMs: number, context: string) => void;
   /** Minimum stall length that triggers `onStall`; defaults to `thresholdMs`. */
   notifyThresholdMs?: number;
+  /**
+   * A lag above this is treated as the machine having been asleep, not a
+   * stall: logged as `[Power]` and `onStall` is not called. Default 2 minutes.
+   */
+  maxPlausibleStallMs?: number;
 }
 
 let timer: ReturnType<typeof setInterval> | null = null;
@@ -29,6 +34,10 @@ export function startStallWatchdog(options: StallWatchdogOptions = {}): void {
     const lag = now - expected;
     expected = now + intervalMs;
     if (lag < thresholdMs) return;
+    if (lag > (options.maxPlausibleStallMs ?? 120_000)) {
+      logger.info(`[Power] Resumed after ~${Math.round(lag / 60_000)}min sleep gap (ended ${new Date(now).toISOString()}); not a stall`);
+      return;
+    }
     let ctx = '';
     try {
       ctx = options.context?.() ?? '';
