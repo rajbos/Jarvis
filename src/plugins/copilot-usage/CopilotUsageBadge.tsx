@@ -1,6 +1,7 @@
 import { useCallback, useLayoutEffect, useState } from 'preact/hooks';
 import { createPortal } from 'preact/compat';
-import type { CopilotUsage, GitHubAccountUsage } from '../types';
+import type { CopilotUsage, GitHubAccountUsage, UsageHistoryRange } from '../types';
+import { Sparkline, useUsageHistory } from '../shared/Sparkline';
 import { formatNumber, formatDurationUntil } from '../shared/utils';
 import { copilotBudgetLevel, copilotUsageLimit, type CopilotBudgetLevel } from './budget-level';
 import { CopilotIcon } from '../shared/BrandIcons';
@@ -15,6 +16,13 @@ const LEVEL_COLOR: Record<CopilotBudgetLevel, string> = {
 };
 
 const credits = (n: number) => formatNumber(Math.round(n));
+
+/** Range back to the 1st of the current month (UTC, like the billing period), at least a day so day one still draws. */
+const sinceMonthStart = () => {
+  const now = new Date();
+  const start = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
+  return Math.max(24 * 60 * 60 * 1000, now.getTime() - start);
+};
 
 const HISTORY_COLORS = ['#64b5f6', '#ce93d8', '#ffb74d', '#81c784', '#f06292', '#4dd0e1'];
 
@@ -48,6 +56,9 @@ interface UsageRowsProps {
   usage: CopilotUsage;
   /** Per-model rows: only the primary block shows them, to keep the stacked flyout short. */
   showModels?: boolean;
+  /** Stored copilot history and this account's series key in it, for the month sparkline. */
+  history?: UsageHistoryRange | null;
+  historyKey?: string;
 }
 
 function Row({ label, value, note, valueClass = '' }: { label: string; value: string; note?: string; valueClass?: string }) {
@@ -61,7 +72,7 @@ function Row({ label, value, note, valueClass = '' }: { label: string; value: st
 }
 
 /** One account's usage: a headline total with a meter, the credit breakdown, and the per-model split. */
-function UsageRows({ usage, showModels = true }: UsageRowsProps) {
+function UsageRows({ usage, showModels = true, history, historyKey }: UsageRowsProps) {
   const level = copilotBudgetLevel(usage);
   const budget = usage.budgetCredits;
   const entitlement = usage.entitlementCredits ?? null;
@@ -93,6 +104,16 @@ function UsageRows({ usage, showModels = true }: UsageRowsProps) {
           <div class="bg-copilot-meter">
             <span style={{ width: `${Math.min(100, pct ?? 0)}%`, background: LEVEL_COLOR[level] }} />
           </div>
+        )}
+        {!usage.error && historyKey && (
+          <Sparkline
+            history={history ?? null}
+            series={historyKey}
+            color={LEVEL_COLOR[level] === LEVEL_COLOR.unknown ? '#64b5f6' : LEVEL_COLOR[level]}
+            mode="used"
+            caption={new Date(Date.UTC(usage.year, usage.month - 1, 1)).toLocaleString(undefined, { month: 'short', timeZone: 'UTC' })}
+            title="AIC used this month (highest per time slot), scaled to the peak, not to the budget"
+          />
         )}
       </div>
       {!usage.error && (
@@ -244,6 +265,7 @@ export function CopilotUsageBadge({ usage, otherAccounts = [], onOpenSettings, o
       ? `Copilot ${credits(usage.creditsUsed)}/${credits(limit)} AIC`
       : `Copilot ${credits(usage.creditsUsed)} AIC`) + (configuredOthers.length > 0 ? ` +${configuredOthers.length}` : '');
 
+  const monthHistory = useUsageHistory('copilot', sinceMonthStart);
   const stacked = configuredOthers.length > 0;
   const [showRaw, setShowRaw] = useState(false);
   const closeRaw = useCallback(() => setShowRaw(false), []);
@@ -274,11 +296,11 @@ export function CopilotUsageBadge({ usage, otherAccounts = [], onOpenSettings, o
       </span>
       <div class="bg-status-claude-pop">
         {stacked && <AccountHeader login={usage.login} host={undefined} level={copilotBudgetLevel(usage)} />}
-        <UsageRows usage={usage} />
+        <UsageRows usage={usage} history={monthHistory} historyKey={usage.login} />
         {configuredOthers.map(({ account, usage: other }) => (
           <div class="bg-status-claude-account" key={account.id}>
             <AccountHeader login={account.login} host={account.host} level={copilotBudgetLevel(other)} />
-            <UsageRows usage={other} showModels={false} />
+            <UsageRows usage={other} showModels={false} history={monthHistory} historyKey={account.id} />
           </div>
         ))}
         {(usage.error || !usage.configured) && (onOpenSettings || onRefresh) && (
