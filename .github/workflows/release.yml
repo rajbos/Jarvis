@@ -57,8 +57,29 @@ jobs:
       - name: Test
         run: npm run test
 
+      # electron-builder downloads its NSIS toolchain from GitHub at build time; cache it
+      # so a re-run (or the next release) doesn't depend on that download succeeding
+      - name: Cache electron-builder downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~\AppData\Local\electron-builder\Cache
+          key: electron-builder-${{ runner.os }}-${{ hashFiles('package-lock.json', 'electron-builder.yml') }}
+          restore-keys: electron-builder-${{ runner.os }}-
+
+      # Those downloads occasionally fail with transient 5xx errors (e.g. a 504 from
+      # GitHub), so retry the build instead of failing the whole release
       - name: Build Windows installer
-        run: npm run dist:win
+        run: |
+          $maxAttempts = 3
+          for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+            npm run dist:win
+            if ($LASTEXITCODE -eq 0) { exit 0 }
+            if ($attempt -lt $maxAttempts) {
+              Write-Host "::warning::dist:win failed (attempt $attempt of $maxAttempts), retrying in 30s"
+              Start-Sleep -Seconds 30
+            }
+          }
+          exit 1
 
       # Records which workflow, commit and tag produced the installer, so anyone
       # can check a download with: gh attestation verify <file> --repo rajbos/Jarvis
