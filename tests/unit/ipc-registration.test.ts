@@ -66,6 +66,9 @@ const EXPECTED_CHANNELS = [
   // chat plugin
   'chat:send',
   'chat:abort',
+  'chat:load-history',
+  'chat:save-history',
+  'chat:clear-history',
   // github-auth plugin
   'github:oauth-status',
   'github:open-url',

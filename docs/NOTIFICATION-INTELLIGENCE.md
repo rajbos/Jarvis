@@ -47,7 +47,7 @@ can be safely dismissed, by running a configurable LLM agent against the accumul
 | Repo metadata (name, branch, language, archived) | `github_repos` table |
 | Local repo clones + remote mappings | `local_repos`, `local_repo_remotes` |
 | GitHub orgs | `github_orgs` |
-| Chat / conversation log | None — chat messages are in-memory only in the renderer (not persisted) |
+| Chat / conversation log | `chat_messages` table — only the current plain Ollama conversation (capped, cleared by "New chat"); Agent Analysis sessions are not persisted |
 | Ollama streaming chat (multi-tool) | `src/services/ollama.ts` `streamChat` / `chatWithTools` |
 
 ### What is missing

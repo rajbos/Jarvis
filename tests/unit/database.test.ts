@@ -572,3 +572,17 @@ describe('Migration v39 -> v40', () => {
     expect(oldDb.exec('PRAGMA user_version')[0].values[0][0]).toBe(40);
   });
 });
+
+describe('Migration v40 -> v41', () => {
+  it('creates the chat_messages table', async () => {
+    const SQL = await initSqlJs();
+    const oldDb = new SQL.Database();
+    oldDb.run('PRAGMA user_version = 40');
+
+    initializeSchema(oldDb);
+
+    expect(oldDb.exec('PRAGMA user_version')[0].values[0][0]).toBe(41);
+    const names = oldDb.exec("SELECT name FROM sqlite_master WHERE type='table'")[0]?.values.map((r) => r[0]) ?? [];
+    expect(names).toContain('chat_messages');
+  });
+});

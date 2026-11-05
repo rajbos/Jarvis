@@ -1591,6 +1591,12 @@ export interface JarvisApi {
 
   abortChat(): Promise<{ ok: boolean }>;
 
+  loadChatHistory(): Promise<Array<{ role: 'user' | 'assistant'; content: string; display?: string }> | IpcErrorResponse>;
+
+  saveChatHistory(messages: Array<{ role: 'user' | 'assistant'; content: string; display?: string }>): Promise<{ ok: boolean }>;
+
+  clearChatHistory(): Promise<{ ok: boolean }>;
+
   onChatToken(cb: (token: string) => void): () => void;
 
   onChatDone(cb: () => void): () => void;

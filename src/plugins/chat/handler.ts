@@ -13,6 +13,7 @@ import { getConfigValue, getDatabasePath } from '../../storage/database';
 import { buildSystemContext, searchReposForChat, searchSecretsForChat, searchOneNoteForChat, searchProjectBudgetForChat, searchFilesForChat } from './db-helpers';
 import { getIndexDbPath, openIndexDatabase } from '../../services/local-file-index';
 import { safeHandle } from '../ipc-utils';
+import { loadChatHistory, saveChatHistory, clearChatHistory } from './history';
 import { readRecentLogLines } from '../../services/logger';
 
 const activeChatAborts = new Map<number, AbortController>();
@@ -340,4 +341,13 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
     return { ok: true };
   });
 
+  safeHandle('chat:load-history', () => loadChatHistory(db));
+  safeHandle('chat:save-history', (_event, messages: unknown) => {
+    saveChatHistory(db, messages);
+    return { ok: true };
+  });
+  safeHandle('chat:clear-history', () => {
+    clearChatHistory(db);
+    return { ok: true };
+  });
 }
