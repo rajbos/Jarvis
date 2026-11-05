@@ -134,13 +134,18 @@ const SHOTS: Shot[] = [
     name: 'agent-analysis-running', view: 'index', waitFor: ['Analysing acme/rocket-sled', 'stop analysis'],
     open: { responses: { getSelectedOllamaModel: 'fixture-model:3b' } },
     prepare: async (page) => {
-      await page.evaluate(() => {
-        window.__jarvisTest.emit('onOpenChat');
-        window.__jarvisTest.emit('onAgentSessionStarting', {
-          sessionId: 42, agentName: 'Notification Triage', scopeType: 'repo', scopeValue: 'acme/rocket-sled',
-          workflowRunCount: 3, workflowFilter: null, provider: 'ollama',
+      await page.evaluate(() => window.__jarvisTest.emit('onOpenChat'));
+      // The chat panel mounts (and subscribes to the event) asynchronously after onOpenChat, so a single emit can
+      // fire before anyone listens. Re-emit until the panel reacts; the handler resets its state, so it is idempotent.
+      await expect.poll(async () => {
+        await page.evaluate(() => {
+          window.__jarvisTest.emit('onAgentSessionStarting', {
+            sessionId: 42, agentName: 'Notification Triage', scopeType: 'repo', scopeValue: 'acme/rocket-sled',
+            workflowRunCount: 3, workflowFilter: null, provider: 'ollama',
+          });
         });
-      });
+        return page.locator('.ec-agent-stop').count();
+      }, { message: 'waiting for the chat panel to pick up the agent session' }).toBe(1);
     },
   },
   {
