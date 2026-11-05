@@ -22,7 +22,6 @@ export function useUsageHistory(metric: UsageHistoryMetric, rangeMs: () => numbe
     void load();
     const id = window.setInterval(load, 2 * 60 * 1000);
     return () => { cancelled = true; window.clearInterval(id); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [metric]);
   return data;
 }
