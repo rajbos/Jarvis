@@ -37,6 +37,9 @@ contextBridge.exposeInMainWorld('jarvis', {
   sendChatMessage: (messages: Array<{ role: string; content: string }>) =>
     ipcRenderer.invoke('chat:send', messages),
   abortChat: () => ipcRenderer.invoke('chat:abort'),
+  loadChatHistory: () => ipcRenderer.invoke('chat:load-history'),
+  saveChatHistory: (messages: unknown[]) => ipcRenderer.invoke('chat:save-history', messages),
+  clearChatHistory: () => ipcRenderer.invoke('chat:clear-history'),
   onChatToken: (callback: (token: string) => void) => {
     const listener = (_event: unknown, token: string) => callback(token);
     ipcRenderer.on('chat:token', listener);

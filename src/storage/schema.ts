@@ -460,6 +460,8 @@ export function getSchema(): string {
     );
 
     ${USAGE_SAMPLES_TABLE_SQL};
+
+    ${CHAT_MESSAGES_TABLE_SQL};
   `;
 }
 
@@ -474,3 +476,12 @@ export const USAGE_SAMPLES_TABLE_SQL = `CREATE TABLE IF NOT EXISTS usage_samples
         data   TEXT NOT NULL,
         PRIMARY KEY (metric, at)
     )`;
+
+/** The single current plain chat conversation (position = order in the thread). */
+export const CHAT_MESSAGES_TABLE_SQL = `
+  CREATE TABLE IF NOT EXISTS chat_messages (
+    position INTEGER PRIMARY KEY,
+    role     TEXT NOT NULL,
+    content  TEXT NOT NULL,
+    display  TEXT
+  )`;

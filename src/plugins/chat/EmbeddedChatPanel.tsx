@@ -45,6 +45,7 @@ export function EmbeddedChatPanel({ visible, selectedModel, onClose, onAgentStar
   const [debugExpanded, setDebugExpanded] = useState(false);
   const [extractingFindings, setExtractingFindings] = useState(false);
   const [extractingError, setExtractingError] = useState<string | null>(null);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
@@ -232,6 +233,31 @@ export function EmbeddedChatPanel({ visible, selectedModel, onClose, onAgentStar
     onShowRequested?.();
   }), [onShowRequested]);
 
+  // Restore the stored plain conversation once on start (survives close/reload/restart).
+  useEffect(() => {
+    let cancelled = false;
+    window.jarvis.loadChatHistory()
+      .then((stored) => {
+        if (cancelled) return;
+        if (!isIpcError(stored) && stored.length > 0) {
+          // Anything that arrived before the load finished stays after the restored thread.
+          setMessages((current) => [...stored, ...current]);
+        }
+      })
+      .catch((err: unknown) => console.error('[Chat] loadChatHistory:', err))
+      .finally(() => { if (!cancelled) setHistoryLoaded(true); });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Save once a message has completed (not per streamed token). Agent analysis
+  // sessions are not persisted, so saving pauses while one is shown.
+  const agentActive = agentStreaming || agentSession !== null || agentSessionInfo !== null;
+  useEffect(() => {
+    if (!historyLoaded || streaming || agentActive) return;
+    const plain = messages.flatMap((m) => m.role === 'diagnostic' ? [] : [m]);
+    window.jarvis.saveChatHistory(plain).catch((err: unknown) => console.error('[Chat] saveChatHistory:', err));
+  }, [messages, streaming, agentActive, historyLoaded]);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, streamText]);
@@ -242,6 +268,7 @@ export function EmbeddedChatPanel({ visible, selectedModel, onClose, onAgentStar
     setStreamText('');
     setStreaming(false);
     void window.jarvis.abortChat();
+    window.jarvis.clearChatHistory().catch((err: unknown) => console.error('[Chat] clearChatHistory:', err));
   }, []);
 
   const handleCloseMessage = useCallback((index: number) => {

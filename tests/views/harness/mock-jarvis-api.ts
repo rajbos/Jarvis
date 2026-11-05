@@ -154,6 +154,9 @@ function defaultResponses(f: Fixtures): Responses {
     setSelectedOllamaModel: ok,
     sendChatMessage: ok,
     abortChat: ok,
+    loadChatHistory: () => [],
+    saveChatHistory: ok,
+    clearChatHistory: ok,
     // Local repos + index
     localGetFolders: f.scanFolders,
     localAddFolder: { canceled: true },

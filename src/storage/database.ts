@@ -1,7 +1,7 @@
 import initSqlJs, { Database as SqlJsDatabase } from 'sql.js';
 import path from 'path';
 import fs from 'fs';
-import { getSchema, USAGE_SAMPLES_TABLE_SQL } from './schema';
+import { getSchema, USAGE_SAMPLES_TABLE_SQL, CHAT_MESSAGES_TABLE_SQL } from './schema';
 import { logger } from '../services/logger';
 
 let db: SqlJsDatabase | null = null;
@@ -94,7 +94,7 @@ export async function createMemoryDatabase(): Promise<SqlJsDatabase> {
 // of the chain in initializeSchema(). Used only to warn if a database fails to
 // reach the latest schema after migration (e.g. a gap in the version chain).
 // A unit test fails if this drifts from the version a fresh database reaches.
-export const LATEST_SCHEMA_VERSION = 40;
+export const LATEST_SCHEMA_VERSION = 41;
 
 export function initializeSchema(database: SqlJsDatabase): void {
   const result = database.exec("PRAGMA user_version");
@@ -103,7 +103,7 @@ export function initializeSchema(database: SqlJsDatabase): void {
   if (userVersion === 0) {
     database.run(getSchema());
     seedBuiltInAgents(database);
-    database.run('PRAGMA user_version = 40');
+    database.run('PRAGMA user_version = 41');
   }
 
   if (userVersion === 1) {
@@ -817,6 +817,13 @@ export function initializeSchema(database: SqlJsDatabase): void {
     database.run('DROP TABLE IF EXISTS conversations');
     database.run('DROP TABLE IF EXISTS task_history');
     database.run('PRAGMA user_version = 40');
+  }
+
+  if (userVersion === 40) {
+    // Migration v40 → v41: the single current Ollama chat conversation, so it
+    // survives closing the panel, reloads and restarts.
+    database.run(CHAT_MESSAGES_TABLE_SQL);
+    database.run('PRAGMA user_version = 41');
   }
 
   const finalResult = database.exec('PRAGMA user_version');
