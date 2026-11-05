@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { TaskScheduler } from '../../src/main/task-scheduler';
+import { TaskScheduler, RESUME_STAGGER_MS } from '../../src/main/task-scheduler';
 import { logger } from '../../src/services/logger';
 
 describe('TaskScheduler', () => {
@@ -115,5 +115,45 @@ describe('TaskScheduler', () => {
 
     expect(() => scheduler.register({ id: 'x', label: 'Duplicate', run: async () => undefined })).toThrow(/already registered/);
     await expect(scheduler.runNow('missing')).rejects.toThrow(/Unknown task/);
+  });
+
+  describe('onResume', () => {
+    it('runs overdue tasks staggered and keeps their interval afterwards', async () => {
+      const a = vi.fn();
+      const b = vi.fn();
+      const info = vi.spyOn(logger, 'info').mockImplementation(() => {});
+      const scheduler = new TaskScheduler();
+      scheduler.register({ id: 'a', label: 'A', intervalMs: 60_000, run: a });
+      scheduler.register({ id: 'b', label: 'B', intervalMs: 60_000, run: b });
+      scheduler.start();
+
+      // Simulate sleep: wall clock jumps without the timers firing.
+      vi.setSystemTime(Date.now() + 3 * 3600_000);
+      scheduler.onResume();
+
+      expect(info.mock.calls.some((c) => /Resume detected — 2 task\(s\)/.test(String(c[0])))).toBe(true);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(a).toHaveBeenCalledTimes(1);
+      expect(b).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(RESUME_STAGGER_MS);
+      expect(b).toHaveBeenCalledTimes(1);
+
+      // Not double-fired, and the regular cadence resumes.
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(a).toHaveBeenCalledTimes(2);
+      scheduler.stop();
+    });
+
+    it('does nothing for tasks that are not overdue or when stopped', async () => {
+      const run = vi.fn();
+      const scheduler = new TaskScheduler();
+      scheduler.register({ id: 'a', label: 'A', intervalMs: 60_000, run });
+      scheduler.onResume();
+      scheduler.start();
+      scheduler.onResume();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(run).not.toHaveBeenCalled();
+      scheduler.stop();
+    });
   });
 });
