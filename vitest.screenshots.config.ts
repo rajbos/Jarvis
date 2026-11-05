@@ -11,6 +11,8 @@ export default defineConfig({
     include: ['tests/views/screenshots.ts'],
     testTimeout: 60_000,
     hookTimeout: 120_000,
+    // expect.poll defaults to 1s, too tight for a cold first render on a loaded CI runner (Windows especially).
+    expect: { poll: { timeout: 10_000 } },
     // One harness (bundle + browser) per file; the shots run sequentially inside it.
     fileParallelism: false,
   },

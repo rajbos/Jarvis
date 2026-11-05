@@ -10,5 +10,7 @@ export default defineConfig({
     include: ['tests/views/**/*.view.test.ts'],
     testTimeout: 30_000,
     hookTimeout: 120_000,
+    // expect.poll defaults to 1s, too tight for a cold first render on a loaded CI runner (Windows especially).
+    expect: { poll: { timeout: 10_000 } },
   },
 });
