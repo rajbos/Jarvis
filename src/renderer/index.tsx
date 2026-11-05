@@ -39,6 +39,7 @@ import { ClaudePanel } from '../plugins/claude/ClaudePanel';
 import { CopilotUsageBadge } from '../plugins/copilot-usage/CopilotUsageBadge';
 import { GitHubRateLimitBadge } from '../plugins/github-auth/GitHubRateLimitBadge';
 import { UsageHistoryDialog, historyTriggerProps } from '../plugins/shared/UsageHistoryDialog';
+import { UsageHistorySparkline } from '../plugins/shared/UsageHistorySparkline';
 import { ClaudeIcon } from '../plugins/shared/BrandIcons';
 import { ActiveSessionsPanel } from '../plugins/active-sessions/ActiveSessionsPanel';
 
@@ -1628,6 +1629,12 @@ function BackgroundStatusBar({
                     : `Claude${claudeBadge.fiveHour?.utilization != null ? ` ${Math.round(claudeBadge.fiveHour.utilization * 100)}%` : ' ok'}`}
               </span>
               <div class="bg-status-claude-pop">
+                <UsageHistorySparkline
+                  metric="claude"
+                  series={CLAUDE_HISTORY_SERIES}
+                  refreshKey={claudeBadge.fetchedAt}
+                  legendSuffix=" % used"
+                />
                 {([
                   ['5-hour window', claudeBadge.fiveHour],
                   ['7-day window', claudeBadge.sevenDay],
