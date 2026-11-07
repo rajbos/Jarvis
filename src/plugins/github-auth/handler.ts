@@ -27,6 +27,7 @@ import type { GitHubRateLimitResource } from '../types';
 import { checkCopilotUsage } from '../copilot-usage/handler';
 import { DEFAULT_HOST, apiBaseForHost, hostOfUrl, webBaseForHost } from '../../services/github-host';
 import { accessForPrimary, accessForRepo } from '../../services/github-repo-access';
+import { getGitHubApiStats, githubRequest, registerGitHubToken } from '../../services/github-api';
 
 /**
  * Sign-in can be started from the main window or the Settings window, so the
@@ -109,9 +110,9 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
       'X-GitHub-Api-Version': '2022-11-28',
     };
     try {
-      const runsRes = await fetch(
+      const runsRes = await githubRequest(
         `${apiBase}/repos/${owner}/${repo}/actions/runs?check_suite_id=${checkSuiteId}&per_page=10`,
-        { headers },
+        { headers }, { purpose: 'check-suite-url' },
       );
       if (runsRes.ok) {
         const data = (await runsRes.json()) as {
@@ -123,7 +124,7 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
         const run = failed ?? data.workflow_runs[0];
         if (run) return run.html_url;
       }
-      const suiteRes = await fetch(checkSuiteApiUrl, { headers });
+      const suiteRes = await githubRequest(checkSuiteApiUrl, { headers }, { purpose: 'check-suite-url' });
       if (suiteRes.ok) {
         const suite = (await suiteRes.json()) as { head_branch: string | null };
         if (suite.head_branch) {
@@ -146,13 +147,13 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
       'X-GitHub-Api-Version': '2022-11-28',
     };
     try {
-      const issueRes = await fetch(subjectUrl, { headers });
+      const issueRes = await githubRequest(subjectUrl, { headers }, { purpose: 'notifications:issue-state' });
       if (!issueRes.ok) return null;
       const issue = (await issueRes.json()) as { state: string };
       if (issue.state !== 'closed') return { state: 'open' as const, closedByMe: false, closedViaMergedPr: false };
 
       // Fetch events to determine who closed the issue and whether a PR did it
-      const eventsRes = await fetch(`${subjectUrl}/events`, { headers });
+      const eventsRes = await githubRequest(`${subjectUrl}/events`, { headers }, { purpose: 'notifications:issue-state' });
       let closedByMe = false;
       let closedViaMergedPr = false;
       if (eventsRes.ok) {
@@ -279,6 +280,9 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
   safeHandle('github:get-rate-limit', async () => {
     const auth = loadGitHubAuth(db);
     const pat = loadGitHubPat(db);
+    // These two are the badges in the status bar; calls made with them show under those names.
+    registerGitHubToken(auth?.accessToken, 'oauth', true);
+    registerGitHubToken(pat, 'pat', true);
 
     type TokenResult = {
       resource: GitHubRateLimitResource | null;
@@ -290,13 +294,13 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
 
     const fetchForToken = async (token: string): Promise<TokenResult> => {
       try {
-        const res = await fetch('https://api.github.com/rate_limit', {
+        const res = await githubRequest('https://api.github.com/rate_limit', {
           headers: {
             Authorization: `Bearer ${token}`,
             Accept: 'application/vnd.github+json',
             'X-GitHub-Api-Version': '2022-11-28',
           },
-        });
+        }, { purpose: 'rate-limit-poll' });
         // GitHub returns the expiry date of expiring tokens (fine-grained PATs)
         // on every authenticated response — surface it so the UI can warn early.
         const tokenExpiresAt = res.headers.get('github-authentication-token-expiration');
@@ -356,6 +360,16 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
           }
         : { configured: false, resource: null },
       fetchedAt: new Date().toISOString(),
+      apiCalls: (() => {
+        const stats = getGitHubApiStats();
+        return {
+          total: stats.total,
+          since: stats.since,
+          byPurpose: stats.byPurpose,
+          byToken: stats.byToken,
+          byPattern: stats.byPattern.slice(0, 60).map(({ purpose, token, method, pattern, count, lastUrl }) => ({ purpose, token, method, pattern, count, lastUrl })),
+        };
+      })(),
     };
   });
 

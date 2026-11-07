@@ -386,6 +386,7 @@ contextBridge.exposeInMainWorld('jarvis', {
   // Active agent sessions + PR review readiness
   getActiveSessions: () => ipcRenderer.invoke('active-sessions:get'),
   refreshActiveSessions: () => ipcRenderer.invoke('active-sessions:refresh'),
+  runAgentSessionAction: (sessionKey: string, kind: string) => ipcRenderer.invoke('active-sessions:run-action', sessionKey, kind),
   onActiveSessionsUpdated: (callback: (snapshot: unknown) => void) => {
     const listener = (_event: unknown, snapshot: unknown) => callback(snapshot);
     ipcRenderer.on('active-sessions:updated', listener);

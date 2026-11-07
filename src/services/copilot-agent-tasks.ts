@@ -5,6 +5,7 @@
 // installation tokens are not supported by this endpoint.
 
 import type { AgentActivity } from '../plugins/types';
+import { githubRequest } from './github-api';
 
 const GITHUB_API = 'https://api.github.com';
 const AGENT_TASKS_API_VERSION = '2026-03-10';
@@ -91,13 +92,13 @@ export async function fetchCopilotTaskSessions(
 ): Promise<FetchTaskSessionsResult> {
   let response: Response;
   try {
-    response = await fetch(`${GITHUB_API}/agents/tasks/${encodeURIComponent(taskId)}`, {
+    response = await githubRequest(`${GITHUB_API}/agents/tasks/${encodeURIComponent(taskId)}`, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         Accept: 'application/vnd.github+json',
         'X-GitHub-Api-Version': AGENT_TASKS_API_VERSION,
       },
-    });
+    }, { purpose: 'active-sessions:cloud-task-detail' });
   } catch (err) {
     return { ok: false, status: 0, error: err instanceof Error ? err.message : String(err) };
   }
@@ -176,13 +177,13 @@ export async function listCopilotAgentTasks(
 
     let response: Response;
     try {
-      response = await fetch(`${GITHUB_API}/agents/tasks?${params.toString()}`, {
+      response = await githubRequest(`${GITHUB_API}/agents/tasks?${params.toString()}`, {
         headers: {
           Authorization: `Bearer ${accessToken}`,
           Accept: 'application/vnd.github+json',
           'X-GitHub-Api-Version': AGENT_TASKS_API_VERSION,
         },
-      });
+      }, { purpose: 'active-sessions:cloud-task-list' });
     } catch (err) {
       return { ok: false, status: 0, error: err instanceof Error ? err.message : String(err) };
     }
@@ -238,9 +239,9 @@ export function cloudStateToActivity(state: string): AgentActivity {
 /** Resolve a numeric repository id to `owner/repo`. Returns null when inaccessible. */
 export async function fetchRepoFullNameById(accessToken: string, repoId: number): Promise<string | null> {
   try {
-    const response = await fetch(`${GITHUB_API}/repositories/${repoId}`, {
+    const response = await githubRequest(`${GITHUB_API}/repositories/${repoId}`, {
       headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/vnd.github+json' },
-    });
+    }, { purpose: 'active-sessions:repo-name' });
     if (!response.ok) return null;
     const body = (await response.json()) as { full_name?: string };
     return body.full_name ?? null;

@@ -26,6 +26,7 @@
 
 import { execFile } from 'child_process';
 import type { CopilotRawResponse } from '../plugins/types';
+import { githubRequest } from './github-api';
 
 export type { CopilotRawResponse };
 
@@ -158,13 +159,13 @@ export async function fetchAiCreditUsage(
     `?year=${period.year}&month=${period.month}`;
   const url = `${apiBase}${endpoint}`;
   try {
-    const res = await fetch(url, {
+    const res = await githubRequest(url, {
       headers: {
         Authorization: `Bearer ${token}`,
         Accept: 'application/vnd.github+json',
         'X-GitHub-Api-Version': '2022-11-28',
       },
-    });
+    }, { purpose: 'copilot-usage:billing' });
     const body = await res.text().catch(() => '');
     const raw: CopilotRawResponse = { endpoint, status: res.status, body: parseBody(body) };
     if (!res.ok) {
@@ -273,13 +274,13 @@ export function parseCopilotQuota(data: CopilotInternalUser): CopilotQuota | nul
 /** Fetch the current-period premium quota the way VS Code does. */
 export async function fetchCopilotQuota(token: string, apiBase = 'https://api.github.com'): Promise<CopilotQuotaFetchResult> {
   try {
-    const res = await fetch(`${apiBase}/copilot_internal/user`, {
+    const res = await githubRequest(`${apiBase}/copilot_internal/user`, {
       headers: {
         Authorization: `Bearer ${token}`,
         Accept: 'application/json',
         'User-Agent': 'Jarvis-Agent/0.1.0',
       },
-    });
+    }, { purpose: 'copilot-usage:quota' });
     const body = await res.text().catch(() => '');
     const raw: CopilotRawResponse = { endpoint: '/copilot_internal/user', status: res.status, body: parseBody(body) };
     if (!res.ok) {

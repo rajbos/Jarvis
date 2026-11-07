@@ -13,6 +13,7 @@ import { saveDatabase } from '../storage/database';
 import { apiBaseForHost } from './github-host';
 import { accessForRepo } from './github-repo-access';
 import { logger } from './logger';
+import { githubRequest } from './github-api';
 
 /** Orgs with more cached repos than this are only scanned when switched on explicitly. */
 export const SECRET_SCAN_MAX_AUTO_ORG_REPOS = 200;
@@ -164,13 +165,13 @@ async function fetchRepoSecretNames(
   const url = `${apiBaseForHost(host)}/repos/${repoFullName}/actions/secrets?per_page=100`;
 
   const tryFetch = async (t: string): Promise<SecretsFetch> => {
-    const resp = await fetch(url, {
+    const resp = await githubRequest(url, {
       headers: {
         Authorization: `Bearer ${t}`,
         Accept: 'application/vnd.github+json',
         'X-GitHub-Api-Version': '2022-11-28',
       },
-    });
+    }, { purpose: 'secrets-scan', rateLimited: 'passthrough' });
     const remaining = parseInt(resp.headers.get('x-ratelimit-remaining') ?? '', 10);
     if (resp.status === 429 || (resp.status === 403 && remaining === 0)) return { status: 429, names: [], remaining };
     if (resp.status === 403 || resp.status === 404) return { status: resp.status, names: [], remaining };

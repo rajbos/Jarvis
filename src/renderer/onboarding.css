@@ -4895,6 +4895,145 @@ h5.ec-heading { font-size: 0.9375rem; }
   border-top: none;
 }
 
+.bg-ratelimit-calls {
+  margin-top: 0.15rem;
+  padding: 0.45rem 0.85rem 0.3rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: var(--type-meta);
+  line-height: 1.4;
+}
+
+.bg-ratelimit-calls-head {
+  color: var(--text-muted);
+  margin-bottom: 0.2rem;
+}
+
+.bg-ratelimit-calls-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  color: #c8d6ea;
+}
+
+.bg-ratelimit-calls-purpose {
+  font-family: var(--font-mono, monospace);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bg-ratelimit-calls-count {
+  font-variant-numeric: tabular-nums;
+  color: #8ab4e8;
+}
+
+/* GitHub API usage dialog: both tokens' quota next to the calls Jarvis made. */
+/* Same specificity as .bg-copilot-raw but declared earlier, so qualify the selector. */
+.bg-copilot-raw.bg-apiu {
+  width: min(1480px, calc(100vw - 2rem));
+}
+
+.bg-apiu-tokens {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.bg-apiu-token {
+  padding: 0.6rem 0.75rem;
+  border: 1px solid #1e3a5a;
+  border-radius: 6px;
+  background: #0b1628;
+}
+
+.bg-apiu-token-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.35rem;
+}
+
+.bg-apiu-token .bg-status-claude-row {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.bg-apiu-token .bg-sparkline {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.bg-apiu-token-calls {
+  margin-top: 0.4rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-muted);
+  font-size: var(--type-meta);
+}
+
+.bg-apiu-muted {
+  color: var(--text-muted);
+  font-size: var(--type-meta);
+}
+
+.bg-apiu-sparks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0.5rem 1rem;
+}
+
+.bg-apiu-spark-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: var(--type-meta);
+  color: var(--text-muted);
+}
+
+.bg-apiu-spark-label i {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.bg-apiu-spark .bg-sparkline {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.bg-apiu-table {
+  margin-top: 0.5rem;
+  font-size: 0.8125rem;
+}
+
+.bg-apiu-table td,
+.bg-apiu-table th {
+  white-space: nowrap;
+}
+
+.bg-apiu-more {
+  margin-top: 0.4rem;
+  font-size: var(--type-meta);
+}
+
+.bg-apiu-num {
+  text-align: right !important;
+}
+
+.bg-apiu-mono {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.bg-apiu-url {
+  max-width: 34rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .bg-status-ratelimit .bg-status-claude-checked {
   white-space: normal;
 }
@@ -5953,6 +6092,64 @@ h5.ec-heading { font-size: 0.9375rem; }
   border-color: #8a6a1f;
   color: #f0c060;
   background: #2a2212;
+}
+
+.as-chip--conflicts {
+  border-color: #8a3a3a;
+  color: #ff9a9a;
+  background: #2a1414;
+}
+
+.as-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.35rem;
+}
+
+.as-action {
+  font-size: 0.6875rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 4px;
+  border: 1px solid #2b4a75;
+  background: #0f2240;
+  color: #a0c8ff;
+  cursor: pointer;
+}
+
+.as-action:hover:not(:disabled) {
+  background: #16304f;
+  border-color: #3a5a9a;
+}
+
+.as-action:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.as-action--fix {
+  border-color: #8a6a1f;
+  color: #f0c060;
+  background: #2a2212;
+}
+
+.as-action--fix:hover:not(:disabled) {
+  background: #3a3018;
+  border-color: #b08a2a;
+}
+
+.as-action-outcome {
+  font-size: 0.6875rem;
+  color: #6fdc8c;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 32rem;
+}
+
+.as-action-outcome--error {
+  color: #ff9a9a;
 }
 
 .as-pr-link {

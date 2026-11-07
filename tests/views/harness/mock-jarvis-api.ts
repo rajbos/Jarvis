@@ -274,6 +274,7 @@ function defaultResponses(f: Fixtures): Responses {
     resolveGitHubAccountForRepo: { ok: true, resolved: null },
     // Active sessions + background tasks
     getActiveSessions: f.activeSessions,
+    runAgentSessionAction: { ok: true, kind: 'deep-link', message: 'Opened in the fixture app', prompt: null },
     refreshActiveSessions: f.activeSessions,
     listBackgroundTasks: f.backgroundTasks,
     listRecentTaskFailures: [],

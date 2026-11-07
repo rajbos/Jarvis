@@ -16,6 +16,13 @@ vi.mock('electron', () => ({
     removeHandler: vi.fn(),
   },
   Notification: Object.assign(vi.fn().mockImplementation(function () { return { show: notificationShow }; }), { isSupported: () => true }),
+  shell: { openExternal: vi.fn(async () => undefined) },
+  clipboard: { writeText: vi.fn() },
+}));
+
+vi.mock('../../src/services/process-launch', () => ({
+  openTerminal: vi.fn(),
+  resolveDirectory: vi.fn((p: string) => (p.startsWith('C:\missing') ? null : p)),
 }));
 
 vi.mock('../../src/storage/database', async (importOriginal) => {
@@ -34,7 +41,8 @@ vi.mock('../../src/services/active-sessions', () => ({
   collectActiveSessions: vi.fn(),
 }));
 
-import { Notification } from 'electron';
+import { Notification, shell, clipboard } from 'electron';
+import { openTerminal } from '../../src/services/process-launch';
 import {
   recordReadiness,
   refreshActiveSessions,
@@ -198,5 +206,74 @@ describe('IPC handlers', () => {
     registerHandlers(db, () => null);
     vi.mocked(collectActiveSessions).mockRejectedValue(new Error('boom'));
     expect(await handlers.get('active-sessions:refresh')!({})).toMatchObject({ ok: false, error: expect.stringContaining('boom') });
+  });
+});
+
+describe('active-sessions:run-action', () => {
+  const failing = pr({
+    ready: true,
+    checks: { light: 'red', label: '2 failed', detail: '', blocking: false, total: 3, pending: 0, failed: 2, passed: 1, failedNames: ['build', 'lint'] },
+    baseRef: 'main',
+    mergeable: 'CONFLICTING',
+  });
+
+  async function snapshotReady(entryPatch: Partial<ActiveSessionsSnapshot['entries'][number]['session']> = {}) {
+    const snapshot = snapshotWith([failing]);
+    Object.assign(snapshot.entries[0].session, entryPatch);
+    vi.mocked(collectActiveSessions).mockResolvedValue(snapshot);
+    registerHandlers(db, () => null);
+    await handlers.get('active-sessions:refresh')!({});
+    return snapshot.entries[0].session.key;
+  }
+
+  it('rejects bad arguments and unknown sessions', async () => {
+    registerHandlers(db, () => null);
+    expect(await handlers.get('active-sessions:run-action')!({}, 'k0', 'nope')).toEqual({ ok: false, error: 'Invalid arguments' });
+    expect(await handlers.get('active-sessions:run-action')!({}, 'k0', 'open')).toMatchObject({ ok: false, error: expect.stringContaining('refresh') });
+  });
+
+  it('opens Copilot app sessions through a ghapp:// deep link', async () => {
+    const key = await snapshotReady({ client: 'Copilot app', sessionId: 'app-1' });
+    const result = await handlers.get('active-sessions:run-action')!({}, key, 'open');
+    expect(result).toMatchObject({ ok: true, kind: 'deep-link' });
+    expect(vi.mocked(shell.openExternal)).toHaveBeenCalledWith('ghapp://sessions/app-1');
+    expect(vi.mocked(clipboard.writeText)).not.toHaveBeenCalled();
+  });
+
+  it('resumes Claude Code in a terminal with the fix-checks prompt', async () => {
+    const key = await snapshotReady({ provider: 'claude', client: 'Claude Code', sessionId: 'c-1', cwd: 'C:\src\repo' });
+    const result = await handlers.get('active-sessions:run-action')!({}, key, 'fix_checks');
+    expect(result).toMatchObject({ ok: true, kind: 'terminal', prompt: expect.stringContaining('build, lint') });
+    const [cwd, command] = vi.mocked(openTerminal).mock.calls[0];
+    expect(cwd).toBe('C:\src\repo');
+    expect(command).toMatchObject({ file: 'claude', args: ['--resume', 'c-1', expect.stringContaining('build, lint')] });
+  });
+
+  it('fails cleanly when the session folder is gone', async () => {
+    const key = await snapshotReady({ provider: 'claude', client: 'Claude Code', cwd: 'C:\missing\repo' });
+    expect(await handlers.get('active-sessions:run-action')!({}, key, 'open')).toMatchObject({ ok: false, error: expect.stringContaining('missing') });
+    expect(vi.mocked(openTerminal)).not.toHaveBeenCalled();
+  });
+
+  it('asks @copilot to resolve conflicts on a cloud task via a PR comment', async () => {
+    const fetchMock = vi.fn(async () => new Response('{}', { status: 201 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const key = await snapshotReady({ origin: 'cloud', client: 'Copilot cloud agent', cloudTaskId: 't1', cwd: null });
+    const result = await handlers.get('active-sessions:run-action')!({}, key, 'resolve_conflicts');
+    expect(result).toMatchObject({ ok: true, kind: 'pr-comment', message: expect.stringContaining('as @me-org') });
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, { method: string; headers: Record<string, string>; body: string }];
+    expect(url).toBe('https://api.github.com/repos/me/repo/issues/1/comments');
+    expect(init.method).toBe('POST');
+    expect(init.headers.Authorization).toBe('Bearer tok-org');
+    expect(JSON.parse(init.body)).toEqual({ body: expect.stringMatching(/^@copilot The pull request .*merge conflicts/) });
+    vi.unstubAllGlobals();
+  });
+
+  it('reports why a prompt action is unavailable instead of doing anything', async () => {
+    vi.mocked(collectActiveSessions).mockResolvedValue(snapshotWith([pr()]));
+    registerHandlers(db, () => null);
+    await handlers.get('active-sessions:refresh')!({});
+    expect(await handlers.get('active-sessions:run-action')!({}, 'k0', 'fix_checks')).toEqual({ ok: false, error: 'No failing checks.' });
+    expect(vi.mocked(shell.openExternal)).not.toHaveBeenCalled();
   });
 });
