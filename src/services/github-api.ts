@@ -14,7 +14,6 @@
  * `purpose` is a short feature tag (`active-sessions`, `notifications-sync`,
  * …) chosen by the call site; it is what makes the summary actionable.
  */
-import { createHash } from 'node:crypto';
 import { githubFetch, type GithubFetchOptions, type RateLimitInfo } from './github-fetch';
 import { logger } from './logger';
 
@@ -59,15 +58,13 @@ export interface GitHubApiStats {
 }
 
 // ── Token attribution ────────────────────────────────────────────────────────
-// Calls are attributed to the credential in their Authorization header without
-// keeping the credential: tokens are reduced to a short hash and the hash is
-// mapped to a label the rate-limit handler / account resolver registers.
+// Calls are attributed to the credential in their Authorization header. The
+// rate-limit handler / account resolver register a label per credential; the
+// map lives only in this process' memory (the credentials are already held in
+// memory by the auth services) and only the label ever reaches the stats,
+// the log or the renderer.
 
 const tokenLabels = new Map<string, string>();
-
-function tokenHash(token: string): string {
-  return createHash('sha256').update(token).digest('hex').slice(0, 16);
-}
 
 /**
  * Name a credential for the call stats. `override` replaces an existing label
@@ -75,8 +72,7 @@ function tokenHash(token: string): string {
  */
 export function registerGitHubToken(token: string | null | undefined, label: string, override = false): void {
   if (!token) return;
-  const hash = tokenHash(token);
-  if (override || !tokenLabels.has(hash)) tokenLabels.set(hash, label);
+  if (override || !tokenLabels.has(token)) tokenLabels.set(token, label);
 }
 
 function bearerOf(init: RequestInit | undefined): string | null {
@@ -91,11 +87,15 @@ function bearerOf(init: RequestInit | undefined): string | null {
   return m ? m[1].trim() : value.trim();
 }
 
+/** Label for a credential: registered name, `other` when none yet, `none` when unauthenticated. */
+function labelFor(credential: string | null): string {
+  if (!credential) return 'none';
+  return tokenLabels.get(credential) ?? 'other';
+}
+
 /** Label for the credential a request carries. Exported for tests. */
 export function tokenLabelOf(init: RequestInit | undefined): string {
-  const token = bearerOf(init);
-  if (!token) return 'none';
-  return tokenLabels.get(tokenHash(token)) ?? 'other';
+  return labelFor(bearerOf(init));
 }
 
 /** Recent calls kept in memory for the stats IPC. */
@@ -159,24 +159,38 @@ export function githubUrlPattern(url: string): string {
   return `/${out.join('/')}${keys.length ? `?${keys.join('&')}` : ''}`;
 }
 
-const recent: GitHubApiCall[] = [];
-const patterns = new Map<string, GitHubApiPatternStats>();
+// Records keep the credential itself (private to this module) and resolve its
+// label when read, so a token named after its first calls — the badge poll runs
+// a while after sign-in — relabels those calls too instead of leaving them "other".
+interface CallRecord extends Omit<GitHubApiCall, 'token'> {
+  credential: string | null;
+}
+interface PatternRecord extends Omit<GitHubApiPatternStats, 'token'> {
+  credential: string | null;
+}
+
+const recent: CallRecord[] = [];
+const patterns = new Map<string, PatternRecord>();
 let total = 0;
 let since = Date.now();
 
-function record(call: GitHubApiCall): void {
+function record(call: CallRecord): void {
   total++;
   recent.push(call);
   if (recent.length > RECENT_CALLS_LIMIT) recent.splice(0, recent.length - RECENT_CALLS_LIMIT);
-  const key = `${call.purpose}\u0000${call.token}\u0000${call.method}\u0000${call.pattern}`;
+  const key = `${call.purpose}\u0000${call.credential ?? ''}\u0000${call.method}\u0000${call.pattern}`;
   const entry = patterns.get(key);
   if (entry) {
     entry.count++;
     entry.lastAt = call.at;
     entry.lastUrl = call.url;
   } else {
-    patterns.set(key, { purpose: call.purpose, token: call.token, method: call.method, pattern: call.pattern, count: 1, lastAt: call.at, lastUrl: call.url });
+    patterns.set(key, { purpose: call.purpose, credential: call.credential, method: call.method, pattern: call.pattern, count: 1, lastAt: call.at, lastUrl: call.url });
   }
+}
+
+function publicCall({ credential, ...call }: CallRecord): GitHubApiCall {
+  return { ...call, token: labelFor(credential) };
 }
 
 /** Exposed for tests. */
@@ -196,7 +210,8 @@ export function countGitHubApiCalls(sinceMs: number): { total: number; byToken: 
   for (const c of recent) {
     if (c.at < sinceMs) continue;
     count++;
-    byToken[c.token] = (byToken[c.token] ?? 0) + 1;
+    const token = labelFor(c.credential);
+    byToken[token] = (byToken[token] ?? 0) + 1;
     byPurpose[c.purpose] = (byPurpose[c.purpose] ?? 0) + 1;
   }
   return { total: count, byToken, byPurpose };
@@ -205,17 +220,27 @@ export function countGitHubApiCalls(sinceMs: number): { total: number; byToken: 
 export function getGitHubApiStats(): GitHubApiStats {
   const byPurpose = new Map<string, number>();
   const byToken = new Map<string, number>();
-  for (const p of patterns.values()) {
+  // Two credentials can share a label (relabelled later); merge them per pattern.
+  const byPattern = new Map<string, GitHubApiPatternStats>();
+  for (const { credential, ...p } of patterns.values()) {
+    const token = labelFor(credential);
     byPurpose.set(p.purpose, (byPurpose.get(p.purpose) ?? 0) + p.count);
-    byToken.set(p.token, (byToken.get(p.token) ?? 0) + p.count);
+    byToken.set(token, (byToken.get(token) ?? 0) + p.count);
+    const key = `${p.purpose}\u0000${token}\u0000${p.method}\u0000${p.pattern}`;
+    const existing = byPattern.get(key);
+    if (!existing) byPattern.set(key, { ...p, token });
+    else {
+      existing.count += p.count;
+      if (p.lastAt > existing.lastAt) { existing.lastAt = p.lastAt; existing.lastUrl = p.lastUrl; }
+    }
   }
   return {
     total,
     since,
     byPurpose: [...byPurpose].map(([purpose, count]) => ({ purpose, count })).sort((a, b) => b.count - a.count),
     byToken: [...byToken].map(([token, count]) => ({ token, count })).sort((a, b) => b.count - a.count),
-    byPattern: [...patterns.values()].sort((a, b) => b.count - a.count),
-    recent: recent.slice(),
+    byPattern: [...byPattern.values()].sort((a, b) => b.count - a.count),
+    recent: recent.map(publicCall),
   };
 }
 
@@ -261,7 +286,7 @@ export async function githubRequest(
   const { purpose, ...fetchOptions } = options;
   const method = methodOf(init);
   const pattern = githubUrlPattern(url);
-  const token = tokenLabelOf(init);
+  const credential = bearerOf(init);
   const startedAt = Date.now();
   const seen: { rateLimit: RateLimitInfo | null } = { rateLimit: null };
   const onRateLimit = (info: RateLimitInfo) => {
@@ -276,10 +301,10 @@ export async function githubRequest(
   } finally {
     const at = Date.now();
     const { rateLimit } = seen;
-    const call: GitHubApiCall = { at, purpose, token, method, pattern, url, status, durationMs: at - startedAt, rateLimit };
+    const call: CallRecord = { at, purpose, credential, method, pattern, url, status, durationMs: at - startedAt, rateLimit };
     record(call);
     const budget = rateLimit ? ` ${rateLimit.resource ?? 'core'} ${rateLimit.remaining}/${rateLimit.limit}` : '';
-    logger.debug(`[GitHubAPI] ${purpose} [${token}] ${method} ${pattern} → ${status || 'ERR'} ${call.durationMs}ms${budget} ${url}`);
+    logger.debug(`[GitHubAPI] ${purpose} [${labelFor(credential)}] ${method} ${pattern} → ${status || 'ERR'} ${call.durationMs}ms${budget} ${url}`);
   }
 }
 

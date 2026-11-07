@@ -108,7 +108,7 @@ describe('token attribution', () => {
     globalThis.fetch = realFetch;
   });
 
-  it('labels calls by the credential in the Authorization header without storing it', async () => {
+  it('labels calls by the credential in the Authorization header without exposing it', async () => {
     registerGitHubToken('oauth-secret', 'oauth', true);
     registerGitHubToken('pat-secret', 'pat', true);
     await githubRequest('https://api.github.com/user', { headers: { Authorization: 'Bearer oauth-secret' } }, { purpose: 'auth' });
@@ -125,6 +125,17 @@ describe('token attribution', () => {
     ].sort());
     expect(stats.byPattern.map((p) => p.token).sort()).toEqual(['none', 'oauth', 'other', 'pat']);
     expect(JSON.stringify(stats)).not.toContain('secret');
+  });
+
+  it('relabels calls made before the credential got its name', async () => {
+    await githubRequest('https://api.github.com/user', { headers: { Authorization: 'Bearer late' } }, { purpose: 'auth' });
+    expect(getGitHubApiStats().byToken).toEqual([{ token: 'other', count: 1 }]);
+    registerGitHubToken('late', 'oauth:me');
+    registerGitHubToken('late', 'oauth', true);
+    expect(getGitHubApiStats().byToken).toEqual([{ token: 'oauth', count: 1 }]);
+    expect(getGitHubApiStats().byPattern[0]).toMatchObject({ token: 'oauth', count: 1 });
+    expect(getGitHubApiStats().recent[0].token).toBe('oauth');
+    expect(countGitHubApiCalls(0).byToken).toEqual({ oauth: 1 });
   });
 
   it('keeps the status-bar labels over per-account labels', () => {

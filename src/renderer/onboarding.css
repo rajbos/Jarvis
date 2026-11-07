@@ -4928,8 +4928,9 @@ h5.ec-heading { font-size: 0.9375rem; }
 }
 
 /* GitHub API usage dialog: both tokens' quota next to the calls Jarvis made. */
-.bg-apiu {
-  width: min(1040px, calc(100vw - 2rem));
+/* Same specificity as .bg-copilot-raw but declared earlier, so qualify the selector. */
+.bg-copilot-raw.bg-apiu {
+  width: min(1480px, calc(100vw - 2rem));
 }
 
 .bg-apiu-tokens {
@@ -5006,6 +5007,11 @@ h5.ec-heading { font-size: 0.9375rem; }
   font-size: 0.8125rem;
 }
 
+.bg-apiu-table td,
+.bg-apiu-table th {
+  white-space: nowrap;
+}
+
 .bg-apiu-num {
   text-align: right !important;
 }
@@ -5017,7 +5023,7 @@ h5.ec-heading { font-size: 0.9375rem; }
 }
 
 .bg-apiu-url {
-  max-width: 22rem;
+  max-width: 34rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
