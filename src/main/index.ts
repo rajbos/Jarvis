@@ -17,7 +17,7 @@ import { stopBridgeServer } from '../plugins/browser-companion/server';
 import { logger, setLogLevel, enableFileLogging } from '../services/logger';
 import { showSafeNotification } from '../services/notifications';
 import { startStallWatchdog } from '../services/stall-watchdog';
-import { STALL_NOTIFY_THRESHOLD_MS, buildStallDiagnostic, reportFreeze, setFreezeReportSender } from './freeze-diagnostics';
+import { STALL_NOTIFY_THRESHOLD_MS, buildStallDiagnostic, reportFreeze, setFreezeReportSender, setUserAttentionProbe } from './freeze-diagnostics';
 import { checkForUpdates, registerUpdateIpcHandlers, startUpdateChecks, stopUpdateChecks, onUpdateCheckResume } from './update-checker';
 import { registerPowerResumeHandler } from './power-resume';
 import { registerDiagnosticsIpcHandlers } from './diagnostics';
@@ -81,6 +81,8 @@ let mainWindow: BrowserWindow | null = null;
 setFreezeReportSender((report) => {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('diagnostics:show', report);
 });
+setUserAttentionProbe(() => !!mainWindow && !mainWindow.isDestroyed()
+  && mainWindow.isVisible() && !mainWindow.isMinimized() && mainWindow.isFocused());
 let settingsWindow: BrowserWindow | null = null;
 let aboutWindow: BrowserWindow | null = null;
  
