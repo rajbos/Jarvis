@@ -7,6 +7,7 @@ describe('GitHubApiUsageDialog helpers', () => {
     const stats: GitHubApiCallStats = {
       total: 10,
       since: 0,
+      windowMs: 60 * 60 * 1000,
       byPurpose: [{ purpose: 'sync', count: 7 }, { purpose: 'sweep', count: 3 }],
       byToken: [{ token: 'oauth', count: 8 }, { token: 'pat', count: 2 }],
       // Capped list: one sync pattern is missing, so the purpose total must come from byPurpose.
