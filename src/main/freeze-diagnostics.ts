@@ -4,7 +4,7 @@
 import type { DiagnosticReport } from '../types/ipc-payloads';
 
 /** Stalls shorter than this are only logged (the watchdog logs from 1s). */
-export const STALL_NOTIFY_THRESHOLD_MS = 3_000;
+export const STALL_NOTIFY_THRESHOLD_MS = 5_000;
 /** A window must stay unresponsive this long before the user is told. */
 export const UNRESPONSIVE_NOTIFY_THRESHOLD_MS = 5_000;
 /** At most one freeze card per this long, so a bad stretch can't flood the chat. */
@@ -14,9 +14,20 @@ type Sender = (report: DiagnosticReport) => void;
 
 let sender: Sender | null = null;
 let lastReportAt = 0;
+let userIsWatching: (() => boolean) | null = null;
 
 export function setFreezeReportSender(fn: Sender | null): void {
   sender = fn;
+}
+
+/**
+ * Registers a probe telling whether the user can currently see Jarvis (window
+ * visible and focused). A freeze nobody saw (window hidden, minimized or behind
+ * other apps, often just the OS throttling or suspending the process) is only
+ * logged, not surfaced as a chat card.
+ */
+export function setUserAttentionProbe(fn: (() => boolean) | null): void {
+  userIsWatching = fn;
 }
 
 export function resetFreezeReportThrottle(): void {
@@ -60,6 +71,11 @@ export function buildUnresponsiveDiagnostic(windowName: string, durationMs: numb
 /** Delivers the report unless one was delivered within the cooldown. Returns whether it was sent. */
 export function reportFreeze(report: DiagnosticReport, nowMs: number = Date.now()): boolean {
   if (!sender) return false;
+  try {
+    if (userIsWatching && !userIsWatching()) return false;
+  } catch {
+    /* probe is best effort: fall through and report */
+  }
   if (lastReportAt && nowMs - lastReportAt < FREEZE_REPORT_COOLDOWN_MS) return false;
   lastReportAt = nowMs;
   try {

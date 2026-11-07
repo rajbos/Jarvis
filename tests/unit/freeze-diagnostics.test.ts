@@ -6,11 +6,13 @@ import {
   reportFreeze,
   resetFreezeReportThrottle,
   setFreezeReportSender,
+  setUserAttentionProbe,
 } from '../../src/main/freeze-diagnostics';
 
 describe('freeze diagnostics', () => {
   beforeEach(() => {
     setFreezeReportSender(null);
+    setUserAttentionProbe(null);
     resetFreezeReportThrottle();
   });
 
@@ -42,6 +44,19 @@ describe('freeze diagnostics', () => {
     expect(reportFreeze(report, 1_000_000 + FREEZE_REPORT_COOLDOWN_MS - 1)).toBe(false);
     expect(reportFreeze(report, 1_000_000 + FREEZE_REPORT_COOLDOWN_MS)).toBe(true);
     expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  it('stays silent while the user is not looking at the window, and does not use up the cooldown', () => {
+    const send = vi.fn();
+    setFreezeReportSender(send);
+    let watching = false;
+    setUserAttentionProbe(() => watching);
+    const report = buildStallDiagnostic(5000, '');
+    expect(reportFreeze(report, 1_000_000)).toBe(false);
+    watching = true;
+    expect(reportFreeze(report, 1_000_001)).toBe(true);
+    expect(send).toHaveBeenCalledTimes(1);
+    setUserAttentionProbe(null);
   });
 
   it('swallows sender errors', () => {
