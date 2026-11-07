@@ -48,9 +48,11 @@ export interface GitHubApiPatternStats {
 }
 
 export interface GitHubApiStats {
-  /** Calls since the stats were last reset (app start). */
+  /** Calls in the window. */
   total: number;
+  /** Start of the window (epoch ms); the app start when that is later. */
   since: number;
+  windowMs: number;
   byPurpose: Array<{ purpose: string; count: number }>;
   byToken: Array<{ token: string; count: number }>;
   byPattern: GitHubApiPatternStats[];
@@ -99,7 +101,7 @@ export function tokenLabelOf(init: RequestInit | undefined): string {
 }
 
 /** Recent calls kept in memory for the stats IPC. */
-export const RECENT_CALLS_LIMIT = 2000;
+export const RECENT_CALLS_LIMIT = 50_000;
 
 const HEX_SHA_RE = /^[0-9a-f]{40}$/i;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -165,28 +167,20 @@ export function githubUrlPattern(url: string): string {
 interface CallRecord extends Omit<GitHubApiCall, 'token'> {
   credential: string | null;
 }
-interface PatternRecord extends Omit<GitHubApiPatternStats, 'token'> {
-  credential: string | null;
-}
+
+/** Calls older than this are dropped from the ring; stats are windows over it. */
+export const CALL_RETENTION_MS = 24 * 60 * 60 * 1000;
 
 const recent: CallRecord[] = [];
-const patterns = new Map<string, PatternRecord>();
-let total = 0;
 let since = Date.now();
 
 function record(call: CallRecord): void {
-  total++;
   recent.push(call);
-  if (recent.length > RECENT_CALLS_LIMIT) recent.splice(0, recent.length - RECENT_CALLS_LIMIT);
-  const key = `${call.purpose}\u0000${call.credential ?? ''}\u0000${call.method}\u0000${call.pattern}`;
-  const entry = patterns.get(key);
-  if (entry) {
-    entry.count++;
-    entry.lastAt = call.at;
-    entry.lastUrl = call.url;
-  } else {
-    patterns.set(key, { purpose: call.purpose, credential: call.credential, method: call.method, pattern: call.pattern, count: 1, lastAt: call.at, lastUrl: call.url });
-  }
+  const cutoff = call.at - CALL_RETENTION_MS;
+  let drop = 0;
+  while (drop < recent.length && recent[drop].at < cutoff) drop++;
+  if (recent.length - drop > RECENT_CALLS_LIMIT) drop = recent.length - RECENT_CALLS_LIMIT;
+  if (drop > 0) recent.splice(0, drop);
 }
 
 function publicCall({ credential, ...call }: CallRecord): GitHubApiCall {
@@ -196,9 +190,7 @@ function publicCall({ credential, ...call }: CallRecord): GitHubApiCall {
 /** Exposed for tests. */
 export function resetGitHubApiStats(now: number = Date.now()): void {
   recent.length = 0;
-  patterns.clear();
   tokenLabels.clear();
-  total = 0;
   since = now;
 }
 
@@ -217,30 +209,40 @@ export function countGitHubApiCalls(sinceMs: number): { total: number; byToken: 
   return { total: count, byToken, byPurpose };
 }
 
-export function getGitHubApiStats(): GitHubApiStats {
+/**
+ * The calls of the last `windowMs` (default: everything retained), grouped by
+ * purpose, credential and URL pattern. `since` is where the window starts, or
+ * the app start when that is later — the ring only knows this run.
+ */
+export function getGitHubApiStats(windowMs: number = CALL_RETENTION_MS, now: number = Date.now()): GitHubApiStats {
+  const start = Math.max(now - windowMs, since);
   const byPurpose = new Map<string, number>();
   const byToken = new Map<string, number>();
-  // Two credentials can share a label (relabelled later); merge them per pattern.
   const byPattern = new Map<string, GitHubApiPatternStats>();
-  for (const { credential, ...p } of patterns.values()) {
-    const token = labelFor(credential);
-    byPurpose.set(p.purpose, (byPurpose.get(p.purpose) ?? 0) + p.count);
-    byToken.set(token, (byToken.get(token) ?? 0) + p.count);
-    const key = `${p.purpose}\u0000${token}\u0000${p.method}\u0000${p.pattern}`;
-    const existing = byPattern.get(key);
-    if (!existing) byPattern.set(key, { ...p, token });
-    else {
-      existing.count += p.count;
-      if (p.lastAt > existing.lastAt) { existing.lastAt = p.lastAt; existing.lastUrl = p.lastUrl; }
+  const calls: GitHubApiCall[] = [];
+  for (const c of recent) {
+    if (c.at < start) continue;
+    const call = publicCall(c);
+    calls.push(call);
+    byPurpose.set(call.purpose, (byPurpose.get(call.purpose) ?? 0) + 1);
+    byToken.set(call.token, (byToken.get(call.token) ?? 0) + 1);
+    const key = `${call.purpose}\u0000${call.token}\u0000${call.method}\u0000${call.pattern}`;
+    const entry = byPattern.get(key);
+    if (entry) {
+      entry.count++;
+      if (call.at >= entry.lastAt) { entry.lastAt = call.at; entry.lastUrl = call.url; }
+    } else {
+      byPattern.set(key, { purpose: call.purpose, token: call.token, method: call.method, pattern: call.pattern, count: 1, lastAt: call.at, lastUrl: call.url });
     }
   }
   return {
-    total,
-    since,
+    total: calls.length,
+    since: start,
+    windowMs,
     byPurpose: [...byPurpose].map(([purpose, count]) => ({ purpose, count })).sort((a, b) => b.count - a.count),
     byToken: [...byToken].map(([token, count]) => ({ token, count })).sort((a, b) => b.count - a.count),
     byPattern: [...byPattern.values()].sort((a, b) => b.count - a.count),
-    recent: recent.map(publicCall),
+    recent: calls,
   };
 }
 

@@ -725,9 +725,11 @@ export interface GitHubRateLimit {
 
 /** Jarvis-side tally of GitHub API calls, grouped by the feature that made them. */
 export interface GitHubApiCallStats {
+  /** Calls in the window. */
   total: number;
-  /** Epoch ms the tally started (app start / last reset). */
+  /** Start of the window (epoch ms), or the app start when that is later — calls are only counted while Jarvis runs. */
   since: number;
+  windowMs: number;
   byPurpose: Array<{ purpose: string; count: number }>;
   /** Per credential: `oauth` / `pat` are the status-bar tokens, `<source>:<account>` other accounts, `other` unlabelled, `none` unauthenticated. */
   byToken: Array<{ token: string; count: number }>;
@@ -1958,6 +1960,8 @@ export interface JarvisApi {
   refreshActiveSessions(): Promise<ActiveSessionsSnapshot | IpcErrorResponse>;
   onActiveSessionsUpdated(cb: (snapshot: ActiveSessionsSnapshot) => void): () => void;
   runAgentSessionAction(sessionKey: string, kind: AgentActionKind): Promise<AgentActionResult>;
+  /** Jarvis' own GitHub API calls in the last `windowMs` (1h / 4h / 24h). */
+  getGitHubApiCallStats(windowMs: number): Promise<GitHubApiCallStats | IpcErrorResponse>;
   // Auto-dismiss log
   listAutoDismissLog(limit?: number): Promise<AutoDismissLogEntry[] | IpcErrorResponse>;
   getAutoDismissStats(): Promise<AutoDismissStats | IpcErrorResponse>;

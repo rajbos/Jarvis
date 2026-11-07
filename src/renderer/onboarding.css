@@ -4954,6 +4954,8 @@ h5.ec-heading { font-size: 0.9375rem; }
 }
 
 .bg-apiu-token .bg-status-claude-row {
+  /* label · remaining/limit · hourly lows · reset (the popover row has no lows column) */
+  grid-template-columns: 5.5rem max-content minmax(0, 1fr) max-content;
   padding-left: 0;
   padding-right: 0;
 }
@@ -5010,6 +5012,18 @@ h5.ec-heading { font-size: 0.9375rem; }
 .bg-apiu-table td,
 .bg-apiu-table th {
   white-space: nowrap;
+}
+
+.bg-apiu-lows {
+  text-align: right;
+  color: #c8d6ea;
+  font-size: var(--type-meta);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.bg-apiu-lows-prev {
+  color: var(--text-muted);
 }
 
 .bg-apiu-more {

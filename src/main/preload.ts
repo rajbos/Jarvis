@@ -387,6 +387,7 @@ contextBridge.exposeInMainWorld('jarvis', {
   getActiveSessions: () => ipcRenderer.invoke('active-sessions:get'),
   refreshActiveSessions: () => ipcRenderer.invoke('active-sessions:refresh'),
   runAgentSessionAction: (sessionKey: string, kind: string) => ipcRenderer.invoke('active-sessions:run-action', sessionKey, kind),
+  getGitHubApiCallStats: (windowMs: number) => ipcRenderer.invoke('github:api-call-stats', windowMs),
   onActiveSessionsUpdated: (callback: (snapshot: unknown) => void) => {
     const listener = (_event: unknown, snapshot: unknown) => callback(snapshot);
     ipcRenderer.on('active-sessions:updated', listener);

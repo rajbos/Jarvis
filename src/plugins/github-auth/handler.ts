@@ -23,7 +23,7 @@ import { safeHandle } from '../ipc-utils';
 import { logger } from '../../services/logger';
 import { showSafeNotification } from '../../services/notifications';
 import { getRateLimitHistory, recordRateLimitSample } from '../../services/github-rate-limit-history';
-import type { GitHubRateLimitResource } from '../types';
+import type { GitHubRateLimitResource, GitHubApiCallStats } from '../types';
 import { checkCopilotUsage } from '../copilot-usage/handler';
 import { DEFAULT_HOST, apiBaseForHost, hostOfUrl, webBaseForHost } from '../../services/github-host';
 import { accessForPrimary, accessForRepo } from '../../services/github-repo-access';
@@ -55,6 +55,18 @@ let activeDeviceFlow: {
   /** Adding a further account: the current primary account stays primary. */
   additional: boolean;
 } | null = null;
+
+function apiCallStats(windowMs: number): GitHubApiCallStats {
+  const stats = getGitHubApiStats(windowMs);
+  return {
+    total: stats.total,
+    since: stats.since,
+    windowMs: stats.windowMs,
+    byPurpose: stats.byPurpose,
+    byToken: stats.byToken,
+    byPattern: stats.byPattern.map(({ purpose, token, method, pattern, count, lastUrl }) => ({ purpose, token, method, pattern, count, lastUrl })),
+  };
+}
 
 export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWindow | null): void {
   safeHandle('github:oauth-status', async () => {
@@ -360,17 +372,14 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
           }
         : { configured: false, resource: null },
       fetchedAt: new Date().toISOString(),
-      apiCalls: (() => {
-        const stats = getGitHubApiStats();
-        return {
-          total: stats.total,
-          since: stats.since,
-          byPurpose: stats.byPurpose,
-          byToken: stats.byToken,
-          byPattern: stats.byPattern.slice(0, 60).map(({ purpose, token, method, pattern, count, lastUrl }) => ({ purpose, token, method, pattern, count, lastUrl })),
-        };
-      })(),
+      // The badge popover shows the last hour; the dialog asks for its own window.
+      apiCalls: apiCallStats(60 * 60 * 1000),
     };
+  });
+
+  safeHandle('github:api-call-stats', (_event, windowMs: unknown) => {
+    if (typeof windowMs !== 'number' || !Number.isFinite(windowMs) || windowMs <= 0) throw new Error('windowMs must be a positive number');
+    return apiCallStats(windowMs);
   });
 
 }

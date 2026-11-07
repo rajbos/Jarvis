@@ -7,13 +7,19 @@
  */
 import { useEffect, useState } from 'preact/hooks';
 import { createPortal } from 'preact/compat';
-import type { GitHubRateLimit, GitHubRateLimitSource } from '../types';
+import { isIpcError, type GitHubApiCallStats, type GitHubRateLimit, type GitHubRateLimitSource } from '../types';
 import { formatDurationUntil, formatNumber } from '../shared/utils';
 import { Sparkline, useUsageHistory } from '../shared/Sparkline';
 import { UsageHistoryDialog } from '../shared/UsageHistoryDialog';
-import { formatSince, purposeRows, tokenColumns, tokenLabel } from './api-usage';
+import { formatSince, hourlyLows, purposeRows, tokenColumns, tokenLabel } from './api-usage';
 
 const HOUR = 60 * 60 * 1000;
+/** Call windows the dialog can show; the most recent first. */
+const WINDOWS = [
+  { label: '1h', ms: HOUR },
+  { label: '4h', ms: 4 * HOUR },
+  { label: '24h', ms: 24 * HOUR },
+] as const;
 /** Rows shown per table until the user asks for the rest. */
 export const COLLAPSED_ROWS = 7;
 const BUCKET_LABEL: Record<string, string> = { core: 'REST', graphql: 'GraphQL', search: 'Search' };
@@ -63,6 +69,16 @@ function TokenColumn({ label, metric, source, calls, onHistory }: {
             <span class={`bg-status-claude-state ${r.remaining === 0 ? 'bg-status-claude-state--limited' : r.remaining / r.limit < 0.2 ? 'bg-status-claude-state--warning' : 'bg-status-claude-state--available'}`}>
               {formatNumber(r.remaining)} / {formatNumber(r.limit)}
             </span>
+            {(() => {
+              const lows = hourlyLows(source.history, name, now);
+              if (lows.current === null && lows.previous === null) return null;
+              const show = (v: number | null) => (v === null ? '–' : formatNumber(v));
+              return (
+                <span class="bg-apiu-lows" title={`Lowest remaining this hour: ${show(lows.current)} · the hour before: ${show(lows.previous)}`}>
+                  ↓ {show(lows.current)} <span class="bg-apiu-lows-prev">· {show(lows.previous)}</span>
+                </span>
+              );
+            })()}
             <span class="bg-status-claude-reset">{formatDurationUntil(r.reset, now)} · {clock(r.reset)}</span>
           </div>
           <Sparkline history={trend} series={name} color={BUCKET_COLOR[name]} mode="remaining" caption="48h" title={`${BUCKET_LABEL[name]} % remaining, last 48 hours`} />
@@ -87,8 +103,27 @@ export function GitHubApiUsageDialog({ rateLimit, onClose }: Props) {
   const [allFeatures, setAllFeatures] = useState(false);
   const [allPatterns, setAllPatterns] = useState(false);
   const callHistory = useUsageHistory('github-api-calls', () => 24 * HOUR);
-  const stats = rateLimit.apiCalls ?? null;
+  const [windowMs, setWindowMs] = useState<number>(WINDOWS[0].ms);
+  const [stats, setStats] = useState<GitHubApiCallStats | null>(rateLimit.apiCalls ?? null);
+  const [statsError, setStatsError] = useState<string | null>(null);
   const now = Date.now();
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await window.jarvis.getGitHubApiCallStats(windowMs);
+        if (cancelled) return;
+        if (isIpcError(res)) setStatsError(res.error);
+        else { setStats(res); setStatsError(null); }
+      } catch (e) {
+        if (!cancelled) setStatsError(String(e));
+      }
+    };
+    void load();
+    const id = window.setInterval(load, 60 * 1000);
+    return () => { cancelled = true; window.clearInterval(id); };
+  }, [windowMs]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -113,7 +148,21 @@ export function GitHubApiUsageDialog({ rateLimit, onClose }: Props) {
       <div class="bg-copilot-raw bg-apiu" role="dialog" aria-label="GitHub API usage">
         <div class="bg-copilot-raw-head">
           <strong>GitHub API usage</strong>
-          <button type="button" class="bg-status-claude-action" onClick={onClose}>Close</button>
+          <div class="bg-rlh-ranges" role="group" aria-label="Calls window">
+            {WINDOWS.map((w) => (
+              <button
+                type="button"
+                key={w.label}
+                class={`bg-rlh-range${w.ms === windowMs ? ' bg-rlh-range--active' : ''}`}
+                aria-pressed={w.ms === windowMs}
+                title={`Calls Jarvis made in the last ${w.label}`}
+                onClick={() => setWindowMs(w.ms)}
+              >
+                {w.label}
+              </button>
+            ))}
+            <button type="button" class="bg-status-claude-action" onClick={onClose}>Close</button>
+          </div>
         </div>
         <div class="bg-copilot-raw-body">
           <h3>Quota left per token <span>· checked {new Date(rateLimit.fetchedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></h3>
@@ -124,10 +173,16 @@ export function GitHubApiUsageDialog({ rateLimit, onClose }: Props) {
 
           <h3>
             Calls made by Jarvis
-            {stats && <span> · {formatNumber(stats.total)} in the last {formatSince(stats.since, now)} (since the app started)</span>}
+            {stats && (
+              <span>
+                {' '}· {formatNumber(stats.total)} in the last {formatSince(stats.since, now)}
+                {stats.since > now - stats.windowMs + 60_000 ? ` (Jarvis started ${new Date(stats.since).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})` : ''}
+              </span>
+            )}
           </h3>
+          {statsError && <div class="bg-status-claude-error">Could not load the call stats: {statsError}</div>}
           {!stats || stats.total === 0 ? (
-            <div class="bg-copilot-raw-empty">No calls recorded yet in this run.</div>
+            <div class="bg-copilot-raw-empty">No calls in this window.</div>
           ) : (
             <>
               <div class="bg-apiu-sparks">
@@ -188,8 +243,7 @@ export function GitHubApiUsageDialog({ rateLimit, onClose }: Props) {
             </>
           )}
           <div class="bg-status-claude-checked bg-rlh-foot">
-            Counts restart with the app; calls per token are stored every 10 minutes and kept for 30 days.
-            GraphQL and search have their own quotas, so a REST drain and a GraphQL drain are different features.
+            Calls are counted while Jarvis runs; the per-token trend is stored every 10 minutes and kept for 30 days.
           </div>
         </div>
       </div>

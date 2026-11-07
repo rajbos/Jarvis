@@ -221,6 +221,7 @@ const EXPECTED_CHANNELS = [
   'active-sessions:get',
   'active-sessions:refresh',
   'active-sessions:run-action',
+  'github:api-call-stats',
   // background tasks
   'tasks:list',
   'tasks:recent-failures',

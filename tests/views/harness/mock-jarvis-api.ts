@@ -118,6 +118,7 @@ function defaultResponses(f: Fixtures): Responses {
     getPatStatus: { hasPat: false },
     logout: ok,
     getGitHubRateLimit: f.rateLimit,
+    getGitHubApiCallStats: (windowMs) => ({ ...f.rateLimit.apiCalls!, windowMs, since: Date.parse(f.rateLimit.fetchedAt) - windowMs }),
     getUsageHistory: (metric, rangeMs) => {
       const end = Date.parse(f.rateLimit.fetchedAt);
       const start = end - rangeMs;

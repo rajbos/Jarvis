@@ -2,7 +2,7 @@
  * Pure helpers for the GitHub API usage dialog (kept out of the .tsx so unit
  * tests can import them without a JSX runtime).
  */
-import type { GitHubApiCallStats } from '../types';
+import type { GitHubApiCallStats, GitHubRateLimitSample } from '../types';
 
 /** Human name for a credential label from the call stats. */
 export function tokenLabel(token: string): string {
@@ -46,6 +46,34 @@ export function purposeRows(stats: GitHubApiCallStats): PurposeRow[] {
     rows.set(purpose, row);
   }
   return [...rows.values()].sort((a, b) => b.total - a.total);
+}
+
+export interface HourlyLows {
+  /** Lowest remaining in the last 60 minutes; null without samples. */
+  current: number | null;
+  /** Lowest remaining in the 60 minutes before that. */
+  previous: number | null;
+}
+
+const HOUR_MS = 60 * 60 * 1000;
+
+/**
+ * Lowest remaining value of one bucket in the current hour and the hour before,
+ * from the 2-hour sample history, so the drain per hour can be read off the
+ * row without decoding the trend line.
+ */
+export function hourlyLows(history: readonly GitHubRateLimitSample[] | undefined, bucket: string, now: number): HourlyLows {
+  let current: number | null = null;
+  let previous: number | null = null;
+  for (const sample of history ?? []) {
+    const value = (sample.buckets as Record<string, { remaining: number } | undefined>)[bucket]?.remaining;
+    if (value === undefined) continue;
+    const age = now - sample.at;
+    if (age < 0 || age >= 2 * HOUR_MS) continue;
+    if (age < HOUR_MS) current = current === null ? value : Math.min(current, value);
+    else previous = previous === null ? value : Math.min(previous, value);
+  }
+  return { current, previous };
 }
 
 /** Credential columns: the status-bar tokens first, then whatever else made calls. */

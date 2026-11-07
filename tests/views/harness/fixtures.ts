@@ -294,7 +294,8 @@ export function createFixtures(now: number) {
     fetchedAt: iso(now, 0),
     apiCalls: {
       total: 434,
-      since: now - 95 * 60 * 1000,
+      since: now - 60 * 60 * 1000,
+      windowMs: 60 * 60 * 1000,
       byPurpose: [
         { purpose: 'notifications-sync:actor', count: 188 },
         { purpose: 'active-sessions:pr-readiness', count: 96 },
