@@ -1,7 +1,7 @@
 import { Fragment } from 'preact';
 import { useState } from 'preact/hooks';
 import { Sparkline, useUsageHistory } from '../shared/Sparkline';
-import type { GitHubRateLimitSource } from '../types';
+import type { GitHubApiCallStats, GitHubRateLimitSource } from '../types';
 import { formatNumber, formatDurationUntil } from '../shared/utils';
 import { CHART_BUCKETS, rateLimitSeries, tightestBucket, type ChartBucket } from './rate-limit-chart';
 import { UsageHistoryDialog, historyTriggerProps } from '../shared/UsageHistoryDialog';
@@ -39,13 +39,22 @@ const clock = (unixSec: number) => new Date(unixSec * 1000).toLocaleTimeString([
 interface Props {
   label: 'OAuth' | 'PAT';
   source: GitHubRateLimitSource;
+  /** Jarvis-side call tally (shared by both tokens), shown so the drain can be traced to a feature. */
+  apiCalls?: GitHubApiCallStats;
+}
+
+function formatSince(sinceMs: number, now: number): string {
+  const mins = Math.max(1, Math.round((now - sinceMs) / 60_000));
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  return hours < 48 ? `${hours}h${mins % 60 ? ` ${mins % 60}m` : ''}` : `${Math.floor(hours / 24)}d`;
 }
 
 /**
  * Status-bar rate-limit badge with a hover popover charting the last 2 hours.
  * Clicking it opens the stored history, zoomable out to 30 days.
  */
-export function GitHubRateLimitBadge({ label, source }: Props) {
+export function GitHubRateLimitBadge({ label, source, apiCalls }: Props) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const trend = useUsageHistory(label === 'OAuth' ? 'github-oauth' : 'github-pat', TREND_RANGE);
   const tight = tightestBucket(source);
@@ -160,6 +169,19 @@ export function GitHubRateLimitBadge({ label, source }: Props) {
           </Fragment>
         ))}
 
+        {apiCalls && apiCalls.total > 0 && (
+          <div class="bg-ratelimit-calls" title={apiCalls.byPattern.slice(0, 12).map((p) => `${p.count}× ${p.method} ${p.pattern} (${p.purpose})`).join('\n')}>
+            <div class="bg-ratelimit-calls-head">
+              Jarvis made {formatNumber(apiCalls.total)} API call{apiCalls.total === 1 ? '' : 's'} in the last {formatSince(apiCalls.since, now)}
+            </div>
+            {apiCalls.byPurpose.slice(0, 6).map((p) => (
+              <div class="bg-ratelimit-calls-row" key={p.purpose}>
+                <span class="bg-ratelimit-calls-purpose">{p.purpose}</span>
+                <span class="bg-ratelimit-calls-count">{formatNumber(p.count)}</span>
+              </div>
+            ))}
+          </div>
+        )}
         {source.tokenExpired && (
           <div class="bg-status-claude-error">PAT expired or revoked. Open Settings → GitHub Access to enter a new token.</div>
         )}

@@ -718,6 +718,19 @@ export interface GitHubRateLimit {
 
   fetchedAt: string; // ISO timestamp
 
+  /** What Jarvis itself has been asking the API since it started (see services/github-api.ts). */
+  apiCalls?: GitHubApiCallStats;
+
+}
+
+/** Jarvis-side tally of GitHub API calls, grouped by the feature that made them. */
+export interface GitHubApiCallStats {
+  total: number;
+  /** Epoch ms the tally started (app start / last reset). */
+  since: number;
+  byPurpose: Array<{ purpose: string; count: number }>;
+  /** Busiest URL shapes, e.g. `GET /repos/{owner}/{repo}/pulls/{n}`. */
+  byPattern: Array<{ purpose: string; method: string; pattern: string; count: number; lastUrl: string }>;
 }
 
 // ── Claude (Claude Code OAuth) types ──────────────────────────────────────────
@@ -947,6 +960,8 @@ export interface ActiveAgentSession {
   sessionFile?: string | null;
   /** Local sessions: token usage and cost read from `sessionFile`. */
   localUsage?: LocalSessionUsage | null;
+  /** Claude Code: how the session was started (`claude-desktop` for the desktop app, `cli` for a terminal). */
+  entrypoint?: string | null;
 }
 /** Usage of a local session, from the ai-engineering-fluency session parser. */
 export interface LocalSessionUsage {
@@ -978,7 +993,11 @@ export interface PrReadiness {
   isDraft: boolean;
   headSha: string;
   headRef: string;
-  checks: ReadinessStage & { total: number; pending: number; failed: number; passed: number };
+  /** Base branch; null when the lookup did not return it. */
+  baseRef?: string | null;
+  /** Merge state against the base branch: CONFLICTING needs a human or an agent before it can merge. */
+  mergeable?: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN';
+  checks: ReadinessStage & { total: number; pending: number; failed: number; passed: number; failedNames?: string[] };
   copilotReview: ReadinessStage & { status: CopilotReviewStatus };
   /** Open PR where every gating stage has finished — ready for a human reviewer. */
   ready: boolean;
@@ -1004,6 +1023,11 @@ export interface ActiveSessionSourceStatus {
   skipped?: boolean;
   error?: string;
 }
+/** Follow-up a user can hand to an agent session (see services/agent-actions.ts). */
+export type AgentActionKind = 'open' | 'fix_checks' | 'resolve_conflicts';
+export type AgentActionResult =
+  | { ok: true; kind: 'deep-link' | 'terminal' | 'pr-comment'; message: string; prompt: string | null }
+  | { ok: false; error: string };
 export interface ActiveSessionsSnapshot {
   entries: ActiveSessionEntry[];
   sources: {
@@ -1931,6 +1955,7 @@ export interface JarvisApi {
   getActiveSessions(): Promise<ActiveSessionsSnapshot | null | IpcErrorResponse>;
   refreshActiveSessions(): Promise<ActiveSessionsSnapshot | IpcErrorResponse>;
   onActiveSessionsUpdated(cb: (snapshot: ActiveSessionsSnapshot) => void): () => void;
+  runAgentSessionAction(sessionKey: string, kind: AgentActionKind): Promise<AgentActionResult>;
   // Auto-dismiss log
   listAutoDismissLog(limit?: number): Promise<AutoDismissLogEntry[] | IpcErrorResponse>;
   getAutoDismissStats(): Promise<AutoDismissStats | IpcErrorResponse>;

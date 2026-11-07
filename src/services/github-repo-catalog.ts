@@ -13,6 +13,7 @@ import { saveDatabase } from '../storage/database';
 import { apiBaseForHost } from './github-host';
 import { accessForRepo } from './github-repo-access';
 import { logger } from './logger';
+import { githubRequest } from './github-api';
 
 export const README_MAX_LINES = 200;
 /** Hard cap on stored characters, so a README with enormous lines cannot bloat the DB. */
@@ -149,7 +150,7 @@ export async function runReadmeBatch(db: SqlJsDatabase, opts: ReadmeBatchOptions
 
     result.attempted++;
     try {
-      const res = await fetch(`${apiBaseForHost(repo.host)}/repos/${repo.full_name}/readme`, { headers });
+      const res = await githubRequest(`${apiBaseForHost(repo.host)}/repos/${repo.full_name}/readme`, { headers }, { purpose: 'repo-catalog:readme' });
       const remaining = parseInt(res.headers.get('x-ratelimit-remaining') ?? '', 10);
 
       if (res.status === 304) {

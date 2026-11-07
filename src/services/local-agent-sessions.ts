@@ -813,6 +813,7 @@ export async function discoverClaudeLocalSessions(options: LocalSessionDiscovery
       pid,
       linkedPr,
       sessionFile,
+      entrypoint: typeof meta.entrypoint === 'string' ? meta.entrypoint : null,
     });
   }
   pruneScans(claudePrScans, scannedTranscripts);

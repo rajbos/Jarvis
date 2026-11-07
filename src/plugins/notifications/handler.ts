@@ -36,6 +36,7 @@ import { fetchAndStoreWorkflowData, getWorkflowSummaryForRepo } from '../../serv
 import { isWorkflowDataFresh } from './workflow-cache';
 import { safeHandle } from '../ipc-utils';
 import { logger } from '../../services/logger';
+import { githubRequest } from '../../services/github-api';
 
 // ── Boot workflow check constants ─────────────────────────────────────────────
 
@@ -54,13 +55,13 @@ const BOOT_CHECK_ESTIMATED_CALLS_PER_REPO = 10;
  */
 async function fetchTokenRateLimitRemaining(token: string): Promise<number | null> {
   try {
-    const res = await fetch(`${currentApiBase()}/rate_limit`, {
+    const res = await githubRequest(`${currentApiBase()}/rate_limit`, {
       headers: {
         Authorization: `Bearer ${token}`,
         Accept: 'application/vnd.github+json',
         'X-GitHub-Api-Version': '2022-11-28',
       },
-    });
+    }, { purpose: 'notifications:rate-limit' });
     if (!res.ok) return null;
     const data = (await res.json()) as { resources: { core: { remaining: number } } };
     return data.resources.core.remaining;
@@ -143,13 +144,13 @@ async function fetchPrState(
 ): Promise<{ state: 'open' | 'closed' | 'merged'; isDependabot: boolean; closedByMe: boolean } | null> {
   if (!PULL_API_URL_RE.test(subjectUrl)) return null;
   try {
-    const res = await fetch(subjectUrl, {
+    const res = await githubRequest(subjectUrl, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         Accept: 'application/vnd.github+json',
         'X-GitHub-Api-Version': '2022-11-28',
       },
-    });
+    }, { purpose: 'auto-dismiss' });
     if (!res.ok) return null;
     const pr = (await res.json()) as {
       state: string;
@@ -184,12 +185,12 @@ async function fetchIssueState(
     'X-GitHub-Api-Version': '2022-11-28',
   };
   try {
-    const issueRes = await fetch(subjectUrl, { headers });
+    const issueRes = await githubRequest(subjectUrl, { headers }, { purpose: 'auto-dismiss' });
     if (!issueRes.ok) return null;
     const issue = (await issueRes.json()) as { state: string };
     if (issue.state !== 'closed') return { state: 'open', closedByMe: false, closedViaMergedPr: false, closedViaCollabPr: false };
 
-    const eventsRes = await fetch(`${subjectUrl}/events`, { headers });
+    const eventsRes = await githubRequest(`${subjectUrl}/events`, { headers }, { purpose: 'auto-dismiss' });
     let closedByMe = false;
     let closedViaMergedPr = false;
     if (eventsRes.ok) {
@@ -225,9 +226,9 @@ async function issueClosedViaCollabPr(
   headers: Record<string, string>,
 ): Promise<boolean> {
   try {
-    const timelineRes = await fetch(`${subjectUrl}/timeline?per_page=100`, {
+    const timelineRes = await githubRequest(`${subjectUrl}/timeline?per_page=100`, {
       headers: { ...headers, Accept: 'application/vnd.github.mockingbird-preview+json' },
-    });
+    }, { purpose: 'auto-dismiss' });
     if (!timelineRes.ok) return false;
     const timeline = (await timelineRes.json()) as Array<{
       event: string;
@@ -254,7 +255,7 @@ async function collaboratedOnPr(
   headers: Record<string, string>,
 ): Promise<boolean> {
   try {
-    const prRes = await fetch(prUrl, { headers });
+    const prRes = await githubRequest(prUrl, { headers }, { purpose: 'auto-dismiss' });
     if (!prRes.ok) return false;
     const pr = (await prRes.json()) as {
       merged: boolean;
@@ -265,7 +266,7 @@ async function collaboratedOnPr(
     if ((pr.user?.login ?? '').toLowerCase() === myLogin) return true;
     if ((pr.merged_by?.login ?? '').toLowerCase() === myLogin) return true;
 
-    const commitsRes = await fetch(`${prUrl}/commits?per_page=100`, { headers });
+    const commitsRes = await githubRequest(`${prUrl}/commits?per_page=100`, { headers }, { purpose: 'auto-dismiss' });
     if (!commitsRes.ok) return false;
     const commits = (await commitsRes.json()) as Array<{
       author: { login: string } | null;

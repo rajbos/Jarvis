@@ -8,7 +8,9 @@ import { runBootWorkflowCheck, syncGitHubNotifications, runAutoDismissSweep } fr
 import { refreshRuddrProjectsInBackground, prewarmRuddrCache, hoursDiscoveryDeps } from '../plugins/groups/handler';
 import { runRuddrHoursDiscovery } from '../plugins/groups/ruddr-hours-discovery';
 import { checkCopilotUsage } from '../plugins/copilot-usage/handler';
-import { runActiveSessionsSweep } from '../plugins/active-sessions/handler';
+import { getLatestActiveSessionsSnapshot, runActiveSessionsSweep } from '../plugins/active-sessions/handler';
+import { getWebhookRelayConfig } from '../agent/config';
+import { pollWebhookRelay, prChangeKey, takeChangedPrs } from '../services/webhook-relay';
 import { runReadmeBatch } from '../services/github-repo-catalog';
 import { runSecretsBatch } from '../services/github-secrets';
 import { loadGitHubPat } from '../services/github-oauth';
@@ -16,6 +18,7 @@ import { accessForPrimary } from '../services/github-repo-access';
 import { safeHandle } from '../plugins/ipc-utils';
 import { runDueSkills } from '../plugins/browser-companion/skill-runner';
 import { logger } from '../services/logger';
+import { summarizeGitHubApiCalls } from '../services/github-api';
 import { TaskFailureAlerter, recordTaskFailure, getRecentTaskFailures } from './task-failure-log';
 import type { TaskFailureEntry } from './task-failure-log';
 
@@ -39,6 +42,10 @@ export const SECRETS_SCAN_INITIAL_DELAY_MS = 180_000;
 export const SECRETS_SCAN_INTERVAL_MS = 5 * 60 * 1000;
 export const BROWSER_SKILLS_INITIAL_DELAY_MS = 60_000;
 export const BROWSER_SKILLS_INTERVAL_MS = 60 * 1000;
+export const GITHUB_API_SUMMARY_INITIAL_DELAY_MS = 10 * 60 * 1000;
+export const GITHUB_API_SUMMARY_INTERVAL_MS = 10 * 60 * 1000;
+export const WEBHOOK_RELAY_INITIAL_DELAY_MS = 15_000;
+export const WEBHOOK_RELAY_INTERVAL_MS = 30 * 1000;
 
 let scheduler: TaskScheduler | null = null;
 
@@ -188,6 +195,50 @@ export function createBackgroundTaskScheduler(
     initialDelayMs: BROWSER_SKILLS_INITIAL_DELAY_MS,
     intervalMs: BROWSER_SKILLS_INTERVAL_MS,
     run: async () => ({ ...(await runDueSkills(db)) }),
+  });
+
+  // Push-based PR updates: poll the user's webhook relay (docs/WEBHOOK-RELAY.md)
+  // and re-run the agent-sessions sweep right away when a listed PR changed.
+  registerTask(taskScheduler, getWindow, {
+    id: 'github-webhook-relay-poll',
+    label: 'GitHub webhook relay poll',
+    initialDelayMs: WEBHOOK_RELAY_INITIAL_DELAY_MS,
+    intervalMs: WEBHOOK_RELAY_INTERVAL_MS,
+    run: async () => {
+      const relay = getWebhookRelayConfig();
+      if (!relay) return { skipped: true, reason: 'No webhook relay configured (config.json → webhookRelay)' };
+      const poll = await pollWebhookRelay(relay);
+      if (poll.error) throw new Error(poll.error);
+      const changed = takeChangedPrs();
+      const listed = new Set(
+        (getLatestActiveSessionsSnapshot()?.entries ?? [])
+          .flatMap((e) => (e.pr ? [prChangeKey(e.pr.repoFullName, e.pr.prNumber)] : [])),
+      );
+      const relevant = [...changed.keys()].filter((k) => listed.has(k));
+      if (relevant.length > 0) {
+        logger.info(`[WebhookRelay] ${relevant.length} listed PR(s) changed (${relevant.slice(0, 5).join(', ')}) — refreshing agent sessions`);
+        void taskScheduler.runNow('active-sessions-readiness');
+      }
+      return { fetched: poll.fetched, relevant: poll.relevant, listedChanged: relevant.length, cursor: poll.cursor };
+    },
+  });
+
+  // Periodic insight into what is draining the GitHub REST/GraphQL budget:
+  // one info line per window with the calls grouped by feature and URL shape.
+  let summarySince = Date.now();
+  registerTask(taskScheduler, getWindow, {
+    id: 'github-api-usage-summary',
+    label: 'GitHub API usage summary',
+    initialDelayMs: GITHUB_API_SUMMARY_INITIAL_DELAY_MS,
+    intervalMs: GITHUB_API_SUMMARY_INTERVAL_MS,
+    run: () => {
+      const summary = summarizeGitHubApiCalls(summarySince, 8);
+      const minutes = Math.round((Date.now() - summarySince) / 60_000);
+      summarySince = Date.now();
+      if (!summary) return { calls: 0, minutes };
+      logger.info(`[GitHubAPI] last ${minutes}m: ${summary}`);
+      return { calls: parseInt(summary, 10), minutes };
+    },
   });
 
   return taskScheduler;

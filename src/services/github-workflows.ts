@@ -2,8 +2,8 @@
 import type { Database as SqlJsDatabase } from 'sql.js';
 import type { WorkflowRun, WorkflowJob, WorkflowRunSummary } from '../plugins/types';
 
-import { githubFetch } from './github-fetch';
 import { currentApiBase } from './github-host';
+import { githubRequest } from './github-api';
 
 // Max log bytes to store per job — keeps the DB size manageable
 const MAX_LOG_BYTES = 10000;
@@ -68,13 +68,13 @@ export interface LogExtractionResult {
 // ── Low-level GitHub API helpers ──────────────────────────────────────────────
 
 async function githubGet<T>(url: string, accessToken: string): Promise<T> {
-  const response = await githubFetch(url, {
+  const response = await githubRequest(url, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
       Accept: 'application/vnd.github+json',
       'X-GitHub-Api-Version': '2022-11-28',
     },
-  });
+  }, { purpose: 'workflows' });
   if (!response.ok) {
     throw new Error(`GitHub API error ${response.status}: ${url}`);
   }
@@ -160,14 +160,14 @@ async function fetchJobLogExcerpt(
   job: GitHubWorkflowJob,
 ): Promise<LogExtractionResult | null> {
   const logUrl = `${currentApiBase()}/repos/${repoFullName}/actions/jobs/${job.id}/logs`;
-  const response = await fetch(logUrl, {
+  const response = await githubRequest(logUrl, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
       Accept: 'application/vnd.github+json',
       'X-GitHub-Api-Version': '2022-11-28',
     },
     redirect: 'follow',
-  });
+  }, { purpose: 'workflows:job-log' });
   if (!response.ok) return null;
   const text = await response.text();
   if (!text) return null;
@@ -405,7 +405,7 @@ export async function createGitHubIssue(
   body: string,
   labels: string[],
 ): Promise<{ url: string; number: number; node_id: string }> {
-  const response = await fetch(`${currentApiBase()}/repos/${repoFullName}/issues`, {
+  const response = await githubRequest(`${currentApiBase()}/repos/${repoFullName}/issues`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -414,7 +414,7 @@ export async function createGitHubIssue(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ title, body, labels }),
-  });
+  }, { purpose: 'workflows:create-issue' });
   if (!response.ok) {
     const text = await response.text();
     throw new Error(`Failed to create issue: HTTP ${response.status} — ${text.slice(0, 200)}`);

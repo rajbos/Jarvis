@@ -437,7 +437,7 @@ export function createFixtures(now: number) {
         pr: {
           repoFullName: REPO_ROCKET, prNumber: 77, title: 'Teach the rocket sled to brake',
           url: `https://github.com/${REPO_ROCKET}/pull/77`, state: 'OPEN', isDraft: false,
-          headSha: 'def5678', headRef: 'copilot/brakes',
+          headSha: 'def5678', headRef: 'copilot/brakes', baseRef: 'main', mergeable: 'CONFLICTING',
           checks: { light: 'green', label: 'Passed 3/3', detail: '3/3 passed', blocking: false, total: 3, pending: 0, failed: 0, passed: 3 },
           copilotReview: { light: 'green', label: 'Reviewed', detail: 'Copilot reviewed the latest commit', blocking: false, status: 'completed' },
           ready: true, waitingOn: [], checkedAt: iso(now, 0),
