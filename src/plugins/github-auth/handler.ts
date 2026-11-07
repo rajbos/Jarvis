@@ -27,7 +27,7 @@ import type { GitHubRateLimitResource } from '../types';
 import { checkCopilotUsage } from '../copilot-usage/handler';
 import { DEFAULT_HOST, apiBaseForHost, hostOfUrl, webBaseForHost } from '../../services/github-host';
 import { accessForPrimary, accessForRepo } from '../../services/github-repo-access';
-import { getGitHubApiStats, githubRequest } from '../../services/github-api';
+import { getGitHubApiStats, githubRequest, registerGitHubToken } from '../../services/github-api';
 
 /**
  * Sign-in can be started from the main window or the Settings window, so the
@@ -280,6 +280,9 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
   safeHandle('github:get-rate-limit', async () => {
     const auth = loadGitHubAuth(db);
     const pat = loadGitHubPat(db);
+    // These two are the badges in the status bar; calls made with them show under those names.
+    registerGitHubToken(auth?.accessToken, 'oauth', true);
+    registerGitHubToken(pat, 'pat', true);
 
     type TokenResult = {
       resource: GitHubRateLimitResource | null;
@@ -363,7 +366,8 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
           total: stats.total,
           since: stats.since,
           byPurpose: stats.byPurpose,
-          byPattern: stats.byPattern.slice(0, 25).map(({ purpose, method, pattern, count, lastUrl }) => ({ purpose, method, pattern, count, lastUrl })),
+          byToken: stats.byToken,
+          byPattern: stats.byPattern.slice(0, 60).map(({ purpose, token, method, pattern, count, lastUrl }) => ({ purpose, token, method, pattern, count, lastUrl })),
         };
       })(),
     };

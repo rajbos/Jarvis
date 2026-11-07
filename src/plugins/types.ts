@@ -642,7 +642,7 @@ export type RateLimitBucketName = 'core' | 'graphql' | 'search';
 
 // ── Stored usage history (status-bar history dialog) ─────────────────────────
 /** What a stored usage series belongs to: a GitHub token's rate limits, Claude's windows, Copilot credits. */
-export type UsageHistoryMetric = 'github-oauth' | 'github-pat' | 'claude' | 'copilot';
+export type UsageHistoryMetric = 'github-oauth' | 'github-pat' | 'claude' | 'copilot' | 'github-api-calls';
 
 /** One poll: a value per series, with the ceiling it counts against (null = no known ceiling). */
 export interface UsageHistorySample {
@@ -729,8 +729,10 @@ export interface GitHubApiCallStats {
   /** Epoch ms the tally started (app start / last reset). */
   since: number;
   byPurpose: Array<{ purpose: string; count: number }>;
+  /** Per credential: `oauth` / `pat` are the status-bar tokens, `<source>:<account>` other accounts, `other` unlabelled, `none` unauthenticated. */
+  byToken: Array<{ token: string; count: number }>;
   /** Busiest URL shapes, e.g. `GET /repos/{owner}/{repo}/pulls/{n}`. */
-  byPattern: Array<{ purpose: string; method: string; pattern: string; count: number; lastUrl: string }>;
+  byPattern: Array<{ purpose: string; token: string; method: string; pattern: string; count: number; lastUrl: string }>;
 }
 
 // ── Claude (Claude Code OAuth) types ──────────────────────────────────────────

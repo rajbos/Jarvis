@@ -4927,6 +4927,102 @@ h5.ec-heading { font-size: 0.9375rem; }
   color: #8ab4e8;
 }
 
+/* GitHub API usage dialog: both tokens' quota next to the calls Jarvis made. */
+.bg-apiu {
+  width: min(1040px, calc(100vw - 2rem));
+}
+
+.bg-apiu-tokens {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.bg-apiu-token {
+  padding: 0.6rem 0.75rem;
+  border: 1px solid #1e3a5a;
+  border-radius: 6px;
+  background: #0b1628;
+}
+
+.bg-apiu-token-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.35rem;
+}
+
+.bg-apiu-token .bg-status-claude-row {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.bg-apiu-token .bg-sparkline {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.bg-apiu-token-calls {
+  margin-top: 0.4rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-muted);
+  font-size: var(--type-meta);
+}
+
+.bg-apiu-muted {
+  color: var(--text-muted);
+  font-size: var(--type-meta);
+}
+
+.bg-apiu-sparks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0.5rem 1rem;
+}
+
+.bg-apiu-spark-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: var(--type-meta);
+  color: var(--text-muted);
+}
+
+.bg-apiu-spark-label i {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.bg-apiu-spark .bg-sparkline {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.bg-apiu-table {
+  margin-top: 0.5rem;
+  font-size: 0.8125rem;
+}
+
+.bg-apiu-num {
+  text-align: right !important;
+}
+
+.bg-apiu-mono {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.bg-apiu-url {
+  max-width: 22rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .bg-status-ratelimit .bg-status-claude-checked {
   white-space: normal;
 }

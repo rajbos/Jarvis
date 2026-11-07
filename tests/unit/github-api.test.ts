@@ -1,10 +1,13 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import {
+  countGitHubApiCalls,
   getGitHubApiStats,
   githubRequest,
   githubUrlPattern,
+  registerGitHubToken,
   resetGitHubApiStats,
   summarizeGitHubApiCalls,
+  tokenLabelOf,
 } from '../../src/services/github-api';
 import { GitHubRateLimitError } from '../../src/services/github-fetch';
 
@@ -93,5 +96,52 @@ describe('githubRequest', () => {
     globalThis.fetch = vi.fn(async () => res(403, { 'x-ratelimit-remaining': '0', 'x-ratelimit-limit': '5000', 'x-ratelimit-reset': reset })) as unknown as typeof fetch;
     await expect(githubRequest('https://api.github.com/user', {}, { purpose: 'auth' })).rejects.toBeInstanceOf(GitHubRateLimitError);
     expect(getGitHubApiStats().total).toBe(1);
+  });
+});
+
+describe('token attribution', () => {
+  beforeEach(() => {
+    resetGitHubApiStats(1000);
+    globalThis.fetch = vi.fn(async () => res(200)) as unknown as typeof fetch;
+  });
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+  });
+
+  it('labels calls by the credential in the Authorization header without storing it', async () => {
+    registerGitHubToken('oauth-secret', 'oauth', true);
+    registerGitHubToken('pat-secret', 'pat', true);
+    await githubRequest('https://api.github.com/user', { headers: { Authorization: 'Bearer oauth-secret' } }, { purpose: 'auth' });
+    await githubRequest('https://api.github.com/user', { headers: new Headers({ authorization: 'token pat-secret' }) }, { purpose: 'auth' });
+    await githubRequest('https://api.github.com/user', { headers: [['Authorization', 'Bearer who-knows']] }, { purpose: 'auth' });
+    await githubRequest('https://api.github.com/rate_limit', {}, { purpose: 'auth' });
+
+    const stats = getGitHubApiStats();
+    expect(stats.byToken).toEqual([
+      expect.objectContaining({ token: 'oauth', count: 1 }),
+      expect.objectContaining({ token: 'pat', count: 1 }),
+      expect.objectContaining({ token: 'other', count: 1 }),
+      expect.objectContaining({ token: 'none', count: 1 }),
+    ].sort());
+    expect(stats.byPattern.map((p) => p.token).sort()).toEqual(['none', 'oauth', 'other', 'pat']);
+    expect(JSON.stringify(stats)).not.toContain('secret');
+  });
+
+  it('keeps the status-bar labels over per-account labels', () => {
+    registerGitHubToken('tok', 'gh-cli:me');
+    registerGitHubToken('tok', 'oauth', true);
+    registerGitHubToken('tok', 'pat:me');
+    expect(tokenLabelOf({ headers: { Authorization: 'Bearer tok' } })).toBe('oauth');
+  });
+
+  it('counts calls after a point in time per token and purpose', async () => {
+    registerGitHubToken('a', 'oauth', true);
+    vi.spyOn(Date, 'now').mockReturnValue(5000);
+    await githubRequest('https://api.github.com/user', { headers: { Authorization: 'Bearer a' } }, { purpose: 'p1' });
+    vi.spyOn(Date, 'now').mockReturnValue(9000);
+    await githubRequest('https://api.github.com/user', { headers: { Authorization: 'Bearer a' } }, { purpose: 'p1' });
+    await githubRequest('https://api.github.com/user', {}, { purpose: 'p2' });
+    expect(countGitHubApiCalls(6000)).toEqual({ total: 2, byToken: { oauth: 1, none: 1 }, byPurpose: { p1: 1, p2: 1 } });
+    vi.restoreAllMocks();
   });
 });

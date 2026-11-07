@@ -18,7 +18,8 @@ import { accessForPrimary } from '../services/github-repo-access';
 import { safeHandle } from '../plugins/ipc-utils';
 import { runDueSkills } from '../plugins/browser-companion/skill-runner';
 import { logger } from '../services/logger';
-import { summarizeGitHubApiCalls } from '../services/github-api';
+import { countGitHubApiCalls, summarizeGitHubApiCalls } from '../services/github-api';
+import { recordUsageSample } from '../services/usage-history';
 import { TaskFailureAlerter, recordTaskFailure, getRecentTaskFailures } from './task-failure-log';
 import type { TaskFailureEntry } from './task-failure-log';
 
@@ -232,12 +233,20 @@ export function createBackgroundTaskScheduler(
     initialDelayMs: GITHUB_API_SUMMARY_INITIAL_DELAY_MS,
     intervalMs: GITHUB_API_SUMMARY_INTERVAL_MS,
     run: () => {
+      const now = Date.now();
       const summary = summarizeGitHubApiCalls(summarySince, 8);
-      const minutes = Math.round((Date.now() - summarySince) / 60_000);
-      summarySince = Date.now();
+      const counts = countGitHubApiCalls(summarySince);
+      const minutes = Math.round((now - summarySince) / 60_000);
+      summarySince = now;
+      // One stored sample per window: calls per credential (for the API usage
+      // dialog's history), always including the status-bar tokens so the
+      // series exist even in a quiet window.
+      const series: Record<string, { value: number; limit: null }> = { total: { value: counts.total, limit: null } };
+      for (const token of new Set(['oauth', 'pat', ...Object.keys(counts.byToken)])) series[token] = { value: counts.byToken[token] ?? 0, limit: null };
+      recordUsageSample('github-api-calls', { at: now, series });
       if (!summary) return { calls: 0, minutes };
       logger.info(`[GitHubAPI] last ${minutes}m: ${summary}`);
-      return { calls: parseInt(summary, 10), minutes };
+      return { calls: counts.total, minutes };
     },
   });
 

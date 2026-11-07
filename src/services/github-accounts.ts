@@ -27,6 +27,7 @@ import type { Database as SqlJsDatabase } from 'sql.js';
 import { parseGitHubRemote } from './local-discovery';
 import { encrypt, decryptSecret, getEncryptionKey } from '../storage/encryption';
 import { getGhCliToken } from './copilot-usage';
+import { registerGitHubToken } from './github-api';
 import { deleteRepoVisibilityFor, listRepoViewers, recordRepoVisibility } from './github-repo-visibility';
 import { getPrimaryGitHubLogin, listGitHubAuths, loadGitHubAuth, loadGitHubPat } from './github-oauth';
 import type { GitHubAccountInfo } from '../plugins/types';
@@ -439,14 +440,19 @@ export interface AccountToken {
  */
 export async function resolveAccountToken(db: SqlJsDatabase, id: string): Promise<AccountToken | null> {
   const { host, login } = parseAccountId(id);
-  if (host === DEFAULT_HOST) {
-    const oauth = loadGitHubAuth(db, login);
-    if (oauth) return { id, host, login, token: oauth.accessToken, source: 'oauth' };
-  }
-  const pat = host === DEFAULT_HOST ? loadGitHubPat(db, login) : loadHostAccountPat(db, id);
-  if (pat) return { id, host, login, token: pat, source: 'pat' };
-  const gh = await getGhCliToken(login, host);
-  return gh ? { id, host, login, token: gh, source: 'gh-cli' } : null;
+  const found = await (async (): Promise<AccountToken | null> => {
+    if (host === DEFAULT_HOST) {
+      const oauth = loadGitHubAuth(db, login);
+      if (oauth) return { id, host, login, token: oauth.accessToken, source: 'oauth' };
+    }
+    const pat = host === DEFAULT_HOST ? loadGitHubPat(db, login) : loadHostAccountPat(db, id);
+    if (pat) return { id, host, login, token: pat, source: 'pat' };
+    const gh = await getGhCliToken(login, host);
+    return gh ? { id, host, login, token: gh, source: 'gh-cli' } : null;
+  })();
+  // Name the credential for the API call stats (the status-bar tokens keep their own labels).
+  if (found) registerGitHubToken(found.token, `${found.source}:${found.id}`);
+  return found;
 }
 
 // ── Account list ─────────────────────────────────────────────────────────────
