@@ -118,6 +118,7 @@ function defaultResponses(f: Fixtures): Responses {
     getPatStatus: { hasPat: false },
     logout: ok,
     getGitHubRateLimit: f.rateLimit,
+    getGitHubApiCallStats: (windowMs) => ({ ...f.rateLimit.apiCalls!, windowMs, since: Date.parse(f.rateLimit.fetchedAt) - windowMs }),
     getUsageHistory: (metric, rangeMs) => {
       const end = Date.parse(f.rateLimit.fetchedAt);
       const start = end - rangeMs;
@@ -274,6 +275,7 @@ function defaultResponses(f: Fixtures): Responses {
     resolveGitHubAccountForRepo: { ok: true, resolved: null },
     // Active sessions + background tasks
     getActiveSessions: f.activeSessions,
+    runAgentSessionAction: { ok: true, kind: 'deep-link', message: 'Opened in the fixture app', prompt: null },
     refreshActiveSessions: f.activeSessions,
     listBackgroundTasks: f.backgroundTasks,
     listRecentTaskFailures: [],

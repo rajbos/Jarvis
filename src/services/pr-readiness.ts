@@ -8,6 +8,7 @@
 // for up to BATCH_SIZE lookups) and evaluated by the pure evaluatePrReadiness().
 
 import type { CopilotReviewStatus, PrReadiness, ReadinessStage } from '../plugins/types';
+import { githubRequest } from './github-api';
 
 const GITHUB_GRAPHQL_URL = 'https://api.github.com/graphql';
 const BATCH_SIZE = 10;
@@ -22,7 +23,7 @@ export function isCopilotReviewerLogin(login: string | null | undefined): boolea
 
 // Team{…} is deliberately not selected — it requires read:org and fails otherwise.
 const PR_FIELDS = `
-  number title url state isDraft headRefName headRefOid
+  number title url state isDraft headRefName headRefOid baseRefName mergeable
   headRepositoryOwner { login }
   repository { nameWithOwner }
   commits(last: 1) {
@@ -86,6 +87,10 @@ export interface RawPullRequest {
   isDraft: boolean;
   headRefName: string;
   headRefOid: string;
+  /** Absent in older fixtures / cached payloads. */
+  baseRefName?: string;
+  /** GitHub computes this lazily; UNKNOWN right after a push. */
+  mergeable?: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN';
   headRepositoryOwner: { login: string } | null;
   repository: { nameWithOwner: string };
   commits: {
@@ -187,7 +192,7 @@ function evaluateChecks(pr: RawPullRequest, nowMs: number): PrReadiness['checks'
     return {
       light: 'red', label: `${failed} failed`, blocking: false,
       detail: `All checks finished; ${failed} failed: ${list(failedNames)}`,
-      total, pending, failed, passed,
+      total, pending, failed, passed, failedNames,
     };
   }
   return {
@@ -249,6 +254,8 @@ export function evaluatePrReadiness(pr: RawPullRequest, checkedAt: string = new 
     isDraft: pr.isDraft,
     headSha: pr.headRefOid,
     headRef: pr.headRefName,
+    baseRef: pr.baseRefName ?? null,
+    mergeable: pr.mergeable ?? 'UNKNOWN',
     checks,
     copilotReview,
     ready: pr.state === 'OPEN' && waitingOn.length === 0,
@@ -346,7 +353,7 @@ export async function fetchPullRequests(accessToken: string, lookups: PrLookup[]
     const { query, variables } = buildBatchQuery(batch);
     let body: GraphQLResponse;
     try {
-      const response = await fetch(GITHUB_GRAPHQL_URL, {
+      const response = await githubRequest(GITHUB_GRAPHQL_URL, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -354,7 +361,7 @@ export async function fetchPullRequests(accessToken: string, lookups: PrLookup[]
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ query, variables }),
-      });
+      }, { purpose: 'active-sessions:pr-readiness' });
       if (!response.ok) {
         const text = await response.text().catch(() => '');
         throw new Error(`GitHub GraphQL API error ${response.status}: ${text.slice(0, 200)}`);

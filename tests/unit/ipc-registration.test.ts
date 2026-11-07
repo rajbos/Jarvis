@@ -220,6 +220,8 @@ const EXPECTED_CHANNELS = [
   // active agent sessions / PR readiness
   'active-sessions:get',
   'active-sessions:refresh',
+  'active-sessions:run-action',
+  'github:api-call-stats',
   // background tasks
   'tasks:list',
   'tasks:recent-failures',

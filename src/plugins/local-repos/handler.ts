@@ -1,7 +1,4 @@
 // ── Local repos IPC handlers ──────────────────────────────────────────────────
-import { spawn } from 'node:child_process';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
 import { shell, dialog, BrowserWindow } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
 import { saveDatabase } from '../../storage/database';
@@ -17,51 +14,20 @@ import {
 import { getFileIndexState, startFileIndexIfNeeded } from './file-index-runner';
 import { safeHandle } from '../ipc-utils';
 import { logger } from '../../services/logger';
+import { openTerminal, resolveDirectory } from '../../services/process-launch';
 
 let localScanRunning = false;
 let lastLocalScanProgress: ScanProgress | null = null;
 
-function launchDetached(command: string, args: string[], folderPath: string, onError: (error: unknown) => void): void {
-  try {
-    const child = spawn(command, args, {
-      cwd: folderPath,
-      detached: true,
-      stdio: 'ignore',
-      windowsHide: false,
-    });
-    child.once('spawn', () => {
-      child.unref();
-    });
-    child.once('error', onError);
-  } catch (err) {
-    onError(err);
-  }
-}
-
-function openTerminal(folderPath: string): void {
+function openTerminalInFolder(folderPath: string): void {
   // Normalize the path and confirm it resolves to an existing directory
   // before handing it to a spawned shell process.
-  const resolvedPath = path.resolve(folderPath);
-  let isDirectory: boolean;
-  try {
-    isDirectory = fs.statSync(resolvedPath).isDirectory();
-  } catch (err) {
-    logger.error('[IPC] local:open-terminal failed: invalid folder path', resolvedPath, err);
+  const resolvedPath = resolveDirectory(folderPath);
+  if (!resolvedPath) {
+    logger.error('[IPC] local:open-terminal failed: not a directory', folderPath);
     return;
   }
-  if (!isDirectory) {
-    logger.error('[IPC] local:open-terminal failed: not a directory', resolvedPath);
-    return;
-  }
-
-  // Prefer Windows Terminal when available, but keep working on machines that
-  // only have the classic command prompt.
-  launchDetached('wt.exe', ['-d', resolvedPath], resolvedPath, () => {
-    const commandShell = process.env.ComSpec ?? process.env.COMSPEC ?? 'cmd.exe';
-    launchDetached(commandShell, ['/k'], resolvedPath, (err) => {
-      logger.error('[IPC] local:open-terminal failed:', err);
-    });
-  });
+  openTerminal(resolvedPath, undefined, (err) => logger.error('[IPC] local:open-terminal failed:', err));
 }
 
 export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWindow | null): void {
@@ -128,7 +94,7 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
 
   safeHandle('local:open-terminal', (_event, folderPath: string) => {
     if (typeof folderPath !== 'string' || folderPath.length === 0) return;
-    openTerminal(folderPath);
+    openTerminalInFolder(folderPath);
   });
 }
 

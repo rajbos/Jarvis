@@ -2,6 +2,8 @@ import type { Database as SqlJsDatabase } from 'sql.js';
 import { encrypt, decryptSecret, getEncryptionKey } from '../storage/encryption';
 import { getConfigValue, setConfigValue, saveDatabase } from '../storage/database';
 import { logger } from './logger';
+import { registerGitHubToken } from './github-api';
+import { githubRequest } from './github-api';
 
 const GITHUB_DEVICE_CODE_URL = 'https://github.com/login/device/code';
 const GITHUB_ACCESS_TOKEN_URL = 'https://github.com/login/oauth/access_token';
@@ -112,13 +114,13 @@ export async function pollForToken(
 /**
  * Step 3: Fetch the authenticated user's profile.
  */
-export async function fetchGitHubUser(accessToken: string): Promise<GitHubUser> {  const response = await fetch(GITHUB_USER_API_URL, {
+export async function fetchGitHubUser(accessToken: string): Promise<GitHubUser> {  const response = await githubRequest(GITHUB_USER_API_URL, {
     headers: {
       'Authorization': `Bearer ${accessToken}`,
       'Accept': 'application/json',
       'User-Agent': 'Jarvis-Agent/0.1.0',
     },
-  });
+  }, { purpose: 'auth:user' });
 
   if (!response.ok) {
     throw new Error(`Failed to fetch user: ${response.status}`);
@@ -145,13 +147,13 @@ export type PatValidation =
 export async function validateGitHubPat(pat: string): Promise<PatValidation> {
   let response: Response;
   try {
-    response = await fetch(GITHUB_USER_API_URL, {
+    response = await githubRequest(GITHUB_USER_API_URL, {
       headers: {
         'Authorization': `Bearer ${pat}`,
         'Accept': 'application/json',
         'User-Agent': 'Jarvis-Agent/0.1.0',
       },
-    });
+    }, { purpose: 'auth:user' });
   } catch (err) {
     return { status: 'unknown', error: err instanceof Error ? err.message : String(err) };
   }
@@ -277,7 +279,16 @@ function decryptAuthRow(db: SqlJsDatabase, row: AuthRow): StoredGitHubAuth | nul
  */
 export function loadGitHubAuth(db: SqlJsDatabase, login?: string): StoredGitHubAuth | null {
   const row = selectAuthRow(db, login);
-  return row ? decryptAuthRow(db, row) : null;
+  const auth = row ? decryptAuthRow(db, row) : null;
+  // Name the credential for the API call stats: the primary account's sign-in
+  // is the "OAuth" badge in the status bar, other accounts show as oauth:<login>.
+  if (auth && row) registerGitHubToken(auth.accessToken, isPrimaryLogin(db, row.login) ? 'oauth' : `oauth:${row.login}`, true);
+  return auth;
+}
+
+function isPrimaryLogin(db: SqlJsDatabase, login: string): boolean {
+  const primary = getConfigValue(db, KEY_PRIMARY_LOGIN) ?? selectAuthRow(db)?.login ?? null;
+  return primary !== null && primary.toLowerCase() === login.toLowerCase();
 }
 
 /** Login of the primary account — the one every single-account feature uses. */
@@ -336,6 +347,8 @@ export function loadGitHubPat(db: SqlJsDatabase, login?: string): string | null 
   const pat = decryptAuthColumn(db, row.login, 'pat', row.pat);
   if (pat === null) {
     warnOnce(`pat:${row.login}`, `[OAuth] Failed to decrypt stored PAT for ${row.login} — re-enter it to restore access`);
+  } else {
+    registerGitHubToken(pat, isPrimaryLogin(db, row.login) ? 'pat' : `pat:${row.login}`, true);
   }
   return pat;
 }

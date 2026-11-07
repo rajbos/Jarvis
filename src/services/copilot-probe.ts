@@ -7,6 +7,7 @@
 // allowlist of read-only billing paths is ever requested.
 
 import type { CopilotRawResponse } from '../plugins/types';
+import { githubRequest } from './github-api';
 
 const SEGMENT = '[A-Za-z0-9][A-Za-z0-9_.-]*';
 const REPORT = '(?:ai_credit|premium_request)/usage|usage(?:/summary)?';
@@ -67,13 +68,13 @@ export async function probeEndpoint(
 ): Promise<CopilotRawResponse> {
   const internal = endpoint.startsWith('/copilot_internal/');
   try {
-    const res = await fetch(`${apiBase}${endpoint}`, {
+    const res = await githubRequest(`${apiBase}${endpoint}`, {
       headers: {
         Authorization: `Bearer ${token}`,
         Accept: internal ? 'application/json' : 'application/vnd.github+json',
         ...(internal ? { 'User-Agent': 'Jarvis-Agent/0.1.0' } : { 'X-GitHub-Api-Version': '2026-03-10' }),
       },
-    });
+    }, { purpose: 'copilot-probe' });
     const body = await res.text().catch(() => '');
     return { endpoint, status: res.status, body: parseBody(body) };
   } catch (err) {

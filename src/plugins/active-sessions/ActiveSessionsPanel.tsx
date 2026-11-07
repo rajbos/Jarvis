@@ -7,6 +7,8 @@ import type {
   ActiveSessionEntry,
   ActiveSessionSourceStatus,
   ActiveSessionsSnapshot,
+  AgentActionKind,
+  AgentActionResult,
   AgentProvider,
   LocalSessionUsage,
   ReadinessStage,
@@ -100,6 +102,74 @@ function openUrl(url: string) {
   void window.jarvis.openUrl(url);
 }
 
+/** What "Open" will do for this session, for the button tooltip. */
+function openHint(entry: ActiveSessionEntry): string {
+  const s = entry.session;
+  if (s.origin === 'cloud') return s.cloudTaskId && s.repoFullName ? 'Open the task in the GitHub Copilot app' : 'Open the pull request on GitHub';
+  if (s.provider === 'copilot') return s.client.startsWith('Copilot app') ? 'Open this session in the GitHub Copilot app' : 'Resume this Copilot CLI session in a terminal';
+  if (s.entrypoint === 'claude-desktop') return 'Claude Desktop cannot resume a session by link — opens a new Claude Code session in the same folder';
+  return 'Resume this Claude Code session in a terminal';
+}
+
+function promptHint(kind: Exclude<AgentActionKind, 'open'>, entry: ActiveSessionEntry): string {
+  const s = entry.session;
+  const what = kind === 'fix_checks' ? 'fix the failing checks' : 'resolve the merge conflicts';
+  if (s.origin === 'cloud') return `Comment on the PR asking @copilot to ${what}`;
+  if (s.provider === 'copilot') {
+    return s.client.startsWith('Copilot app')
+      ? `Start a new Copilot app session on the PR with a prompt to ${what}`
+      : `Resume the Copilot CLI session in a terminal with a prompt to ${what}`;
+  }
+  if (s.entrypoint === 'claude-desktop') return `Open a new Claude Code session in this folder with a prompt to ${what} (press Enter to send)`;
+  return `Resume the Claude Code session in a terminal with a prompt to ${what}`;
+}
+
+/** Row buttons: bring the session forward, or hand the agent a follow-up for a failing / conflicting PR. */
+function SessionActions({ entry }: { entry: ActiveSessionEntry }) {
+  const [busy, setBusy] = useState<AgentActionKind | null>(null);
+  const [outcome, setOutcome] = useState<AgentActionResult | null>(null);
+  const pr = entry.pr;
+  const open = pr?.state === 'OPEN';
+  const canFixChecks = open && pr.checks.pending === 0 && pr.checks.failed > 0;
+  const canResolve = open && pr.mergeable === 'CONFLICTING';
+
+  const run = async (kind: AgentActionKind) => {
+    setBusy(kind);
+    setOutcome(null);
+    try {
+      const result = await window.jarvis.runAgentSessionAction(entry.session.key, kind);
+      setOutcome(result);
+    } catch (err) {
+      setOutcome({ ok: false, error: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <div class="as-actions">
+      <button class="as-action" disabled={busy !== null} title={openHint(entry)} onClick={() => void run('open')}>
+        {busy === 'open' ? 'Opening…' : '↗ Open session'}
+      </button>
+      {canFixChecks && (
+        <button class="as-action as-action--fix" disabled={busy !== null} title={promptHint('fix_checks', entry)} onClick={() => void run('fix_checks')}>
+          {busy === 'fix_checks' ? 'Sending…' : `🛠 Fix ${pr.checks.failed} failing check${pr.checks.failed === 1 ? '' : 's'}`}
+        </button>
+      )}
+      {canResolve && (
+        <button class="as-action as-action--fix" disabled={busy !== null} title={promptHint('resolve_conflicts', entry)} onClick={() => void run('resolve_conflicts')}>
+          {busy === 'resolve_conflicts' ? 'Sending…' : '⚔ Resolve conflicts'}
+        </button>
+      )}
+      {outcome && (
+        <span class={`as-action-outcome${outcome.ok ? '' : ' as-action-outcome--error'}`} title={outcome.ok ? outcome.prompt ?? outcome.message : outcome.error}>
+          {outcome.ok ? `✓ ${outcome.message}` : `✗ ${outcome.error}`}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function SessionRow({ entry }: { entry: ActiveSessionEntry }) {
   const { session, pr } = entry;
   const folder = session.cwd?.split(/[\\/]/).filter(Boolean).pop() ?? null;
@@ -145,6 +215,11 @@ function SessionRow({ entry }: { entry: ActiveSessionEntry }) {
             </button>
           )}
           {pr?.isDraft && <span class="as-chip as-chip--draft">Draft</span>}
+          {pr?.state === 'OPEN' && pr.mergeable === 'CONFLICTING' && (
+            <span class="as-chip as-chip--conflicts" title={`This PR has merge conflicts with ${pr.baseRef ?? 'its base branch'} and cannot be merged until they are resolved.`}>
+              ⚔ Conflicts
+            </span>
+          )}
           {entry.prAccount && (
             <span class="as-chip as-chip--account" title={`PR checked as @${entry.prAccount} — the account assigned to this repo or its owner (Settings → GitHub Accounts)`}>
               as @{entry.prAccount}
@@ -152,6 +227,7 @@ function SessionRow({ entry }: { entry: ActiveSessionEntry }) {
           )}
         </div>
         {entry.prError && <div class="as-row-error" title={entry.prError}>PR lookup failed: {entry.prError}</div>}
+        <SessionActions entry={entry} />
       </div>
       <div class="as-lights">
         <Light name="Agent" stage={entry.agent} />

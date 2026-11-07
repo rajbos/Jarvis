@@ -1,10 +1,11 @@
 import { Fragment } from 'preact';
 import { useState } from 'preact/hooks';
 import { Sparkline, useUsageHistory } from '../shared/Sparkline';
-import type { GitHubRateLimitSource } from '../types';
+import type { GitHubApiCallStats, GitHubRateLimit, GitHubRateLimitSource } from '../types';
 import { formatNumber, formatDurationUntil } from '../shared/utils';
 import { CHART_BUCKETS, rateLimitSeries, tightestBucket, type ChartBucket } from './rate-limit-chart';
-import { UsageHistoryDialog, historyTriggerProps } from '../shared/UsageHistoryDialog';
+import { historyTriggerProps } from '../shared/UsageHistoryDialog';
+import { GitHubApiUsageDialog } from './GitHubApiUsageDialog';
 
 const CHART_W = 320;
 const CHART_H = 72;
@@ -14,13 +15,6 @@ const BUCKET_COLOR: Record<ChartBucket, string> = { core: '#64b5f6', graphql: '#
 
 const SPARK_COLOR: Record<string, string> = { core: '#64b5f6', graphql: '#ce93d8', search: '#ffb74d' };
 const TREND_RANGE = () => 48 * 60 * 60 * 1000;
-
-const HISTORY_SERIES = [
-  { key: 'core', label: 'REST', color: BUCKET_COLOR.core },
-  { key: 'graphql', label: 'GraphQL', color: BUCKET_COLOR.graphql },
-  // Search's 30-per-minute quota swings constantly and would drown the others.
-  { key: 'search', label: 'Search', color: '#ffb74d', hidden: true },
-] as const;
 
 function rateLimitColor(remaining: number): string {
   if (remaining < 100) return '#f44336';
@@ -39,13 +33,24 @@ const clock = (unixSec: number) => new Date(unixSec * 1000).toLocaleTimeString([
 interface Props {
   label: 'OAuth' | 'PAT';
   source: GitHubRateLimitSource;
+  /** Jarvis-side call tally, shown so the drain can be traced to a feature. */
+  apiCalls?: GitHubApiCallStats;
+  /** The whole payload, for the API usage dialog the badge opens. */
+  rateLimit: GitHubRateLimit;
+}
+
+function formatSince(sinceMs: number, now: number): string {
+  const mins = Math.max(1, Math.round((now - sinceMs) / 60_000));
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  return hours < 48 ? `${hours}h${mins % 60 ? ` ${mins % 60}m` : ''}` : `${Math.floor(hours / 24)}d`;
 }
 
 /**
  * Status-bar rate-limit badge with a hover popover charting the last 2 hours.
  * Clicking it opens the stored history, zoomable out to 30 days.
  */
-export function GitHubRateLimitBadge({ label, source }: Props) {
+export function GitHubRateLimitBadge({ label, source, apiCalls, rateLimit }: Props) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const trend = useUsageHistory(label === 'OAuth' ? 'github-oauth' : 'github-pat', TREND_RANGE);
   const tight = tightestBucket(source);
@@ -160,6 +165,23 @@ export function GitHubRateLimitBadge({ label, source }: Props) {
           </Fragment>
         ))}
 
+        {apiCalls && apiCalls.total > 0 && (() => {
+          const mine = apiCalls.byToken.find((t) => t.token === (label === 'OAuth' ? 'oauth' : 'pat'))?.count ?? 0;
+          return (
+            <div class="bg-ratelimit-calls" title={apiCalls.byPattern.slice(0, 12).map((p) => `${p.count}× ${p.method} ${p.pattern} (${p.purpose}, ${p.token})`).join('\n')}>
+              <div class="bg-ratelimit-calls-head">
+                Jarvis made {formatNumber(mine)} call{mine === 1 ? '' : 's'} with this token in the last {formatSince(apiCalls.since, now)}
+                {apiCalls.total !== mine ? ` (${formatNumber(apiCalls.total)} with all tokens)` : ''}
+              </div>
+              {apiCalls.byPurpose.slice(0, 6).map((p) => (
+                <div class="bg-ratelimit-calls-row" key={p.purpose}>
+                  <span class="bg-ratelimit-calls-purpose">{p.purpose}</span>
+                  <span class="bg-ratelimit-calls-count">{formatNumber(p.count)}</span>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
         {source.tokenExpired && (
           <div class="bg-status-claude-error">PAT expired or revoked. Open Settings → GitHub Access to enter a new token.</div>
         )}
@@ -167,21 +189,12 @@ export function GitHubRateLimitBadge({ label, source }: Props) {
           <div class="bg-status-claude-error">Check failed: {source.error}</div>
         )}
         <div class="bg-status-claude-checked">
-          Click the badge for the full history.
+          Click the badge for both tokens' quota and the calls Jarvis made.
           Secondary (abuse) limits have no counter and don't show here.
           {source.tokenExpiresAt ? ` Token expires ${source.tokenExpiresAt}.` : ''}
         </div>
       </div>
-      {historyOpen && (
-        <UsageHistoryDialog
-          title={`${label} rate-limit history`}
-          metric={label === 'OAuth' ? 'github-oauth' : 'github-pat'}
-          series={HISTORY_SERIES}
-          mode="remaining"
-          footnote="sampled every 2 minutes while Jarvis runs"
-          onClose={() => setHistoryOpen(false)}
-        />
-      )}
+      {historyOpen && <GitHubApiUsageDialog rateLimit={rateLimit} onClose={() => setHistoryOpen(false)} />}
     </span>
   );
 }

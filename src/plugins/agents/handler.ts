@@ -27,6 +27,7 @@ import {
   getAgentSession,
   runAgentSession,
 } from './runner';
+import { githubRequest } from '../../services/github-api';
 
 /**
  * In-flight agent sessions, keyed by sessionId, so `agents:cancel` (and app
@@ -332,14 +333,14 @@ export function registerHandlers(
         const errors: string[] = [];
         for (const id of ids) {
           try {
-            const resp = await fetch(`https://api.github.com/notifications/threads/${id}`, {
+            const resp = await githubRequest(`https://api.github.com/notifications/threads/${id}`, {
               method: 'PATCH',
               headers: {
                 Authorization: `Bearer ${auth.token}`,
                 Accept: 'application/vnd.github+json',
                 'X-GitHub-Api-Version': '2022-11-28',
               },
-            });
+            }, { purpose: 'agents:mark-read' });
             if (!resp.ok && resp.status !== 404) {
               errors.push(`${id}: HTTP ${resp.status}`);
             } else {

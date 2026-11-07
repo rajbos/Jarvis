@@ -13,7 +13,7 @@ import { logger } from './logger';
 /** How far back samples are kept in the database. */
 export const USAGE_HISTORY_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
-export const USAGE_HISTORY_METRICS: readonly UsageHistoryMetric[] = ['github-oauth', 'github-pat', 'claude', 'copilot'];
+export const USAGE_HISTORY_METRICS: readonly UsageHistoryMetric[] = ['github-oauth', 'github-pat', 'claude', 'copilot', 'github-api-calls'];
 
 const PRUNE_EVERY_MS = 60 * 60 * 1000;
 

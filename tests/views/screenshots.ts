@@ -111,9 +111,14 @@ const SHOTS: Shot[] = [
     prepare: (page) => page.locator('.bg-status-ratelimit').last().hover(),
   },
   {
+    name: 'github-api-usage', view: 'index', waitFor: ['GitHub API usage', 'Calls made by Jarvis', 'notifications-sync:actor', 'Busiest requests', 'Show all 9 requests'],
+    prepare: (page) => page.locator('.bg-status-ratelimit .bg-status-rate-limit').first().click(),
+  },
+  {
     name: 'pat-rate-limit-history', view: 'index', waitFor: ['PAT rate-limit history', 'Lowest in range'],
     prepare: async (page) => {
       await page.locator('.bg-status-ratelimit .bg-status-rate-limit').last().click();
+      await page.locator('.bg-apiu-token').last().getByRole('button', { name: '30-day history' }).click();
       await page.getByRole('button', { name: '7d' }).click();
       await page.locator('.bg-rlh-chart svg').hover({ position: { x: 560, y: 120 } });
     },

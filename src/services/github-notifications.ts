@@ -1,8 +1,9 @@
 import type { Database as SqlJsDatabase } from 'sql.js';
 
 import { logger } from './logger';
-import { githubFetch, GitHubRateLimitError } from './github-fetch';
+import { GitHubRateLimitError } from './github-fetch';
 import { currentApiBase, currentHostContext, DEFAULT_HOST } from './github-host';
+import { githubRequest } from './github-api';
 
 export interface GitHubNotification {
   id: string;
@@ -52,13 +53,13 @@ async function fetchPage(
   url: string,
   accessToken: string,
 ): Promise<{ items: GitHubNotification[]; nextUrl: string | null }> {
-  const response = await fetch(url, {
+  const response = await githubRequest(url, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
       Accept: 'application/vnd.github+json',
       'X-GitHub-Api-Version': '2022-11-28',
     },
-  });
+  }, { purpose: 'notifications-sync:list' });
 
   if (!response.ok) {
     throw new Error(
@@ -105,13 +106,13 @@ async function fetchSubjectActor(
   if (!subjectUrl?.startsWith(`${currentApiBase()}/repos/`)) return { login: null, type: null };
 
   try {
-    const response = await githubFetch(subjectUrl, {
+    const response = await githubRequest(subjectUrl, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         Accept: 'application/vnd.github+json',
         'X-GitHub-Api-Version': '2022-11-28',
       },
-    });
+    }, { purpose: 'notifications-sync:actor' });
     if (!response.ok) return { login: null, type: null };
     return extractActorFromSubject(await response.json());
   } catch (err) {
@@ -502,13 +503,13 @@ function isDependabotPRNotification(n: StoredNotification): boolean {
 async function checkPRMerged(accessToken: string, prApiUrl: string): Promise<boolean> {
   if (!DEPENDABOT_PR_URL_RE.test(prApiUrl)) return false;
   try {
-    const response = await githubFetch(prApiUrl, {
+    const response = await githubRequest(prApiUrl, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         Accept: 'application/vnd.github+json',
         'X-GitHub-Api-Version': '2022-11-28',
       },
-    });
+    }, { purpose: 'notifications-sync:pr-detail' });
     if (!response.ok) return false;
     const pr = (await response.json()) as Record<string, unknown>;
     return pr.state === 'closed' && pr.merged_at != null;
@@ -583,13 +584,13 @@ async function fetchOneBranchPage(
   accessToken: string,
   pageUrl: string,
 ): Promise<{ names: string[]; next: string | null }> {
-  const res = await fetch(pageUrl, {
+  const res = await githubRequest(pageUrl, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
       Accept: 'application/vnd.github+json',
       'X-GitHub-Api-Version': '2022-11-28',
     },
-  });
+  }, { purpose: 'notifications-sync:page' });
   if (!res.ok) return { names: [], next: null };
   const json = (await res.json()) as Array<{ name: string }>;
   const linkH = res.headers.get('Link');
@@ -682,7 +683,7 @@ export async function markNotificationRead(
   accessToken: string,
   threadId: string,
 ): Promise<void> {
-  const response = await fetch(
+  const response = await githubRequest(
     `${currentApiBase()}/notifications/threads/${encodeURIComponent(notificationThreadId(threadId))}`,
     {
       method: 'PATCH',
@@ -691,7 +692,7 @@ export async function markNotificationRead(
         Accept: 'application/vnd.github+json',
         'X-GitHub-Api-Version': '2022-11-28',
       },
-    },
+    }, { purpose: 'notifications-sync:mark-read' },
   );
   if (!response.ok && response.status !== 204) {
     throw new Error(

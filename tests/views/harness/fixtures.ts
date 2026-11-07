@@ -292,6 +292,34 @@ export function createFixtures(now: number) {
       tokenExpired: false,
     },
     fetchedAt: iso(now, 0),
+    apiCalls: {
+      total: 434,
+      since: now - 60 * 60 * 1000,
+      windowMs: 60 * 60 * 1000,
+      byPurpose: [
+        { purpose: 'notifications-sync:actor', count: 188 },
+        { purpose: 'active-sessions:pr-readiness', count: 96 },
+        { purpose: 'active-sessions:cloud-task-detail', count: 60 },
+        { purpose: 'auto-dismiss', count: 63 },
+        { purpose: 'rate-limit-poll', count: 27 },
+      ],
+      byToken: [
+        { token: 'oauth', count: 309 },
+        { token: 'pat', count: 98 },
+        { token: 'gh-cli:test-user-work', count: 27 },
+      ],
+      byPattern: [
+        { purpose: 'notifications-sync:actor', token: 'oauth', method: 'GET', pattern: '/repos/{owner}/{repo}/pulls/{n}', count: 131, lastUrl: `https://api.github.com/repos/${REPO_ROCKET}/pulls/77` },
+        { purpose: 'active-sessions:pr-readiness', token: 'oauth', method: 'POST', pattern: '/graphql', count: 69, lastUrl: 'https://api.github.com/graphql' },
+        { purpose: 'active-sessions:cloud-task-detail', token: 'oauth', method: 'GET', pattern: '/agents/tasks/{task}', count: 60, lastUrl: 'https://api.github.com/agents/tasks/task-fixture-1' },
+        { purpose: 'notifications-sync:actor', token: 'oauth', method: 'GET', pattern: '/repos/{owner}/{repo}/issues/{n}', count: 57, lastUrl: `https://api.github.com/repos/${REPO_ANVIL}/issues/12` },
+        { purpose: 'auto-dismiss', token: 'pat', method: 'GET', pattern: '/repos/{owner}/{repo}/issues/{n}/events', count: 41, lastUrl: `https://api.github.com/repos/${REPO_ANVIL}/issues/12/events` },
+        { purpose: 'active-sessions:pr-readiness', token: 'gh-cli:test-user-work', method: 'POST', pattern: '/graphql', count: 27, lastUrl: 'https://api.github.com/graphql' },
+        { purpose: 'rate-limit-poll', token: 'oauth', method: 'GET', pattern: '/rate_limit', count: 14, lastUrl: 'https://api.github.com/rate_limit' },
+        { purpose: 'rate-limit-poll', token: 'pat', method: 'GET', pattern: '/rate_limit', count: 13, lastUrl: 'https://api.github.com/rate_limit' },
+        { purpose: 'auto-dismiss', token: 'pat', method: 'GET', pattern: '/repos/{owner}/{repo}/pulls/{n}/commits?per_page', count: 22, lastUrl: `https://api.github.com/repos/${REPO_ROCKET}/pulls/58/commits?per_page=100` },
+      ],
+    },
   };
 
   // Stored samples for the history dialogs, polled every 2 minutes between
@@ -353,11 +381,27 @@ export function createFixtures(now: number) {
       },
     ];
   });
+  // Calls per 10-minute window, per token, for the API usage dialog sparklines.
+  const apiCallHistory = pollTimes(1, 10 * 60 * 1000).map((at): UsageHistorySample => {
+    const h = new Date(at).getHours() + new Date(at).getMinutes() / 60;
+    const busy = h >= 9 && h <= 17 ? 1 : 0.3;
+    return {
+      at,
+      series: {
+        total: { value: Math.round(busy * (28 + 12 * Math.sin(h))), limit: null },
+        oauth: { value: Math.round(busy * (20 + 10 * Math.sin(h))), limit: null },
+        pat: { value: Math.round(busy * (6 + 2 * Math.cos(h))), limit: null },
+        'gh-cli:test-user-work': { value: Math.round(busy * 2), limit: null },
+      },
+    };
+  });
+
   const usageStored: Record<UsageHistoryMetric, UsageHistorySample[]> = {
     'github-oauth': githubHistory('oauth'),
     'github-pat': githubHistory('pat'),
     claude: claudeHistory,
     copilot: copilotHistory,
+    'github-api-calls': apiCallHistory,
   };
 
   const claudeStatus: ClaudeStatus = { connected: true, subscriptionType: 'pro', source: 'stored', expiresAt: now + 7 * DAY };
@@ -437,7 +481,7 @@ export function createFixtures(now: number) {
         pr: {
           repoFullName: REPO_ROCKET, prNumber: 77, title: 'Teach the rocket sled to brake',
           url: `https://github.com/${REPO_ROCKET}/pull/77`, state: 'OPEN', isDraft: false,
-          headSha: 'def5678', headRef: 'copilot/brakes',
+          headSha: 'def5678', headRef: 'copilot/brakes', baseRef: 'main', mergeable: 'CONFLICTING',
           checks: { light: 'green', label: 'Passed 3/3', detail: '3/3 passed', blocking: false, total: 3, pending: 0, failed: 0, passed: 3 },
           copilotReview: { light: 'green', label: 'Reviewed', detail: 'Copilot reviewed the latest commit', blocking: false, status: 'completed' },
           ready: true, waitingOn: [], checkedAt: iso(now, 0),

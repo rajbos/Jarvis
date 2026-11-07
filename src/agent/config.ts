@@ -26,6 +26,16 @@ export interface JarvisConfig {
     /** Shared secret token required by the browser extension to authenticate. */
     token?: string;
   };
+  /**
+   * GitHub webhook relay (an Azure Function the user hosts) that Jarvis polls
+   * for PR / check changes instead of asking GitHub. See docs/WEBHOOK-RELAY.md.
+   */
+  webhookRelay?: {
+    /** Base URL of the relay, e.g. https://jarvis-relay.azurewebsites.net/api */
+    url?: string;
+    /** Bearer token the relay expects from Jarvis. */
+    token?: string;
+  };
 }
 
 const DEFAULT_CONFIG: JarvisConfig = {
@@ -93,6 +103,14 @@ export function loadConfig(): JarvisConfig {
     electron: { ...DEFAULT_CONFIG.electron, ...userConfig.electron },
     preferences: { ...DEFAULT_CONFIG.preferences, ...userConfig.preferences },
   };
+}
+
+/** The relay settings when both the URL and the token are configured; null otherwise. */
+export function getWebhookRelayConfig(config: JarvisConfig = loadConfig()): { url: string; token: string } | null {
+  const url = config.webhookRelay?.url?.trim();
+  const token = config.webhookRelay?.token?.trim();
+  if (!url || !token || !/^https:\/\//i.test(url)) return null;
+  return { url, token };
 }
 
 export function saveConfig(config: JarvisConfig): void {

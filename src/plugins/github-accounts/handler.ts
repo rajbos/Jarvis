@@ -40,6 +40,7 @@ import { getConfigValue, saveDatabase, setConfigValue } from '../../storage/data
 import { fetchAccountCopilotUsage } from '../copilot-usage/account-usage';
 import { getCopilotBudget } from '../copilot-usage/handler';
 import type { GitHubAccountUsage } from '../types';
+import { githubRequest } from '../../services/github-api';
 
 const BUDGET_KEY_PREFIX = 'copilot_aic_monthly_budget:';
 const LEGACY_BUDGET_KEY = 'copilot_aic_monthly_budget';
@@ -116,9 +117,9 @@ export async function checkAllAccountsUsage(
 
 /** Check a PAT against a GHE.com host and return the login and avatar it belongs to. */
 async function lookupHostUser(host: string, pat: string): Promise<{ login: string; avatarUrl: string | null }> {
-  const res = await fetch(`${apiBaseForHost(host)}/user`, {
+  const res = await githubRequest(`${apiBaseForHost(host)}/user`, {
     headers: { Authorization: `Bearer ${pat}`, Accept: 'application/vnd.github+json', 'User-Agent': 'Jarvis-Agent/0.1.0' },
-  });
+  }, { purpose: 'accounts:lookup-user' });
   if (res.status === 401) throw new Error(`${host} rejected this token (HTTP 401)`);
   if (!res.ok) throw new Error(`Could not read the user on ${host} (HTTP ${res.status})`);
   const user = (await res.json()) as { login?: string; avatar_url?: string };

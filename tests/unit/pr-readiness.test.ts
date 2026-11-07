@@ -370,3 +370,29 @@ describe('fetchPullRequests', () => {
     expect(results.size).toBe(0);
   });
 });
+
+describe('merge state', () => {
+  it('surfaces the base branch and mergeable state, defaulting to UNKNOWN', () => {
+    const pr = makePr({ contexts: [{ __typename: 'CheckRun', name: 'build', status: 'COMPLETED', conclusion: 'FAILURE' }] });
+    const withState = { ...pr, baseRefName: 'main', mergeable: 'CONFLICTING' as const };
+    const readiness = evaluatePrReadiness(withState, '2026-01-01T01:00:00Z');
+    expect(readiness.baseRef).toBe('main');
+    expect(readiness.mergeable).toBe('CONFLICTING');
+    expect(readiness.checks.failedNames).toEqual(['build']);
+    // Conflicts don't gate "ready for review" — the checks did finish.
+    expect(readiness.ready).toBe(true);
+
+    const legacy = evaluatePrReadiness(pr, '2026-01-01T01:00:00Z');
+    expect(legacy.baseRef).toBeNull();
+    expect(legacy.mergeable).toBe('UNKNOWN');
+  });
+
+  it('asks GitHub for the merge state in the batched query', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ data: { q0: { pullRequest: null } } }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await fetchPullRequests('token', [{ kind: 'number', repoFullName: 'o/r', number: 1 }]);
+    const body = JSON.parse((fetchMock.mock.calls[0] as unknown as [string, { body: string }])[1].body) as { query: string };
+    expect(body.query).toContain('baseRefName mergeable');
+    vi.unstubAllGlobals();
+  });
+});

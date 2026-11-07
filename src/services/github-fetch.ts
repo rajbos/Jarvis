@@ -45,7 +45,9 @@ export class GitHubRateLimitError extends Error {
  * rate-limit info (non-API responses, some errors), so callers don't mistake a
  * missing header for a full budget.
  */
-export function parseRateLimit(headers: Headers): RateLimitInfo | null {
+export function parseRateLimit(headers: Headers | undefined | null): RateLimitInfo | null {
+  // Tolerate header-less responses (some test doubles, non-standard fetch shims).
+  if (!headers || typeof headers.get !== 'function') return null;
   const remaining = parseInt(headers.get('x-ratelimit-remaining') ?? '', 10);
   const limit = parseInt(headers.get('x-ratelimit-limit') ?? '', 10);
   if (!Number.isFinite(remaining)) return null;
@@ -98,6 +100,7 @@ export async function isSecondaryRateLimited(response: Response, info: RateLimit
   if (isPrimaryRateLimited(response, info)) return false;
   if (response.status === 429) return true;
   if (response.status !== 403) return false;
+  if (typeof response.headers?.get !== 'function') return false;
   if (response.headers.get('retry-after') !== null) return true;
   try {
     const body = await response.clone().text();
@@ -118,7 +121,7 @@ export async function isRateLimited(response: Response, info: RateLimitInfo | nu
  * rate-limit fallback.
  */
 export function computeRateLimitWaitMs(response: Response, info: RateLimitInfo | null): number {
-  const retryAfter = parseInt(response.headers.get('retry-after') || '', 10);
+  const retryAfter = parseInt(response.headers?.get?.('retry-after') || '', 10);
   if (Number.isFinite(retryAfter) && retryAfter >= 0) return retryAfter * 1000 + 1000;
   if (isPrimaryRateLimited(response, info) && info) return Math.max(0, info.reset * 1000 - Date.now() + 1000);
   return SECONDARY_RATE_LIMIT_WAIT_MS;
@@ -131,6 +134,13 @@ export interface GithubFetchOptions {
   maxRetries?: number;
   /** Called with the parsed rate-limit info of every response. */
   onRateLimit?: (info: RateLimitInfo) => void;
+  /**
+   * What to do with a rate-limited response: `wait` (default) sleeps until the
+   * reset and retries, throwing `GitHubRateLimitError` when the wait is too
+   * long; `passthrough` returns the raw 403/429 so a caller with its own
+   * pause/retry policy (discovery, trickle scans) keeps control.
+   */
+  rateLimited?: 'wait' | 'passthrough';
 }
 
 /**
@@ -143,12 +153,12 @@ export async function githubFetch(
   init: RequestInit,
   options: GithubFetchOptions = {},
 ): Promise<Response> {
-  const { maxWaitMs = DEFAULT_MAX_WAIT_MS, maxRetries = 1, onRateLimit } = options;
+  const { maxWaitMs = DEFAULT_MAX_WAIT_MS, maxRetries = 1, onRateLimit, rateLimited = 'wait' } = options;
   for (let attempt = 0; ; attempt++) {
     const response = await fetch(url, init);
     const info = parseRateLimit(response.headers);
     if (info) onRateLimit?.(info);
-    if (!(await isRateLimited(response, info))) return response;
+    if (rateLimited === 'passthrough' || !(await isRateLimited(response, info))) return response;
 
     const waitMs = computeRateLimitWaitMs(response, info);
     if (attempt >= maxRetries || waitMs > maxWaitMs) {

@@ -1,4 +1,5 @@
 // ── GitHub Copilot coding agent handoff ──────────────────────────────────────
+import { githubRequest } from './github-api';
 // Assigns the Copilot coding agent to an issue via the GraphQL API so it opens
 // a fix PR. See docs: "Using Copilot cloud agent via the API".
 //
@@ -21,7 +22,7 @@ async function githubGraphQL<T>(
   query: string,
   variables: Record<string, unknown>,
 ): Promise<GraphQLResponse<T>> {
-  const response = await fetch(GITHUB_GRAPHQL_URL, {
+  const response = await githubRequest(GITHUB_GRAPHQL_URL, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -29,7 +30,7 @@ async function githubGraphQL<T>(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ query, variables }),
-  });
+  }, { purpose: 'copilot-graphql' });
 
   if (!response.ok) {
     const text = await response.text();

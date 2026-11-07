@@ -14,6 +14,7 @@ import {
 import { currentApiBase, currentHostContext, hostKey } from './github-host';
 import { recordRepoVisibility } from './github-repo-visibility';
 import { isOrgSecretScanOn } from './github-secrets';
+import { githubRequest } from './github-api';
 const PER_PAGE = 100;
 const CALLS_PER_BATCH = 500;
 const BATCH_PAUSE_MS = 10_000; // 10 seconds between batches
@@ -156,13 +157,13 @@ async function githubGet<T>(
     throw new Error('Discovery aborted');
   }
 
-  const response = await fetch(url, {
+  const response = await githubRequest(url, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
       Accept: 'application/json',
       'User-Agent': 'Jarvis-Agent/0.1.0',
     },
-  });
+  }, { purpose: 'discovery', rateLimited: 'passthrough' });
 
   const info = parseRateLimit(response.headers);
   const resource = info ? recordRateLimit(state, url, info) : null;
