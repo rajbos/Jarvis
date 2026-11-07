@@ -5012,6 +5012,11 @@ h5.ec-heading { font-size: 0.9375rem; }
   white-space: nowrap;
 }
 
+.bg-apiu-more {
+  margin-top: 0.4rem;
+  font-size: var(--type-meta);
+}
+
 .bg-apiu-num {
   text-align: right !important;
 }

@@ -111,7 +111,7 @@ const SHOTS: Shot[] = [
     prepare: (page) => page.locator('.bg-status-ratelimit').last().hover(),
   },
   {
-    name: 'github-api-usage', view: 'index', waitFor: ['GitHub API usage', 'Calls made by Jarvis', 'notifications-sync:actor', 'Busiest requests'],
+    name: 'github-api-usage', view: 'index', waitFor: ['GitHub API usage', 'Calls made by Jarvis', 'notifications-sync:actor', 'Busiest requests', 'Show all 9 requests'],
     prepare: (page) => page.locator('.bg-status-ratelimit .bg-status-rate-limit').first().click(),
   },
   {

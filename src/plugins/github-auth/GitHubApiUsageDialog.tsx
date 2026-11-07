@@ -14,6 +14,8 @@ import { UsageHistoryDialog } from '../shared/UsageHistoryDialog';
 import { formatSince, purposeRows, tokenColumns, tokenLabel } from './api-usage';
 
 const HOUR = 60 * 60 * 1000;
+/** Rows shown per table until the user asks for the rest. */
+export const COLLAPSED_ROWS = 7;
 const BUCKET_LABEL: Record<string, string> = { core: 'REST', graphql: 'GraphQL', search: 'Search' };
 const BUCKET_COLOR: Record<string, string> = { core: '#64b5f6', graphql: '#ce93d8', search: '#ffb74d' };
 const TOKEN_COLOR: Record<string, string> = { oauth: '#64b5f6', pat: '#ffb74d', other: '#9e9e9e', none: '#616161' };
@@ -82,6 +84,8 @@ interface Props {
 
 export function GitHubApiUsageDialog({ rateLimit, onClose }: Props) {
   const [history, setHistory] = useState<'oauth' | 'pat' | null>(null);
+  const [allFeatures, setAllFeatures] = useState(false);
+  const [allPatterns, setAllPatterns] = useState(false);
   const callHistory = useUsageHistory('github-api-calls', () => 24 * HOUR);
   const stats = rateLimit.apiCalls ?? null;
   const now = Date.now();
@@ -99,8 +103,10 @@ export function GitHubApiUsageDialog({ rateLimit, onClose }: Props) {
   const tokens = stats?.byToken ?? [];
   const callsFor = (token: string): number | null => (stats ? tokens.find((t) => t.token === token)?.count ?? 0 : null);
   const columns = tokenColumns(stats);
-  const rows = stats ? purposeRows(stats) : [];
-  const patterns = stats ? stats.byPattern.slice(0, 15) : [];
+  const allRows = stats ? purposeRows(stats) : [];
+  const rows = allFeatures ? allRows : allRows.slice(0, COLLAPSED_ROWS);
+  const allPatternRows = stats?.byPattern ?? [];
+  const patterns = allPatterns ? allPatternRows : allPatternRows.slice(0, COLLAPSED_ROWS);
 
   return createPortal(
     <div class="bg-copilot-raw-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
@@ -151,6 +157,11 @@ export function GitHubApiUsageDialog({ rateLimit, onClose }: Props) {
                   ))}
                 </tbody>
               </table>
+              {allRows.length > COLLAPSED_ROWS && (
+                <button type="button" class="bg-status-claude-action bg-apiu-more" onClick={() => setAllFeatures((v) => !v)}>
+                  {allFeatures ? `Show top ${COLLAPSED_ROWS}` : `Show all ${allRows.length} features`}
+                </button>
+              )}
 
               <h3>Busiest requests</h3>
               <table class="bg-rlh-table bg-apiu-table">
@@ -169,6 +180,11 @@ export function GitHubApiUsageDialog({ rateLimit, onClose }: Props) {
                   ))}
                 </tbody>
               </table>
+              {allPatternRows.length > COLLAPSED_ROWS && (
+                <button type="button" class="bg-status-claude-action bg-apiu-more" onClick={() => setAllPatterns((v) => !v)}>
+                  {allPatterns ? `Show top ${COLLAPSED_ROWS}` : `Show all ${allPatternRows.length} requests`}
+                </button>
+              )}
             </>
           )}
           <div class="bg-status-claude-checked bg-rlh-foot">
