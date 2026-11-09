@@ -44,6 +44,7 @@ vi.mock('../../src/services/github-repo-access', () => ({
 vi.mock('../../src/services/github-notifications', () => ({
   fetchNotifications: vi.fn().mockResolvedValue([]),
   fetchNotificationsForRepo: vi.fn().mockResolvedValue([]),
+  loadKnownSubjectActors: vi.fn(() => new Map()),
   storeNotificationsForAccount: vi.fn(),
   deleteNotificationsOfUntrackedAccounts: vi.fn(),
   storeNotificationsForOwner: vi.fn(),

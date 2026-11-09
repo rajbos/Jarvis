@@ -11,6 +11,7 @@ import {
   storeNotificationsForOwner,
   deleteNotification,
   listNotificationsForStarred,
+  loadKnownSubjectActors,
   type GitHubNotification,
 } from '../../src/services/github-notifications';
 
@@ -87,6 +88,17 @@ describe('GitHub Notifications — storeNotifications', () => {
     storeNotifications(db, [makeNotif('1', { subjectUrl: null })]);
     const res = db.exec(`SELECT subject_url FROM github_notifications WHERE id = '1'`);
     expect(res[0].values[0][0]).toBeNull();
+  });
+
+  it('loadKnownSubjectActors returns stored actors by subject url, skipping unknown ones', () => {
+    storeNotifications(db, [
+      { ...makeNotif('1', { subjectUrl: 'https://api.github.com/repos/o/r/pulls/1' }), subject_actor_login: 'octocat', subject_actor_type: 'User' },
+      makeNotif('2', { subjectUrl: 'https://api.github.com/repos/o/r/pulls/2' }),
+      makeNotif('3', { subjectUrl: null }),
+    ]);
+    const known = loadKnownSubjectActors(db);
+    expect(known.size).toBe(1);
+    expect(known.get('https://api.github.com/repos/o/r/pulls/1')).toEqual({ login: 'octocat', type: 'User' });
   });
 
   it('stores subject actor metadata when present', () => {
@@ -403,6 +415,24 @@ describe('fetchNotificationsForRepo', () => {
     const result = await fetchNotificationsForRepo('token', 'myorg/myrepo');
     expect(result[0].subject_actor_login).toBe('dependabot[bot]');
     expect(result[0].subject_actor_type).toBe('Bot');
+  });
+
+  it('reuses known actors and only fetches subjects it has not seen', async () => {
+    const known = makeNotif('1', { type: 'PullRequest', subjectUrl: 'https://api.github.com/repos/myorg/myrepo/pulls/1' });
+    const fresh = makeNotif('2', { type: 'PullRequest', subjectUrl: 'https://api.github.com/repos/myorg/myrepo/pulls/2' });
+    const fetchMock = vi.fn(async (url: RequestInfo | URL) => {
+      if (String(url).includes('/notifications?')) return new Response(JSON.stringify([known, fresh]), { status: 200 });
+      return new Response(JSON.stringify({ user: { login: 'newcomer', type: 'User' } }), { status: 200 });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const result = await fetchNotificationsForRepo('token', 'myorg/myrepo', new Map([
+      ['https://api.github.com/repos/myorg/myrepo/pulls/1', { login: 'octocat', type: 'User' }],
+    ]));
+
+    expect(result.map((n) => n.subject_actor_login)).toEqual(['octocat', 'newcomer']);
+    const subjectCalls = fetchMock.mock.calls.map(([u]) => String(u)).filter((u) => u.includes('/pulls/'));
+    expect(subjectCalls).toEqual(['https://api.github.com/repos/myorg/myrepo/pulls/2']);
   });
 
   it('stops enriching actors once rate limited instead of treating it as "no actor"', async () => {

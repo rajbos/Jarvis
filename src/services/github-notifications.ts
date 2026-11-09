@@ -121,9 +121,32 @@ async function fetchSubjectActor(
   }
 }
 
+/** Actor of a notification subject (the issue/PR author never changes, so it is fetched once). */
+export interface SubjectActor {
+  login: string | null;
+  type: string | null;
+}
+
+/**
+ * Actors already resolved for stored notifications, by subject URL. Passed to
+ * the fetchers so a sync only looks up the subjects it has not seen before.
+ */
+export function loadKnownSubjectActors(db: SqlJsDatabase): Map<string, SubjectActor> {
+  const known = new Map<string, SubjectActor>();
+  const res = db.exec(
+    `SELECT subject_url, subject_actor_login, subject_actor_type FROM github_notifications
+     WHERE subject_url IS NOT NULL AND subject_actor_login IS NOT NULL`,
+  );
+  for (const row of res[0]?.values ?? []) {
+    known.set(row[0] as string, { login: row[1] as string, type: (row[2] as string | null) ?? null });
+  }
+  return known;
+}
+
 async function enrichNotificationActors(
   accessToken: string,
   notifications: GitHubNotification[],
+  known?: Map<string, SubjectActor>,
 ): Promise<GitHubNotification[]> {
   const concurrency = 8;
   const enriched: GitHubNotification[] = new Array(notifications.length);
@@ -135,8 +158,9 @@ async function enrichNotificationActors(
       const index = nextIndex;
       nextIndex++;
       const notification = notifications[index];
-      let actor: { login: string | null; type: string | null } = { login: null, type: null };
-      if (!rateLimited) {
+      const subjectUrl = notification.subject.url;
+      let actor: SubjectActor = (subjectUrl ? known?.get(subjectUrl) : undefined) ?? { login: null, type: null };
+      if (!actor.login && !rateLimited) {
         try {
           actor = await fetchSubjectActor(accessToken, notification.subject.url);
         } catch (err) {
@@ -237,6 +261,7 @@ function scopeSql(scope: AccountScope | undefined): { sql: string; params: strin
 export async function fetchNotifications(
   accessToken: string,
   onProgress?: (count: number) => void,
+  knownActors?: Map<string, SubjectActor>,
 ): Promise<GitHubNotification[]> {
   const all: GitHubNotification[] = [];
   let url: string | null =
@@ -249,7 +274,7 @@ export async function fetchNotifications(
     url = nextUrl;
   }
 
-  return enrichNotificationActors(accessToken, all);
+  return enrichNotificationActors(accessToken, all, knownActors);
 }
 
 /**
@@ -327,6 +352,7 @@ export function getNotificationCounts(db: SqlJsDatabase): NotificationCounts {
 export async function fetchNotificationsForRepo(
   accessToken: string,
   repoFullName: string,
+  knownActors?: Map<string, SubjectActor>,
 ): Promise<GitHubNotification[]> {
   const [owner, repo] = repoFullName.split('/');
   const all: GitHubNotification[] = [];
@@ -339,7 +365,7 @@ export async function fetchNotificationsForRepo(
     url = nextUrl;
   }
 
-  return enrichNotificationActors(accessToken, all);
+  return enrichNotificationActors(accessToken, all, knownActors);
 }
 
 /**

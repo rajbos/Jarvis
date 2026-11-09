@@ -191,6 +191,7 @@ function publicCall({ credential, ...call }: CallRecord): GitHubApiCall {
 export function resetGitHubApiStats(now: number = Date.now()): void {
   recent.length = 0;
   tokenLabels.clear();
+  etagCache.clear();
   since = now;
 }
 
@@ -274,6 +275,88 @@ function methodOf(init: RequestInit | undefined): string {
   return (init?.method ?? 'GET').toUpperCase();
 }
 
+// ── Conditional requests (ETag cache) ────────────────────────────────────────
+// GitHub does not charge a 304 Not Modified against the primary rate limit
+// when the request is authorized. Every successful GET that carries an ETag is
+// remembered (body + headers, in memory only); the next GET of the same URL by
+// the same credential with the same Accept header sends `If-None-Match`, and a
+// 304 is answered from the cache as if it were the original 200. Polling loops
+// (notification sync, auto-dismiss, PR readiness) re-read mostly unchanged
+// resources, so most of their calls become free.
+
+interface EtagEntry {
+  etag: string;
+  body: string;
+  headers: [string, string][];
+  status: number;
+  statusText: string;
+}
+
+/** Max cached responses; the least recently used are dropped first. */
+export const ETAG_CACHE_MAX_ENTRIES = 5_000;
+/** Bodies larger than this are not cached (keeps the cache's memory bounded). */
+export const ETAG_CACHE_MAX_BODY_CHARS = 1_000_000;
+
+const etagCache = new Map<string, EtagEntry>();
+
+/** Exposed for tests. */
+export function clearGitHubEtagCache(): void {
+  etagCache.clear();
+}
+
+/** Number of cached responses. Exposed for tests. */
+export function githubEtagCacheSize(): number {
+  return etagCache.size;
+}
+
+function headerValue(headers: HeadersInit | undefined, name: string): string | null {
+  if (!headers) return null;
+  return new Headers(headers).get(name);
+}
+
+function etagKey(url: string, init: RequestInit, credential: string | null): string | null {
+  if (methodOf(init) !== 'GET') return null;
+  // The caller manages its own validators; leave the request alone.
+  if (headerValue(init.headers, 'if-none-match') || headerValue(init.headers, 'if-modified-since')) return null;
+  const accept = headerValue(init.headers, 'accept') ?? '';
+  return `${credential ?? ''}\u0000${accept}\u0000${url}`;
+}
+
+function cachedResponse(entry: EtagEntry, fresh: Response): Response {
+  const headers = new Headers(entry.headers);
+  // The 304 carries the current rate-limit budget; pass that on, not the stale one.
+  fresh.headers?.forEach?.((value, name) => {
+    if (name.toLowerCase().startsWith('x-ratelimit-')) headers.set(name, value);
+  });
+  return new Response(entry.body, { status: entry.status, statusText: entry.statusText, headers });
+}
+
+async function rememberResponse(key: string, response: Response): Promise<void> {
+  const etag = response.headers?.get?.('etag');
+  if (!etag || response.status !== 200) {
+    etagCache.delete(key);
+    return;
+  }
+  try {
+    const body = await response.clone().text();
+    if (body.length > ETAG_CACHE_MAX_BODY_CHARS) {
+      etagCache.delete(key);
+      return;
+    }
+    const headers: [string, string][] = [];
+    response.headers.forEach((value, name) => headers.push([name, value]));
+    etagCache.delete(key);
+    etagCache.set(key, { etag, body, headers, status: response.status, statusText: response.statusText });
+    while (etagCache.size > ETAG_CACHE_MAX_ENTRIES) {
+      const oldest = etagCache.keys().next().value;
+      if (oldest === undefined) break;
+      etagCache.delete(oldest);
+    }
+  } catch {
+    // Body not readable (test doubles, aborted stream): just don't cache it.
+  }
+}
+
 /**
  * `fetch` for the GitHub API: rate-limit aware (see `githubFetch`) and
  * accounted for. Returns the response; the caller still checks `response.ok`.
@@ -295,10 +378,25 @@ export async function githubRequest(
     seen.rateLimit = info;
     fetchOptions.onRateLimit?.(info);
   };
+  const cacheKey = etagKey(url, init, credential);
+  const cached = cacheKey ? etagCache.get(cacheKey) : undefined;
+  let requestInit = init;
+  if (cached) {
+    const headers = new Headers(init.headers);
+    headers.set('If-None-Match', cached.etag);
+    requestInit = { ...init, headers };
+  }
   let status = 0;
   try {
-    const response = await githubFetch(url, init, { ...fetchOptions, onRateLimit });
+    const response = await githubFetch(url, requestInit, { ...fetchOptions, onRateLimit });
     status = response.status;
+    if (cacheKey && cached && response.status === 304) {
+      // Mark as recently used.
+      etagCache.delete(cacheKey);
+      etagCache.set(cacheKey, cached);
+      return cachedResponse(cached, response);
+    }
+    if (cacheKey) await rememberResponse(cacheKey, response);
     return response;
   } finally {
     const at = Date.now();

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import {
   countGitHubApiCalls,
   getGitHubApiStats,
+  githubEtagCacheSize,
   githubRequest,
   githubUrlPattern,
   registerGitHubToken,
@@ -14,7 +15,8 @@ import { GitHubRateLimitError } from '../../src/services/github-fetch';
 const realFetch = globalThis.fetch;
 
 function res(status: number, headers: Record<string, string> = {}, body = '{}'): Response {
-  return new Response(body, { status, headers });
+  // A 304 cannot carry a body.
+  return new Response(status === 304 ? null : body, { status, headers });
 }
 
 describe('githubUrlPattern', () => {
@@ -51,6 +53,72 @@ describe('githubRequest', () => {
   afterEach(() => {
     globalThis.fetch = realFetch;
     vi.restoreAllMocks();
+  });
+
+  describe('ETag conditional requests', () => {
+    const URL_A = 'https://api.github.com/repos/o/r/pulls/1';
+    const auth = (token: string) => ({ headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' } });
+    const sentEtag = (call: unknown[]) => new Headers((call[1] as RequestInit | undefined)?.headers).get('if-none-match');
+
+    it('sends If-None-Match on the repeat call and replays the cached body on a 304', async () => {
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce(res(200, { etag: '"v1"', link: '<next>; rel="next"', 'x-ratelimit-remaining': '10' }, '{"state":"open"}'))
+        .mockResolvedValueOnce(res(304, { etag: '"v1"', 'x-ratelimit-remaining': '9' }, ''));
+      globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+      const first = await githubRequest(URL_A, auth('t1'), { purpose: 'test' });
+      expect(await first.json()).toEqual({ state: 'open' });
+      const second = await githubRequest(URL_A, auth('t1'), { purpose: 'test' });
+
+      expect(sentEtag(fetchMock.mock.calls[0])).toBeNull();
+      expect(sentEtag(fetchMock.mock.calls[1])).toBe('"v1"');
+      expect(second.status).toBe(200);
+      expect(second.ok).toBe(true);
+      expect(await second.json()).toEqual({ state: 'open' });
+      expect(second.headers.get('link')).toBe('<next>; rel="next"');
+      // Rate-limit headers come from the fresh 304, not the cached 200.
+      expect(second.headers.get('x-ratelimit-remaining')).toBe('9');
+      // The stats still show what GitHub actually answered.
+      expect(getGitHubApiStats(Infinity, Date.now()).recent.map((c) => c.status)).toEqual([200, 304]);
+    });
+
+    it('replaces the cached body when the resource changed', async () => {
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce(res(200, { etag: '"v1"' }, '{"n":1}'))
+        .mockResolvedValueOnce(res(200, { etag: '"v2"' }, '{"n":2}'))
+        .mockResolvedValueOnce(res(304, {}, ''));
+      globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+      await githubRequest(URL_A, auth('t1'), { purpose: 'test' });
+      expect(await (await githubRequest(URL_A, auth('t1'), { purpose: 'test' })).json()).toEqual({ n: 2 });
+      expect(await (await githubRequest(URL_A, auth('t1'), { purpose: 'test' })).json()).toEqual({ n: 2 });
+      expect(sentEtag(fetchMock.mock.calls[2])).toBe('"v2"');
+    });
+
+    it('keeps the cache per credential and leaves non-GET or caller-validated requests alone', async () => {
+      const fetchMock = vi.fn(async () => res(200, { etag: '"v1"' }, '{}'));
+      globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+      await githubRequest(URL_A, auth('t1'), { purpose: 'test' });
+      await githubRequest(URL_A, auth('t2'), { purpose: 'test' });
+      await githubRequest(URL_A, { ...auth('t1'), method: 'PATCH' }, { purpose: 'test' });
+      await githubRequest(URL_A, { headers: { Authorization: 'Bearer t1', Accept: 'application/vnd.github+json', 'If-None-Match': '"mine"' } }, { purpose: 'test' });
+      await githubRequest(URL_A, auth('t1'), { purpose: 'test' });
+
+      expect(fetchMock.mock.calls.map(sentEtag)).toEqual([null, null, null, '"mine"', '"v1"']);
+    });
+
+    it('does not cache responses without an ETag or with an error status', async () => {
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce(res(200, {}, '{}'))
+        .mockResolvedValueOnce(res(404, { etag: '"x"' }, '{}'))
+        .mockResolvedValueOnce(res(200, {}, '{}'));
+      globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+      for (let i = 0; i < 3; i++) await githubRequest(URL_A, auth('t1'), { purpose: 'test' });
+      expect(fetchMock.mock.calls.map(sentEtag)).toEqual([null, null, null]);
+      expect(githubEtagCacheSize()).toBe(0);
+    });
   });
 
   it('records every call by purpose and pattern with the concrete url', async () => {
