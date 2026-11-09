@@ -5,6 +5,7 @@ import type { AutoDismissLogInput } from '../types';
 import {
   fetchNotifications,
   fetchNotificationsForRepo,
+  loadKnownSubjectActors,
   storeNotificationsForAccount,
   deleteNotificationsOfUntrackedAccounts,
   type AccountScope,
@@ -104,11 +105,12 @@ export async function syncGitHubNotifications(
   if (accounts.length === 0) return { ok: true, skipped: true, error: 'Not authenticated' };
 
   const primaryId = getPrimaryGitHubLogin(db);
+  const knownActors = loadKnownSubjectActors(db);
   let failures = 0;
   let lastError: unknown = null;
   for (const account of accounts) {
     try {
-      const fetched = await runWithHost(account.host, () => fetchNotifications(account.token), account.id);
+      const fetched = await runWithHost(account.host, () => fetchNotifications(account.token, undefined, knownActors), account.id);
       const mine = fetched.filter((n) => {
         const ref = hostKey(account.host, n.repository.full_name);
         recordRepoVisibility(db, ref, account.id);
@@ -514,7 +516,7 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
     const access = await accessForOwner(db, owner);
     if (!access) return { ok: false, error: 'Not authenticated' };
     await runWithHost(access.host, async () => {
-      const notifications = await fetchNotifications(access.token);
+      const notifications = await fetchNotifications(access.token, undefined, loadKnownSubjectActors(db));
       storeNotificationsForOwner(db, owner, notifications);
     }, access.id);
     saveDatabase();
@@ -526,7 +528,7 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
     const access = await accessForRepo(db, repoFullName);
     if (!access) return { ok: false, error: 'Not authenticated' };
     await runWithHost(access.host, async () => {
-      const notifications = await fetchNotificationsForRepo(access.token, repoFullName);
+      const notifications = await fetchNotificationsForRepo(access.token, repoFullName, loadKnownSubjectActors(db));
       storeNotificationsForRepo(db, repoFullName, notifications);
     }, access.id);
     saveDatabase();
