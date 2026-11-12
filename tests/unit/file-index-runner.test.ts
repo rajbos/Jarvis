@@ -69,6 +69,19 @@ describe('file index runner', () => {
     expect(startFileIndexIfNeeded({} as never, getWindow)).toBe(false);
   });
 
+  it('force=true does not start a second run while one is in flight', async () => {
+    expect(startFileIndexIfNeeded({} as never, getWindow, true)).toBe(true);
+    expect(startFileIndexIfNeeded({} as never, getWindow, true)).toBe(false);
+    await waitFor(async () => !(await getFileIndexState()).running);
+    const state2 = await getFileIndexState();
+    expect(state2.error).toBeNull();
+    expect(state2.status?.repoCount).toBe(1);
+    expect(fs.readdirSync(tmp).filter((f) => f.includes('.tmp-'))).toEqual([]);
+    // A new forced run is allowed once the previous one finished.
+    expect(startFileIndexIfNeeded({} as never, getWindow, true)).toBe(true);
+    await waitFor(async () => !(await getFileIndexState()).running);
+  });
+
   it('builds the index file, emits progress, and refuses to run twice concurrently', async () => {
     expect(startFileIndexIfNeeded({} as never, getWindow)).toBe(true);
     expect(startFileIndexIfNeeded({} as never, getWindow)).toBe(false);

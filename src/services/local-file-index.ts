@@ -137,7 +137,7 @@ export async function createMemoryIndexDatabase(): Promise<SqlJsDatabase> {
 export function saveIndexDatabase(db: SqlJsDatabase, filePath: string): void {
   const dir = path.dirname(filePath);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  const tmp = `${filePath}.tmp-${process.pid}`;
+  const tmp = `${filePath}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   fs.writeFileSync(tmp, Buffer.from(db.export()));
   fs.renameSync(tmp, filePath);
 }

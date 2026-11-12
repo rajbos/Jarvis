@@ -62,13 +62,16 @@ export async function getFileIndexState(): Promise<FileIndexState> {
 /**
  * Start indexing all known local repos unless a run is already in progress.
  * Returns true when a run was started.
+ *
+ * `force` is accepted for call-site compatibility but never starts a second
+ * run in parallel: concurrent runs would race on the same jarvis-index.db.
  */
 export function startFileIndexIfNeeded(
   db: SqlJsDatabase,
   getWindow: () => BrowserWindow | null,
-  force = false,
+  _force = false,
 ): boolean {
-  if (indexRunning && !force) {
+  if (indexRunning) {
     logger.debug('[FileIndex] Already running, skipping');
     return false;
   }
