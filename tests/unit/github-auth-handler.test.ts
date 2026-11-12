@@ -89,7 +89,8 @@ vi.mock('../../src/plugins/copilot-usage/handler', () => ({
 
 import { registerHandlers, checkOAuthForExpiry } from '../../src/plugins/github-auth/handler';
 import { checkCopilotUsage } from '../../src/plugins/copilot-usage/handler';
-import { saveGitHubAuth, saveGitHubPat, fetchGitHubUser, validateGitHubPat } from '../../src/services/github-oauth';
+import { saveGitHubAuth, saveGitHubPat, loadGitHubAuth, loadGitHubPat, fetchGitHubUser, validateGitHubPat } from '../../src/services/github-oauth';
+import { githubRequest, githubEtagCacheSize, resetGitHubApiStats, tokenLabelOf } from '../../src/services/github-api';
 import { clearRateLimitHistory } from '../../src/services/github-rate-limit-history';
 
 // ── Helper ────────────────────────────────────────────────────────────────────
@@ -277,6 +278,28 @@ describe('GitHub Auth plugin — IPC handlers', () => {
       const result = callHandler('github:delete-pat') as Record<string, unknown>;
       expect(result.ok).toBe(true);
     });
+
+    it("purges the deleted PAT's cached responses and label", async () => {
+      saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo');
+      saveGitHubPat(db, 'octocat', 'ghp_purge_me');
+      const realFetch = globalThis.fetch;
+      globalThis.fetch = vi.fn(async () => new Response('{}', { status: 200, headers: { etag: '"v1"' } })) as unknown as typeof fetch;
+      try {
+        resetGitHubApiStats(1000);
+        loadGitHubPat(db, 'octocat'); // labels the token
+        const init = { headers: { Authorization: 'Bearer ghp_purge_me' } };
+        await githubRequest('https://api.github.com/user/orgs', init, { purpose: 'test' });
+        expect(githubEtagCacheSize()).toBe(1);
+        expect(tokenLabelOf(init)).toBe('pat');
+
+        callHandler('github:delete-pat');
+
+        expect(githubEtagCacheSize()).toBe(0);
+        expect(tokenLabelOf(init)).toBe('other');
+      } finally {
+        globalThis.fetch = realFetch;
+      }
+    });
   });
 
   // ── github:logout ──────────────────────────────────────────────────────────
@@ -292,6 +315,27 @@ describe('GitHub Auth plugin — IPC handlers', () => {
 
       // Verify auth is gone by calling oauth-status
       // (loadGitHubAuth is the actual DB function — it reads from the real DB)
+    });
+
+    it("purges the signed-out token's cached responses and label", async () => {
+      saveGitHubAuth(db, 'octocat', 'gho_purge_me', 'repo');
+      const realFetch = globalThis.fetch;
+      globalThis.fetch = vi.fn(async () => new Response('{}', { status: 200, headers: { etag: '"v1"' } })) as unknown as typeof fetch;
+      try {
+        resetGitHubApiStats(1000);
+        loadGitHubAuth(db, 'octocat'); // labels the token
+        const init = { headers: { Authorization: 'Bearer gho_purge_me' } };
+        await githubRequest('https://api.github.com/user/orgs', init, { purpose: 'test' });
+        expect(githubEtagCacheSize()).toBe(1);
+        expect(tokenLabelOf(init)).toBe('oauth');
+
+        callHandler('github:logout');
+
+        expect(githubEtagCacheSize()).toBe(0);
+        expect(tokenLabelOf(init)).toBe('other');
+      } finally {
+        globalThis.fetch = realFetch;
+      }
     });
   });
 

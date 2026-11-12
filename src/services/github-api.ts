@@ -74,7 +74,38 @@ const tokenLabels = new Map<string, string>();
  */
 export function registerGitHubToken(token: string | null | undefined, label: string, override = false): void {
   if (!token) return;
-  if (override || !tokenLabels.has(token)) tokenLabels.set(token, label);
+  if (override || !tokenLabels.has(token)) {
+    // Re-insert so the Map's insertion order doubles as recency order.
+    tokenLabels.delete(token);
+    tokenLabels.set(token, label);
+    while (tokenLabels.size > TOKEN_LABELS_MAX_ENTRIES) {
+      const oldest = tokenLabels.keys().next().value;
+      if (oldest === undefined) break;
+      tokenLabels.delete(oldest);
+    }
+  }
+}
+
+/** Upper bound for remembered credential labels; the oldest are dropped first. */
+export const TOKEN_LABELS_MAX_ENTRIES = 1_000;
+
+/** Number of labelled credentials. Exposed for tests. */
+export function tokenLabelCount(): number {
+  return tokenLabels.size;
+}
+
+/**
+ * Forget everything held in memory for one credential (cached responses and
+ * its stats label). Call when the credential is removed (sign-out, account or
+ * PAT removal); other credentials are left alone.
+ */
+export function forgetGitHubCredential(token: string | null | undefined): void {
+  if (!token) return;
+  tokenLabels.delete(token);
+  const prefix = `${token}\u0000`;
+  for (const key of [...etagCache.keys()]) {
+    if (key.startsWith(prefix)) etagCache.delete(key);
+  }
 }
 
 function bearerOf(init: RequestInit | undefined): string | null {

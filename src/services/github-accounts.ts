@@ -27,7 +27,7 @@ import type { Database as SqlJsDatabase } from 'sql.js';
 import { parseGitHubRemote } from './local-discovery';
 import { encrypt, decryptSecret, getEncryptionKey } from '../storage/encryption';
 import { getGhCliToken } from './copilot-usage';
-import { registerGitHubToken } from './github-api';
+import { forgetGitHubCredential, registerGitHubToken } from './github-api';
 import { deleteRepoVisibilityFor, listRepoViewers, recordRepoVisibility } from './github-repo-visibility';
 import { getPrimaryGitHubLogin, listGitHubAuths, loadGitHubAuth, loadGitHubPat } from './github-oauth';
 import type { GitHubAccountInfo } from '../plugins/types';
@@ -420,6 +420,7 @@ export function loadHostAccountPat(db: SqlJsDatabase, id: string): string | null
 }
 
 export function deleteHostAccount(db: SqlJsDatabase, id: string): void {
+  forgetGitHubCredential(loadHostAccountPat(db, id));
   db.run('DELETE FROM github_host_accounts WHERE id = ? COLLATE NOCASE', [id]);
 }
 
