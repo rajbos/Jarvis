@@ -28,6 +28,7 @@ This project is **Jarvis**: a locally-hosted personal assistant agent for GitHub
 - **docs/**: Documentation (see ARCHITECTURE.md for design/requirements)
 - **scripts/**: Node scripts for building and watching Electron/renderer
 - **tests/unit/**: Unit tests for all major modules
+- **Ad-hoc inspection scripts**: no `dev/` scratch folder — put reusable, parameterized helpers under `.github/skills/` (e.g. `check-db`). Never commit scripts with hardcoded customer or business names.
 
 ---
 
