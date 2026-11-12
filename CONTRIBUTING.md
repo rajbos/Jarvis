@@ -42,7 +42,7 @@ You can also run and debug from VS Code: press **F5** and choose
 | `npm run test:watch` | Vitest in watch mode |
 | `npm run test:coverage` | Run tests with a coverage report (written to `coverage/`) |
 | `npm run test:views` | Render every window in headless Chromium and run the view integration tests |
-| `npm run test:views:install` | One-time download of the headless Chromium used by `test:views` |
+| `npm run test:views:install` | Download the headless Chromium used by `test:views` by hand (`test:views` and `screenshots` already do this when the build for the installed Playwright version is missing) |
 | `npm run screenshots` | Render every view from the same fixtures and save PNGs to `screenshots/` |
 | `npm run lint` | Lint `src` with ESLint (`npm run lint:fix` to autofix) |
 

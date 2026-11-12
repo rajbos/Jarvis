@@ -7,8 +7,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { mkdtemp, mkdir, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { chromium, type Browser } from 'playwright';
+import type { Browser } from 'playwright';
 import { compareScreenshots } from '../../scripts/screenshot-diff.mjs';
+import { launchBrowser } from './harness/view-harness';
 
 let browser: Browser;
 let dir: string;
@@ -25,7 +26,7 @@ async function shot(file: string, { square, size = { width: 120, height: 80 } }:
 }
 
 beforeAll(async () => {
-  browser = await chromium.launch();
+  browser = await launchBrowser();
   dir = await mkdtemp(path.join(tmpdir(), 'jarvis-shot-diff-'));
   const before = path.join(dir, 'before');
   const after = path.join(dir, 'after');
