@@ -103,9 +103,9 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
 export function startLocalScanIfNeeded(
   db: SqlJsDatabase,
   getWindow: () => BrowserWindow | null,
-  force = false,
+  _force = false,
 ): boolean {
-  if (localScanRunning && !force) {
+  if (localScanRunning) {
     logger.debug('[LocalScan] Already running, skipping');
     return false;
   }
