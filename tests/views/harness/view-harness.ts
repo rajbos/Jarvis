@@ -31,9 +31,10 @@ const RENDERER_SRC = path.join(ROOT, 'src', 'renderer');
 const MOCK_ENTRY = path.join(__dirname, 'mock-jarvis-api.ts');
 
 /** The HTML pages Electron loads — one per BrowserWindow — plus test-only fixture pages. */
-export type ViewName = 'index' | 'settings' | 'about' | 'error-boundary' | 'onenote-race';
+export type ViewName = 'index' | 'settings' | 'about' | 'error-boundary' | 'onenote-race' | 'agent-selector';
 
 const ERROR_BOUNDARY_ENTRY = path.join(__dirname, 'error-boundary-fixture.tsx');
+const AGENT_SELECTOR_ENTRY = path.join(__dirname, 'agent-selector-fixture.tsx');
 const ONENOTE_RACE_ENTRY = path.join(__dirname, 'onenote-race-fixture.tsx');
 
 export interface OpenViewOptions {
@@ -104,6 +105,19 @@ async function buildViews(): Promise<BuiltViews> {
     path.join(dir, 'onenote-race.html'),
     '<!doctype html><html><head><meta charset="UTF-8"><title>OneNote race fixture</title></head>' +
       '<body><div id="app"></div><script src="onenote-race.js"></script></body></html>',
+  );
+  // Test-only page: the AgentSelector modal against the standard fake window.jarvis.
+  await esbuild.build({
+    ...rendererBuildOptions,
+    entryPoints: { 'agent-selector': AGENT_SELECTOR_ENTRY },
+    outdir: dir,
+    logLevel: 'warning',
+    sourcemap: 'inline',
+  });
+  await writeFile(
+    path.join(dir, 'agent-selector.html'),
+    '<!doctype html><html><head><meta charset="UTF-8"><title>AgentSelector fixture</title><link rel="stylesheet" href="renderer.css"></head>' +
+      '<body><div id="app"></div><script src="agent-selector.js"></script></body></html>',
   );
   const mock = await esbuild.build({
     entryPoints: [MOCK_ENTRY],
