@@ -22,6 +22,8 @@ import { checkForUpdates, registerUpdateIpcHandlers, startUpdateChecks, stopUpda
 import { registerPowerResumeHandler } from './power-resume';
 import { registerDiagnosticsIpcHandlers } from './diagnostics';
 import { registerAppWindowIpcHandlers } from './app-window-ipc';
+import { buildCrashDiagnostic, detectNewCrashDumps, trimCrashDumps } from './crash-dumps';
+import type { DiagnosticReport } from '../types/ipc-payloads';
 if (process.env.JARVIS_CONFIG_DIR) {
   app.setPath('userData', path.join(process.env.JARVIS_CONFIG_DIR, 'electron'));
 } else if (!app.isPackaged) {
@@ -54,6 +56,21 @@ try {
   logger.warn('[Main] Could not enable file logging:', err);
 }
 crashReporter.start({ uploadToServer: false, compress: true });
+// Report dumps written since the last run (surfaced once the window is up), then
+// cap how many are kept so the folder cannot grow unbounded.
+let pendingCrashReport: DiagnosticReport | null = null;
+try {
+  const crashDir = app.getPath('crashDumps');
+  const fresh = detectNewCrashDumps(crashDir, path.join(app.getPath('userData'), 'crash-dumps-seen.json'));
+  if (fresh.length > 0) {
+    logger.warn(`[Crash] ${fresh.length} native crash dump(s) written since the last run (see ${crashDir})`);
+    pendingCrashReport = buildCrashDiagnostic(fresh, crashDir);
+  }
+  const removed = trimCrashDumps(crashDir);
+  if (removed > 0) logger.info(`[Crash] Removed ${removed} old crash dump(s)`);
+} catch (err) {
+  logger.warn('[Crash] Crash dump housekeeping failed:', err);
+}
 logger.info(`[Startup] Jarvis ${pkg.version} starting (pid ${process.pid}, electron ${process.versions.electron}, ${process.platform}/${process.arch})`);
 
 // Catch-all for main-process failures outside initialize(). Registering these
@@ -177,6 +194,7 @@ async function initialize(): Promise<void> {
           click: () => { mainWindow?.webContents.toggleDevTools(); },
         },
         { label: 'Open Logs Folder', click: () => { void shell.openPath(app.getPath('logs')); } },
+        { label: 'Open Crash Dumps Folder', click: () => { void shell.openPath(app.getPath('crashDumps')); } },
         { type: 'separator' },
         { role: 'quit' },
       ],
@@ -240,6 +258,15 @@ function showMainWindow(): void {
   });
   mainWindow.on('closed', () => {
     mainWindow = null;
+  });
+  mainWindow.webContents.once('did-finish-load', () => {
+    if (!pendingCrashReport) return;
+    const report = pendingCrashReport;
+    pendingCrashReport = null;
+    // Give the renderer a moment to mount its diagnostics listener.
+    setTimeout(() => {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('diagnostics:show', report);
+    }, 3000);
   });
 }
 
