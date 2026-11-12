@@ -25,6 +25,10 @@ vi.mock('../../src/services/process-launch', () => ({
   resolveDirectory: vi.fn((p: string) => (p.startsWith('C:\missing') ? null : p)),
 }));
 
+vi.mock('../../src/services/copilot-session-message', () => ({
+  sendCopilotSessionMessage: vi.fn(),
+}));
+
 vi.mock('../../src/storage/database', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/storage/database')>();
   return { ...actual, saveDatabase: vi.fn() };
@@ -43,6 +47,7 @@ vi.mock('../../src/services/active-sessions', () => ({
 
 import { Notification, shell, clipboard } from 'electron';
 import { openTerminal } from '../../src/services/process-launch';
+import { sendCopilotSessionMessage } from '../../src/services/copilot-session-message';
 import {
   recordReadiness,
   refreshActiveSessions,
@@ -238,6 +243,23 @@ describe('active-sessions:run-action', () => {
     expect(result).toMatchObject({ ok: true, kind: 'deep-link' });
     expect(vi.mocked(shell.openExternal)).toHaveBeenCalledWith('ghapp://sessions/app-1');
     expect(vi.mocked(clipboard.writeText)).not.toHaveBeenCalled();
+  });
+
+  it('nudges a steerable Copilot CLI session in place', async () => {
+    const key = await snapshotReady({ client: 'Copilot CLI', sessionId: 'cli-1', steerable: true });
+    vi.mocked(sendCopilotSessionMessage).mockResolvedValueOnce({ ok: true, targetSessionName: 'brakes' });
+    expect(await handlers.get('active-sessions:run-action')!({}, key, 'nudge')).toMatchObject({ ok: true, kind: 'session-message', prompt: 'Where are we?' });
+    expect(vi.mocked(sendCopilotSessionMessage)).toHaveBeenCalledWith('cli-1', 'Where are we?');
+    expect(vi.mocked(openTerminal)).not.toHaveBeenCalled();
+
+    vi.mocked(sendCopilotSessionMessage).mockResolvedValueOnce({ ok: false, error: 'The Copilot session is no longer listening' });
+    expect(await handlers.get('active-sessions:run-action')!({}, key, 'nudge')).toEqual({ ok: false, error: 'The Copilot session is no longer listening' });
+  });
+
+  it('refuses to nudge a session that does not accept messages', async () => {
+    const key = await snapshotReady({ client: 'Copilot CLI', sessionId: 'cli-2' });
+    expect(await handlers.get('active-sessions:run-action')!({}, key, 'nudge')).toMatchObject({ ok: false, error: expect.stringContaining('sessionManagementTools') });
+    expect(vi.mocked(sendCopilotSessionMessage)).not.toHaveBeenCalled();
   });
 
   it('resumes Claude Code in a terminal with the fix-checks prompt', async () => {

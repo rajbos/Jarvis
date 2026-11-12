@@ -20,6 +20,7 @@ import type { ActiveSessionEntry, ActiveSessionsSnapshot, AgentActionKind, Agent
 import { AGENT_ACTION_KINDS, AGENT_DEEP_LINK_SCHEMES, planAgentAction, type AgentActionPlan } from '../../services/agent-actions';
 import { githubRequest } from '../../services/github-api';
 import { openTerminal, resolveDirectory } from '../../services/process-launch';
+import { sendCopilotSessionMessage } from '../../services/copilot-session-message';
 import { apiBaseForHost } from '../../services/github-host';
 
 let latestSnapshot: ActiveSessionsSnapshot | null = null;
@@ -199,8 +200,9 @@ function isAllowedDeepLink(url: string): boolean {
 }
 
 /**
- * Execute a planned action for `entry`: open a deep link, start a terminal
- * with the agent CLI, or post the follow-up as a PR comment. Exported for tests.
+ * Execute a planned action for `entry`: open a deep link, deliver a prompt into
+ * the running session, start a terminal with the agent CLI, or post the
+ * follow-up as a PR comment. Exported for tests.
  */
 export async function executeAgentAction(db: SqlJsDatabase, entry: ActiveSessionEntry, plan: AgentActionPlan): Promise<AgentActionResult> {
   const label = `${entry.session.client} ${entry.session.sessionId.slice(0, 8)}`;
@@ -213,6 +215,15 @@ export async function executeAgentAction(db: SqlJsDatabase, entry: ActiveSession
       logger.info(`[ActiveSessions] ${label}: opening ${plan.url.split('?')[0]}`);
       await shell.openExternal(plan.url);
       return { ok: true, kind: 'deep-link', message: plan.description, prompt: plan.prompt };
+    }
+    case 'session-message': {
+      const sent = await sendCopilotSessionMessage(plan.sessionId, plan.content);
+      if (!sent.ok) {
+        logger.warn(`[ActiveSessions] ${label}: message not delivered: ${sent.error}`);
+        return { ok: false, error: sent.error };
+      }
+      logger.info(`[ActiveSessions] ${label}: delivered a ${plan.content.length}-char prompt into the running session`);
+      return { ok: true, kind: 'session-message', message: plan.description, prompt: plan.prompt };
     }
     case 'terminal': {
       const cwd = plan.cwd ? resolveDirectory(plan.cwd) : null;
