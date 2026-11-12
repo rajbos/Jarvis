@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import {
+  TOKEN_LABELS_MAX_ENTRIES,
   countGitHubApiCalls,
+  forgetGitHubCredential,
   getGitHubApiStats,
   githubEtagCacheSize,
   githubRequest,
@@ -8,6 +10,7 @@ import {
   registerGitHubToken,
   resetGitHubApiStats,
   summarizeGitHubApiCalls,
+  tokenLabelCount,
   tokenLabelOf,
 } from '../../src/services/github-api';
 import { GitHubRateLimitError } from '../../src/services/github-fetch';
@@ -222,5 +225,54 @@ describe('token attribution', () => {
     await githubRequest('https://api.github.com/user', {}, { purpose: 'p2' });
     expect(countGitHubApiCalls(6000)).toEqual({ total: 2, byToken: { oauth: 1, none: 1 }, byPurpose: { p1: 1, p2: 1 } });
     vi.restoreAllMocks();
+  });
+});
+
+describe('forgetGitHubCredential', () => {
+  const URL_A = 'https://api.github.com/repos/o/r/pulls/1';
+  const URL_B = 'https://api.github.com/repos/o/r/pulls/2';
+  const auth = (token: string) => ({ headers: { Authorization: `Bearer ${token}` } });
+  const sentEtag = (call: unknown[]) => new Headers((call[1] as RequestInit | undefined)?.headers).get('if-none-match');
+
+  beforeEach(() => {
+    resetGitHubApiStats(1000);
+  });
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+  });
+
+  it("drops only that credential's cached responses and its label", async () => {
+    const fetchMock = vi.fn(async () => res(200, { etag: '"v1"' }, '{"a":1}'));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    registerGitHubToken('gone', 'oauth:gone', true);
+    registerGitHubToken('kept', 'oauth:kept', true);
+    await githubRequest(URL_A, auth('gone'), { purpose: 'test' });
+    await githubRequest(URL_B, auth('gone'), { purpose: 'test' });
+    await githubRequest(URL_A, auth('kept'), { purpose: 'test' });
+    expect(githubEtagCacheSize()).toBe(3);
+
+    forgetGitHubCredential('gone');
+
+    expect(githubEtagCacheSize()).toBe(1);
+    expect(tokenLabelOf(auth('gone'))).toBe('other');
+    expect(tokenLabelOf(auth('kept'))).toBe('oauth:kept');
+    // The forgotten token no longer sends a validator; the other one still does.
+    await githubRequest(URL_A, auth('gone'), { purpose: 'test' });
+    await githubRequest(URL_A, auth('kept'), { purpose: 'test' });
+    const calls = fetchMock.mock.calls as unknown as unknown[][];
+    expect(sentEtag(calls[3])).toBeNull();
+    expect(sentEtag(calls[4])).toBe('"v1"');
+  });
+
+  it('ignores empty tokens', () => {
+    expect(() => forgetGitHubCredential(null)).not.toThrow();
+    expect(() => forgetGitHubCredential('')).not.toThrow();
+  });
+
+  it('caps the number of remembered labels, dropping the oldest', () => {
+    for (let i = 0; i < TOKEN_LABELS_MAX_ENTRIES + 5; i++) registerGitHubToken(`tok-${i}`, `l${i}`);
+    expect(tokenLabelCount()).toBe(TOKEN_LABELS_MAX_ENTRIES);
+    expect(tokenLabelOf(auth('tok-0'))).toBe('other');
+    expect(tokenLabelOf(auth(`tok-${TOKEN_LABELS_MAX_ENTRIES + 4}`))).toBe(`l${TOKEN_LABELS_MAX_ENTRIES + 4}`);
   });
 });

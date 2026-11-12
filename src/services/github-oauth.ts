@@ -2,7 +2,7 @@ import type { Database as SqlJsDatabase } from 'sql.js';
 import { encrypt, decryptSecret, getEncryptionKey } from '../storage/encryption';
 import { getConfigValue, setConfigValue, saveDatabase } from '../storage/database';
 import { logger } from './logger';
-import { registerGitHubToken } from './github-api';
+import { forgetGitHubCredential, registerGitHubToken } from './github-api';
 import { githubRequest } from './github-api';
 
 const GITHUB_DEVICE_CODE_URL = 'https://github.com/login/device/code';
@@ -354,9 +354,35 @@ export function loadGitHubPat(db: SqlJsDatabase, login?: string): string | null 
 }
 
 /**
+ * Drop the in-memory ETag cache entries and stats labels of the stored
+ * credentials that are about to be deleted (all rows, or only `login`'s).
+ */
+function forgetStoredTokens(db: SqlJsDatabase, login: string | undefined, columns: Array<'access_token' | 'pat'>): void {
+  const stmt = db.prepare(`SELECT access_token, pat FROM github_auth${login ? ' WHERE login = ? COLLATE NOCASE' : ''}`);
+  if (login) stmt.bind([login]);
+  try {
+    while (stmt.step()) {
+      const row = stmt.getAsObject() as unknown as Pick<AuthRow, 'access_token' | 'pat'>;
+      for (const column of columns) {
+        const value = row[column];
+        if (!value) continue;
+        try {
+          forgetGitHubCredential(decryptSecret(value).value);
+        } catch {
+          // Undecryptable ciphertext: nothing in memory can belong to it.
+        }
+      }
+    }
+  } finally {
+    stmt.free();
+  }
+}
+
+/**
  * Remove the stored PAT for the authenticated user.
  */
 export function deleteGitHubPat(db: SqlJsDatabase, login: string): void {
+  forgetStoredTokens(db, login, ['pat']);
   db.run('UPDATE github_auth SET pat = NULL WHERE login = ?', [login]);
 }
 
@@ -364,6 +390,7 @@ export function deleteGitHubPat(db: SqlJsDatabase, login: string): void {
  * Remove all GitHub OAuth session data (logout).
  */
 export function deleteGitHubAuth(db: SqlJsDatabase): void {
+  forgetStoredTokens(db, undefined, ['access_token', 'pat']);
   db.run('DELETE FROM github_auth');
   db.run('DELETE FROM config WHERE key = ?', [KEY_PRIMARY_LOGIN]);
 }
@@ -373,6 +400,7 @@ export function deleteGitHubAuth(db: SqlJsDatabase): void {
  * primary setting is cleared, so the most recent remaining sign-in takes over.
  */
 export function deleteGitHubAuthFor(db: SqlJsDatabase, login: string): void {
+  forgetStoredTokens(db, login, ['access_token', 'pat']);
   db.run('DELETE FROM github_auth WHERE login = ? COLLATE NOCASE', [login]);
   db.run('DELETE FROM config WHERE key = ? AND value = ? COLLATE NOCASE', [KEY_PRIMARY_LOGIN, login]);
 }

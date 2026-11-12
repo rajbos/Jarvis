@@ -25,7 +25,7 @@ vi.mock('../../src/services/github-accounts', async (importOriginal) => {
 });
 
 import { registerHandlers, getAccountBudget } from '../../src/plugins/github-accounts/handler';
-import { saveGitHubAuth } from '../../src/services/github-oauth';
+import { saveGitHubAuth, loadGitHubAuth } from '../../src/services/github-oauth';
 import {
   listAssignments,
   listRepoViewers,
@@ -34,6 +34,7 @@ import {
   setAssignment,
 } from '../../src/services/github-accounts';
 import { setConfigValue, getConfigValue } from '../../src/storage/database';
+import { githubRequest, githubEtagCacheSize, resetGitHubApiStats, tokenLabelOf } from '../../src/services/github-api';
 
 let db: SqlJsDatabase;
 const remove = (id: string) => handlers.get('github-accounts:remove')!({}, id) as Promise<{ ok: boolean }>;
@@ -71,6 +72,48 @@ describe('github-accounts:remove data cleanup', () => {
     expect(getAccountBudget(db, 'bob', false)).toBe(500);
     expect(listRepoViewers(db, 'bob-org/app')).toEqual(['bob']);
     expect(getConfigValue(db, 'copilot_aic_monthly_budget')).toBe('999');
+  });
+
+  it("purges the removed account's cached responses and label but not other accounts'", async () => {
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async () => new Response('{}', { status: 200, headers: { etag: '"v1"' } })) as unknown as typeof fetch;
+    try {
+      resetGitHubApiStats(1000);
+      saveGitHubAuth(db, 'alice', 'tok-alice', '');
+      saveGitHubAuth(db, 'bob', 'tok-bob', '');
+      loadGitHubAuth(db, 'alice');
+      loadGitHubAuth(db, 'bob');
+      const as = (t: string) => ({ headers: { Authorization: `Bearer ${t}` } });
+      await githubRequest('https://api.github.com/user/orgs', as('tok-alice'), { purpose: 'test' });
+      await githubRequest('https://api.github.com/user/orgs', as('tok-bob'), { purpose: 'test' });
+      expect(githubEtagCacheSize()).toBe(2);
+
+      await remove('alice');
+
+      expect(githubEtagCacheSize()).toBe(1);
+      expect(tokenLabelOf(as('tok-alice'))).toBe('other');
+      expect(tokenLabelOf(as('tok-bob'))).not.toBe('other');
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  it("purges a removed host account PAT's cached responses", async () => {
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async () => new Response('{}', { status: 200, headers: { etag: '"v1"' } })) as unknown as typeof fetch;
+    try {
+      resetGitHubApiStats(1000);
+      const id = saveHostAccountPat(db, 'acme.ghe.com', 'carol', 'tok-carol', null);
+      const init = { headers: { Authorization: 'Bearer tok-carol' } };
+      await githubRequest('https://api.acme.ghe.com/user', init, { purpose: 'test' });
+      expect(githubEtagCacheSize()).toBe(1);
+
+      await remove(id);
+
+      expect(githubEtagCacheSize()).toBe(0);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
   });
 
   it('matches the account id case-insensitively', async () => {
