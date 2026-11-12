@@ -1,5 +1,5 @@
 // ── Agent Selector Modal ──────────────────────────────────────────────────────
-import { useState, useEffect } from 'preact/hooks';
+import { useState, useEffect, useLayoutEffect } from 'preact/hooks';
 import { isIpcError, type AgentDefinition } from '../types';
 import { relativeAge } from '../shared/utils';
 
@@ -40,6 +40,14 @@ export function AgentSelector({ repoFullName, workflowFilter, onClose, onSession
       .catch(() => setCachedInfo({ fetchedAt: null, runCount: 0 }))
       .finally(() => setCacheLoading(false));
   }, [repoFullName]);
+
+  // Layout effect: the Esc listener must be live as soon as the modal shows. Ignored while a run is
+  // being started so the modal can't be dismissed mid-request.
+  useLayoutEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !running) onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose, running]);
 
   const cacheAgeMs = cachedInfo?.fetchedAt
     ? Date.now() - new Date(cachedInfo.fetchedAt).getTime()
@@ -161,7 +169,7 @@ export function AgentSelector({ repoFullName, workflowFilter, onClose, onSession
 
   return (
     <div class="agent-selector-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div class="agent-selector-modal">
+      <div class="agent-selector-modal" role="dialog" aria-modal="true" aria-label="Run Agent Analysis">
         <div class="agent-selector-header">
           <span class="agent-selector-title">{'🤖 Run Agent Analysis'}</span>
           <button class="agent-selector-close" onClick={onClose} title="Cancel" aria-label="Cancel">{'✕'}</button>
