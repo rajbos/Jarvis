@@ -82,9 +82,20 @@ without Electron:
 Override responses per test with
 `harness.open('index', { responses: { listOrgs: { ok: false, error: 'boom' } } })`,
 then drive the page with Playwright and assert on `view.calls('listOrgs')`. The
-tests fail on uncaught page errors and `console.error` output. When Playwright's
-Chromium is not installed, the harness falls back to a local Edge or Chrome
-(`JARVIS_VIEW_BROWSER_CHANNEL` forces one).
+tests fail on uncaught page errors and `console.error` output.
+
+Which browser runs the views:
+
+- **CI and `npm run screenshots`** use Playwright's bundled Chromium, so
+  screenshots are the same everywhere.
+- **`npm run test:views` on a Windows dev machine** tries Edge first. The bundled
+  headless shell is a large unsigned binary that antivirus scans on every
+  process start, which costs seconds per test and causes timeouts when the
+  machine is busy.
+- When the preferred browser is missing, the harness falls back to the next of
+  bundled Chromium, Edge and Chrome.
+- `JARVIS_VIEW_BROWSER_CHANNEL` forces one: `msedge`, `chrome`, `chromium`, or
+  `bundled` to reproduce a CI-only failure locally.
 
 ### Screenshots in pull requests
 
