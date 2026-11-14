@@ -42,7 +42,7 @@ You can also run and debug from VS Code: press **F5** and choose
 | `npm run test:watch` | Vitest in watch mode |
 | `npm run test:coverage` | Run tests with a coverage report (written to `coverage/`) |
 | `npm run test:views` | Render every window in headless Chromium and run the view integration tests |
-| `npm run test:views:install` | One-time download of the headless Chromium used by `test:views` |
+| `npm run test:views:install` | Download the headless Chromium used by `test:views` by hand (`test:views` and `screenshots` already do this when the build for the installed Playwright version is missing) |
 | `npm run screenshots` | Render every view from the same fixtures and save PNGs to `screenshots/` |
 | `npm run lint` | Lint `src` with ESLint (`npm run lint:fix` to autofix) |
 
@@ -82,9 +82,20 @@ without Electron:
 Override responses per test with
 `harness.open('index', { responses: { listOrgs: { ok: false, error: 'boom' } } })`,
 then drive the page with Playwright and assert on `view.calls('listOrgs')`. The
-tests fail on uncaught page errors and `console.error` output. When Playwright's
-Chromium is not installed, the harness falls back to a local Edge or Chrome
-(`JARVIS_VIEW_BROWSER_CHANNEL` forces one).
+tests fail on uncaught page errors and `console.error` output.
+
+Which browser runs the views:
+
+- **CI and `npm run screenshots`** use Playwright's bundled Chromium, so
+  screenshots are the same everywhere.
+- **`npm run test:views` on a Windows dev machine** tries Edge first. The bundled
+  headless shell is a large unsigned binary that antivirus scans on every
+  process start, which costs seconds per test and causes timeouts when the
+  machine is busy.
+- When the preferred browser is missing, the harness falls back to the next of
+  bundled Chromium, Edge and Chrome.
+- `JARVIS_VIEW_BROWSER_CHANNEL` forces one: `msedge`, `chrome`, `chromium`, or
+  `bundled` to reproduce a CI-only failure locally.
 
 ### Screenshots in pull requests
 

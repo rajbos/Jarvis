@@ -200,7 +200,8 @@ const SHOTS: Shot[] = [
   { name: 'about', view: 'about', waitFor: ['9.9.9-fixture'] },
 ];
 
-const harness = useViewHarness();
+// Bundled Chromium, so local shots match the ones CI posts on a pull request.
+const harness = useViewHarness('bundled');
 
 describe('view screenshots', () => {
   for (const shot of SHOTS) {
