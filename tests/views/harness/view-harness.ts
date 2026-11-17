@@ -154,17 +154,38 @@ function serve(dir: string): Promise<Server> {
   return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve(server)));
 }
 
+/** Which browser a harness prefers: the fastest one available, or always Playwright's own Chromium. */
+export type BrowserPreference = 'fast' | 'bundled';
+
 /**
- * Launches Playwright's bundled Chromium; when it is not installed (no
- * `npx playwright install chromium` yet) falls back to a locally installed
- * Edge or Chrome so the tests still run on a dev machine. Set
- * JARVIS_VIEW_BROWSER_CHANNEL to force a channel.
+ * Browser channels to try, in order (`undefined` is Playwright's bundled Chromium).
+ *
+ * On a Windows dev machine Edge goes first: the bundled headless shell is a
+ * large unsigned binary that antivirus scans on every process start (seconds
+ * per page, since each page gets its own renderer process), which pushes the
+ * tests towards their timeout when the machine is busy. CI and `bundled`
+ * callers (screenshots, which must match CI pixel for pixel) keep the bundled
+ * build first. The others are fallbacks so the tests still run when the
+ * preferred browser is missing.
  */
-async function launchBrowser(): Promise<Browser> {
+export function browserChannels(
+  prefer: BrowserPreference = 'fast',
+  env: { platform: string; ci: boolean } = { platform: process.platform, ci: !!process.env.CI },
+): (string | undefined)[] {
+  const edgeFirst = prefer === 'fast' && env.platform === 'win32' && !env.ci;
+  return edgeFirst ? ['msedge', undefined, 'chrome'] : [undefined, 'msedge', 'chrome'];
+}
+
+/**
+ * Launches the first browser from `browserChannels` that starts. Set
+ * JARVIS_VIEW_BROWSER_CHANNEL to force one: a channel name (`msedge`,
+ * `chrome`, `chromium`) or `bundled` for Playwright's own Chromium.
+ */
+export async function launchBrowser(prefer: BrowserPreference = 'fast'): Promise<Browser> {
   const forced = process.env.JARVIS_VIEW_BROWSER_CHANNEL;
-  if (forced) return chromium.launch({ channel: forced });
+  if (forced) return chromium.launch(forced === 'bundled' ? {} : { channel: forced });
   const failures: string[] = [];
-  for (const channel of [undefined, 'msedge', 'chrome']) {
+  for (const channel of browserChannels(prefer)) {
     try {
       return await chromium.launch(channel ? { channel } : {});
     } catch (err) {
@@ -181,11 +202,13 @@ export class ViewHarness {
   private contexts: BrowserContext[] = [];
   private origin = '';
 
+  constructor(private readonly prefer: BrowserPreference = 'fast') {}
+
   async start(): Promise<void> {
     this.built = await buildViews();
     this.server = await serve(this.built.dir);
     this.origin = `http://127.0.0.1:${(this.server.address() as AddressInfo).port}`;
-    this.browser = await launchBrowser();
+    this.browser = await launchBrowser(this.prefer);
   }
 
   async open(view: ViewName, opts: OpenViewOptions = {}): Promise<OpenedView> {
@@ -264,8 +287,8 @@ export class ViewHarness {
 }
 
 /** Registers vitest hooks that start one harness per test file and close pages after each test. */
-export function useViewHarness(): ViewHarness {
-  const harness = new ViewHarness();
+export function useViewHarness(prefer: BrowserPreference = 'fast'): ViewHarness {
+  const harness = new ViewHarness(prefer);
   beforeAll(() => harness.start(), 120_000);
   afterEach(() => harness.closePages());
   afterAll(() => harness.stop());
