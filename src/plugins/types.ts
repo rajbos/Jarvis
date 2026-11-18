@@ -310,6 +310,14 @@ export interface RepoSecret {
 
   scanned_at: string;
 
+  /** GitHub timestamps; null/absent for rows scanned before age tracking. */
+  created_at?: string | null;
+
+  updated_at?: string | null;
+
+  /** 1 when the repo is archived. */
+  archived?: number | null;
+
 }
 
 export interface SecretFavorite {
@@ -1013,6 +1021,8 @@ export interface ActiveAgentSession {
   localUsage?: LocalSessionUsage | null;
   /** Claude Code: how the session was started (`claude-desktop` for the desktop app, `cli` for a terminal). */
   entrypoint?: string | null;
+  /** Copilot CLI: the running session accepts messages, so a prompt can be delivered into its own window. */
+  steerable?: boolean;
 }
 /** Usage of a local session, from the ai-engineering-fluency session parser. */
 export interface LocalSessionUsage {
@@ -1075,9 +1085,9 @@ export interface ActiveSessionSourceStatus {
   error?: string;
 }
 /** Follow-up a user can hand to an agent session (see services/agent-actions.ts). */
-export type AgentActionKind = 'open' | 'fix_checks' | 'resolve_conflicts';
+export type AgentActionKind = 'open' | 'nudge' | 'fix_checks' | 'resolve_conflicts';
 export type AgentActionResult =
-  | { ok: true; kind: 'deep-link' | 'terminal' | 'pr-comment'; message: string; prompt: string | null }
+  | { ok: true; kind: 'deep-link' | 'terminal' | 'pr-comment' | 'session-message'; message: string; prompt: string | null }
   | { ok: false; error: string };
 export interface ActiveSessionsSnapshot {
   entries: ActiveSessionEntry[];
@@ -1555,6 +1565,7 @@ export interface GroupDetail {
 // type-checking on window.jarvis calls without re-declaring it everywhere.
 
 import type { DiagnosticReport as DiagnosticReportPayload } from '../types/ipc-payloads';
+import type { FireBrief } from '../services/fire-brief';
 
 export type { OnboardingStatus } from '../agent/onboarding';
 
@@ -1862,6 +1873,10 @@ export interface JarvisApi {
   // Dashboard
 
   dashboardGetSummary(): Promise<DashboardSummary>;
+  getFireBrief(): Promise<FireBrief | IpcErrorResponse>;
+  refreshFireBrief(): Promise<FireBrief | IpcErrorResponse>;
+  acknowledgeFireBrief(): Promise<FireBrief | IpcErrorResponse>;
+  onFireBrief(cb: (payload: { brief: FireBrief; show: boolean }) => void): () => void;
 
   dashboardPushBranchUpstream(repoPath: string, branch: string): Promise<{ ok: boolean; error?: string; output?: string }>;
 

@@ -167,6 +167,9 @@ const EXPECTED_CHANNELS = [
   'secrets:remove-favorite',
   // dashboard plugin
   'dashboard:get-summary',
+  'fire-brief:get',
+  'fire-brief:refresh',
+  'fire-brief:acknowledge',
   'dashboard:push-branch-upstream',
   // groups plugin
   'groups:list',

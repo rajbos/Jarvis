@@ -202,6 +202,18 @@ describe('filesystem discovery', () => {
     expect([...result.mirroredTasks.entries()].sort()).toEqual([['task-dead', 'Copilot CLI'], ['task-live', 'Copilot app']]);
   });
 
+  it('marks Copilot sessions that registered a message endpoint as steerable', async () => {
+    writeCopilotSession('open-door', { pid: 111, yaml: 'id: open-door\nclient_name: github/cli\n' });
+    writeCopilotSession('closed-door', { pid: 111, yaml: 'id: closed-door\nclient_name: github/cli\n' });
+    const registry = path.join(home, '.copilot', 'session-management');
+    fs.mkdirSync(registry, { recursive: true });
+    fs.writeFileSync(path.join(registry, 'open-door.json'), JSON.stringify({ sessionId: 'open-door', generation: 1, address: '127.0.0.1:4242', token: 'fixture-token' }));
+
+    const result = await discoverCopilotLocalSessions({ homeDir: home, isPidAlive: () => true, getProcessStartTimes: startedLongAgo, now: () => NOW });
+
+    expect(Object.fromEntries(result.sessions.map((s) => [s.sessionId, s.steerable]))).toEqual({ 'open-door': true, 'closed-door': false });
+  });
+
   it('skips session dirs older than the recent window, but records their mirrored task within the mirror window', async () => {
     const dir = writeCopilotSession('old', { pid: 111, yaml: 'id: old\nclient_name: github/autopilot\nmc_task_id: task-old\n' });
     const old = new Date(NOW - 10 * 24 * 60 * 60 * 1000);

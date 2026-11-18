@@ -43,6 +43,16 @@ import {
   type RepoRole,
   searchLocalRepos,
 } from './tools/github.js';
+import {
+  attentionSummary,
+  triageAgentSessions,
+  triageFailedRuns,
+  triageNotifications,
+  triagePrReadiness,
+  triageUsage,
+  USAGE_METRICS,
+  type TriageResult,
+} from './tools/triage.js';
 import { openIndexSnapshot, INDEX_DB_PATH } from './index-db.js';
 import { describeIndex, searchLocalFiles } from './tools/files.js';
 
@@ -65,6 +75,10 @@ Tool families:
               ruddr_hours (totals by day/week/client/project/work type/note/group),
               ruddr_hours_entries (individual entries with notes) and ruddr_hours_status (how far
               back the cache reaches — check it before reporting zero hours for a period).
+- triage_*  : "what needs my attention?" read-only views: triage_summary (counts, start here), then
+              triage_notifications, triage_failed_runs, triage_pr_readiness, triage_agent_sessions and
+              triage_usage to drill down. isError means a prerequisite or named repo/session is missing;
+              an empty list with total 0 means nothing needs attention. Lists report total/truncated.
 - groups_*  : customer/client groups that tie repos and Ruddr projects together.
 - onenote_* : cached OneNote pages (meeting notes, project documentation).`,
   },
@@ -462,6 +476,118 @@ server.registerTool(
     }
     return { content: [{ type: 'text' as const, text: JSON.stringify(runs, null, 2) }] };
   },
+);
+
+// ── Triage tools ──────────────────────────────────────────────────────────────
+
+function triageReply<T>(result: TriageResult<T>) {
+  if (!result.ok) return { content: [{ type: 'text' as const, text: result.error }], isError: true };
+  return { content: [{ type: 'text' as const, text: JSON.stringify(result.value, null, 2) }] };
+}
+
+const triageLimit = z.number().int().min(1).max(200).optional().default(25);
+
+server.registerTool(
+  'triage_summary',
+  {
+    title: 'Attention summary',
+    description:
+      'Counts of what needs attention: unread notifications, failed workflow runs (24h), PRs ready / ' +
+      'waiting for review and open agent sessions. Start here, then drill down with the other triage_* ' +
+      'tools. A section with `unavailable` could not be computed (older database); its total is null.',
+  },
+  async () => {
+    const db = await openSnapshot();
+    return { content: [{ type: 'text' as const, text: JSON.stringify(attentionSummary(db), null, 2) }] };
+  },
+);
+
+server.registerTool(
+  'triage_notifications',
+  {
+    title: 'Unread notifications',
+    description:
+      'Unread GitHub notifications (default), newest first, optionally for one `repo` ("owner/repo") or ' +
+      'org/owner ("owner"). Reports total, returned and truncated. Error when the repo/owner is unknown.',
+    inputSchema: {
+      repo: z.string().optional().describe('"owner/repo" or "owner"'),
+      unreadOnly: z.boolean().optional().default(true),
+      limit: triageLimit,
+    },
+  },
+  async ({ repo, unreadOnly, limit }: { repo?: string; unreadOnly?: boolean; limit?: number }) =>
+    triageReply(triageNotifications(await openSnapshot(), { repo, unreadOnly, limit })),
+);
+
+server.registerTool(
+  'triage_failed_runs',
+  {
+    title: 'Failed workflow runs',
+    description:
+      'Failed GitHub Actions runs (failure, timed_out, startup_failure), newest first. Filter by `repo` ' +
+      '("owner/repo" or "owner") and `sinceHours` (time window). Reports total, returned and truncated.',
+    inputSchema: {
+      repo: z.string().optional().describe('"owner/repo" or "owner"'),
+      sinceHours: z.number().positive().optional().describe('Only runs started in the last N hours'),
+      limit: triageLimit,
+    },
+  },
+  async ({ repo, sinceHours, limit }: { repo?: string; sinceHours?: number; limit?: number }) =>
+    triageReply(triageFailedRuns(await openSnapshot(), { repo, sinceHours, limit })),
+);
+
+server.registerTool(
+  'triage_pr_readiness',
+  {
+    title: 'PR readiness verdicts',
+    description:
+      'Last known review-readiness of PRs linked to agent sessions: ready, or what they are `waitingOn`. ' +
+      'Filter by `repo` and `ready`. Reports total, returned and truncated.',
+    inputSchema: {
+      repo: z.string().optional().describe('"owner/repo" or "owner"'),
+      ready: z.boolean().optional().describe('true: only ready PRs; false: only PRs still waiting'),
+      limit: triageLimit,
+    },
+  },
+  async ({ repo, ready, limit }: { repo?: string; ready?: boolean; limit?: number }) =>
+    triageReply(triagePrReadiness(await openSnapshot(), { repo, ready, limit })),
+);
+
+server.registerTool(
+  'triage_agent_sessions',
+  {
+    title: 'Agent sessions',
+    description:
+      'Jarvis agent sessions and their state. By default only sessions that have not finished; set ' +
+      '`includeCompleted`, filter by `status`, or fetch one by `id` (error when it does not exist). ' +
+      'Summaries are capped and raw results are never returned.',
+    inputSchema: {
+      id: z.number().int().optional(),
+      status: z.string().optional().describe('e.g. "pending", "running", "completed"'),
+      includeCompleted: z.boolean().optional().default(false),
+      limit: triageLimit,
+    },
+  },
+  async ({ id, status, includeCompleted, limit }: { id?: number; status?: string; includeCompleted?: boolean; limit?: number }) =>
+    triageReply(triageAgentSessions(await openSnapshot(), { id, status, includeCompleted, limit })),
+);
+
+server.registerTool(
+  'triage_usage',
+  {
+    title: 'Usage samples',
+    description:
+      'Latest polled usage readings (GitHub rate limits, Claude windows, Copilot credits, GitHub API call ' +
+      'counts) as value/limit per series. Pass `metric` (' + USAGE_METRICS.join(', ') + ') for history with ' +
+      '`limit` samples and optional `sinceHours`. Error when a requested metric has no samples.',
+    inputSchema: {
+      metric: z.string().optional(),
+      sinceHours: z.number().positive().optional(),
+      limit: z.number().int().min(1).max(100).optional().default(1),
+    },
+  },
+  async ({ metric, sinceHours, limit }: { metric?: string; sinceHours?: number; limit?: number }) =>
+    triageReply(triageUsage(await openSnapshot(), { metric, sinceHours, limit })),
 );
 
 // ── Tool: ruddr_hours ─────────────────────────────────────────────────────────

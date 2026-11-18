@@ -142,6 +142,40 @@ describe('collectActiveSessions', () => {
     expect(snap.readyCount).toBe(1);
   });
 
+  it('does not hide a session started on a branch whose PR was already merged', async () => {
+    const branchLookup: PrLookup = { kind: 'branch', repoFullName: 'me/repo', branch: 'feature', headOwner: undefined };
+    const merged = rawPr({ state: 'MERGED', closedAt: '2026-02-20T10:00:00Z' });
+    vi.mocked(resolveGitContext).mockReturnValue(gitCtx('feature'));
+    stubPrResults([[branchLookup, { ok: true, pr: merged }]]);
+    const collect = async (session: Partial<ActiveAgentSession>) => {
+      vi.mocked(discoverCopilotLocalSessions).mockResolvedValue({ sessions: [localSession(session)], mirroredTasks: new Map() });
+      return (await collectActiveSessions({ accessToken: 'tok', now: () => NOW })).entries[0];
+    };
+
+    // New work on an old branch: the merged PR is not this session's.
+    expect(await collect({ startedAt: '2026-03-01T09:00:00Z' })).toMatchObject({ pr: null, verdict: 'no_pr', verdictLabel: 'No PR yet' });
+    // The session that produced the PR keeps its merged verdict.
+    expect(await collect({ startedAt: '2026-02-19T09:00:00Z' })).toMatchObject({ pr: { prNumber: 5 }, verdict: 'merged' });
+    // Without a start time (or a close time) there is nothing to compare — keep the PR.
+    expect(await collect({ startedAt: null })).toMatchObject({ verdict: 'merged' });
+    stubPrResults([[branchLookup, { ok: true, pr: rawPr({ state: 'MERGED' }) }]]);
+    expect(await collect({ startedAt: '2026-03-01T09:00:00Z' })).toMatchObject({ verdict: 'merged' });
+  });
+
+  it('keeps a merged PR the session reported itself, whenever the session started', async () => {
+    const numberLookup: PrLookup = { kind: 'number', repoFullName: 'me/repo', number: 5 };
+    vi.mocked(discoverCopilotLocalSessions).mockResolvedValue({
+      sessions: [localSession({ startedAt: '2026-03-01T09:00:00Z', linkedPr: { repoFullName: 'me/repo', number: 5 } })],
+      mirroredTasks: new Map(),
+    });
+    vi.mocked(resolveGitContext).mockReturnValue(gitCtx('main'));
+    stubPrResults([[numberLookup, { ok: true, pr: rawPr({ state: 'MERGED', closedAt: '2026-02-20T10:00:00Z' }) }]]);
+
+    const snap = await collectActiveSessions({ accessToken: 'tok', now: () => NOW });
+
+    expect(snap.entries[0]).toMatchObject({ pr: { prNumber: 5 }, verdict: 'merged' });
+  });
+
   it('tries the upstream repo with a head-owner filter for fork branches', async () => {
     vi.mocked(discoverCopilotLocalSessions).mockResolvedValue({ sessions: [localSession({})], mirroredTasks: new Map() });
     vi.mocked(resolveGitContext).mockReturnValue(gitCtx('feature', ['me/repo', 'org/repo']));
