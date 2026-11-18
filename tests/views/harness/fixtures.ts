@@ -8,6 +8,7 @@
  * `fixtures-are-synthetic.view.test.ts` guards that the current machine's user and
  * host names do not leak in here.
  */
+import type { FireBrief } from '../../../src/services/fire-brief';
 import type {
   ActiveSessionsSnapshot,
   AgentDefinition,
@@ -689,7 +690,33 @@ export function createFixtures(now: number) {
     ],
   };
 
+  const fireBrief: FireBrief = {
+    generatedAt: iso(now, 0),
+    since: iso(now, -DAY),
+    totalItems: 5,
+    allClear: false,
+    summary: 'A Copilot session is waiting for your input, and CI failed on rocket-sled main. One PR is ready for review.',
+    sections: [
+      { id: 'sessions', title: 'Agent sessions', total: 1, items: [
+        { id: 'session:fx1', severity: 'fire', text: 'Copilot CLI needs input: Add a heavier anvil option', url: `https://github.com/${REPO_ANVIL}/pull/12`, tab: 'agent-sessions' },
+      ] },
+      { id: 'failed_runs', title: 'Failed workflow runs', total: 1, items: [
+        { id: 'run:7001', severity: 'fire', text: `${REPO_ROCKET}: CI failed on main`, url: `https://github.com/${REPO_ROCKET}/actions/runs/7001` },
+      ] },
+      { id: 'prs', title: 'Pull requests', total: 1, items: [
+        { id: 'pr:fx', severity: 'attention', text: `${REPO_ANVIL}#12 is ready for review`, url: `https://github.com/${REPO_ANVIL}/pull/12` },
+      ] },
+      { id: 'notifications', title: 'Unread notifications', total: 1, items: [
+        { id: 'notif:fx', severity: 'attention', text: `${REPO_HAMMOCK}: 2 unread notifications`, url: `https://github.com/${REPO_HAMMOCK}` },
+      ] },
+      { id: 'task_failures', title: 'Background task failures', total: 1, items: [
+        { id: 'task:fx', severity: 'attention', text: 'Background task "notifications-sync" failed: network unreachable', url: null, tab: 'setup' },
+      ] },
+    ],
+  };
+
   return {
+    fireBrief,
     ruddrHoursWeek, ruddrHoursSummary,
     localRepos, notifications, notificationCounts, orgs, reposByOrg, scanFolders, dashboard,
     workflowSummary, groups, groupDetails, ruddrBudget, secrets, ollama, rateLimit, usageStored, claudeStatus,

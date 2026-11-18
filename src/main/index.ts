@@ -20,6 +20,7 @@ import { startStallWatchdog } from '../services/stall-watchdog';
 import { STALL_NOTIFY_THRESHOLD_MS, buildStallDiagnostic, reportFreeze, setFreezeReportSender, setUserAttentionProbe } from './freeze-diagnostics';
 import { checkForUpdates, registerUpdateIpcHandlers, startUpdateChecks, stopUpdateChecks, onUpdateCheckResume } from './update-checker';
 import { registerPowerResumeHandler } from './power-resume';
+import { pushFireBrief } from '../plugins/fire-brief/handler';
 import { registerDiagnosticsIpcHandlers } from './diagnostics';
 import { registerAppWindowIpcHandlers } from './app-window-ipc';
 import { buildCrashDiagnostic, detectNewCrashDumps, trimCrashDumps } from './crash-dumps';
@@ -156,6 +157,7 @@ async function initialize(): Promise<void> {
     runAuthExpiryChecks('Resume');
     onUpdateCheckResume();
     getBackgroundTaskScheduler()?.onResume();
+    void pushFireBrief(db, () => mainWindow, true);
   });
 
   // Check if Ollama is available and update onboarding step accordingly
@@ -260,6 +262,10 @@ function showMainWindow(): void {
     mainWindow = null;
   });
   mainWindow.webContents.once('did-finish-load', () => {
+    // Give the first agent-session sweep and the renderer listeners a moment, then show the brief.
+    setTimeout(() => {
+      if (currentDb) void pushFireBrief(currentDb, () => mainWindow, true);
+    }, 15000);
     if (!pendingCrashReport) return;
     const report = pendingCrashReport;
     pendingCrashReport = null;
