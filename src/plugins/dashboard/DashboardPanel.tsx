@@ -5,6 +5,8 @@ import {
   type RepoHealthStatus,
   type HealthWarning,
   type StoredNotification,
+  type CiHealthReport,
+  type CiWorkflowHealth,
 } from '../types';
 import { AgentSelector } from '../agents/AgentSelector';
 import { FireBriefCard } from './FireBriefCard';
@@ -950,6 +952,94 @@ function isEmptyStatePositive(card: CardFilter): boolean {
 
 // ── Main Dashboard ────────────────────────────────────────────────────────────
 
+function formatDuration(ms: number | null): string {
+  if (ms === null) return '—';
+  const s = Math.round(ms / 1000);
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
+}
+
+function CiHealthList({ title, rows, metric, empty }: {
+  title: string;
+  rows: CiWorkflowHealth[];
+  metric: (w: CiWorkflowHealth) => string;
+  empty: string;
+}) {
+  return (
+    <div class="ci-health-group">
+      <h4>{title}</h4>
+      {rows.length === 0 && <div class="ci-health-empty">{empty}</div>}
+      {rows.map((w) => (
+        <div class="ci-health-row" key={`${w.repoFullName}|${w.workflowId}`}>
+          <div class="ci-health-name">
+            <span class="ci-health-workflow">{w.workflowName}</span>
+            <span class="ci-health-repo">{w.repoFullName}</span>
+          </div>
+          <span class="ci-health-metric">{metric(w)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Drill-in panel rendered to the right of the dashboard (append, never replace). */
+function CiHealthPanel({ onClose }: { onClose: () => void }) {
+  const [windowDays, setWindowDays] = useState<7 | 30>(7);
+  const [report, setReport] = useState<CiHealthReport | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    window.jarvis.dashboardGetCiHealth(windowDays).then((r) => {
+      if (!cancelled && !isIpcError(r)) setReport(r);
+    }).catch(() => { /* leave the previous report in place */ });
+    return () => { cancelled = true; };
+  }, [windowDays]);
+
+  return (
+    <aside class="ci-health-panel">
+      <div class="ci-health-header">
+        <h3>🩺 CI health</h3>
+        <button class="dash-sort-btn" onClick={onClose} title="Close" aria-label="Close CI health">✕</button>
+      </div>
+      <div class="dash-sort-controls">
+        {([7, 30] as const).map((d) => (
+          <button
+            key={d}
+            class={`dash-sort-btn${windowDays === d ? ' dash-sort-btn--active' : ''}`}
+            onClick={() => setWindowDays(d)}
+          >
+            {d} days
+          </button>
+        ))}
+      </div>
+      <p class="ci-health-note">Based on cached runs only (about the last 7 days are kept).</p>
+      {!report ? (
+        <div class="dash-loading">Loading…</div>
+      ) : (
+        <>
+          <CiHealthList
+            title="Top failing"
+            rows={report.topFailing}
+            empty="No failing workflows 🎉"
+            metric={(w) => `${Math.round(w.failureRate * 100)}% (${w.failedRuns}/${w.totalRuns})`}
+          />
+          <CiHealthList
+            title="Top flaky (failed, then passed on the same commit)"
+            rows={report.topFlaky}
+            empty="No flaky workflows detected"
+            metric={(w) => `${w.flakyShas} commit${w.flakyShas !== 1 ? 's' : ''}`}
+          />
+          <CiHealthList
+            title="Getting slower"
+            rows={report.topSlowing}
+            empty="No duration drift detected"
+            metric={(w) => `+${Math.round((w.durationDrift ?? 0) * 100)}% (${formatDuration(w.previousMedianDurationMs)} → ${formatDuration(w.medianDurationMs)})`}
+          />
+        </>
+      )}
+    </aside>
+  );
+}
+
 export function DashboardPanel({ dismissedNotifIds, onOpenHistory, onOpenTab }: { dismissedNotifIds?: ReadonlySet<string>; onOpenHistory?: () => void; onOpenTab?: (tab: 'agent-sessions' | 'dashboard' | 'setup') => void }) {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -964,6 +1054,7 @@ export function DashboardPanel({ dismissedNotifIds, onOpenHistory, onOpenTab }: 
   const [autoDismissResult, setAutoDismissResult] = useState<AutoDismissRunResult | null>(null);
   const [autoDismissAcknowledged, setAutoDismissAcknowledged] = useState(false);
   const [autoDismissDone, setAutoDismissDone] = useState(false);
+  const [ciOpen, setCiOpen] = useState(false);
   const [pipelineStatus, setPipelineStatus] = useState<'idle' | 'running' | 'done'>('idle');
 
   const load = useCallback(async () => {
@@ -1182,10 +1273,18 @@ export function DashboardPanel({ dismissedNotifIds, onOpenHistory, onOpenTab }: 
   });
 
   return (
+    <div class="dash-with-side">
     <div class="dashboard-panel">
       <div class="dash-header">
         <h2>📊 Repo Dashboard</h2>
         <div class="dash-header-right">
+          <button
+            class={`dash-refresh-btn${ciOpen ? ' dash-sort-btn--active' : ''}`}
+            onClick={() => setCiOpen((o) => !o)}
+            title="CI failure rate, flaky workflows and duration drift"
+          >
+            🩺 CI health
+          </button>
           <span class="dash-updated">Last updated: {new Date(summary.generatedAt).toLocaleTimeString()}</span>
           <button class="dash-refresh-btn" onClick={load} disabled={loading} title="Refresh">
             <svg
@@ -1309,6 +1408,8 @@ export function DashboardPanel({ dismissedNotifIds, onOpenHistory, onOpenTab }: 
           </div>
         )}
       </div>
+    </div>
+    {ciOpen && <CiHealthPanel onClose={() => setCiOpen(false)} />}
     </div>
   );
 }

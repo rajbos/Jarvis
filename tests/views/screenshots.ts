@@ -43,6 +43,10 @@ interface Shot {
 
 const SHOTS: Shot[] = [
   { name: 'repo-dashboard', view: 'index', waitFor: ['rocket-sled', 'anvil-api', 'hammock'] },
+  {
+    name: 'repo-dashboard-ci-health', view: 'index', waitFor: ['rocket-sled', 'Top failing', 'Launch tests'],
+    prepare: (page) => page.getByRole('button', { name: /CI health/ }).click(),
+  },
   { name: 'groups-dashboard', view: 'index', tab: /Groups Dashboard/, waitFor: ['Acme Retainer', 'Globex Pilot'] },
   {
     name: 'agent-sessions', view: 'index', tab: /Agent Sessions/,

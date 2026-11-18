@@ -78,6 +78,17 @@ describe('main window — tabs', () => {
     expect((await view.calls('listNotificationsForRepo')).map((c) => c.args[0])).toContain(REPO_ROCKET);
     await expectCleanRender(view);
   });
+
+  it('opens the CI health panel to the right of the dashboard without hiding it', async () => {
+    const view = await harness.open('index');
+    const { page } = view;
+    await page.getByRole('button', { name: /CI health/ }).click();
+    await expect.poll(() => page.locator('.ci-health-panel').innerText()).toContain('Launch tests');
+    expect(await page.locator('.ci-health-panel').innerText()).toContain('Getting slower');
+    await expect(page.locator('.dash-repo-list').isVisible()).resolves.toBe(true);
+    expect((await view.calls('dashboardGetCiHealth')).map((c) => c.args[0])).toContain(7);
+    await expectCleanRender(view);
+  });
 });
 
 describe('main window — Setup tab panels', () => {

@@ -243,6 +243,7 @@ contextBridge.exposeInMainWorld('jarvis', {
     ipcRenderer.invoke('github:get-cached-workflow-info', repoFullName),
   // Dashboard
   dashboardGetSummary: () => ipcRenderer.invoke('dashboard:get-summary'),
+  dashboardGetCiHealth: (windowDays: number) => ipcRenderer.invoke('dashboard:get-ci-health', windowDays),
   dashboardPushBranchUpstream: (repoPath: string, branch: string) =>
     ipcRenderer.invoke('dashboard:push-branch-upstream', repoPath, branch),
   // "What's on fire" brief

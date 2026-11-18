@@ -167,6 +167,7 @@ const EXPECTED_CHANNELS = [
   'secrets:remove-favorite',
   // dashboard plugin
   'dashboard:get-summary',
+  'dashboard:get-ci-health',
   'fire-brief:get',
   'fire-brief:refresh',
   'fire-brief:acknowledge',

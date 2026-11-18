@@ -21,6 +21,7 @@ import type {
   ClaudeStatus,
   CopilotUsage,
   DashboardSummary,
+  CiHealthReport,
   GitHubRateLimit,
   Group,
   GroupDetail,
@@ -186,6 +187,24 @@ export function createFixtures(now: number) {
   const scanFolders: ScanFolder[] = [
     { id: 1, path: LOCAL_ROOT, addedAt: iso(now, -60 * DAY), repoCount: localRepos.length },
   ];
+
+  const wf = (repo: string, id: string, name: string, over: Partial<CiHealthReport['workflows'][number]>) => ({
+    repoFullName: repo, workflowId: id, workflowName: name, totalRuns: 10, failedRuns: 0, failureRate: 0,
+    flakyShas: 0, medianDurationMs: 120_000, previousMedianDurationMs: 120_000, durationDrift: 0, ...over,
+  });
+  const ciFailing = [
+    wf(REPO_ROCKET, '1', 'Launch tests', { totalRuns: 12, failedRuns: 6, failureRate: 0.5 }),
+    wf(REPO_ANVIL, '2', 'Build', { totalRuns: 20, failedRuns: 4, failureRate: 0.2 }),
+  ];
+  const ciFlaky = [wf(REPO_ROCKET, '1', 'Launch tests', { totalRuns: 12, failedRuns: 6, failureRate: 0.5, flakyShas: 3 })];
+  const ciSlowing = [
+    wf(REPO_HAMMOCK, '3', 'Lint', { medianDurationMs: 90_000, previousMedianDurationMs: 60_000, durationDrift: 0.5 }),
+  ];
+  const ciHealth: CiHealthReport = {
+    windowDays: 7, generatedAt: iso(now, 0),
+    workflows: [...ciFailing, ...ciSlowing],
+    topFailing: ciFailing, topFlaky: ciFlaky, topSlowing: ciSlowing,
+  };
 
   const dashboard: DashboardSummary = {
     repos: [
@@ -747,7 +766,7 @@ export function createFixtures(now: number) {
   return {
     fireBrief,
     ruddrHoursWeek, ruddrHoursSummary,
-    localRepos, pruneCandidates, notifications, notificationCounts, orgs, reposByOrg, scanFolders, dashboard,
+    localRepos, pruneCandidates, notifications, notificationCounts, orgs, reposByOrg, scanFolders, dashboard, ciHealth,
     workflowSummary, groups, groupDetails, ruddrBudget, secrets, ollama, rateLimit, usageStored, claudeStatus,
     claudeRateLimit, copilotUsage, githubAccounts, githubAccountsUsage, activeSessions, autoDismissLog, autoDismissStats, backgroundTasks,
     browserSkills, browserRuns, agents, onedriveRoots, localIndexStatus, mcpConfig,

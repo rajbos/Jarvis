@@ -14,6 +14,7 @@ import { listLocalRepos } from '../../services/local-discovery';
 import { normalizeGitHubUrl } from '../../services/local-discovery';
 import { safeHandle } from '../ipc-utils';
 import { logger } from '../../services/logger';
+import { computeCiHealth, type CiHealthReport, type CiRunInput } from '../../services/ci-health';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -210,6 +211,41 @@ export function registerHandlers(
         generatedAt: new Date().toISOString(),
       };
     }
+  });
+
+  /**
+   * dashboard:get-ci-health
+   * Failure rate / flaky / duration-drift trends across all cached workflow
+   * runs. Reads only the local cache - no GitHub API calls.
+   */
+  safeHandle('dashboard:get-ci-health', async (_event, windowDays: number): Promise<CiHealthReport> => {
+    const days = windowDays === 30 ? 30 : 7;
+    const stmt = db.prepare(
+      `SELECT repo_full_name, workflow_id, workflow_name, head_sha, conclusion, status,
+              run_started_at, updated_at
+       FROM github_workflow_runs
+       WHERE run_started_at >= datetime('now', ?)`,
+    );
+    const runs: CiRunInput[] = [];
+    try {
+      stmt.bind([`-${days} days`]);
+      while (stmt.step()) {
+        const r = stmt.getAsObject() as Record<string, string | null>;
+        runs.push({
+          repoFullName: r.repo_full_name as string,
+          workflowId: r.workflow_id,
+          workflowName: r.workflow_name,
+          headSha: r.head_sha,
+          conclusion: r.conclusion,
+          status: r.status,
+          runStartedAt: r.run_started_at,
+          updatedAt: r.updated_at,
+        });
+      }
+    } finally {
+      stmt.free();
+    }
+    return computeCiHealth(runs, days);
   });
 
   /**
