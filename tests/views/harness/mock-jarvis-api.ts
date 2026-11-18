@@ -79,6 +79,7 @@ const EVENT_METHODS: Record<EventMethod, true> = {
   onRuddrHoursUpdated: true,
   onCopilotUsageUpdated: true,
   onActiveSessionsUpdated: true,
+  onFireBrief: true,
   onBackgroundTaskComplete: true,
   onNotificationCountsUpdated: true,
   onAutoDismissComplete: true,
@@ -195,6 +196,9 @@ function defaultResponses(f: Fixtures): Responses {
     githubGetWorkflowSummary: f.workflowSummary,
     githubGetCachedWorkflowInfo: { fetchedAt: new Date(now).toISOString(), runCount: 1 },
     dashboardGetSummary: f.dashboard,
+    getFireBrief: f.fireBrief,
+    refreshFireBrief: f.fireBrief,
+    acknowledgeFireBrief: { ...f.fireBrief, sections: [], totalItems: 0, allClear: true },
     dashboardPushBranchUpstream: ok,
     // Groups + Ruddr
     groupsList: f.groups,

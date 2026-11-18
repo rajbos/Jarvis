@@ -1508,6 +1508,7 @@ export interface GroupDetail {
 // type-checking on window.jarvis calls without re-declaring it everywhere.
 
 import type { DiagnosticReport as DiagnosticReportPayload } from '../types/ipc-payloads';
+import type { FireBrief } from '../services/fire-brief';
 
 export type { OnboardingStatus } from '../agent/onboarding';
 
@@ -1811,6 +1812,10 @@ export interface JarvisApi {
   // Dashboard
 
   dashboardGetSummary(): Promise<DashboardSummary>;
+  getFireBrief(): Promise<FireBrief | IpcErrorResponse>;
+  refreshFireBrief(): Promise<FireBrief | IpcErrorResponse>;
+  acknowledgeFireBrief(): Promise<FireBrief | IpcErrorResponse>;
+  onFireBrief(cb: (payload: { brief: FireBrief; show: boolean }) => void): () => void;
 
   dashboardPushBranchUpstream(repoPath: string, branch: string): Promise<{ ok: boolean; error?: string; output?: string }>;
 

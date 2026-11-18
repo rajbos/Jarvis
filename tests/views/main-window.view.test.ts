@@ -39,6 +39,16 @@ describe('main window — tabs', () => {
     await expectCleanRender(view);
   });
 
+  it('shows the fire brief card with a link per line', async () => {
+    const view = await harness.open('index');
+    const card = view.page.locator('[data-testid="fire-brief"]');
+    await expect.poll(() => card.innerText()).toContain("What's on fire (5)");
+    const links = await card.locator('a').evaluateAll((as) => as.map((a) => (a as HTMLAnchorElement).href));
+    expect(links).toHaveLength(4);
+    expect(links.every((l) => l.startsWith('https://github.com/'))).toBe(true);
+    expect(await view.calls('getFireBrief')).toHaveLength(1);
+  });
+
   const tabs: Array<{ name: RegExp; expected: string[]; loadedBy: Parameters<OpenedView['calls']>[0] }> = [
     { name: /Groups Dashboard/, expected: [GROUP_ACME, GROUP_GLOBEX, 'My Ruddr hours', RUDDR_UNLINKED_PROJECT, 'in 4 wks'], loadedBy: 'groupsList' },
     { name: /Agent Sessions/, expected: ['Teach the rocket sled to brake'], loadedBy: 'getActiveSessions' },

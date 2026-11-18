@@ -441,6 +441,11 @@ function App() {
   }, []);
 
   useEffect(() => {
+    // App start / resume from sleep: bring the dashboard (with the fire brief) forward.
+    return window.jarvis.onFireBrief(({ show }) => { if (show) setActiveTab('dashboard'); });
+  }, []);
+
+  useEffect(() => {
     return window.jarvis.onOpenChat(handleOpenChat);
   }, []); // run once: registers the IPC listener on mount
 
@@ -1053,7 +1058,7 @@ function App() {
 
       {/* ── Dashboard tab ────────────────────────────────────────────────── */}
       {activeTab === 'dashboard' && (
-        <DashboardPanel dismissedNotifIds={dismissedNotifIds} onOpenHistory={() => setActiveTab('dismiss-history')} />
+        <DashboardPanel dismissedNotifIds={dismissedNotifIds} onOpenHistory={() => setActiveTab('dismiss-history')} onOpenTab={setActiveTab} />
       )}
 
       {/* ── Dismissed notifications history tab ──────────────────────────── */}

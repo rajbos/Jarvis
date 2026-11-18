@@ -19,6 +19,7 @@ import { registerHandlers as registerLocalReposHandlers } from '../plugins/local
 import { registerHandlers as registerAgentsHandlers } from '../plugins/agents/handler';
 import { registerHandlers as registerSecretsHandlers } from '../plugins/secrets/handler';
 import { registerHandlers as registerDashboardHandlers } from '../plugins/dashboard/handler';
+import { registerHandlers as registerFireBriefHandlers } from '../plugins/fire-brief/handler';
 import { registerHandlers as registerGroupsHandlers } from '../plugins/groups/handler';
 import { registerHandlers as registerOnedriveHandlers } from '../plugins/onedrive/handler';
 import { registerHandlers as registerBrowserCompanionHandlers } from '../plugins/browser-companion/handler';
@@ -49,6 +50,7 @@ export function registerIpcHandlers(
   registerAgentsHandlers(db, getWindow);
   registerSecretsHandlers(db, getWindow);
   registerDashboardHandlers(db, getWindow);
+  registerFireBriefHandlers(db);
   registerGroupsHandlers(db, getWindow);
   registerOnedriveHandlers(db, getWindow);
   registerBrowserCompanionHandlers(db, getWindow);
