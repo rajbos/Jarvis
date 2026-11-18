@@ -225,6 +225,53 @@ export interface LocalRemote {
 
 }
 
+export type PruneReason = 'pr-merged' | 'pr-closed' | 'upstream-gone';
+
+/** One thing the user can prune: a local branch, plus the idle worktree it is checked out in (if any). */
+export interface PruneCandidate {
+  /** Stable id: `<branch>@<sha>`. A branch that moved gets a new id and is no longer offered. */
+  id: string;
+  branch: string;
+  sha: string;
+  committedAt: string | null;
+  reason: PruneReason;
+  /** Human-readable explanation, e.g. "PR #12 merged". */
+  detail: string;
+  prNumber: number | null;
+  prUrl: string | null;
+  /** Linked worktree that will be removed together with the branch; null when only the branch is deleted. */
+  worktreePath: string | null;
+}
+
+export interface PruneSkipped {
+  branch: string;
+  reason: string;
+}
+
+export interface PruneCandidates {
+  repoPath: string;
+  candidates: PruneCandidate[];
+  /** Branches that were looked at but are kept, with the reason they are not offered. */
+  skipped: PruneSkipped[];
+  /** Whether PR state could be looked up on GitHub. Without it only "upstream gone" branches can be offered. */
+  prLookup: 'ok' | 'partial' | 'unavailable' | 'no-github-remote';
+  generatedAt: string;
+}
+
+export interface PruneResultItem {
+  id: string;
+  branch: string;
+  sha: string;
+  ok: boolean;
+  error?: string;
+  worktreeRemoved: boolean;
+}
+
+export interface PruneRequestItem {
+  branch: string;
+  sha: string;
+}
+
 export interface LocalRepo {
 
   id: number;
@@ -1737,6 +1784,10 @@ export interface JarvisApi {
   localOpenFolder(folderPath: string): Promise<void>;
 
   localOpenTerminal(folderPath: string): Promise<void>;
+
+  localGetPruneCandidates(repoPath: string): Promise<PruneCandidates | IpcErrorResponse>;
+
+  localPrune(repoPath: string, items: PruneRequestItem[]): Promise<{ results: PruneResultItem[] } | IpcErrorResponse>;
 
   // Secrets
 

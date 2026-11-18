@@ -15,6 +15,14 @@ import { getFileIndexState, startFileIndexIfNeeded } from './file-index-runner';
 import { safeHandle } from '../ipc-utils';
 import { logger } from '../../services/logger';
 import { openTerminal, resolveDirectory } from '../../services/process-launch';
+import { findPruneCandidates, pruneBranches, type PruneDeps } from '../../services/branch-prune';
+import { fetchPullRequests, prLookupKey, type PrLookup, type PrLookupResult } from '../../services/pr-readiness';
+import { accessForRepo, ghCliFallbacks } from '../../services/github-repo-access';
+import { DEFAULT_HOST } from '../../services/github-host';
+import { resolveGitContext } from '../../services/git-context';
+import { discoverClaudeLocalSessions, discoverCopilotLocalSessions } from '../../services/local-agent-sessions';
+import path from 'node:path';
+import type { PruneRequestItem } from '../types';
 
 let localScanRunning = false;
 let lastLocalScanProgress: ScanProgress | null = null;
@@ -28,6 +36,59 @@ function openTerminalInFolder(folderPath: string): void {
     return;
   }
   openTerminal(resolvedPath, undefined, (err) => logger.error('[IPC] local:open-terminal failed:', err));
+}
+
+/** Branches and folders that agent sessions use right now; throws when sessions cannot be listed. */
+async function activeSessionUse(): Promise<{ branches: Set<string>; paths: string[] }> {
+  const [copilot, claude] = await Promise.all([discoverCopilotLocalSessions(), discoverClaudeLocalSessions()]);
+  const branches = new Set<string>();
+  const paths: string[] = [];
+  for (const session of [...copilot.sessions, ...claude]) {
+    if (session.branch) branches.add(session.branch);
+    if (session.cwd) {
+      paths.push(session.cwd);
+      const branch = resolveGitContext(session.cwd)?.branch;
+      if (branch) branches.add(branch);
+    }
+  }
+  return { branches, paths };
+}
+
+function pruneDeps(db: SqlJsDatabase): PruneDeps {
+  return {
+    activeUse: activeSessionUse,
+    fetchPrs: async (lookups: PrLookup[]) => {
+      const results = new Map<string, PrLookupResult>();
+      const byRepo = new Map<string, PrLookup[]>();
+      for (const l of lookups) {
+        if (l.kind !== 'branch') continue;
+        byRepo.set(l.repoFullName, [...(byRepo.get(l.repoFullName) ?? []), l]);
+      }
+      let any = false;
+      for (const [repo, group] of byRepo) {
+        const access = await accessForRepo(db, repo, DEFAULT_HOST);
+        if (!access) continue;
+        any = true;
+        const got = await fetchPullRequests(access.token, group);
+        const failed = group.filter((l) => !got.get(prLookupKey(l))?.ok);
+        if (failed.length > 0) {
+          // The account may not be SSO-authorized for the org: retry with the GitHub CLI's logins.
+          for (const fb of await ghCliFallbacks(access, DEFAULT_HOST)) {
+            const retry = await fetchPullRequests(fb.token, failed);
+            for (const [k, v] of retry) if (v.ok) got.set(k, v);
+          }
+        }
+        for (const [k, v] of got) results.set(k, v);
+      }
+      return any ? results : null;
+    },
+  };
+}
+
+/** Only repos Jarvis discovered may be pruned — the renderer cannot point this at an arbitrary folder. */
+function isKnownRepo(db: SqlJsDatabase, repoPath: string): boolean {
+  const wanted = path.resolve(repoPath).toLowerCase();
+  return listLocalRepos(db).some((r) => path.resolve(r.localPath).toLowerCase() === wanted);
 }
 
 export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWindow | null): void {
@@ -90,6 +151,22 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
   safeHandle('local:open-folder', (_event, folderPath: string) => {
     if (typeof folderPath !== 'string' || folderPath.length === 0) return;
     void shell.openPath(folderPath);
+  });
+
+  safeHandle('local:get-prune-candidates', async (_event, repoPath: string) => {
+    if (typeof repoPath !== 'string' || repoPath.length === 0) return { ok: false, error: 'Invalid repoPath' };
+    if (!isKnownRepo(db, repoPath)) return { ok: false, error: 'Not a known local repository' };
+    return await findPruneCandidates(repoPath, pruneDeps(db));
+  });
+
+  safeHandle('local:prune', async (_event, repoPath: string, items: PruneRequestItem[]) => {
+    if (typeof repoPath !== 'string' || repoPath.length === 0) return { ok: false, error: 'Invalid repoPath' };
+    if (!Array.isArray(items) || items.length === 0 || items.length > 500) return { ok: false, error: 'Invalid items' };
+    const valid = items.every((i) => i && typeof i.branch === 'string' && i.branch.length > 0 && typeof i.sha === 'string' && /^[0-9a-f]{40,64}$/.test(i.sha));
+    if (!valid) return { ok: false, error: 'Invalid items' };
+    if (!isKnownRepo(db, repoPath)) return { ok: false, error: 'Not a known local repository' };
+    const results = await pruneBranches(repoPath, items.map((i) => ({ branch: i.branch, sha: i.sha })), pruneDeps(db));
+    return { results };
   });
 
   safeHandle('local:open-terminal', (_event, folderPath: string) => {

@@ -25,6 +25,7 @@ import type {
   GroupDetail,
   LocalIndexStatus,
   LocalRepo,
+  PruneCandidates,
   McpClientConfig,
   NotificationCounts,
   OllamaStatus,
@@ -116,6 +117,34 @@ export function createFixtures(now: number) {
     localRepo(102, REPO_ANVIL, now),
     localRepo(103, REPO_HAMMOCK, now),
   ];
+
+  const pruneCandidates: PruneCandidates = {
+    repoPath: localRepos[0].localPath,
+    candidates: [
+      {
+        id: 'feature/turbo-boost@1111111111111111111111111111111111111111', branch: 'feature/turbo-boost',
+        sha: '1111111111111111111111111111111111111111', committedAt: iso(now, -9 * DAY), reason: 'pr-merged',
+        detail: 'PR #41 merged', prNumber: 41, prUrl: `https://github.com/${REPO_ROCKET}/pull/41`,
+        worktreePath: `${LOCAL_ROOT}\\worktrees\\rocket-sled-turbo`,
+      },
+      {
+        id: 'fix/sled-wobble@2222222222222222222222222222222222222222', branch: 'fix/sled-wobble',
+        sha: '2222222222222222222222222222222222222222', committedAt: iso(now, -20 * DAY), reason: 'pr-closed',
+        detail: 'PR #37 closed', prNumber: 37, prUrl: `https://github.com/${REPO_ROCKET}/pull/37`, worktreePath: null,
+      },
+      {
+        id: 'chore/old-experiment@3333333333333333333333333333333333333333', branch: 'chore/old-experiment',
+        sha: '3333333333333333333333333333333333333333', committedAt: iso(now, -45 * DAY), reason: 'upstream-gone',
+        detail: 'upstream branch deleted, all commits are on a remote', prNumber: null, prUrl: null, worktreePath: null,
+      },
+    ],
+    skipped: [
+      { branch: 'feature/in-review', reason: 'PR #44 is still open' },
+      { branch: 'wip/scratch', reason: '2 unpushed commits' },
+    ],
+    prLookup: 'ok',
+    generatedAt: iso(now, 0),
+  };
 
   const notifications: StoredNotification[] = [
     notification('9001', REPO_ROCKET, 'Add turbo boost to the sled launcher', now),
@@ -685,7 +714,7 @@ export function createFixtures(now: number) {
 
   return {
     ruddrHoursWeek, ruddrHoursSummary,
-    localRepos, notifications, notificationCounts, orgs, reposByOrg, scanFolders, dashboard,
+    localRepos, pruneCandidates, notifications, notificationCounts, orgs, reposByOrg, scanFolders, dashboard,
     workflowSummary, groups, groupDetails, ruddrBudget, secrets, ollama, rateLimit, usageStored, claudeStatus,
     claudeRateLimit, copilotUsage, githubAccounts, githubAccountsUsage, activeSessions, autoDismissLog, autoDismissStats, backgroundTasks,
     browserSkills, browserRuns, agents, onedriveRoots, localIndexStatus, mcpConfig,

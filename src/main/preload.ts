@@ -105,6 +105,8 @@ contextBridge.exposeInMainWorld('jarvis', {
   localListReposForFolder: (folderPath: string) => ipcRenderer.invoke('local:list-repos-for-folder', folderPath),
   localOpenFolder: (folderPath: string) => ipcRenderer.invoke('local:open-folder', folderPath),
   localOpenTerminal: (folderPath: string) => ipcRenderer.invoke('local:open-terminal', folderPath),
+  localGetPruneCandidates: (repoPath: string) => ipcRenderer.invoke('local:get-prune-candidates', repoPath),
+  localPrune: (repoPath: string, items: unknown) => ipcRenderer.invoke('local:prune', repoPath, items),
   // Secrets
   scanRepoSecrets: () => ipcRenderer.invoke('secrets:scan'),
   listAllSecrets: () => ipcRenderer.invoke('secrets:list-all'),

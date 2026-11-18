@@ -96,6 +96,28 @@ describe('main window — Setup tab panels', () => {
     await expectCleanRender(view);
   });
 
+  it('opens branch cleanup to the right of the repo list and requires confirmation before pruning', async () => {
+    const view = await openSetup();
+    const { page } = view;
+    await page.locator('#local-repos-step').click();
+    await page.getByText(ORG_ACME, { exact: true }).first().click();
+    await page.getByText('Clean up branches…').first().click();
+    await expect.poll(() => page.locator('#branch-prune-panel').innerText()).toContain('feature/turbo-boost');
+    // The repo list stays visible next to the new panel.
+    expect(await page.locator('.repo-panel').count()).toBe(3);
+    expect(await view.calls('localPrune')).toHaveLength(0);
+
+    await page.locator('#branch-prune-panel button', { hasText: 'Prune all' }).click();
+    const confirm = page.locator('.prune-confirm');
+    await expect.poll(() => confirm.innerText()).toContain('Delete 3 branches?');
+    expect(await confirm.innerText()).toContain('rocket-sled-turbo');
+    expect(await view.calls('localPrune')).toHaveLength(0);
+
+    await confirm.getByRole('button', { name: 'Cancel' }).click();
+    expect(await view.calls('localPrune')).toHaveLength(0);
+    await expectCleanRender(view);
+  });
+
   it('lists scanned secrets', async () => {
     const view = await openSetup();
     await view.page.locator('.secrets-layout .step').click();

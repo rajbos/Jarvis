@@ -171,6 +171,8 @@ function defaultResponses(f: Fixtures): Responses {
     localListReposForFolder: f.localRepos,
     localOpenFolder: undefined,
     localOpenTerminal: undefined,
+    localGetPruneCandidates: f.pruneCandidates,
+    localPrune: { results: [] },
     // Secrets
     scanRepoSecrets: { scanned: 3, secretsFound: f.secrets.length, errors: [] },
     listAllSecrets: f.secrets,

@@ -59,6 +59,14 @@ const SHOTS: Shot[] = [
     prepare: (page) => page.locator('#secrets-step').click(),
   },
   {
+    name: 'setup-local-branch-cleanup', view: 'index', tab: /Setup/, waitFor: ['Branch cleanup', 'feature/turbo-boost', 'PR #41 merged'],
+    prepare: async (page) => {
+      await page.locator('#local-repos-step').click();
+      await page.getByText('acme-labs', { exact: true }).first().click();
+      await page.getByText('Clean up branches…').first().click();
+    },
+  },
+  {
     name: 'setup-signed-out', view: 'index', tab: /Setup/, waitFor: ['Sign in with GitHub'],
     open: { responses: { getGitHubOAuthStatus: { authenticated: false } } },
   },

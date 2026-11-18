@@ -138,6 +138,8 @@ const EXPECTED_CHANNELS = [
   'local:list-repos-for-folder',
   'local:open-folder',
   'local:open-terminal',
+  'local:get-prune-candidates',
+  'local:prune',
   // mcp-server plugin
   'mcp:get-client-config',
   // agents plugin
