@@ -1,5 +1,6 @@
 import { useState } from 'preact/hooks';
 import { LocalRepoCard } from './LocalRepoCard';
+import { BranchPrunePanel } from './BranchPrunePanel';
 import { IconButton } from '../shared/IconButton';
 import { deduplicateLocalRepos, formatNumber } from '../shared/utils';
 import type { LocalRepo, NotificationCounts } from '../types';
@@ -19,6 +20,7 @@ interface LocalRepoPanelViewProps {
 
 export function LocalRepoPanelView({ title, repos, notifCounts, initialSortKey = 'name', onOpenRepoNotif, onClearNotif, onSortChange, onClose }: LocalRepoPanelViewProps) {
   const [sortKey, setSortKey] = useState<LocalSortKey>(initialSortKey);
+  const [pruneRepo, setPruneRepo] = useState<{ name: string; path: string } | null>(null);
 
   const deduped = deduplicateLocalRepos(repos);
 
@@ -41,6 +43,7 @@ export function LocalRepoPanelView({ title, repos, notifCounts, initialSortKey =
   const hasDuplicates = deduped.some((g) => g.isDuplicate);
 
   return (
+    <>
     <div class="repo-panel">
       <div class="repo-panel-header">
         <IconButton icon={<>&#8249;</>} label="Back" onClick={onClose} />
@@ -94,10 +97,14 @@ export function LocalRepoPanelView({ title, repos, notifCounts, initialSortKey =
               allLocalPaths={isDuplicate ? allLocalPaths : undefined}
               onOpenPath={(p) => { onClearNotif(); void window.jarvis.localOpenFolder(p); }}
               onClick={handleClick}
+              onPrune={() => setPruneRepo({ name: primaryRepo.name, path: primaryRepo.localPath })}
             />
           );
         })
       )}
     </div>
+    {/* Appended to the right of the repo list, never replacing it. */}
+    {pruneRepo && <BranchPrunePanel repoName={pruneRepo.name} repoPath={pruneRepo.path} onClose={() => setPruneRepo(null)} />}
+    </>
   );
 }

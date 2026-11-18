@@ -9,9 +9,11 @@ interface LocalRepoCardProps {
   /** Called when the user opens a specific local path (only used when allLocalPaths is passed). */
   onOpenPath?: (path: string) => void;
   onClick: () => void;
+  /** Opens the branch cleanup panel for this repo. */
+  onPrune?: () => void;
 }
 
-export function LocalRepoCard({ repo, notifCount, allLocalPaths, onOpenPath, onClick }: LocalRepoCardProps) {
+export function LocalRepoCard({ repo, notifCount, allLocalPaths, onOpenPath, onClick, onPrune }: LocalRepoCardProps) {
   // Collect unique GitHub full-names from all remotes
   const githubRemotes = repo.remotes
     .map((r) => ({ name: r.name, fullName: normalizeGitHubUrl(r.url) }))
@@ -68,6 +70,17 @@ export function LocalRepoCard({ repo, notifCount, allLocalPaths, onOpenPath, onC
           </span>
         )}
       </div>
+      {onPrune && (
+        <div style={{ marginTop: '0.3rem' }}>
+          <button
+            class="btn-link"
+            title="Find merged branches and idle worktrees to delete"
+            onClick={(e: Event) => { e.stopPropagation(); onPrune(); }}
+          >
+            Clean up branches…
+          </button>
+        </div>
+      )}
       {githubRemotes.length > 0 && (
         <div class="repo-card-meta" style={{ marginTop: '0.25rem' }}>
           {githubRemotes.map((r) => (
