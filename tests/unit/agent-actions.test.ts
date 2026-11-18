@@ -120,6 +120,22 @@ describe('planAgentAction', () => {
     expect(url.searchParams.get('prompt')).toContain('build, lint');
   });
 
+  it('delivers prompts into a steerable Copilot CLI session instead of starting a terminal', () => {
+    const cli = { provider: 'copilot' as const, client: 'Copilot CLI', sessionId: 'cli-1', steerable: true };
+    expect(planAgentAction('nudge', entry(cli, null))).toMatchObject({ kind: 'session-message', sessionId: 'cli-1', content: 'Where are we?' });
+    expect(planAgentAction('fix_checks', entry(cli, failing))).toMatchObject({ kind: 'session-message', sessionId: 'cli-1', content: expect.stringContaining('build, lint') });
+    // Bringing the session forward is still a terminal resume.
+    expect(planAgentAction('open', entry(cli, null))).toMatchObject({ kind: 'terminal', file: 'copilot' });
+  });
+
+  it('only nudges sessions that accept messages', () => {
+    expect(actionUnavailableReason('nudge', null)).toBeNull();
+    expect(planAgentAction('nudge', entry({ provider: 'copilot', client: 'Copilot CLI' }, null))).toMatchObject({ kind: 'unsupported', description: expect.stringContaining('sessionManagementTools') });
+    expect(planAgentAction('nudge', entry({}, null))).toMatchObject({ kind: 'unsupported', description: expect.stringContaining('Only running Copilot CLI') });
+    // A cloud task is never messaged locally, whatever the flag says.
+    expect(planAgentAction('nudge', entry({ provider: 'copilot', origin: 'cloud', steerable: true }, null)).kind).toBe('unsupported');
+  });
+
   it('resumes Copilot CLI sessions with -i for a prompt', () => {
     const cli = { provider: 'copilot' as const, client: 'Copilot CLI', sessionId: 'cli-1' };
     expect(planAgentAction('open', entry(cli, null))).toMatchObject({ kind: 'terminal', file: 'copilot', args: ['--resume', 'cli-1'] });

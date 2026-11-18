@@ -255,6 +255,8 @@ describe('Migration chain completeness (no orphaned user_version)', () => {
     34: `CREATE TABLE github_repos (id INTEGER PRIMARY KEY AUTOINCREMENT, full_name TEXT); CREATE TABLE github_orgs (id INTEGER PRIMARY KEY AUTOINCREMENT, login TEXT); CREATE TABLE repo_secrets (id INTEGER PRIMARY KEY AUTOINCREMENT, github_repo_id INTEGER, secret_name TEXT, scanned_at DATETIME); CREATE TABLE secret_scan_favorites (id INTEGER PRIMARY KEY AUTOINCREMENT, target_type TEXT, target_name TEXT)`,
   };
 
+  preSeedByVersion[41] = 'CREATE TABLE repo_secrets (id INTEGER PRIMARY KEY AUTOINCREMENT, github_repo_id INTEGER, secret_name TEXT, scanned_at DATETIME)';
+
   it('advances the version from every intermediate user_version (0..28)', async () => {
     const SQL = await initSqlJs();
     const referenceDb = new SQL.Database();
@@ -584,5 +586,28 @@ describe('Migration v40 -> v41', () => {
     expect(oldDb.exec('PRAGMA user_version')[0].values[0][0]).toBe(41);
     const names = oldDb.exec("SELECT name FROM sqlite_master WHERE type='table'")[0]?.values.map((r) => r[0]) ?? [];
     expect(names).toContain('chat_messages');
+  });
+});
+
+describe('Migration v41 -> v42', () => {
+  it('adds nullable created_at/updated_at to repo_secrets and keeps old rows', async () => {
+    const SQL = await initSqlJs();
+    const oldDb = new SQL.Database();
+    oldDb.run(`CREATE TABLE repo_secrets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, github_repo_id INTEGER NOT NULL,
+      secret_name TEXT NOT NULL, scanned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(github_repo_id, secret_name))`);
+    oldDb.run(`INSERT INTO repo_secrets (github_repo_id, secret_name) VALUES (1, 'OLD_ROW')`);
+    oldDb.run('PRAGMA user_version = 41');
+
+    initializeSchema(oldDb);
+
+    expect(oldDb.exec('PRAGMA user_version')[0].values[0][0]).toBe(42);
+    const cols = oldDb.exec('PRAGMA table_info(repo_secrets)')[0].values.map((r: unknown[]) => r[1] as string);
+    expect(cols).toContain('created_at');
+    expect(cols).toContain('updated_at');
+    const row = oldDb.exec('SELECT secret_name, created_at, updated_at FROM repo_secrets')[0].values[0];
+    expect(row).toEqual(['OLD_ROW', null, null]);
+    oldDb.close();
   });
 });

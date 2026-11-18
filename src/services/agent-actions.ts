@@ -9,7 +9,9 @@
 //   Copilot app      ghapp://sessions/<id> opens the session; a prompt starts a
 //                    new session on the PR (ghapp://session/new?repo&pr&prompt).
 //   Copilot CLI      `copilot --resume <id>` in a terminal, `-i <prompt>` to
-//                    continue with a prompt.
+//                    continue with a prompt. A running session that accepts
+//                    peer messages (`steerable`) gets the prompt delivered into
+//                    its own window instead (services/copilot-session-message.ts).
 //   Copilot cloud    ghapp://github.com/<owner>/<repo>/tasks/<id>; without a repo
 //                    the PR, else https://github.com/copilot/tasks/<id>. A prompt is
 //                    a PR comment mentioning @copilot, which the cloud agent picks up.
@@ -22,10 +24,14 @@ import type { ActiveSessionEntry, AgentActionKind, PrReadiness } from '../plugin
 
 export type { AgentActionKind };
 
-export const AGENT_ACTION_KINDS: readonly AgentActionKind[] = ['open', 'fix_checks', 'resolve_conflicts'];
+export const AGENT_ACTION_KINDS: readonly AgentActionKind[] = ['open', 'nudge', 'fix_checks', 'resolve_conflicts'];
+
+/** What a nudge asks the session: report where the work stands. */
+export const NUDGE_PROMPT = 'Where are we?';
 
 export type AgentActionPlan =
   | { kind: 'deep-link'; url: string; description: string; prompt: string | null; copyPrompt: boolean }
+  | { kind: 'session-message'; sessionId: string; content: string; description: string; prompt: string }
   | { kind: 'terminal'; file: string; args: string[]; cwd: string | null; description: string; prompt: string | null }
   | { kind: 'pr-comment'; repoFullName: string; prNumber: number; body: string; description: string; prompt: string }
   | { kind: 'unsupported'; description: string; prompt: string | null };
@@ -41,7 +47,7 @@ function oneLine(text: string): string {
 
 /** Why a prompt action is not available right now, or null when it is. */
 export function actionUnavailableReason(kind: AgentActionKind, pr: PrReadiness | null): string | null {
-  if (kind === 'open') return null;
+  if (kind === 'open' || kind === 'nudge') return null;
   if (!pr) return 'No pull request linked yet.';
   if (pr.state !== 'OPEN') return `The PR is ${pr.state.toLowerCase()}.`;
   if (kind === 'fix_checks') {
@@ -56,6 +62,7 @@ export function actionUnavailableReason(kind: AgentActionKind, pr: PrReadiness |
 /** Follow-up prompt for the agent; null when the action does not apply. */
 export function buildAgentPrompt(kind: AgentActionKind, entry: ActiveSessionEntry): string | null {
   const pr = entry.pr;
+  if (kind === 'nudge') return NUDGE_PROMPT;
   if (kind === 'open' || !pr || actionUnavailableReason(kind, pr)) return null;
   const ref = `${pr.repoFullName}#${pr.prNumber}`;
   if (kind === 'fix_checks') {
@@ -83,6 +90,27 @@ export function planAgentAction(kind: AgentActionKind, entry: ActiveSessionEntry
   const prompt = buildAgentPrompt(kind, entry);
   if (kind !== 'open' && !prompt) {
     return unsupported(actionUnavailableReason(kind, pr) ?? 'Action not available.', null);
+  }
+
+  // ── Running Copilot CLI session that accepts messages ──────────────────────
+  // The prompt lands in the session's own window, so nothing new is started.
+  const steerable = session.origin === 'local' && session.provider === 'copilot' && session.steerable === true;
+  if (prompt && steerable) {
+    return {
+      kind: 'session-message',
+      sessionId: session.sessionId,
+      content: prompt,
+      description: 'Sent the prompt into the running Copilot session',
+      prompt,
+    };
+  }
+  if (kind === 'nudge') {
+    return unsupported(
+      session.provider === 'copilot' && session.origin === 'local'
+        ? 'This Copilot session does not accept messages — enable sessionManagementTools in ~/.copilot/settings.json and restart the session.'
+        : 'Only running Copilot CLI sessions can be nudged in place.',
+      prompt,
+    );
   }
 
   // ── Copilot cloud agent ────────────────────────────────────────────────────

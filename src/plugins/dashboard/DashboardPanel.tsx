@@ -9,6 +9,7 @@ import {
   type CiWorkflowHealth,
 } from '../types';
 import { AgentSelector } from '../agents/AgentSelector';
+import { FireBriefCard } from './FireBriefCard';
 import { apiUrlToWebUrl, repoWebUrl } from '../shared/github-urls';
 // ── Failure hint helpers ──────────────────────────────────────────────────────────
 
@@ -1039,7 +1040,7 @@ function CiHealthPanel({ onClose }: { onClose: () => void }) {
   );
 }
 
-export function DashboardPanel({ dismissedNotifIds, onOpenHistory }: { dismissedNotifIds?: ReadonlySet<string>; onOpenHistory?: () => void }) {
+export function DashboardPanel({ dismissedNotifIds, onOpenHistory, onOpenTab }: { dismissedNotifIds?: ReadonlySet<string>; onOpenHistory?: () => void; onOpenTab?: (tab: 'agent-sessions' | 'dashboard' | 'setup') => void }) {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [cardFilter, setCardFilter] = useState<CardFilter>('all');
@@ -1299,6 +1300,8 @@ export function DashboardPanel({ dismissedNotifIds, onOpenHistory }: { dismissed
           </button>
         </div>
       </div>
+
+      <FireBriefCard onOpenTab={onOpenTab} />
 
       <SummaryCards
         summary={summary}

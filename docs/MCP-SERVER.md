@@ -77,6 +77,27 @@ Repo-level search terms are ANDed and matched case-insensitively with `LIKE`. Fi
 
 The index is kept out of `jarvis.db` on purpose: sql.js persists a database by rewriting the whole file, and the index is tens of megabytes.
 
+### Triage tools ("what needs my attention?")
+
+Read-only views over data Jarvis already stores. Start with `triage_summary` (counts only), then drill down.
+
+| Tool | Description |
+|---|---|
+| `triage_summary` | Counts: unread notifications, failed runs (24h), PRs ready / waiting, open agent sessions. A section that cannot be computed (older database) has `total: null` and an `unavailable` message |
+| `triage_notifications` | Unread notifications (set `unreadOnly: false` for all), newest first. Filters: `repo` (`owner/repo` or an org/owner), `limit` |
+| `triage_failed_runs` | Runs with conclusion `failure`, `timed_out` or `startup_failure`. Filters: `repo`, `sinceHours` (time window), `limit`. Log excerpts are never returned |
+| `triage_pr_readiness` | Last review-readiness verdict per PR linked to an agent session: `ready` or `waitingOn`. Filters: `repo`, `ready`, `limit` |
+| `triage_agent_sessions` | Jarvis agent sessions and state; unfinished only by default. Filters: `id`, `status`, `includeCompleted`, `limit`. Summaries are capped to 500 characters; raw results are never returned |
+| `triage_usage` | Latest usage reading per metric (`github-oauth`, `github-pat`, `claude`, `copilot`, `github-api-calls`) as value/limit per series. With `metric`: history via `limit` and `sinceHours` |
+
+Design decisions:
+
+- **Summary plus drill-downs** rather than one tool per data type only: an agent can answer "anything on fire?" in one cheap call and only fetches detail for non-zero sections.
+- **Truncation**: every list returns `total` (all matches), `returned`, `truncated` and `items`; default limit 25, maximum 200. `triage_usage` returns `truncated` for samples.
+- **Errors vs. empty** (see #558): `isError: true` when a prerequisite is missing (the table does not exist in an older or never-started database), an argument is invalid, or a named repo/owner, agent session id or usage metric has no data at all. A known repo with nothing to report is a success with `total: 0`.
+- **Read-only and secret-free**: no dismiss or other writes; only selected columns are returned, never tokens, API payloads, workflow log excerpts or agent raw results.
+- Live "active sessions" shown in the app are held in memory and are not in the database, so `triage_agent_sessions` covers the stored Jarvis agent sessions; PRs linked to live sessions appear through `triage_pr_readiness`.
+
 ### Ruddr tools (projects and budgets)
 
 | Tool | Description |

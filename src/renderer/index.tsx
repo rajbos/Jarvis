@@ -26,6 +26,7 @@ import { getReposUnder, hasDeepRepos, setSystemLocale, formatDurationUntil, desc
 import { IpcErrorBanner } from '../plugins/shared/IpcErrorBanner';
 import { SecretsStep } from '../plugins/secrets/SecretsStep';
 import { SecretsScanPanel } from '../plugins/secrets/SecretsScanPanel';
+import { SecretsHygienePanel } from '../plugins/secrets/SecretsHygienePanel';
 import { DashboardPanel } from '../plugins/dashboard/DashboardPanel';
 import { BrowserCompanionPanel } from '../plugins/browser-companion/BrowserCompanionPanel';
 import { GroupsStep } from '../plugins/groups/GroupsStep';
@@ -438,6 +439,11 @@ function App() {
   useEffect(() => {
     // Main-process freeze reports arrive as diagnostics and show up as a chat card.
     return window.jarvis.onShowDiagnostic(showDiagnosticInChat);
+  }, []);
+
+  useEffect(() => {
+    // App start / resume from sleep: bring the dashboard (with the fire brief) forward.
+    return window.jarvis.onFireBrief(({ show }) => { if (show) setActiveTab('dashboard'); });
   }, []);
 
   useEffect(() => {
@@ -1053,7 +1059,7 @@ function App() {
 
       {/* ── Dashboard tab ────────────────────────────────────────────────── */}
       {activeTab === 'dashboard' && (
-        <DashboardPanel dismissedNotifIds={dismissedNotifIds} onOpenHistory={() => setActiveTab('dismiss-history')} />
+        <DashboardPanel dismissedNotifIds={dismissedNotifIds} onOpenHistory={() => setActiveTab('dismiss-history')} onOpenTab={setActiveTab} />
       )}
 
       {/* ── Dismissed notifications history tab ──────────────────────────── */}
@@ -1294,6 +1300,7 @@ function App() {
             onClose={() => setShowSecretsPanel(false)}
           />
         )}
+        {showSecretsPanel && <SecretsHygienePanel secrets={secretsList} />}
       </div>
 
       <div class="groups-layout">

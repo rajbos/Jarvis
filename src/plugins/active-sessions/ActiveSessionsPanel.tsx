@@ -115,11 +115,12 @@ function openHint(entry: ActiveSessionEntry): string {
   return 'Resume this Claude Code session in a terminal';
 }
 
-function promptHint(kind: Exclude<AgentActionKind, 'open'>, entry: ActiveSessionEntry): string {
+function promptHint(kind: 'fix_checks' | 'resolve_conflicts', entry: ActiveSessionEntry): string {
   const s = entry.session;
   const what = kind === 'fix_checks' ? 'fix the failing checks' : 'resolve the merge conflicts';
   if (s.origin === 'cloud') return `Comment on the PR asking @copilot to ${what}`;
   if (s.provider === 'copilot') {
+    if (s.steerable) return `Send a prompt into the running Copilot session to ${what}`;
     return s.client.startsWith('Copilot app')
       ? `Start a new Copilot app session on the PR with a prompt to ${what}`
       : `Resume the Copilot CLI session in a terminal with a prompt to ${what}`;
@@ -155,6 +156,16 @@ function SessionActions({ entry }: { entry: ActiveSessionEntry }) {
       <button class="as-action" disabled={busy !== null} title={openHint(entry)} onClick={() => void run('open')}>
         {busy === 'open' ? 'Opening…' : '↗ Open session'}
       </button>
+      {entry.session.steerable && (
+        <button
+          class="as-action"
+          disabled={busy !== null}
+          title="Send “Where are we?” into the running Copilot session — it answers in its own window"
+          onClick={() => void run('nudge')}
+        >
+          {busy === 'nudge' ? 'Sending…' : '💬 Where are we?'}
+        </button>
+      )}
       {canFixChecks && (
         <button class="as-action as-action--fix" disabled={busy !== null} title={promptHint('fix_checks', entry)} onClick={() => void run('fix_checks')}>
           {busy === 'fix_checks' ? 'Sending…' : `🛠 Fix ${pr.checks.failed} failing check${pr.checks.failed === 1 ? '' : 's'}`}

@@ -23,7 +23,7 @@ export function isCopilotReviewerLogin(login: string | null | undefined): boolea
 
 // Team{…} is deliberately not selected — it requires read:org and fails otherwise.
 const PR_FIELDS = `
-  number title url state isDraft headRefName headRefOid baseRefName mergeable
+  number title url state isDraft headRefName headRefOid baseRefName mergeable closedAt
   headRepositoryOwner { login }
   repository { nameWithOwner }
   commits(last: 1) {
@@ -91,6 +91,8 @@ export interface RawPullRequest {
   baseRefName?: string;
   /** GitHub computes this lazily; UNKNOWN right after a push. */
   mergeable?: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN';
+  /** When the PR was merged or closed; null while open. Absent in older fixtures / cached payloads. */
+  closedAt?: string | null;
   headRepositoryOwner: { login: string } | null;
   repository: { nameWithOwner: string };
   commits: {

@@ -28,7 +28,7 @@ import {
   listCopilotAgentTasks,
   type CloudAgentTask,
 } from './copilot-agent-tasks';
-import { evaluatePrReadiness, fetchPullRequests, prLookupKey, type PrLookup, type PrLookupResult } from './pr-readiness';
+import { evaluatePrReadiness, fetchPullRequests, prLookupKey, type PrLookup, type PrLookupResult, type RawPullRequest } from './pr-readiness';
 import { PhaseTimer } from './phase-timer';
 
 /** A token for a repo and the account it belongs to. */
@@ -261,6 +261,19 @@ async function fetchWithAccounts(
   return { results, accountOf };
 }
 
+/**
+ * A local session started on a branch whose PR was already merged or closed is
+ * new work that merely sits on an old branch — that PR is not this session's,
+ * so it must not mark the session as merged (and hide it). Only applies to
+ * PRs matched by branch name; a PR the session reported itself is always its own.
+ */
+function finishedBeforeSession(pr: RawPullRequest, session: ActiveAgentSession): boolean {
+  if (session.origin !== 'local' || pr.state === 'OPEN' || !pr.closedAt || !session.startedAt) return false;
+  const closedAt = Date.parse(pr.closedAt);
+  const startedAt = Date.parse(session.startedAt);
+  return Number.isFinite(closedAt) && Number.isFinite(startedAt) && startedAt > closedAt;
+}
+
 export async function collectActiveSessions(options: CollectActiveSessionsOptions): Promise<ActiveSessionsSnapshot> {
   const now = options.now?.() ?? Date.now();
   const token = options.accessToken;
@@ -415,6 +428,7 @@ export async function collectActiveSessions(options: CollectActiveSessionsOption
       }
       if (result.pr) {
         const found = result.pr;
+        if (lookup.kind === 'branch' && finishedBeforeSession(found, session)) continue;
         pr = timer.sync('readiness', () => evaluatePrReadiness(found, checkedAt));
         prAccount = accountOf.get(key) || null;
         prError = null;

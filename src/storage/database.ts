@@ -94,7 +94,7 @@ export async function createMemoryDatabase(): Promise<SqlJsDatabase> {
 // of the chain in initializeSchema(). Used only to warn if a database fails to
 // reach the latest schema after migration (e.g. a gap in the version chain).
 // A unit test fails if this drifts from the version a fresh database reaches.
-export const LATEST_SCHEMA_VERSION = 41;
+export const LATEST_SCHEMA_VERSION = 42;
 
 export function initializeSchema(database: SqlJsDatabase): void {
   const result = database.exec("PRAGMA user_version");
@@ -103,7 +103,7 @@ export function initializeSchema(database: SqlJsDatabase): void {
   if (userVersion === 0) {
     database.run(getSchema());
     seedBuiltInAgents(database);
-    database.run('PRAGMA user_version = 41');
+    database.run('PRAGMA user_version = 42');
   }
 
   if (userVersion === 1) {
@@ -824,6 +824,14 @@ export function initializeSchema(database: SqlJsDatabase): void {
     // survives closing the panel, reloads and restarts.
     database.run(CHAT_MESSAGES_TABLE_SQL);
     database.run('PRAGMA user_version = 41');
+  }
+
+  if (userVersion === 41) {
+    // Migration v41 → v42: GitHub's created_at/updated_at per Actions secret
+    // (NULL for rows scanned earlier = "age unknown" until the next rescan).
+    database.run('ALTER TABLE repo_secrets ADD COLUMN created_at TEXT DEFAULT NULL');
+    database.run('ALTER TABLE repo_secrets ADD COLUMN updated_at TEXT DEFAULT NULL');
+    database.run('PRAGMA user_version = 42');
   }
 
   const finalResult = database.exec('PRAGMA user_version');

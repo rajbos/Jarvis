@@ -247,6 +247,8 @@ export function getSchema(): string {
         github_repo_id INTEGER NOT NULL REFERENCES github_repos(id) ON DELETE CASCADE,
         secret_name    TEXT NOT NULL,
         scanned_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+        created_at     TEXT DEFAULT NULL,
+        updated_at     TEXT DEFAULT NULL,
         UNIQUE(github_repo_id, secret_name)
     );
     CREATE INDEX IF NOT EXISTS idx_repo_secrets_repo_id ON repo_secrets(github_repo_id);

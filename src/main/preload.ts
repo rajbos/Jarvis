@@ -244,6 +244,15 @@ contextBridge.exposeInMainWorld('jarvis', {
   dashboardGetCiHealth: (windowDays: number) => ipcRenderer.invoke('dashboard:get-ci-health', windowDays),
   dashboardPushBranchUpstream: (repoPath: string, branch: string) =>
     ipcRenderer.invoke('dashboard:push-branch-upstream', repoPath, branch),
+  // "What's on fire" brief
+  getFireBrief: () => ipcRenderer.invoke('fire-brief:get'),
+  refreshFireBrief: () => ipcRenderer.invoke('fire-brief:refresh'),
+  acknowledgeFireBrief: () => ipcRenderer.invoke('fire-brief:acknowledge'),
+  onFireBrief: (callback: (payload: { brief: unknown; show: boolean }) => void) => {
+    const listener = (_event: unknown, payload: { brief: unknown; show: boolean }) => callback(payload);
+    ipcRenderer.on('fire-brief:updated', listener);
+    return () => { ipcRenderer.removeListener('fire-brief:updated', listener); };
+  },
   // Groups
   groupsList: () => ipcRenderer.invoke('groups:list'),
   groupsGet: (groupId: number) => ipcRenderer.invoke('groups:get', groupId),

@@ -166,6 +166,9 @@ const EXPECTED_CHANNELS = [
   // dashboard plugin
   'dashboard:get-summary',
   'dashboard:get-ci-health',
+  'fire-brief:get',
+  'fire-brief:refresh',
+  'fire-brief:acknowledge',
   'dashboard:push-branch-upstream',
   // groups plugin
   'groups:list',
