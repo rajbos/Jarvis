@@ -227,7 +227,8 @@ describe('against real git repos', () => {
     expect(res.prLookup).toBe('ok');
     expect(res.candidates.map((c) => c.branch)).toEqual(['merged/a', 'merged/b']);
     const b = res.candidates.find((c) => c.branch === 'merged/b')!;
-    expect(path.resolve(b.worktreePath!).toLowerCase()).toBe(path.resolve(wtB).toLowerCase());
+    // Windows runners hand out 8.3 short temp paths; compare the real paths.
+    expect(fs.realpathSync.native(b.worktreePath!).toLowerCase()).toBe(fs.realpathSync.native(wtB).toLowerCase());
     const skipped = Object.fromEntries(res.skipped.map((s) => [s.branch, s.reason]));
     expect(skipped['open/c']).toMatch(/still open/);
     expect(skipped['nopr/d']).toBe('no PR');
