@@ -148,10 +148,17 @@ function pickCandidates(db: SqlJsDatabase, ownerLogin: string | null | undefined
   return rows;
 }
 
+/** Name and GitHub's timestamps only; secret values are never returned by the API nor stored. */
+interface ScannedSecret {
+  name: string;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
 interface SecretsFetch {
   /** HTTP status; 429 also stands for a 403 with an exhausted rate limit. */
   status: number;
-  names: string[];
+  secrets: ScannedSecret[];
   /** x-ratelimit-remaining of the response, NaN when absent. */
   remaining: number;
 }
@@ -173,11 +180,15 @@ async function fetchRepoSecretNames(
       },
     }, { purpose: 'secrets-scan', rateLimited: 'passthrough' });
     const remaining = parseInt(resp.headers.get('x-ratelimit-remaining') ?? '', 10);
-    if (resp.status === 429 || (resp.status === 403 && remaining === 0)) return { status: 429, names: [], remaining };
-    if (resp.status === 403 || resp.status === 404) return { status: resp.status, names: [], remaining };
+    if (resp.status === 429 || (resp.status === 403 && remaining === 0)) return { status: 429, secrets: [], remaining };
+    if (resp.status === 403 || resp.status === 404) return { status: resp.status, secrets: [], remaining };
     if (!resp.ok) throw new Error(`GitHub API ${resp.status} for ${repoFullName}/actions/secrets`);
-    const data = await resp.json() as { secrets?: Array<{ name: string }> };
-    return { status: 200, names: (data.secrets ?? []).map((s) => s.name), remaining };
+    const data = await resp.json() as { secrets?: Array<{ name: string; created_at?: string; updated_at?: string }> };
+    return {
+      status: 200,
+      secrets: (data.secrets ?? []).map((s) => ({ name: s.name, created_at: s.created_at ?? null, updated_at: s.updated_at ?? null })),
+      remaining,
+    };
   };
 
   const first = token ? await tryFetch(token) : null;
@@ -185,7 +196,7 @@ async function fetchRepoSecretNames(
   if ((!first || first.status === 403 || first.status === 404) && patToken && patToken !== token) {
     return tryFetch(patToken);
   }
-  return first ?? { status: 401, names: [], remaining: NaN };
+  return first ?? { status: 401, secrets: [], remaining: NaN };
 }
 
 function markScanned(db: SqlJsDatabase, repoId: number, status: SecretsScanStatus): void {
@@ -223,11 +234,11 @@ async function scanBatch(db: SqlJsDatabase, opts: SecretsBatchOptions): Promise<
       }
       // Also on a 403/404: without access the names we had may be stale.
       db.run('DELETE FROM repo_secrets WHERE github_repo_id = ?', [repo.id]);
-      for (const name of result.names) {
+      for (const secret of result.secrets) {
         db.run(
-          `INSERT OR REPLACE INTO repo_secrets (github_repo_id, secret_name, scanned_at)
-           VALUES (?, ?, CURRENT_TIMESTAMP)`,
-          [repo.id, name],
+          `INSERT OR REPLACE INTO repo_secrets (github_repo_id, secret_name, scanned_at, created_at, updated_at)
+           VALUES (?, ?, CURRENT_TIMESTAMP, ?, ?)`,
+          [repo.id, secret.name, secret.created_at, secret.updated_at],
         );
         secretsFound++;
       }
@@ -260,11 +271,16 @@ export interface RepoSecretRow {
   full_name: string;
   secret_name: string;
   scanned_at: string;
+  /** GitHub timestamps; null for rows scanned before age tracking ("age unknown"). */
+  created_at: string | null;
+  updated_at: string | null;
+  /** 1 when the repo is archived. */
+  archived: number | null;
 }
 
 export function searchSecrets(db: SqlJsDatabase, pattern: string): RepoSecretRow[] {
   const stmt = db.prepare(
-    `SELECT r.full_name, s.secret_name, s.scanned_at
+    `SELECT r.full_name, s.secret_name, s.scanned_at, s.created_at, s.updated_at, r.archived
      FROM repo_secrets s
      JOIN github_repos r ON r.id = s.github_repo_id
      WHERE LOWER(s.secret_name) LIKE LOWER(?)
@@ -310,7 +326,7 @@ export function removeSecretFavorite(db: SqlJsDatabase, targetName: string): voi
 
 export function listSecretsForRepo(db: SqlJsDatabase, repoFullName: string): RepoSecretRow[] {
   const stmt = db.prepare(
-    `SELECT r.full_name, s.secret_name, s.scanned_at
+    `SELECT r.full_name, s.secret_name, s.scanned_at, s.created_at, s.updated_at, r.archived
      FROM repo_secrets s
      JOIN github_repos r ON r.id = s.github_repo_id
      WHERE r.full_name = ?

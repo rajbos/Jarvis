@@ -26,6 +26,7 @@ import { getReposUnder, hasDeepRepos, setSystemLocale, formatDurationUntil, desc
 import { IpcErrorBanner } from '../plugins/shared/IpcErrorBanner';
 import { SecretsStep } from '../plugins/secrets/SecretsStep';
 import { SecretsScanPanel } from '../plugins/secrets/SecretsScanPanel';
+import { SecretsHygienePanel } from '../plugins/secrets/SecretsHygienePanel';
 import { DashboardPanel } from '../plugins/dashboard/DashboardPanel';
 import { BrowserCompanionPanel } from '../plugins/browser-companion/BrowserCompanionPanel';
 import { GroupsStep } from '../plugins/groups/GroupsStep';
@@ -1294,6 +1295,7 @@ function App() {
             onClose={() => setShowSecretsPanel(false)}
           />
         )}
+        {showSecretsPanel && <SecretsHygienePanel secrets={secretsList} />}
       </div>
 
       <div class="groups-layout">

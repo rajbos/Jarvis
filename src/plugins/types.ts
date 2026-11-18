@@ -263,6 +263,14 @@ export interface RepoSecret {
 
   scanned_at: string;
 
+  /** GitHub timestamps; null/absent for rows scanned before age tracking. */
+  created_at?: string | null;
+
+  updated_at?: string | null;
+
+  /** 1 when the repo is archived. */
+  archived?: number | null;
+
 }
 
 export interface SecretFavorite {
