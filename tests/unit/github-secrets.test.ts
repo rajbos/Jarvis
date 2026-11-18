@@ -458,3 +458,22 @@ describe('listOrgs — secrets scan state', () => {
     db.close();
   });
 });
+
+describe('runSecretsBatch timestamps', () => {
+  it('stores created_at/updated_at from GitHub and nothing but names and timestamps', async () => {
+    const SQL = await initSqlJs();
+    const db = new SQL.Database();
+    db.run(getSchema());
+    insertRepo(db, { id: 1, fullName: 'alice/myapp' });
+    globalThis.fetch = vi.fn(async () => new Response(
+      JSON.stringify({ secrets: [{ name: 'K', created_at: '2025-01-01T00:00:00Z', updated_at: '2025-02-01T00:00:00Z' }] }),
+      { status: 200, headers: { 'x-ratelimit-remaining': '4900' } },
+    ));
+    await runSecretsBatch(db, { ownerLogin: 'alice' });
+    const row = listSecretsForRepo(db, 'alice/myapp')[0];
+    expect(row.created_at).toBe('2025-01-01T00:00:00Z');
+    expect(row.updated_at).toBe('2025-02-01T00:00:00Z');
+    expect(row.archived).toBe(0);
+    db.close();
+  });
+});

@@ -250,8 +250,14 @@ export function createFixtures(now: number) {
   };
 
   const secrets: RepoSecret[] = [
-    { full_name: REPO_ROCKET, secret_name: 'FIXTURE_DEPLOY_KEY', scanned_at: iso(now, -DAY) },
-    { full_name: REPO_HAMMOCK, secret_name: 'FIXTURE_NPM_TOKEN', scanned_at: iso(now, -DAY) },
+    { full_name: REPO_ROCKET, secret_name: 'FIXTURE_DEPLOY_KEY', scanned_at: iso(now, -DAY), created_at: iso(now, -500 * DAY), updated_at: iso(now, -400 * DAY) },
+    { full_name: REPO_HAMMOCK, secret_name: 'FIXTURE_NPM_TOKEN', scanned_at: iso(now, -DAY), created_at: iso(now, -30 * DAY), updated_at: iso(now, -10 * DAY) },
+    // Scanned before age tracking: renders as "age unknown".
+    { full_name: REPO_HAMMOCK, secret_name: 'FIXTURE_OLD_ROW', scanned_at: iso(now, -DAY), created_at: null, updated_at: null },
+    // Shared by three repos: an org-secret candidate; one of them is archived.
+    { full_name: 'fixture-org/alpha', secret_name: 'FIXTURE_SHARED_TOKEN', scanned_at: iso(now, -DAY), created_at: iso(now, -20 * DAY), updated_at: iso(now, -20 * DAY) },
+    { full_name: 'fixture-org/beta', secret_name: 'FIXTURE_SHARED_TOKEN', scanned_at: iso(now, -DAY), created_at: iso(now, -20 * DAY), updated_at: iso(now, -20 * DAY) },
+    { full_name: 'fixture-org/legacy', secret_name: 'FIXTURE_SHARED_TOKEN', scanned_at: iso(now, -DAY), created_at: iso(now, -20 * DAY), updated_at: iso(now, -20 * DAY), archived: 1 },
   ];
 
   const ollama: OllamaStatus = {
