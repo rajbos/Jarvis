@@ -10,8 +10,9 @@
 //                    new session on the PR (ghapp://session/new?repo&pr&prompt).
 //   Copilot CLI      `copilot --resume <id>` in a terminal, `-i <prompt>` to
 //                    continue with a prompt.
-//   Copilot cloud    ghapp://github.com/<owner>/<repo>/tasks/<id>; a prompt is a
-//                    PR comment mentioning @copilot, which the cloud agent picks up.
+//   Copilot cloud    ghapp://github.com/<owner>/<repo>/tasks/<id>; without a repo
+//                    the PR, else https://github.com/copilot/tasks/<id>. A prompt is
+//                    a PR comment mentioning @copilot, which the cloud agent picks up.
 //   Claude Code CLI  `claude --resume <id> [prompt]` in a terminal.
 //   Claude desktop   No per-session link exists; claude://code/new?folder&q opens
 //                    a new Claude Code session in the same folder with the prompt
@@ -106,7 +107,16 @@ export function planAgentAction(kind: AgentActionKind, entry: ActiveSessionEntry
       };
     }
     if (pr) return { kind: 'deep-link', url: pr.url, description: 'Open the pull request on GitHub', prompt: null, copyPrompt: false };
-    return unsupported('This cloud task has no repository or PR to open.', null);
+    if (session.cloudTaskId) {
+      return {
+        kind: 'deep-link',
+        url: `https://github.com/copilot/tasks/${encodeURIComponent(session.cloudTaskId)}`,
+        description: 'Open the task on github.com',
+        prompt: null,
+        copyPrompt: false,
+      };
+    }
+    return unsupported('This cloud task has no task id, repository or PR to open.', null);
   }
 
   // ── Copilot app ────────────────────────────────────────────────────────────

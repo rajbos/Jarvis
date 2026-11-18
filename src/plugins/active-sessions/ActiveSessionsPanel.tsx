@@ -105,7 +105,11 @@ function openUrl(url: string) {
 /** What "Open" will do for this session, for the button tooltip. */
 function openHint(entry: ActiveSessionEntry): string {
   const s = entry.session;
-  if (s.origin === 'cloud') return s.cloudTaskId && s.repoFullName ? 'Open the task in the GitHub Copilot app' : 'Open the pull request on GitHub';
+  if (s.origin === 'cloud') {
+    if (s.cloudTaskId && s.repoFullName) return 'Open the task in the GitHub Copilot app';
+    if (entry.pr) return 'Open the pull request on GitHub';
+    return 'Open the task on github.com';
+  }
   if (s.provider === 'copilot') return s.client.startsWith('Copilot app') ? 'Open this session in the GitHub Copilot app' : 'Resume this Copilot CLI session in a terminal';
   if (s.entrypoint === 'claude-desktop') return 'Claude Desktop cannot resume a session by link — opens a new Claude Code session in the same folder';
   return 'Resume this Claude Code session in a terminal';

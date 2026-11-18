@@ -133,7 +133,8 @@ describe('planAgentAction', () => {
     const cloud = { provider: 'copilot' as const, origin: 'cloud' as const, client: 'Copilot cloud agent', sessionId: 't1', cloudTaskId: 't1', cwd: null };
     expect(planAgentAction('open', entry(cloud, failing))).toMatchObject({ kind: 'deep-link', url: 'ghapp://github.com/acme/rocket/tasks/t1' });
     expect(planAgentAction('open', entry({ ...cloud, repoFullName: null }, failing))).toMatchObject({ kind: 'deep-link', url: failing.url });
-    expect(planAgentAction('open', entry({ ...cloud, repoFullName: null }, null)).kind).toBe('unsupported');
+    expect(planAgentAction('open', entry({ ...cloud, repoFullName: null }, null))).toMatchObject({ kind: 'deep-link', url: 'https://github.com/copilot/tasks/t1' });
+    expect(planAgentAction('open', entry({ ...cloud, repoFullName: null, cloudTaskId: null }, null)).kind).toBe('unsupported');
     const plan = planAgentAction('fix_checks', entry(cloud, failing));
     expect(plan).toMatchObject({ kind: 'pr-comment', repoFullName: 'acme/rocket', prNumber: 77 });
     if (plan.kind !== 'pr-comment') throw new Error('unreachable');
