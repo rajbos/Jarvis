@@ -196,6 +196,7 @@ function defaultResponses(f: Fixtures): Responses {
     githubGetWorkflowSummary: f.workflowSummary,
     githubGetCachedWorkflowInfo: { fetchedAt: new Date(now).toISOString(), runCount: 1 },
     dashboardGetSummary: f.dashboard,
+    dashboardGetCiHealth: f.ciHealth,
     getFireBrief: f.fireBrief,
     refreshFireBrief: f.fireBrief,
     acknowledgeFireBrief: { ...f.fireBrief, sections: [], totalItems: 0, allClear: true },
