@@ -21,6 +21,7 @@ import fs, { promises as fsp } from 'fs';
 import os from 'os';
 import path from 'path';
 import type { ActiveAgentSession, AgentActivity } from '../plugins/types';
+import { isCopilotSessionSteerable } from './copilot-session-message';
 import { logger } from './logger';
 import { PhaseTimer } from './phase-timer';
 
@@ -560,6 +561,7 @@ export async function discoverCopilotLocalSessions(options: LocalSessionDiscover
       pid,
       linkedPr: eventsPath ? await timer.time('copilotPrLink', () => findCopilotPrLink(eventsPath)) : null,
       sessionFile: eventsPath,
+      steerable: await isCopilotSessionSteerable(sessionId, home),
     });
   }
   pruneScans(copilotPrScans, scannedLogs);

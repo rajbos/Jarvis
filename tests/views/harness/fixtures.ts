@@ -517,7 +517,7 @@ export function createFixtures(now: number) {
           sessionId: 'fixture-3', title: 'Fix the flaky hammock sunset snapshot test',
           cwd: `${LOCAL_ROOT}\\globex-oss\\hammock`,
           repoFullName: REPO_HAMMOCK, branch: 'copilot/sunset-colors', activity: 'idle',
-          startedAt: iso(now, -DAY - 60 * 60 * 1000), updatedAt: iso(now, -DAY), pid: 4343, branchPushed: true,
+          startedAt: iso(now, -DAY - 60 * 60 * 1000), updatedAt: iso(now, -DAY), pid: 4343, branchPushed: true, steerable: true,
           localUsage: { primaryModel: 'claude-sonnet-5.5', models: ['claude-sonnet-5.5'], totalTokens: 6_840_000, credits: 20.82, estimatedUsd: 2.08 },
         },
         agent: { light: 'green', label: 'Idle', detail: 'Waiting for the next prompt', blocking: false },
