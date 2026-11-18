@@ -578,6 +578,8 @@ export interface RepoHealthStatus {
 
 }
 
+export type { CiHealthReport, CiWorkflowHealth } from '../services/ci-health';
+
 export interface DashboardSummary {
 
   repos: RepoHealthStatus[];
@@ -1811,6 +1813,8 @@ export interface JarvisApi {
   // Dashboard
 
   dashboardGetSummary(): Promise<DashboardSummary>;
+
+  dashboardGetCiHealth(windowDays: number): Promise<import('../services/ci-health').CiHealthReport>;
 
   dashboardPushBranchUpstream(repoPath: string, branch: string): Promise<{ ok: boolean; error?: string; output?: string }>;
 

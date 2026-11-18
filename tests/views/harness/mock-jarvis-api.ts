@@ -195,6 +195,7 @@ function defaultResponses(f: Fixtures): Responses {
     githubGetWorkflowSummary: f.workflowSummary,
     githubGetCachedWorkflowInfo: { fetchedAt: new Date(now).toISOString(), runCount: 1 },
     dashboardGetSummary: f.dashboard,
+    dashboardGetCiHealth: f.ciHealth,
     dashboardPushBranchUpstream: ok,
     // Groups + Ruddr
     groupsList: f.groups,

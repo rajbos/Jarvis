@@ -165,6 +165,7 @@ const EXPECTED_CHANNELS = [
   'secrets:remove-favorite',
   // dashboard plugin
   'dashboard:get-summary',
+  'dashboard:get-ci-health',
   'dashboard:push-branch-upstream',
   // groups plugin
   'groups:list',
