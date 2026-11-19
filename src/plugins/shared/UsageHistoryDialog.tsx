@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { createPortal } from 'preact/compat';
 import { isIpcError, type UsageHistoryMetric, type UsageHistoryPoint, type UsageHistoryRange } from '../types';
 import { formatNumber } from './utils';
-import { chartY, historyBands, niceCeil, timeTicks } from './usage-history-chart';
+import { type AxisDomain, chartY, fitAxisDomain, historyBands, timeTicks } from './usage-history-chart';
 
 const W = 760;
 const H = 240;
@@ -43,6 +43,11 @@ interface Props {
   format?: (value: number) => string;
   /** Show values as "value / limit"; off when the value is already a percentage. */
   showLimit?: boolean;
+  /**
+   * Plot raw values (not a share of the limit) on an axis that fits the visible
+   * data. The percentage of the limit moves to the tooltip and table.
+   */
+  absolute?: boolean;
   initialRangeMs?: number;
   footnote?: string;
   onClose: () => void;
@@ -69,7 +74,7 @@ const when = (ms: number) => new Date(ms).toLocaleString([], { weekday: 'short',
  * to the other extreme, so short dips and spikes stay visible when zoomed out.
  */
 export function UsageHistoryDialog({
-  title, metric, series, mode, format = formatNumber, showLimit = true, initialRangeMs, footnote, onClose,
+  title, metric, series, mode, format = formatNumber, showLimit = true, absolute = false, initialRangeMs, footnote, onClose,
 }: Props) {
   const [rangeMs, setRangeMs] = useState<number>(initialRangeMs ?? RANGES[0].ms);
   const [data, setData] = useState<UsageHistoryRange | null>(null);
@@ -105,12 +110,14 @@ export function UsageHistoryDialog({
   const visible = series.filter((s) => shown[s.key]);
 
   // Series plot as a share of their own limit. When any shown series has none
-  // (unlimited Copilot plan), every line switches to raw values on an axis from
-  // 0 to a round number above the highest one, so they stay comparable.
+  // (unlimited Copilot plan), or `absolute` is set, every line switches to raw
+  // values on an axis fitted to the visible data, so they stay comparable.
   const unlimited = view ? visible.some((s) => view.slots.some((slot) => slot.series[s.key] && slot.series[s.key].limit === null)) : false;
-  const scale = view && unlimited
-    ? niceCeil(Math.max(0, ...visible.flatMap((s) => view.slots.map((slot) => slot.series[s.key]?.max ?? 0))))
-    : null;
+  let scale: AxisDomain | null = null;
+  if (view && (unlimited || absolute)) {
+    const vals = visible.flatMap((s) => view.slots.flatMap((slot) => (slot.series[s.key] ? [slot.series[s.key].min, slot.series[s.key].max] : [])));
+    scale = vals.length > 0 ? fitAxisDomain(Math.min(...vals), Math.max(...vals)) : { min: 0, max: 1 };
+  }
   const yOf = (value: number, limit: number | null) => chartY(value, limit, PLOT_H, scale);
 
   const bands = view
@@ -136,6 +143,8 @@ export function UsageHistoryDialog({
   const hoverSlot = view && hover !== null ? view.slots[hover] : null;
   const hoverX = hoverSlot ? xOf((hoverSlot.from + hoverSlot.to) / 2) : 0;
   const withLimit = (value: number, limit: number | null) => (showLimit && limit !== null ? `${format(value)} / ${format(limit)}` : format(value));
+  // Only needed when the axis shows raw values; otherwise the axis itself is the percentage.
+  const pct = (value: number, limit: number | null) => (absolute && showLimit && limit ?` (${Math.round((value / limit) * 100)}%)` : '');
 
   return createPortal(
     <div class="bg-copilot-raw-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
@@ -175,7 +184,7 @@ export function UsageHistoryDialog({
                   <g key={f}>
                     <line class="bg-ratelimit-grid" x1={0} x2={PLOT_W} y1={(1 - f) * PLOT_H} y2={(1 - f) * PLOT_H} />
                     <text class="bg-rlh-ylabel" x={-6} y={(1 - f) * PLOT_H + 4}>
-                      {scale !== null ? format(f * scale) : `${f * 100}%`}
+                      {scale !== null ? format(scale.min + f * (scale.max - scale.min)) : `${f * 100}%`}
                     </text>
                   </g>
                 ))}
@@ -265,7 +274,7 @@ export function UsageHistoryDialog({
                       <i style={{ background: s.color }} />
                       <span>{s.label}</span>
                       <span>
-                        {v.min === v.max ? withLimit(v.min, v.limit) : withLimit(v.min, null) + '–' + withLimit(v.max, v.limit)}
+                        {v.min === v.max ? withLimit(v.min, v.limit) + pct(v.min, v.limit) : withLimit(v.min, null) + '–' + withLimit(v.max, v.limit) + pct(v.max, v.limit)}
                       </span>
                     </div>
                   );

@@ -11,7 +11,7 @@ import {
   recordUsageSample,
   USAGE_HISTORY_RETENTION_MS,
 } from '../../src/services/usage-history';
-import { chartY, downsampleUsageHistory, historyBands, niceCeil } from '../../src/plugins/shared/usage-history-chart';
+import { chartY, downsampleUsageHistory, fitAxisDomain, historyBands, niceCeil } from '../../src/plugins/shared/usage-history-chart';
 
 const MIN = 60 * 1000;
 const sample = (at: number, series: Record<string, [number, number | null]>) => ({
@@ -109,13 +109,58 @@ describe('historyBands', () => {
   });
 
   it('scales series without a limit against the given axis maximum', () => {
-    expect(historyBands([slot(0, 250, 500, null)], 'core', 0, 2 * MIN, 100, 100, 2 * MIN, 1000)[0][0]).toMatchObject({ yMin: 75, yMax: 50 });
-    expect(chartY(2000, null, 100, 1000)).toBe(0);
+    expect(historyBands([slot(0, 250, 500, null)], 'core', 0, 2 * MIN, 100, 100, 2 * MIN, { min: 0, max: 1000 })[0][0]).toMatchObject({ yMin: 75, yMax: 50 });
+    expect(chartY(2000, null, 100, { min: 0, max: 1000 })).toBe(0);
   });
 });
 
 describe('niceCeil', () => {
   it('rounds up to a readable axis maximum', () => {
     expect([0, 7, 120, 250, 2600].map(niceCeil)).toEqual([1, 10, 200, 250, 5000]);
+  });
+});
+
+describe('fitAxisDomain', () => {
+  it('starts at 0 with headroom when the data spans a wide range', () => {
+    expect(fitAxisDomain(0, 550)).toEqual({ min: 0, max: 600 });
+  });
+  it('zooms in on a narrow high band', () => {
+    const d = fitAxisDomain(1200, 1348);
+    expect(d.min).toBeGreaterThan(900);
+    expect(d.max).toBeGreaterThanOrEqual(1348);
+    expect(d.max - d.min).toBeLessThan(600);
+  });
+  it('handles empty data', () => {
+    expect(fitAxisDomain(0, 0)).toEqual({ min: 0, max: 1 });
+  });
+  it('falls back for negative and non-finite input instead of returning an axis that misses the data', () => {
+    expect(fitAxisDomain(-5, -1)).toEqual({ min: 0, max: 1 });
+    expect(fitAxisDomain(Number.NaN, 5)).toEqual({ min: 0, max: 1 });
+    expect(fitAxisDomain(5, Number.POSITIVE_INFINITY)).toEqual({ min: 0, max: 1 });
+    expect(fitAxisDomain(-5, 100).min).toBe(0);
+  });
+  it('does not zoom a flat series', () => {
+    const d = fitAxisDomain(500, 500);
+    expect(d.min).toBe(0);
+    expect(d.max).toBeGreaterThanOrEqual(500);
+  });
+  it('always contains the data and uses 4 equal round intervals', () => {
+    for (const [lo, hi] of [[1200, 1348], [0, 550], [3, 9], [95, 100], [0.2, 0.9], [5, 5.4]] as const) {
+      const d = fitAxisDomain(lo, hi);
+      expect(d.min).toBeLessThanOrEqual(lo);
+      expect(d.max).toBeGreaterThanOrEqual(hi);
+      const step = (d.max - d.min) / 4;
+      const mantissa = Number((step / 10 ** Math.floor(Math.log10(step))).toPrecision(6));
+      expect([1, 1.5, 2, 2.5, 3, 4, 5, 10]).toContain(mantissa);
+    }
+  });
+  it('returns tick values without floating-point residue', () => {
+    const d = fitAxisDomain(5, 5.4);
+    expect([d.min, d.max]).toEqual([Number(d.min.toPrecision(12)), Number(d.max.toPrecision(12))]);
+    expect(String(d.min).length).toBeLessThan(8);
+    expect(String(d.max).length).toBeLessThan(8);
+  });
+  it('maps values through a floored domain', () => {
+    expect(chartY(150, null, 100, { min: 100, max: 200 })).toBe(50);
   });
 });
