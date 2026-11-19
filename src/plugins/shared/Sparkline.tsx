@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
 import { isIpcError, type UsageHistoryMetric, type UsageHistoryRange } from '../types';
-import { historyBands } from './usage-history-chart';
+import { type AxisDomain, historyBands } from './usage-history-chart';
 
 const W = 280;
 const H = 26;
@@ -44,8 +44,8 @@ interface SparklineProps {
 /** Tiny history chart for one series, sized to sit under a flyout row. */
 export function Sparkline({ history, series, color, mode, caption, title }: SparklineProps) {
   const slots = history?.slots ?? [];
-  const scale = mode === 'used'
-    ? Math.max(1, ...slots.map((s) => s.series[series]?.max ?? 0))
+  const scale: AxisDomain | null = mode === 'used'
+    ? { min: 0, max: Math.max(1, ...slots.map((s) => s.series[series]?.max ?? 0)) }
     : null;
   const segments = history
     ? historyBands(slots, series, history.start, history.end, W - 2 * PAD, H - 2 * PAD, history.slotMs, scale)

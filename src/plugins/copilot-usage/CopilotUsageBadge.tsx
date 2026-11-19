@@ -338,6 +338,7 @@ export function CopilotUsageBadge({ usage, otherAccounts = [], onOpenSettings, o
           metric="copilot"
           series={historySeries}
           mode="used"
+          absolute
           format={credits}
           initialRangeMs={30 * 24 * 60 * 60 * 1000}
           footnote="recorded at every usage check (monthly totals reset on the 1st)"

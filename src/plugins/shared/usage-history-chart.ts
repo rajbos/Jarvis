@@ -73,7 +73,7 @@ export function historyBands(
   width: number,
   height: number,
   slotMs: number,
-  scale: number | null = null,
+  scale: AxisDomain | null = null,
 ): BandPoint[][] {
   const span = Math.max(1, end - start);
   // Long ranges bridge overnight gaps; otherwise a month of history reads as a dashed line.
@@ -101,12 +101,43 @@ export function historyBands(
   return segments;
 }
 
-/** y for a value: its share of the limit, or of `scale` when one is given; top = full. */
-export function chartY(value: number, limit: number | null, height: number, scale: number | null = null): number {
-  const max = scale ?? limit;
-  const ratio = max && max > 0 ? value / max : 0;
+/** A raw-value y axis: `min` at the bottom, `max` at the top. */
+export interface AxisDomain {
+  min: number;
+  max: number;
+}
+
+/** y for a value: its position in `scale` when one is given, else its share of the limit; top = full. */
+export function chartY(value: number, limit: number | null, height: number, scale: AxisDomain | null = null): number {
+  const lo = scale?.min ?? 0;
+  const hi = scale?.max ?? limit;
+  const ratio = hi && hi > lo ? (value - lo) / (hi - lo) : 0;
   return (1 - Math.min(1, Math.max(0, ratio))) * height;
 }
+
+/**
+ * Axis that fits the data: from 0 to a round number above the highest value, or,
+ * when every value sits in a narrow high band (e.g. a counter creeping up late in
+ * the month), zoomed in on that band so the progression stays readable.
+ * Always 4 equal intervals of a round step. Usage counters are never negative, so
+ * negative or non-finite input is clamped; a flat series (lo == hi) is not zoomed,
+ * since a ±1% window around one value reads as noise.
+ */
+export function fitAxisDomain(lo: number, hi: number): AxisDomain {
+  if (!Number.isFinite(lo) || !Number.isFinite(hi) || !(hi > 0)) return { min: 0, max: 1 };
+  lo = Math.min(Math.max(0, lo), hi);
+  const span = hi - lo;
+  const zoom = lo > 0 && span > 0 && span < hi * 0.6;
+  const pad = zoom ? Math.max(span * 0.15, hi * 0.01) : hi * 0.08;
+  const bottom = zoom ? Math.max(0, lo - pad) : 0;
+  const step = niceStep((hi + pad - bottom) / 4);
+  const min = zoom ? Math.floor(bottom / step) * step : 0;
+  const stepFinal = zoom ? niceStep((hi + pad - min) / 4) : step;
+  return { min: clean(min), max: clean(min + stepFinal * 4) };
+}
+
+/** Drops floating-point residue (4.800000000000001) so tick labels stay round. */
+const clean = (n: number): number => Number(n.toPrecision(12));
 
 /** A round number at or above `n`, for the top of an unlimited series' axis. */
 export function niceCeil(n: number): number {
@@ -114,6 +145,13 @@ export function niceCeil(n: number): number {
   const mag = 10 ** Math.floor(Math.log10(n));
   const step = [1, 2, 2.5, 5, 10].find((m) => m * mag >= n) ?? 10;
   return step * mag;
+}
+
+/** A round grid step at or above `n` (finer than niceCeil, so axes don't overshoot the data). */
+function niceStep(n: number): number {
+  if (n <= 0) return 1;
+  const mag = 10 ** Math.floor(Math.log10(n));
+  return ([1, 1.5, 2, 2.5, 3, 4, 5, 10].find((m) => m * mag >= n) ?? 10) * mag;
 }
 
 /** Evenly spaced time ticks across [start, end], labelled to suit the range. */
