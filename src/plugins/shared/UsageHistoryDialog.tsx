@@ -143,7 +143,8 @@ export function UsageHistoryDialog({
   const hoverSlot = view && hover !== null ? view.slots[hover] : null;
   const hoverX = hoverSlot ? xOf((hoverSlot.from + hoverSlot.to) / 2) : 0;
   const withLimit = (value: number, limit: number | null) => (showLimit && limit !== null ? `${format(value)} / ${format(limit)}` : format(value));
-  const pct = (value: number, limit: number | null) => (showLimit && limit ? ` (${Math.round((value / limit) * 100)}%)` : '');
+  // Only needed when the axis shows raw values; otherwise the axis itself is the percentage.
+  const pct = (value: number, limit: number | null) => (absolute && showLimit && limit ?` (${Math.round((value / limit) * 100)}%)` : '');
 
   return createPortal(
     <div class="bg-copilot-raw-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
