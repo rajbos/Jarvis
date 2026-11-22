@@ -2053,6 +2053,9 @@ export interface JarvisApi {
   openAppLog(): Promise<{ ok: boolean; error?: string }>;
   onShowDiagnostic(cb: (report: DiagnosticReportPayload) => void): () => void;
 
+  /** The machine woke from sleep; renderer polls should refresh now. */
+  onSystemResumed(cb: () => void): () => void;
+
 }
 
 declare global {

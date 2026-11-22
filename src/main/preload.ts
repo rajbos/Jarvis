@@ -124,6 +124,11 @@ contextBridge.exposeInMainWorld('jarvis', {
     ipcRenderer.on('diagnostics:show', listener);
     return () => { ipcRenderer.removeListener('diagnostics:show', listener); };
   },
+  onSystemResumed: (callback: () => void) => {
+    const listener = () => callback();
+    ipcRenderer.on('app:resumed', listener);
+    return () => { ipcRenderer.removeListener('app:resumed', listener); };
+  },
   onOpenChat: (callback: () => void) => {
     const listener = () => callback();
     ipcRenderer.on('chat:open', listener);

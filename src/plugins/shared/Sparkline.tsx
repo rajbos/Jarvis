@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { isIpcError, type UsageHistoryMetric, type UsageHistoryRange } from '../types';
 import { historyBands, sparklineScale } from './usage-history-chart';
+import { startPolling } from './polling';
 
 const W = 280;
 const H = 26;
@@ -20,8 +21,8 @@ export function useUsageHistory(metric: UsageHistoryMetric, rangeMs: () => numbe
       }
     };
     void load();
-    const id = window.setInterval(load, 2 * 60 * 1000);
-    return () => { cancelled = true; window.clearInterval(id); };
+    const stop = startPolling(load, 2 * 60 * 1000);
+    return () => { cancelled = true; stop(); };
   }, [metric]);
   return data;
 }

@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'node:events';
 import {
+  APP_RESUMED_CHANNEL,
+  notifyRenderersOfResume,
   registerPowerResumeHandler,
   resetPowerResumeHandlerForTests,
   RESUME_DEBOUNCE_MS,
@@ -41,5 +43,20 @@ describe('registerPowerResumeHandler', () => {
     const monitor = new EventEmitter();
     registerPowerResumeHandler(monitor, () => { throw new Error('boom'); });
     expect(() => monitor.emit('resume')).not.toThrow();
+  });
+});
+
+describe('notifyRenderersOfResume', () => {
+  it('sends app:resumed to every window through the given sender', () => {
+    const send = vi.fn();
+    notifyRenderersOfResume(['main', 'settings'], send);
+    expect(APP_RESUMED_CHANNEL).toBe('app:resumed');
+    expect(send.mock.calls).toEqual([['main', 'app:resumed'], ['settings', 'app:resumed']]);
+  });
+
+  it('keeps notifying the rest when one send throws', () => {
+    const send = vi.fn((win: string) => { if (win === 'broken') throw new Error('disposed'); });
+    expect(() => notifyRenderersOfResume(['broken', 'next'], send)).not.toThrow();
+    expect(send).toHaveBeenLastCalledWith('next', 'app:resumed');
   });
 });

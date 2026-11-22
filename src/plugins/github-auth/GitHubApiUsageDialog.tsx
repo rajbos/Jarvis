@@ -11,6 +11,7 @@ import { isIpcError, type GitHubApiCallStats, type GitHubRateLimit, type GitHubR
 import { formatDurationUntil, formatNumber } from '../shared/utils';
 import { Sparkline, useUsageHistory } from '../shared/Sparkline';
 import { UsageHistoryDialog } from '../shared/UsageHistoryDialog';
+import { startPolling } from '../shared/polling';
 import { formatSince, hourlyLows, purposeRows, tokenColumns, tokenLabel } from './api-usage';
 
 const HOUR = 60 * 60 * 1000;
@@ -121,8 +122,8 @@ export function GitHubApiUsageDialog({ rateLimit, onClose }: Props) {
       }
     };
     void load();
-    const id = window.setInterval(load, 60 * 1000);
-    return () => { cancelled = true; window.clearInterval(id); };
+    const stop = startPolling(load, 60 * 1000);
+    return () => { cancelled = true; stop(); };
   }, [windowMs]);
 
   useEffect(() => {

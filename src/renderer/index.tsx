@@ -75,6 +75,7 @@ import type {
 import { isIpcError } from '../plugins/types';
 import '../plugins/types'; // activate the global Window augmentation
 import { ErrorBoundary, installGlobalErrorHandlers } from '../plugins/shared/ErrorBoundary';
+import { startPolling } from '../plugins/shared/polling';
 
 type AppTab = 'dashboard' | 'groups-dashboard' | 'agent-sessions' | 'browser' | 'setup' | 'dismiss-history';
 
@@ -577,7 +578,7 @@ function App() {
   // 2-minute rate limit refresh
   useEffect(() => {
     if (!oauthStatus?.authenticated) return;
-    const id = window.setInterval(async () => {
+    return startPolling(async () => {
       try {
         const rl = await window.jarvis.getGitHubRateLimit();
         if (isIpcError(rl)) {
@@ -589,7 +590,6 @@ function App() {
         console.warn('[Jarvis] Rate limit refresh failed:', e);
       }
     }, 2 * 60 * 1000);
-    return () => window.clearInterval(id);
   }, [oauthStatus?.authenticated]);
 
   // Claude rate limit polling — every 2 minutes normally, every 30s while
@@ -597,7 +597,7 @@ function App() {
   useEffect(() => {
     if (!claudeStatus?.connected) return;
     const intervalMs = claudeRateLimit?.limited ? 30 * 1000 : 2 * 60 * 1000;
-    const id = window.setInterval(async () => {
+    return startPolling(async () => {
       try {
         const rl = await window.jarvis.getClaudeRateLimit();
         setClaudeRateLimit(rl);
@@ -605,7 +605,6 @@ function App() {
         console.warn('[Jarvis] Claude rate limit refresh failed:', e);
       }
     }, intervalMs);
-    return () => window.clearInterval(id);
   }, [claudeStatus?.connected, claudeRateLimit?.limited]);
 
   // Keep refs so the effect below can always read the latest panel state

@@ -41,6 +41,25 @@ export function registerPowerResumeHandler(
   });
 }
 
+/** IPC channel the renderer's polling helper listens on (preload `onSystemResumed`). */
+export const APP_RESUMED_CHANNEL = 'app:resumed';
+
+/**
+ * Tell every open renderer the machine woke. Their polls run on window timers
+ * that paused during sleep too, so they refresh on this instead of waiting a
+ * full interval. `send` is `safeSend` in the app (injected to keep this module
+ * free of Electron imports); one failing window does not stop the rest.
+ */
+export function notifyRenderersOfResume<W>(windows: readonly W[], send: (win: W, channel: string) => void): void {
+  for (const win of windows) {
+    try {
+      send(win, APP_RESUMED_CHANNEL);
+    } catch (err) {
+      logger.debug('[Power] Could not notify window of resume:', err);
+    }
+  }
+}
+
 /** Test helper. */
 export function resetPowerResumeHandlerForTests(): void {
   registered = false;

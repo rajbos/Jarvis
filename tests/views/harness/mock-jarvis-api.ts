@@ -54,6 +54,7 @@ const EVENT_METHODS: Record<EventMethod, true> = {
   onSecretsProgress: true,
   onOpenChat: true,
   onShowDiagnostic: true,
+  onSystemResumed: true,
   onOAuthComplete: true,
   onPatExpired: true,
   onOAuthExpired: true,

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { createPortal } from 'preact/compat';
 import { isIpcError, type UsageHistoryMetric, type UsageHistoryPoint, type UsageHistoryRange } from '../types';
 import { formatNumber } from './utils';
+import { startPolling } from './polling';
 import { chartY, historyAxisScale, historyBands, limitPercentSuffix, timeTicks } from './usage-history-chart';
 
 const W = 760;
@@ -96,8 +97,8 @@ export function UsageHistoryDialog({
       }
     };
     void load();
-    const id = window.setInterval(load, 2 * 60 * 1000);
-    return () => { cancelled = true; window.clearInterval(id); };
+    const stop = startPolling(load, 2 * 60 * 1000);
+    return () => { cancelled = true; stop(); };
   }, [metric, rangeMs]);
 
   useEffect(() => {
