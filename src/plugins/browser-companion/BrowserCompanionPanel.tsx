@@ -6,6 +6,7 @@ import {
   type BrowserCompanionStatus,
 } from '../types';
 import { copyToClipboard } from '../clipboard';
+import { useTimeouts } from '../shared/timeouts';
 
 // ── Skill form ────────────────────────────────────────────────────────────────
 
@@ -207,6 +208,7 @@ export function BrowserCompanionPanel({ onBack }: { onBack: () => void }) {
   const [selectedSkillId, setSelectedSkillId] = useState<number | null>(null);
   const [pairingToken, setPairingToken] = useState<string | null>(null);
   const [tokenCopy, setTokenCopy] = useState<'idle' | 'copied' | 'failed'>('idle');
+  const timeouts = useTimeouts();
   const [regenerating, setRegenerating] = useState(false);
 
   const loadStatus = useCallback(async () => {
@@ -344,7 +346,7 @@ export function BrowserCompanionPanel({ onBack }: { onBack: () => void }) {
   const handleCopyToken = async () => {
     if (!pairingToken) return;
     setTokenCopy(await copyToClipboard(pairingToken) ? 'copied' : 'failed');
-    setTimeout(() => setTokenCopy('idle'), 2000);
+    timeouts.set('tokenCopy', () => setTokenCopy('idle'), 2000);
   };
 
   const handleRegenerateToken = async () => {

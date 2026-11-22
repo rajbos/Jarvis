@@ -4,6 +4,7 @@
 // server searches.
 import { useEffect, useState } from 'preact/hooks';
 import { copyToClipboard } from '../plugins/clipboard';
+import { useTimeouts } from '../plugins/shared/timeouts';
 
 export interface McpClientConfigView {
   claudeDesktop: string;
@@ -61,6 +62,7 @@ export function McpServerSection({ api }: { api: McpSectionApi }) {
   const [tab, setTab] = useState<SnippetKey>('claudeDesktop');
   const [copied, setCopied] = useState(false);
   const [copyFailed, setCopyFailed] = useState(false);
+  const timeouts = useTimeouts();
   const [index, setIndex] = useState<IndexStatusView | null>(null);
   const [progress, setProgress] = useState<IndexProgressView | null>(null);
   const [starting, setStarting] = useState(false);
@@ -86,7 +88,7 @@ export function McpServerSection({ api }: { api: McpSectionApi }) {
     const ok = await copyToClipboard(config[tab]);
     setCopied(ok);
     setCopyFailed(!ok);
-    setTimeout(() => { setCopied(false); setCopyFailed(false); }, ok ? 1500 : 2000);
+    timeouts.set('copied', () => { setCopied(false); setCopyFailed(false); }, ok ? 1500 : 2000);
   };
 
   const handleIndexNow = async () => {

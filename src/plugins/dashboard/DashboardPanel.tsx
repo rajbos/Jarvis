@@ -11,6 +11,7 @@ import {
 import { AgentSelector } from '../agents/AgentSelector';
 import { FireBriefCard } from './FireBriefCard';
 import { apiUrlToWebUrl, repoWebUrl } from '../shared/github-urls';
+import { useTimeouts } from '../shared/timeouts';
 // ── Failure hint helpers ──────────────────────────────────────────────────────────
 
 interface FailureHint {
@@ -253,6 +254,7 @@ function NotificationList({ repoFullName, dismissedNotifIds, workflowFilter }: {
   // Ids currently mid-dismiss-animation — kept in the list one beat longer so the
   // row can fade/collapse out instead of vanishing instantly.
   const [dismissingIds, setDismissingIds] = useState<ReadonlySet<string>>(new Set());
+  const timeouts = useTimeouts();
 
   useEffect(() => {
     if (!successMsg) return;
@@ -363,7 +365,7 @@ function NotificationList({ repoFullName, dismissedNotifIds, workflowFilter }: {
       return;
     }
     // Let the exit transition play before actually removing the row.
-    setTimeout(() => {
+    timeouts.set(`dismiss:${id}`, () => {
       setNotifications((prev) => prev?.filter((n) => n.id !== id) ?? null);
       setDismissingIds((prev) => { const next = new Set(prev); next.delete(id); return next; });
     }, 260);
@@ -382,7 +384,7 @@ function NotificationList({ repoFullName, dismissedNotifIds, workflowFilter }: {
         console.error('[Dashboard] Failed to dismiss notification:', err);
       }
     }
-    setTimeout(() => {
+    timeouts.set(`dismiss-group:${ids.join(',')}`, () => {
       setNotifications((prev) => prev?.filter((n) => !ids.includes(n.id)) ?? null);
       setDismissingIds((prev) => { const next = new Set(prev); for (const id of ids) next.delete(id); return next; });
     }, 260);
@@ -1093,6 +1095,7 @@ export function DashboardPanel({ dismissedNotifIds, onOpenHistory, onOpenTab }: 
   const [ciOpen, setCiOpen] = useState(false);
   const [ciFocus, setCiFocus] = useState<CiFocus | null>(null);
   const [pipelineStatus, setPipelineStatus] = useState<'idle' | 'running' | 'done'>('idle');
+  const timeouts = useTimeouts();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1223,7 +1226,7 @@ export function DashboardPanel({ dismissedNotifIds, onOpenHistory, onOpenTab }: 
       if (result.ok) {
         setPushStates((prev) => ({ ...prev, [repoId]: 'done' }));
         // Refresh dashboard after a short delay so the warning clears
-        setTimeout(() => { void load(); }, 2000);
+        timeouts.set('reload-after-push', () => { void load(); }, 2000);
       } else {
         console.error('[Dashboard] Push upstream failed:', result.error);
         setPushStates((prev) => ({ ...prev, [repoId]: 'error' }));
