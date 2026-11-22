@@ -11,7 +11,16 @@ import {
   recordUsageSample,
   USAGE_HISTORY_RETENTION_MS,
 } from '../../src/services/usage-history';
-import { chartY, downsampleUsageHistory, fitAxisDomain, historyBands, niceCeil } from '../../src/plugins/shared/usage-history-chart';
+import {
+  chartY,
+  downsampleUsageHistory,
+  fitAxisDomain,
+  historyAxisScale,
+  historyBands,
+  limitPercentSuffix,
+  niceCeil,
+  sparklineScale,
+} from '../../src/plugins/shared/usage-history-chart';
 
 const MIN = 60 * 1000;
 const sample = (at: number, series: Record<string, [number, number | null]>) => ({
@@ -162,5 +171,93 @@ describe('fitAxisDomain', () => {
   });
   it('maps values through a floored domain', () => {
     expect(chartY(150, null, 100, { min: 100, max: 200 })).toBe(50);
+  });
+});
+
+type SlotSeries = Record<string, [min: number, max: number, limit: number | null]>;
+const slot = (from: number, series: SlotSeries) => ({
+  from,
+  to: from + MIN,
+  series: Object.fromEntries(Object.entries(series).map(([k, [min, max, limit]]) => [k, { min, max, last: max, limit }])),
+});
+
+describe('historyAxisScale', () => {
+  const limited = [slot(0, { a: [10, 20, 100], b: [40, 60, 100] }), slot(MIN, { a: [20, 30, 100], b: [50, 80, 100] })];
+  const mixed = [slot(0, { credits: [100, 140, null], quota: [10, 20, 300] }), slot(MIN, { credits: [140, 180, null], quota: [20, 25, 300] })];
+
+  it('keeps the share-of-limit axis when every visible series is limited and absolute is off', () => {
+    expect(historyAxisScale(limited, ['a', 'b'], false)).toBeNull();
+  });
+
+  it('switches to a raw axis fitted to the unlimited series when absolute is off', () => {
+    expect(historyAxisScale([slot(0, { credits: [100, 180, null] })], ['credits'], false)).toEqual(fitAxisDomain(100, 180));
+  });
+
+  it('fits the raw axis across every visible series when one of them is unlimited', () => {
+    expect(historyAxisScale(mixed, ['credits', 'quota'], false)).toEqual(fitAxisDomain(10, 180));
+  });
+
+  it('uses a raw axis over all visible series when absolute is set, even if all are limited', () => {
+    expect(historyAxisScale(limited, ['a', 'b'], true)).toEqual(fitAxisDomain(10, 80));
+  });
+
+  it('gives the same fitted axis when absolute is set and a series is unlimited', () => {
+    expect(historyAxisScale(mixed, ['credits', 'quota'], true)).toEqual(fitAxisDomain(10, 180));
+  });
+
+  it('ignores hidden series: hiding the unlimited one returns to the share-of-limit axis', () => {
+    expect(historyAxisScale(mixed, ['quota'], false)).toBeNull();
+  });
+
+  it('rescales to the remaining visible series when one is hidden on an absolute chart', () => {
+    expect(historyAxisScale(limited, ['a'], true)).toEqual(fitAxisDomain(10, 30));
+  });
+
+  it('falls back to 0..1 when absolute is set but no visible series has data', () => {
+    expect(historyAxisScale([], ['a'], true)).toEqual({ min: 0, max: 1 });
+    expect(historyAxisScale(limited, ['missing'], true)).toEqual({ min: 0, max: 1 });
+    expect(historyAxisScale(limited, [], true)).toEqual({ min: 0, max: 1 });
+  });
+
+  it('keeps the share-of-limit axis for empty data when absolute is off', () => {
+    expect(historyAxisScale([], ['a'], false)).toBeNull();
+  });
+
+  it('switches to a raw axis when only some slots of a series lack a limit', () => {
+    const slots = [slot(0, { a: [10, 20, 100] }), slot(MIN, { a: [20, 40, null] })];
+    expect(historyAxisScale(slots, ['a'], false)).toEqual(fitAxisDomain(10, 40));
+  });
+});
+
+describe('limitPercentSuffix', () => {
+  it('shows the share of the limit only on an absolute chart that shows limits', () => {
+    expect(limitPercentSuffix(42, 100, true, true)).toBe(' (42%)');
+    expect(limitPercentSuffix(1, 3, true, true)).toBe(' (33%)');
+  });
+  it('is empty when absolute is off, whatever the limit', () => {
+    expect(limitPercentSuffix(42, 100, false, true)).toBe('');
+    expect(limitPercentSuffix(42, 100, false, false)).toBe('');
+  });
+  it('is empty when limits are hidden', () => {
+    expect(limitPercentSuffix(42, 100, true, false)).toBe('');
+  });
+  it('is empty without a positive limit', () => {
+    expect(limitPercentSuffix(42, null, true, true)).toBe('');
+    expect(limitPercentSuffix(42, 0, true, true)).toBe('');
+  });
+});
+
+describe('sparklineScale', () => {
+  const slots = [slot(0, { a: [5, 12, 100] }), slot(MIN, { a: [12, 30, 100], b: [1, 2, null] })];
+  it('plots remaining as a share of the limit', () => {
+    expect(sparklineScale(slots, 'a', 'remaining')).toBeNull();
+  });
+  it('plots used from 0 to the highest value seen for that series', () => {
+    expect(sparklineScale(slots, 'a', 'used')).toEqual({ min: 0, max: 30 });
+  });
+  it('never uses an axis top below 1', () => {
+    expect(sparklineScale(slots, 'b', 'used')).toEqual({ min: 0, max: 2 });
+    expect(sparklineScale([], 'a', 'used')).toEqual({ min: 0, max: 1 });
+    expect(sparklineScale([slot(0, { a: [0, 0.2, null] })], 'a', 'used')).toEqual({ min: 0, max: 1 });
   });
 });

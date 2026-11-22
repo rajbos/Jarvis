@@ -136,6 +136,40 @@ export function fitAxisDomain(lo: number, hi: number): AxisDomain {
   return { min: clean(min), max: clean(min + stepFinal * 4) };
 }
 
+/**
+ * y axis for the history dialog. Series plot as a share of their own limit
+ * (null). When any visible series has no limit in some slot (unlimited Copilot
+ * plan), or `absolute` is set, every line switches to raw values on an axis
+ * fitted to the visible series' lows and highs, so they stay comparable.
+ * Hidden series do not count: hiding one rescales the axis to the rest.
+ */
+export function historyAxisScale(slots: UsageHistorySlot[], visibleKeys: readonly string[], absolute: boolean): AxisDomain | null {
+  const unlimited = visibleKeys.some((key) => slots.some((slot) => slot.series[key] && slot.series[key].limit === null));
+  if (!unlimited && !absolute) return null;
+  const vals = visibleKeys.flatMap((key) => slots.flatMap((slot) => (slot.series[key] ? [slot.series[key].min, slot.series[key].max] : [])));
+  return vals.length > 0 ? fitAxisDomain(Math.min(...vals), Math.max(...vals)) : { min: 0, max: 1 };
+}
+
+/**
+ * Percent-of-limit suffix for the tooltip and table, e.g. " (42%)". Only shown on
+ * a raw-value (`absolute`) chart: on a share-of-limit chart the axis already is
+ * the percentage. Empty when there is no (positive) limit or limits are hidden.
+ */
+export function limitPercentSuffix(value: number, limit: number | null, absolute: boolean, showLimit: boolean): string {
+  return absolute && showLimit && limit ? ` (${Math.round((value / limit) * 100)}%)` : '';
+}
+
+/**
+ * y axis for a sparkline. `used` plots raw values from 0 to the highest value
+ * seen (at least 1), so the limit never flattens the curve; `remaining` plots a
+ * share of the limit (null).
+ */
+export function sparklineScale(slots: UsageHistorySlot[], series: string, mode: 'remaining' | 'used'): AxisDomain | null {
+  return mode === 'used'
+    ? { min: 0, max: Math.max(1, ...slots.map((s) => s.series[series]?.max ?? 0)) }
+    : null;
+}
+
 /** Drops floating-point residue (4.800000000000001) so tick labels stay round. */
 const clean = (n: number): number => Number(n.toPrecision(12));
 
