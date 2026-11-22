@@ -272,6 +272,16 @@ describe('against real git repos', () => {
     expect((await findPruneCandidates(repo, deps())).candidates).toEqual([]);
   });
 
+  it('fails closed when agent sessions cannot be determined', async () => {
+    const sha = makeBranch('merged/a');
+    prs['merged/a'] = { state: 'MERGED' };
+    const failing: PruneDeps = { ...deps(), activeUse: async () => { throw new Error('sessions unreadable'); } };
+
+    await expect(findPruneCandidates(repo, failing)).rejects.toThrow('sessions unreadable');
+    await expect(pruneBranches(repo, [{ branch: 'merged/a', sha }], failing)).rejects.toThrow('sessions unreadable');
+    expect(git(repo, 'for-each-ref', 'refs/heads/merged/a')).toContain(sha);
+  });
+
   it('offers a gone-upstream branch only when all commits are on a remote', async () => {
     makeBranch('gone/pushed');
     git(repo, 'push', '-q', 'origin', '--delete', 'gone/pushed');

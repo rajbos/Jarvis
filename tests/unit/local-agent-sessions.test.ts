@@ -419,6 +419,77 @@ describe('filesystem discovery', () => {
     });
     expect(sessions).toEqual([]);
   });
+
+  describe('strict mode (fail closed)', () => {
+    const eacces = () => Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+
+    it('still means "no sessions" when the stores do not exist', async () => {
+      expect((await discoverCopilotLocalSessions({ homeDir: home, strict: true })).sessions).toEqual([]);
+      expect(await discoverClaudeLocalSessions({ homeDir: home, strict: true })).toEqual([]);
+    });
+
+    it('rejects when a session store exists but cannot be listed', async () => {
+      // A file where the folder should be: readdir fails with ENOTDIR on every platform.
+      fs.mkdirSync(path.join(home, '.copilot'), { recursive: true });
+      fs.writeFileSync(path.join(home, '.copilot', 'session-state'), '');
+      fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+      fs.writeFileSync(path.join(home, '.claude', 'sessions'), '');
+
+      await expect(discoverCopilotLocalSessions({ homeDir: home, strict: true })).rejects.toMatchObject({ code: 'ENOTDIR' });
+      await expect(discoverClaudeLocalSessions({ homeDir: home, strict: true })).rejects.toMatchObject({ code: 'ENOTDIR' });
+      // The lenient default (dashboard sweep) is unchanged.
+      expect((await discoverCopilotLocalSessions({ homeDir: home })).sessions).toEqual([]);
+      expect(await discoverClaudeLocalSessions({ homeDir: home })).toEqual([]);
+    });
+
+    it('rejects on a permission error listing the stores', async () => {
+      fs.mkdirSync(path.join(home, '.copilot', 'session-state'), { recursive: true });
+      fs.mkdirSync(path.join(home, '.claude', 'sessions'), { recursive: true });
+      vi.spyOn(fs.promises, 'readdir').mockRejectedValue(eacces());
+
+      await expect(discoverCopilotLocalSessions({ homeDir: home, strict: true })).rejects.toMatchObject({ code: 'EACCES' });
+      await expect(discoverClaudeLocalSessions({ homeDir: home, strict: true })).rejects.toMatchObject({ code: 'EACCES' });
+    });
+
+    it('rejects when one Copilot session folder cannot be read', async () => {
+      const dir = writeCopilotSession('locked-out', { pid: 111, yaml: 'id: locked-out\ncwd: C:\\src\\repo\n' });
+      const real = fs.promises.readdir;
+      vi.spyOn(fs.promises, 'readdir').mockImplementation(((p: fs.PathLike, ...rest: unknown[]) =>
+        String(p) === dir ? Promise.reject(eacces()) : (real as (...a: unknown[]) => Promise<unknown>)(p, ...rest)) as typeof real);
+      const options = { homeDir: home, isPidAlive: () => true, getProcessStartTimes: startedLongAgo, now: () => NOW };
+
+      await expect(discoverCopilotLocalSessions({ ...options, strict: true })).rejects.toMatchObject({ code: 'EACCES' });
+      expect((await discoverCopilotLocalSessions(options)).sessions).toEqual([]);
+    });
+
+    it('rejects when a running Claude session file cannot be parsed', async () => {
+      const sessionsDir = path.join(home, '.claude', 'sessions');
+      fs.mkdirSync(sessionsDir, { recursive: true });
+      fs.writeFileSync(path.join(sessionsDir, '777.json'), '{"pid": 777, "cwd": "C:\\sr');
+      const options = { homeDir: home, getProcessStartTimes: startedLongAgo, now: () => NOW };
+
+      await expect(discoverClaudeLocalSessions({ ...options, isPidAlive: () => true, strict: true })).rejects.toThrow(/777\.json/);
+      // A half-written file of a process that is gone is just stale.
+      expect(await discoverClaudeLocalSessions({ ...options, isPidAlive: () => false, strict: true })).toEqual([]);
+      expect(await discoverClaudeLocalSessions({ ...options, isPidAlive: () => true })).toEqual([]);
+    });
+
+    it('re-checks old session folders instead of trusting the stale-folder cache', async () => {
+      const dir = writeCopilotSession('resumed', {
+        pid: 111,
+        yaml: 'id: resumed\ncwd: C:\\src\\repo\nupdated_at: 2026-03-01T11:59:00Z\n',
+      });
+      const old = new Date(NOW - 60 * 24 * 60 * 60 * 1000);
+      fs.utimesSync(dir, old, old);
+      const options = { homeDir: home, isPidAlive: () => true, getProcessStartTimes: startedLongAgo, now: () => NOW };
+      expect((await discoverCopilotLocalSessions(options)).sessions).toEqual([]); // marks it stale
+
+      const fresh = new Date(NOW - 1000);
+      fs.utimesSync(dir, fresh, fresh); // the session was resumed
+      expect((await discoverCopilotLocalSessions(options)).sessions).toEqual([]); // lenient: still cached as stale
+      expect((await discoverCopilotLocalSessions({ ...options, strict: true })).sessions.map((s) => s.sessionId)).toEqual(['resumed']);
+    });
+  });
 });
 
 describe('readTail', () => {
