@@ -37,7 +37,7 @@ import type { RuddrApiEntry } from '../../services/ruddr-hours';
 import { listGroups, loadRuddrProjectsFromDb, upsertDiscoveredRuddrProjects } from '../../services/groups';
 import type { RuddrHoursStatus, RuddrHoursSummary, RuddrHoursWeek, RuddrHoursGroupTotals } from '../types';
 import { logger } from '../../services/logger';
-import { safeHandle } from '../ipc-utils';
+import { safeHandle, safeSend } from '../ipc-utils';
 
 export const HOURS_WEEKS_PER_RUN = 3;
 export const HOURS_PAUSE_MIN_MS = 15_000;
@@ -223,7 +223,7 @@ async function fetchWeeks(
 
 function broadcast(db: SqlJsDatabase, deps: HoursDiscoveryDeps): void {
   const win = deps.getWindow();
-  if (win && !win.isDestroyed()) win.webContents.send('ruddr-hours:updated', getHoursStatus(db));
+  safeSend(win, 'ruddr-hours:updated', getHoursStatus(db));
 }
 
 /** One scheduled discovery step: refresh due weeks, then backfill older ones. */

@@ -57,7 +57,7 @@ let registerUpdateIpcHandlers: UpdateCheckerModule['registerUpdateIpcHandlers'];
 
 /** Stand-in main window that records everything pushed over `updates:state`. */
 function fakeWindow() {
-  return { isDestroyed: () => false, webContents: { send: mocks.send } };
+  return { isDestroyed: () => false, webContents: { isDestroyed: () => false, send: mocks.send } };
 }
 
 /** Pull an ipcMain.handle callback out of the mock by channel name. */

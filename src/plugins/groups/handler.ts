@@ -33,7 +33,7 @@ import type { BrowserTabSession } from '../browser-companion/tab-session';
 import type { RuddrProjectMatch } from '../types';
 import { ruddrApiGet, projectKeysFromPath, projectPath } from './ruddr-api';
 import { logger } from '../../services/logger';
-import { safeHandle } from '../ipc-utils';
+import { safeHandle, safeSend } from '../ipc-utils';
 import { registerRuddrHoursHandlers } from './ruddr-hours-discovery';
 import type { HoursDiscoveryDeps } from './ruddr-hours-discovery';
 
@@ -428,9 +428,7 @@ async function refreshLinkedProjectDetails(
 
   if (updated) {
     const win = _getWindowFn();
-    if (win && !win.isDestroyed()) {
-      win.webContents.send('groups:project-details-refreshed');
-    }
+    safeSend(win, 'groups:project-details-refreshed');
   }
 }
 
@@ -449,7 +447,7 @@ export function hoursDiscoveryDeps(db: SqlJsDatabase, getWindow: () => BrowserWi
         ruddrProjectsCache = [...ruddrProjectsCache, ...projects.filter((p) => !known.has(p.path))];
       }
       const win = getWindow();
-      if (win && !win.isDestroyed()) win.webContents.send('groups:new-ruddr-projects', projects);
+      safeSend(win, 'groups:new-ruddr-projects', projects);
     },
   };
 }
@@ -463,9 +461,7 @@ export async function refreshRuddrProjectsInBackground(
   _getWindowFn = getWindow;
   _notifyNewProjects = (projects: RuddrProjectEntry[]) => {
     const win = getWindow();
-    if (win && !win.isDestroyed()) {
-      win.webContents.send('groups:new-ruddr-projects', projects);
-    }
+    safeSend(win, 'groups:new-ruddr-projects', projects);
   };
 
   if (forceFresh) ruddrProjectsCacheTime = 0;

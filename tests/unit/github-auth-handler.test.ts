@@ -506,7 +506,7 @@ describe('GitHub Auth plugin — IPC handlers', () => {
     it('marks the OAuth sign-in as expired and sends github:oauth-expired on a 401', async () => {
       saveGitHubAuth(db, 'octocat', 'gho_revoked', 'repo');
       const send = vi.fn();
-      registerHandlers(db, () => ({ webContents: { send } }) as never);
+      registerHandlers(db, () => ({ isDestroyed: () => false, webContents: { isDestroyed: () => false, send } }) as never);
       global.fetch = vi.fn().mockResolvedValueOnce({
         ok: false, status: 401, headers: { get: () => null }, json: async () => ({}),
       } as unknown as Response);
@@ -521,7 +521,7 @@ describe('GitHub Auth plugin — IPC handlers', () => {
     it('forwards the OAuth expiry fields and sends no event when the token is valid', async () => {
       saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo');
       const send = vi.fn();
-      registerHandlers(db, () => ({ webContents: { send } }) as never);
+      registerHandlers(db, () => ({ isDestroyed: () => false, webContents: { isDestroyed: () => false, send } }) as never);
       global.fetch = vi.fn().mockResolvedValueOnce({
         ok: true, headers: { get: () => null },
         json: async () => ({ resources: { core: { limit: 5000, remaining: 1, reset: 1, used: 4999 } } }),
@@ -543,7 +543,7 @@ describe('GitHub Auth plugin — IPC handlers', () => {
     it('returns false and sends nothing when the token is valid', async () => {
       saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo');
       const send = vi.fn();
-      expect(await checkOAuthForExpiry(db, () => ({ webContents: { send } }) as never)).toBe(false);
+      expect(await checkOAuthForExpiry(db, () => ({ isDestroyed: () => false, webContents: { isDestroyed: () => false, send } }) as never)).toBe(false);
       expect(send).not.toHaveBeenCalled();
     });
 
@@ -551,7 +551,7 @@ describe('GitHub Auth plugin — IPC handlers', () => {
       saveGitHubAuth(db, 'octocat', 'gho_abc123', 'repo');
       vi.mocked(validateGitHubPat).mockResolvedValueOnce({ status: 'unknown', error: 'offline' });
       const send = vi.fn();
-      expect(await checkOAuthForExpiry(db, () => ({ webContents: { send } }) as never)).toBe(false);
+      expect(await checkOAuthForExpiry(db, () => ({ isDestroyed: () => false, webContents: { isDestroyed: () => false, send } }) as never)).toBe(false);
       expect(send).not.toHaveBeenCalled();
     });
 
@@ -559,7 +559,7 @@ describe('GitHub Auth plugin — IPC handlers', () => {
       saveGitHubAuth(db, 'octocat', 'gho_revoked', 'repo');
       vi.mocked(validateGitHubPat).mockResolvedValueOnce({ status: 'expired' });
       const send = vi.fn();
-      expect(await checkOAuthForExpiry(db, () => ({ webContents: { send } }) as never)).toBe(true);
+      expect(await checkOAuthForExpiry(db, () => ({ isDestroyed: () => false, webContents: { isDestroyed: () => false, send } }) as never)).toBe(true);
       expect(send).toHaveBeenCalledWith('github:oauth-expired');
     });
   });

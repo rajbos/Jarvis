@@ -238,7 +238,7 @@ describe('Copilot usage plugin', () => {
 
   it('pushes updates to the main window', async () => {
     const send = vi.fn();
-    const win = { isDestroyed: () => false, webContents: { send } } as unknown as Electron.BrowserWindow;
+    const win = { isDestroyed: () => false, webContents: { isDestroyed: () => false, send } } as unknown as Electron.BrowserWindow;
     mockAuth.mockReturnValue({ login: 'me', accessToken: 'oauth', scopes: 'user', avatarUrl: null });
     mockFetch.mockResolvedValue({ ok: true, summary: summary(1) });
     await checkCopilotUsage(db, () => win, now);
@@ -248,8 +248,8 @@ describe('Copilot usage plugin', () => {
   it('pushes updates to every open window (e.g. Settings) once', async () => {
     const mainSend = vi.fn();
     const settingsSend = vi.fn();
-    const main = { isDestroyed: () => false, webContents: { send: mainSend } };
-    const settings = { isDestroyed: () => false, webContents: { send: settingsSend } };
+    const main = { isDestroyed: () => false, webContents: { isDestroyed: () => false, send: mainSend } };
+    const settings = { isDestroyed: () => false, webContents: { isDestroyed: () => false, send: settingsSend } };
     allWindows.push(main, settings);
     try {
       mockAuth.mockReturnValue({ login: 'me', accessToken: 'oauth', scopes: 'user', avatarUrl: null });

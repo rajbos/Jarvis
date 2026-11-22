@@ -6,6 +6,7 @@ import { randomBytes } from 'crypto';
 import type { BrowserWindow } from 'electron';
 import { loadConfig, saveConfig } from '../../agent/config';
 import { logger } from '../../services/logger';
+import { safeSend } from '../ipc-utils';
 
 const configuredBridgePort = Number.parseInt(process.env.JARVIS_BRIDGE_PORT ?? '', 10);
 export const BRIDGE_PORT = Number.isInteger(configuredBridgePort) && configuredBridgePort > 0
@@ -109,7 +110,7 @@ export function regenerateBridgeToken(): string {
     authenticatedClient = null;
   }
   rejectAllPending(new Error('Bridge token rotated'));
-  getWindowFn?.()?.webContents.send('browser:extension-connected', { count: 0 });
+  safeSend(getWindowFn?.(), 'browser:extension-connected', { count: 0 });
   return token;
 }
 
@@ -252,7 +253,7 @@ export function startBridgeServer(getWindow: () => BrowserWindow | null): void {
         authenticatedClient = null;
         rejectAllPending(new Error('Extension disconnected'));
         logger.info('[BrowserBridge] Authenticated extension disconnected');
-        getWindowFn?.()?.webContents.send('browser:extension-connected', { count: 0 });
+        safeSend(getWindowFn?.(), 'browser:extension-connected', { count: 0 });
       }
     });
 
@@ -313,7 +314,7 @@ function handleAuthMessage(ws: WebSocket, rawData: string): void {
   authenticatedClient = ws;
   ws.send(JSON.stringify({ type: 'auth-ok' }));
   logger.info('[BrowserBridge] Extension authenticated');
-  getWindowFn?.()?.webContents.send('browser:extension-connected', { count: 1 });
+  safeSend(getWindowFn?.(), 'browser:extension-connected', { count: 1 });
 }
 
 export function stopBridgeServer(): void {

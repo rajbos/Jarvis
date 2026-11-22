@@ -55,7 +55,7 @@ function agentDef() {
 }
 
 function makeMockWindow() {
-  return { webContents: { send: vi.fn() } };
+  return { isDestroyed: () => false, webContents: { isDestroyed: () => false, send: vi.fn() } };
 }
 
 // ── extractJsonResult ─────────────────────────────────────────────────────────

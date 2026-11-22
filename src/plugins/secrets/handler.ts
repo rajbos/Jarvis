@@ -11,7 +11,7 @@ import {
   addSecretFavorite,
   removeSecretFavorite,
 } from '../../services/github-secrets';
-import { safeHandle } from '../ipc-utils';
+import { safeHandle, safeSend } from '../ipc-utils';
 
 /** "Scan Now" takes a bigger bite than the background trickle; the trickle does the rest. */
 const MANUAL_SCAN_BATCH_SIZE = 100;
@@ -31,7 +31,7 @@ export function registerHandlers(db: SqlJsDatabase, _getWindow: () => BrowserWin
         ownerLogin: auth.login,
         patToken: pat,
         onProgress: (done, total, secretsFound) => {
-          _getWindow()?.webContents.send('secrets:scan-progress', { done, total, secretsFound });
+          safeSend(_getWindow(), 'secrets:scan-progress', { done, total, secretsFound });
         },
       });
       return result;

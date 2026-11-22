@@ -12,7 +12,7 @@ import {
   type ScanProgress,
 } from '../../services/local-discovery';
 import { getFileIndexState, startFileIndexIfNeeded } from './file-index-runner';
-import { safeHandle } from '../ipc-utils';
+import { safeHandle, safeSend } from '../ipc-utils';
 import { logger } from '../../services/logger';
 import { openTerminal, resolveDirectory } from '../../services/process-launch';
 import { findPruneCandidates, pruneBranches, type PruneDeps } from '../../services/branch-prune';
@@ -217,13 +217,13 @@ export function startLocalScanIfNeeded(
 
   runLocalDiscovery(db, (progress) => {
     lastLocalScanProgress = progress;
-    getWindow()?.webContents.send('local:scan-progress', progress);
+    safeSend(getWindow(), 'local:scan-progress', progress);
   }).then((done) => {
     localScanRunning = false;
     lastLocalScanProgress = done;
     saveDatabase();
     logger.info('[LocalScan] Finished —', done.reposFound, 'repo(s) found');
-    getWindow()?.webContents.send('local:scan-complete', done);
+    safeSend(getWindow(), 'local:scan-complete', done);
     // Refresh the file content index now that the repo list is current.
     startFileIndexIfNeeded(db, getWindow);
   }).catch((err: unknown) => {

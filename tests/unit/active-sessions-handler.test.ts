@@ -141,7 +141,7 @@ describe('refreshActiveSessions', () => {
   it('persists readiness, notifies once and pushes the snapshot to the renderer', async () => {
     vi.mocked(collectActiveSessions).mockResolvedValue(snapshotWith([pr(), pr({ prNumber: 2, ready: false, waitingOn: ['checks'] })]));
     const send = vi.fn();
-    const win = { isDestroyed: () => false, webContents: { send } };
+    const win = { isDestroyed: () => false, webContents: { isDestroyed: () => false, send } };
 
     const snap = await refreshActiveSessions(db, () => win as never);
 

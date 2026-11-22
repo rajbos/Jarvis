@@ -41,7 +41,8 @@ export default tseslint.config(
   },
   {
     // IPC handlers must register via safeHandle() (src/plugins/ipc-utils.ts) so error
-    // handling (logging + the { ok: false, error } shape) lives in one place.
+    // handling (logging + the { ok: false, error } shape) lives in one place. Main-to-renderer
+    // pushes go through safeSend() so a destroyed window is skipped instead of throwing.
     files: ['src/**/*.ts'],
     ignores: ['src/plugins/ipc-utils.ts'],
     rules: {
@@ -50,6 +51,10 @@ export default tseslint.config(
         {
           selector: "CallExpression[callee.object.name='ipcMain'][callee.property.name='handle']",
           message: 'Register IPC handlers with safeHandle() from src/plugins/ipc-utils.ts instead of calling ipcMain.handle() directly.',
+        },
+        {
+          selector: "CallExpression[callee.property.name='send'][callee.object.property.name='webContents']",
+          message: 'Push to a window with safeSend() from src/plugins/ipc-utils.ts instead of calling webContents.send() directly: the window may be destroyed by the time an async callback fires.',
         },
       ],
     },

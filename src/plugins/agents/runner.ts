@@ -10,6 +10,7 @@ import { ollamaProvider } from './providers/ollama-provider';
 import type { AgentProvider, AgentRunOptions } from './providers/types';
 import type { AgentDefinition, AgentFinding, AgentSession, WorkflowRun, WorkflowJob } from '../types';
 import type { RawFinding } from './json-extract';
+import { safeSend } from '../ipc-utils';
 
 export { extractJsonResult } from './json-extract';
 export type { RawFinding, AgentJsonResult } from './json-extract';
@@ -330,7 +331,7 @@ export async function runAgentSession(
     const systemPrompt = renderSystemPrompt(agentDef.system_prompt, provider);
 
     // Emit debug context so the renderer can show it in the chat debug viewer
-    getWindow()?.webContents.send('agent:debug-context', {
+    safeSend(getWindow(), 'agent:debug-context', {
       sessionId,
       systemPrompt,
       userMessage,
@@ -341,9 +342,9 @@ export async function runAgentSession(
       systemPrompt,
       userMessage,
       {
-        onToken: (token) => getWindow()?.webContents.send('agent:token', token),
-        onAnalysisComplete: () => getWindow()?.webContents.send('agent:analysis-complete', { sessionId }),
-        onFindingsError: (message) => getWindow()?.webContents.send('agent:phase2-error', { sessionId, message }),
+        onToken: (token) => safeSend(getWindow(), 'agent:token', token),
+        onAnalysisComplete: () => safeSend(getWindow(), 'agent:analysis-complete', { sessionId }),
+        onFindingsError: (message) => safeSend(getWindow(), 'agent:phase2-error', { sessionId, message }),
       },
       providerOptions,
     );
@@ -354,15 +355,15 @@ export async function runAgentSession(
 
     updateAgentSession(db, sessionId, 'completed', outcome.summary, outcome.analysisText);
 
-    getWindow()?.webContents.send('agent:session-complete', { sessionId });
+    safeSend(getWindow(), 'agent:session-complete', { sessionId });
   } catch (err) {
     if (providerOptions?.signal?.aborted || (err instanceof Error && err.name === 'AbortError')) {
       updateAgentSession(db, sessionId, 'cancelled', null, null);
-      win?.webContents.send('agent:session-cancelled', { sessionId });
+      safeSend(win, 'agent:session-cancelled', { sessionId });
       return;
     }
     const message = err instanceof Error ? err.message : String(err);
     updateAgentSession(db, sessionId, 'failed', null, message);
-    win?.webContents.send('agent:session-error', { sessionId, message });
+    safeSend(win, 'agent:session-error', { sessionId, message });
   }
 }

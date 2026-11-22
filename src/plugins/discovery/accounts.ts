@@ -15,6 +15,7 @@ import { loadGitHubAuth } from '../../services/github-oauth';
 import { getConfigValue, saveDatabase, setConfigValue } from '../../storage/database';
 import { logger } from '../../services/logger';
 import { lastDiscoveryProgress } from './state';
+import { safeSend } from '../ipc-utils';
 
 let running = false;
 
@@ -40,7 +41,7 @@ export async function discoverAdditionalAccounts(
         continue;
       }
       const firstRun = force || !getConfigValue(db, accountIndexedKey(account.id));
-      getWindow()?.webContents.send('app:background-status', `Discovering repos for @${account.id}…`);
+      safeSend(getWindow(), 'app:background-status', `Discovering repos for @${account.id}…`);
       logger.info(`[Discovery] ${firstRun ? 'Full' : 'Lightweight'} discovery for @${account.id}`);
       await runWithHost(
         account.host,
@@ -52,7 +53,7 @@ export async function discoverAdditionalAccounts(
       setConfigValue(db, accountIndexedKey(account.id), new Date().toISOString());
       saveDatabase();
     }
-    if (accounts.length > 0) getWindow()?.webContents.send('github:discovery-complete', lastDiscoveryProgress);
+    if (accounts.length > 0) safeSend(getWindow(), 'github:discovery-complete', lastDiscoveryProgress);
   } catch (err) {
     logger.error('[Discovery] Additional account discovery failed:', err);
   } finally {

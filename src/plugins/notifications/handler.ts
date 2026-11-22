@@ -35,7 +35,7 @@ import {
 import { saveDatabase } from '../../storage/database';
 import { fetchAndStoreWorkflowData, getWorkflowSummaryForRepo } from '../../services/github-workflows';
 import { isWorkflowDataFresh } from './workflow-cache';
-import { safeHandle } from '../ipc-utils';
+import { safeHandle, safeSend } from '../ipc-utils';
 import { logger } from '../../services/logger';
 import { githubRequest } from '../../services/github-api';
 
@@ -130,9 +130,7 @@ export async function syncGitHubNotifications(
   saveDatabase();
   const counts = getNotificationCounts(db);
   const win = getWindow();
-  if (win && !win.isDestroyed()) {
-    win.webContents.send('github:notification-counts-updated', counts);
-  }
+  safeSend(win, 'github:notification-counts-updated', counts);
   return { ok: true, counts };
 }
 
@@ -493,10 +491,8 @@ export async function runAutoDismissSweep(
 
   const result = { steps, total: steps.reduce((sum, step) => sum + step.dismissed, 0) };
   const win = getWindow();
-  if (win && !win.isDestroyed()) {
-    win.webContents.send('github:auto-dismiss-complete', { result, logEntries });
-    if (logEntries.length > 0) win.webContents.send('github:notification-counts-updated', getNotificationCounts(db));
-  }
+  safeSend(win, 'github:auto-dismiss-complete', { result, logEntries });
+  if (logEntries.length > 0) safeSend(win, 'github:notification-counts-updated', getNotificationCounts(db));
   return { ok: true, counts, result, logEntries };
 }
 
@@ -661,7 +657,7 @@ export async function runBootWorkflowCheck(
     }
   }
 
-  const sendStatus = (msg: string) => getWindow()?.webContents.send('app:background-status', msg);
+  const sendStatus = (msg: string) => safeSend(getWindow(), 'app:background-status', msg);
 
   logger.info(`[Boot] Pre-warming workflow cache for ${staleRepos.length} stale repo(s)…`);
   sendStatus(`Caching workflow data for ${staleRepos.length} repo${staleRepos.length !== 1 ? 's' : ''}…`);

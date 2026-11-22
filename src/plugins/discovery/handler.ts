@@ -19,7 +19,7 @@ import {
   setActiveDiscovery,
   setLastDiscoveryProgress,
 } from './state';
-import { safeHandle } from '../ipc-utils';
+import { safeHandle, safeSend } from '../ipc-utils';
 import { DEFAULT_HOST, runWithHost } from '../../services/github-host';
 import { discoverAdditionalAccounts } from './accounts';
 import { logger } from '../../services/logger';
@@ -52,7 +52,7 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
     const auth = loadGitHubAuth(db);
     runPatDiscovery(db, pat, undefined, undefined, (progress) => {
       setLastDiscoveryProgress(progress);
-      getWindow()?.webContents.send('github:discovery-progress', progress);
+      safeSend(getWindow(), 'github:discovery-progress', progress);
     }, auth?.login).then(() => {
       const doneProgress: DiscoveryProgress = {
         phase: 'done',
@@ -60,8 +60,8 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
         reposFound: lastDiscoveryProgress?.reposFound ?? 0,
       };
       setLastDiscoveryProgress(doneProgress);
-      getWindow()?.webContents.send('github:discovery-progress', doneProgress);
-      getWindow()?.webContents.send('github:discovery-complete', doneProgress);
+      safeSend(getWindow(), 'github:discovery-progress', doneProgress);
+      safeSend(getWindow(), 'github:discovery-complete', doneProgress);
       logger.info('[Discovery] PAT-only discovery finished');
     }).catch((err) => {
       logger.error('[Discovery] PAT-only discovery failed:', err);
@@ -88,7 +88,7 @@ function startPrimaryDiscovery(
   force: boolean,
   auth: NonNullable<ReturnType<typeof loadGitHubAuth>>,
 ): void {
-  const sendStatus = (msg: string) => getWindow()?.webContents.send('app:background-status', msg);
+  const sendStatus = (msg: string) => safeSend(getWindow(), 'app:background-status', msg);
 
   if (activeDiscovery && !activeDiscovery.aborted) {
     logger.debug('[Discovery] Already running, skipping');
@@ -114,7 +114,7 @@ function startPrimaryDiscovery(
 
       runPatDiscovery(db, pat, undefined, undefined, (progress) => {
         setLastDiscoveryProgress(progress);
-        getWindow()?.webContents.send('github:discovery-progress', progress);
+        safeSend(getWindow(), 'github:discovery-progress', progress);
       }, auth.login).then(() => {
         const doneProgress: DiscoveryProgress = {
           phase: 'done',
@@ -122,8 +122,8 @@ function startPrimaryDiscovery(
           reposFound: lastDiscoveryProgress?.reposFound ?? 0,
         };
         setLastDiscoveryProgress(doneProgress);
-        getWindow()?.webContents.send('github:discovery-progress', doneProgress);
-        getWindow()?.webContents.send('github:discovery-complete', doneProgress);
+        safeSend(getWindow(), 'github:discovery-progress', doneProgress);
+        safeSend(getWindow(), 'github:discovery-complete', doneProgress);
         logger.info('[Discovery] PAT-only discovery finished');
       }).catch((err) => {
         logger.error('[Discovery] PAT-only discovery failed:', err);
@@ -153,11 +153,11 @@ function startPrimaryDiscovery(
         const pat = loadGitHubPat(db);
         runLightweightRefresh(db, auth.accessToken, (progress) => {
           setLastDiscoveryProgress(progress);
-          getWindow()?.webContents.send('github:discovery-progress', progress);
+          safeSend(getWindow(), 'github:discovery-progress', progress);
         }, pat, auth.login).then(() => {
           logger.info('[Discovery] Lightweight refresh finished');
           sendStatus('Repos synced.');
-          getWindow()?.webContents.send('github:discovery-complete', lastDiscoveryProgress);
+          safeSend(getWindow(), 'github:discovery-complete', lastDiscoveryProgress);
           return discoverAdditionalAccounts(db, getWindow, false);
         }).catch((err) => {
           logger.error('[Discovery] Lightweight refresh failed:', err);
@@ -172,12 +172,12 @@ function startPrimaryDiscovery(
           const starProgress: DiscoveryProgress = { phase: 'starred', orgsFound: 0, reposFound: 0 };
           fetchStarredRepos(db, auth.accessToken, starState, starProgress, (p) => {
             setLastDiscoveryProgress(p);
-            getWindow()?.webContents.send('github:discovery-progress', p);
+            safeSend(getWindow(), 'github:discovery-progress', p);
           }).then(() => {
             const done: DiscoveryProgress = { phase: 'done', orgsFound: 0, reposFound: starProgress.reposFound };
             setLastDiscoveryProgress(done);
             sendStatus(starProgress.reposFound + ' starred repo' + (starProgress.reposFound !== 1 ? 's' : '') + ' loaded.');
-            getWindow()?.webContents.send('github:discovery-complete', done);
+            safeSend(getWindow(), 'github:discovery-complete', done);
           }).catch((err) => logger.error('[Discovery] Starred-only fetch failed:', err));
         }
       }
@@ -190,12 +190,12 @@ function startPrimaryDiscovery(
   const pat = loadGitHubPat(db);
   runDiscovery(db, auth.accessToken, (progress) => {
     setLastDiscoveryProgress(progress);
-    getWindow()?.webContents.send('github:discovery-progress', progress);
+    safeSend(getWindow(), 'github:discovery-progress', progress);
   }, pat, auth.login).then((_state) => {
     setActiveDiscovery(null);
     logger.info('[Discovery] Finished');
     sendStatus('Discovery finished — ' + (lastDiscoveryProgress?.reposFound ?? 0) + ' repos found.');
-    getWindow()?.webContents.send('github:discovery-complete', lastDiscoveryProgress);
+    safeSend(getWindow(), 'github:discovery-complete', lastDiscoveryProgress);
     return discoverAdditionalAccounts(db, getWindow, force);
   }).catch((err) => {
     setActiveDiscovery(null);

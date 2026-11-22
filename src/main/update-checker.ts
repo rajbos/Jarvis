@@ -2,7 +2,7 @@ import path from 'path';
 import { app, Notification, type BrowserWindow } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import type { UpdateState } from '../types/ipc-payloads';
-import { safeHandle } from '../plugins/ipc-utils';
+import { safeHandle, safeSend } from '../plugins/ipc-utils';
 import { logger } from '../services/logger';
 import { enforceSignatureVerification } from './update-verification';
 import { buildUpdateDiagnostic, updateErrorNotification } from './update-diagnostics';
@@ -31,9 +31,7 @@ let getMainWindow: () => BrowserWindow | null = () => null;
 
 function broadcastState(): void {
   const win = getMainWindow();
-  if (win && !win.isDestroyed()) {
-    win.webContents.send('updates:state', state);
-  }
+  safeSend(win, 'updates:state', state);
 }
 
 function setState(next: UpdateState): void {

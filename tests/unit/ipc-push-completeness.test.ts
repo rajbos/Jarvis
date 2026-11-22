@@ -15,7 +15,7 @@ import { resolve } from 'path';
 const root = resolve(__dirname, '../../src');
 
 /**
- * Files known to contain webContents.send() or event.sender.send() calls.
+ * Files known to contain safeSend(), webContents.send() or event.sender.send() calls.
  * Add new files here as they are created.
  */
 const SOURCE_FILES = [
@@ -34,7 +34,7 @@ const SOURCE_FILES = [
 ];
 
 /**
- * Extract all channel names from webContents.send() and event.sender.send() calls
+ * Extract all channel names from safeSend(), webContents.send() and event.sender.send() calls
  * in the main process source files.
  */
 function extractEmittedChannels(): string[] {
@@ -50,11 +50,11 @@ function extractEmittedChannels(): string[] {
       continue;
     }
     
-    // Match webContents.send('channel', ...) and event.sender.send('channel', ...)
-    const sendPattern = /(webContents|event\.sender)\.send\s*\(\s*['"]([^'"]+)['"]/g;
+    // Match safeSend(win, 'channel', ...), webContents.send('channel', ...) and event.sender.send('channel', ...)
+    const sendPattern = /(?:safeSend\s*\([^,]*,|(?:webContents|event\.sender)\.send\s*\()\s*['"]([^'"]+)['"]/g;
     let match;
     while ((match = sendPattern.exec(content)) !== null) {
-      channels.add(match[2]);
+      channels.add(match[1]);
     }
   }
   
