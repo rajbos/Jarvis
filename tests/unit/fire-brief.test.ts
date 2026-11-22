@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import initSqlJs, { Database as SqlJsDatabase } from 'sql.js';
 import { getSchema } from '../../src/storage/schema';
 import {
-  acknowledgeBrief, addProseSummary, buildFireBrief, collectBriefInputs, resolveSince,
+  acknowledgeBrief, addProseSummary, buildFireBrief, collectBriefInputs, formatElapsed, resolveSince,
   DEFAULT_LOOKBACK_MS, MAX_ITEMS_PER_SECTION, SESSION_STALL_MS, type FireBriefInputs,
 } from '../../src/services/fire-brief';
 import type { ActiveSessionEntry } from '../../src/plugins/types';
@@ -81,9 +81,36 @@ describe('buildFireBrief', () => {
     ] }));
     expect(b.sections[0].items.map((i) => i.text)).toEqual([
       'Copilot CLI needs input: Fix the widget',
-      'Copilot CLI looks stalled (31 min without update): Fix the widget',
+      'Copilot CLI looks stalled (no update for 31 min): Fix the widget',
     ]);
     expect(b.sections[0].items[0].severity).toBe('fire');
+  });
+
+  it('skips sessions whose PR was merged or closed, keeps open or missing PRs', () => {
+    const withPr = (activity: string, state: string | null) => {
+      const e = session(activity, -60 * 24 * HOUR, { key: `${activity}:${state}` });
+      if (state) e.pr = { state, url: `https://github.com/acme/widgets/pull/1` } as ActiveSessionEntry['pr'];
+      return e;
+    };
+    const b = buildFireBrief(inputs({ sessions: [
+      withPr('working', 'MERGED'),
+      withPr('working', 'CLOSED'),
+      withPr('waiting_for_user', 'MERGED'),
+      withPr('working', 'OPEN'),
+      withPr('working', null),
+    ] }));
+    expect(b.sections[0].items.map((i) => i.id)).toEqual(['session:working:OPEN', 'session:working:null']);
+  });
+
+  it('formats elapsed time in a human-readable unit', () => {
+    const MIN = 60_000;
+    expect(formatElapsed(31 * MIN)).toBe('31 min');
+    expect(formatElapsed(60 * MIN)).toBe('1 hour');
+    expect(formatElapsed(47 * HOUR)).toBe('47 hours');
+    expect(formatElapsed(48 * HOUR)).toBe('2 days');
+    expect(formatElapsed(20 * 24 * HOUR)).toBe('2 weeks');
+    expect(formatElapsed(108027 * MIN)).toBe('2 months');
+    expect(formatElapsed(400 * 24 * HOUR)).toBe('1 year');
   });
 
   it('reports task failures since the last brief with a local tab hint', () => {

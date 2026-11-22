@@ -196,6 +196,11 @@ function normalizeWorkflowName(title: string): string {
   return m ? m[1].trim() : title;
 }
 
+/** Case-insensitive match of a notification group's workflow name against a CI health workflow name. */
+export function sameWorkflow(groupName: string | null, workflowName: string): boolean {
+  return !!groupName && groupName.trim().toLowerCase() === workflowName.trim().toLowerCase();
+}
+
 function extractBranchFromTitle(title: string): string | null {
   const m = title.match(/\bfor\s+(\S+)\s+branch\b/i);
   return m ? m[1] : null;
@@ -236,7 +241,7 @@ function groupDashNotifications(notifications: StoredNotification[]): { groups: 
 }
 
 /** Lazily loads and displays notifications for a single repo, grouped by workflow. */
-function NotificationList({ repoFullName, dismissedNotifIds }: { repoFullName: string; dismissedNotifIds?: ReadonlySet<string> }) {
+function NotificationList({ repoFullName, dismissedNotifIds, workflowFilter }: { repoFullName: string; dismissedNotifIds?: ReadonlySet<string>; workflowFilter?: string | null }) {
   const [notifications, setNotifications] = useState<StoredNotification[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [recoveryMap, setRecoveryMap] = useState<Map<string, boolean>>(new Map());
@@ -427,7 +432,15 @@ function NotificationList({ repoFullName, dismissedNotifIds }: { repoFullName: s
     return <div class="dash-notif-empty">No notifications</div>;
   }
 
-  const { groups, isGrouped } = groupDashNotifications(visible);
+  const grouped = groupDashNotifications(visible);
+  // CI health focus: keep only the focused workflow's group.
+  const groups = workflowFilter
+    ? grouped.groups.filter((g) => sameWorkflow(g.workflowName, workflowFilter))
+    : grouped.groups;
+  const isGrouped = grouped.isGrouped || !!workflowFilter;
+  if (workflowFilter && groups.length === 0) {
+    return <div class="dash-notif-empty">No notifications for {workflowFilter}</div>;
+  }
 
   const renderRow = (n: StoredNotification) => (
     <div key={n.id} class={`dash-notif-item-wrap${dismissingIds.has(n.id) ? ' dash-notif-item-wrap--dismissing' : ''}`}>
@@ -460,7 +473,7 @@ function NotificationList({ repoFullName, dismissedNotifIds }: { repoFullName: s
   return (
     <>
     <div class="dash-notif-list">
-      <div class="dash-notif-header">🔔 Notifications ({visible.length})</div>
+      <div class="dash-notif-header">🔔 Notifications ({workflowFilter ? groups.reduce((n, g) => n + g.notifications.length, 0) : visible.length})</div>
       {successMsg && <div class="dash-notif-success">{successMsg}</div>}
       {isGrouped ? (
         groups.map((group) => (
@@ -759,7 +772,8 @@ function RepoHealthRow({
   onOpenTerminal,
   onOpenGitHub,
   onPushBranch,
-  dismissedNotifIds,}: {
+  dismissedNotifIds,
+  workflowFilter,}: {
   status: RepoHealthStatus;
   warnings: HealthWarning[];
   expanded: boolean;
@@ -769,7 +783,8 @@ function RepoHealthRow({
   onOpenTerminal: (localPath: string) => void;
   onOpenGitHub: (repoFullName: string) => void;
   onPushBranch: (localPath: string, branch: string) => void;
-  dismissedNotifIds?: ReadonlySet<string>;}) {
+  dismissedNotifIds?: ReadonlySet<string>;
+  workflowFilter?: string | null;}) {
   return (
     <div id={`dash-repo-${status.localRepoId}`} class={`dash-repo-row ${warnings.length > 0 ? 'dash-repo-warn' : ''} ${expanded ? 'dash-repo-expanded' : ''}`}>
       <div class="dash-repo-summary" onClick={onToggle} title="Click to expand">
@@ -832,7 +847,7 @@ function RepoHealthRow({
 
           {/* Inline notification list */}
           {status.notificationCount > 0 && status.linkedGithubRepo && (
-            <NotificationList repoFullName={status.linkedGithubRepo} dismissedNotifIds={dismissedNotifIds} />          )}
+            <NotificationList repoFullName={status.linkedGithubRepo} dismissedNotifIds={dismissedNotifIds} workflowFilter={workflowFilter} />          )}
 
           {/* Actionable guidance per warning */}
           {warnings.length > 0 && (
@@ -958,31 +973,46 @@ function formatDuration(ms: number | null): string {
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
 }
 
-function CiHealthList({ title, rows, metric, empty }: {
+export interface CiFocus { repoFullName: string; workflowName: string }
+
+function isFocused(focus: CiFocus | null, w: CiWorkflowHealth): boolean {
+  return !!focus && focus.repoFullName.toLowerCase() === w.repoFullName.toLowerCase() && focus.workflowName === w.workflowName;
+}
+
+function CiHealthList({ title, rows, metric, empty, focus, onFocus }: {
   title: string;
   rows: CiWorkflowHealth[];
   metric: (w: CiWorkflowHealth) => string;
   empty: string;
+  focus: CiFocus | null;
+  onFocus: (focus: CiFocus | null) => void;
 }) {
   return (
     <div class="ci-health-group">
       <h4>{title}</h4>
       {rows.length === 0 && <div class="ci-health-empty">{empty}</div>}
       {rows.map((w) => (
-        <div class="ci-health-row" key={`${w.repoFullName}|${w.workflowId}`}>
-          <div class="ci-health-name">
+        <button
+          type="button"
+          class={`ci-health-row${isFocused(focus, w) ? ' ci-health-row--active' : ''}`}
+          key={`${w.repoFullName}|${w.workflowId}`}
+          aria-pressed={isFocused(focus, w)}
+          title={isFocused(focus, w) ? 'Clear the filter' : 'Show this repo and workflow in the list'}
+          onClick={() => onFocus(isFocused(focus, w) ? null : { repoFullName: w.repoFullName, workflowName: w.workflowName })}
+        >
+          <span class="ci-health-name">
             <span class="ci-health-workflow">{w.workflowName}</span>
             <span class="ci-health-repo">{w.repoFullName}</span>
-          </div>
+          </span>
           <span class="ci-health-metric">{metric(w)}</span>
-        </div>
+        </button>
       ))}
     </div>
   );
 }
 
 /** Drill-in panel rendered to the right of the dashboard (append, never replace). */
-function CiHealthPanel({ onClose }: { onClose: () => void }) {
+function CiHealthPanel({ onClose, focus, onFocus }: { onClose: () => void; focus: CiFocus | null; onFocus: (focus: CiFocus | null) => void }) {
   const [windowDays, setWindowDays] = useState<7 | 30>(7);
   const [report, setReport] = useState<CiHealthReport | null>(null);
 
@@ -1011,25 +1041,31 @@ function CiHealthPanel({ onClose }: { onClose: () => void }) {
           </button>
         ))}
       </div>
-      <p class="ci-health-note">Based on cached runs only (about the last 7 days are kept).</p>
+      <p class="ci-health-note">Based on cached runs only (about the last 7 days are kept). Click a workflow to filter the repo list.</p>
       {!report ? (
         <div class="dash-loading">Loading…</div>
       ) : (
         <>
           <CiHealthList
             title="Top failing"
+            focus={focus}
+            onFocus={onFocus}
             rows={report.topFailing}
             empty="No failing workflows 🎉"
             metric={(w) => `${Math.round(w.failureRate * 100)}% (${w.failedRuns}/${w.totalRuns})`}
           />
           <CiHealthList
             title="Top flaky (failed, then passed on the same commit)"
+            focus={focus}
+            onFocus={onFocus}
             rows={report.topFlaky}
             empty="No flaky workflows detected"
             metric={(w) => `${w.flakyShas} commit${w.flakyShas !== 1 ? 's' : ''}`}
           />
           <CiHealthList
             title="Getting slower"
+            focus={focus}
+            onFocus={onFocus}
             rows={report.topSlowing}
             empty="No duration drift detected"
             metric={(w) => `+${Math.round((w.durationDrift ?? 0) * 100)}% (${formatDuration(w.previousMedianDurationMs)} → ${formatDuration(w.medianDurationMs)})`}
@@ -1055,6 +1091,7 @@ export function DashboardPanel({ dismissedNotifIds, onOpenHistory, onOpenTab }: 
   const [autoDismissAcknowledged, setAutoDismissAcknowledged] = useState(false);
   const [autoDismissDone, setAutoDismissDone] = useState(false);
   const [ciOpen, setCiOpen] = useState(false);
+  const [ciFocus, setCiFocus] = useState<CiFocus | null>(null);
   const [pipelineStatus, setPipelineStatus] = useState<'idle' | 'running' | 'done'>('idle');
 
   const load = useCallback(async () => {
@@ -1160,6 +1197,17 @@ export function DashboardPanel({ dismissedNotifIds, onOpenHistory, onOpenTab }: 
     window.jarvis.localOpenTerminal(localPath);
   };
 
+  const focusCi = (focus: CiFocus | null) => {
+    setCiFocus(focus);
+    if (!focus || !summary) return;
+    const match = summary.repos.find((r) => r.linkedGithubRepo?.toLowerCase() === focus.repoFullName.toLowerCase());
+    if (!match) return;
+    setExpandedId(match.localRepoId);
+    requestAnimationFrame(() => {
+      document.getElementById(`dash-repo-${match.localRepoId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  };
+
   const handleOpenGitHub = (repoFullName: string) => {
     window.jarvis.openUrl(`https://github.com/${repoFullName}`);
   };
@@ -1245,7 +1293,11 @@ export function DashboardPanel({ dismissedNotifIds, onOpenHistory, onOpenTab }: 
   ).length;
 
   // Filter repos based on the selected card
-  const displayRepos = filterRepos(summary.repos, warningMap, cardFilter);
+  // A CI health focus overrides the card filter: show just that repo, healthy or not.
+  const displayRepos = ciFocus
+    ? summary.repos.filter((r) => r.linkedGithubRepo?.toLowerCase() === ciFocus.repoFullName.toLowerCase())
+    : filterRepos(summary.repos, warningMap, cardFilter);
+  const showTriage = cardFilter === 'human-notifications' && !ciFocus;
   const humanNotificationCount = ownRepoNotifications.filter(
     (notification) => classifyDashboardNotification(notification, currentUserLogin).bucket === 'people',
   ).length;
@@ -1355,8 +1407,8 @@ export function DashboardPanel({ dismissedNotifIds, onOpenHistory, onOpenTab }: 
       {/* Repo health list — filtered by selected card */}
       <div class="dash-section">
         <div class="dash-section-header">
-          <h3>{sectionTitle(cardFilter, sorted.length)}</h3>
-          {cardFilter !== 'human-notifications' && (
+          <h3>{ciFocus ? `🩺 ${ciFocus.workflowName}` : sectionTitle(cardFilter, sorted.length)}</h3>
+          {!showTriage && !ciFocus && (
             <div class="dash-sort-controls">
               <span class="dash-sort-label">Sort:</span>
               {(['attention', 'local-activity', 'remote-activity'] as SortMode[]).map((mode) => (
@@ -1371,7 +1423,13 @@ export function DashboardPanel({ dismissedNotifIds, onOpenHistory, onOpenTab }: 
             </div>
           )}
         </div>
-        {cardFilter === 'human-notifications' ? (
+        {ciFocus && (
+          <div class="dash-ci-focus">
+            <span>Filtered by CI health: <strong>{ciFocus.workflowName}</strong> in {ciFocus.repoFullName}</span>
+            <button class="dash-sort-btn" onClick={() => focusCi(null)}>Clear filter</button>
+          </div>
+        )}
+        {showTriage ? (
           <DashboardNotificationTriage
             notifications={ownRepoNotifications}
             loading={triageLoading}
@@ -1380,7 +1438,13 @@ export function DashboardPanel({ dismissedNotifIds, onOpenHistory, onOpenTab }: 
           />
         ) : (
           <div class="dash-repo-list">
-          {sorted.length === 0 && (
+          {sorted.length === 0 && ciFocus && (
+            <div class="dash-empty">
+              {ciFocus.repoFullName} is not one of your local repos.{' '}
+              <button class="dash-sort-btn" onClick={() => window.jarvis.openUrl(`https://github.com/${ciFocus.repoFullName}/actions`)}>Open Actions on GitHub</button>
+            </div>
+          )}
+          {sorted.length === 0 && !ciFocus && (
             <div class={`dash-empty${isEmptyStatePositive(cardFilter) ? ' dash-empty--positive' : ''}`}>{emptyMessage(cardFilter)}</div>
           )}
           {sorted.map((repo) => (
@@ -1403,13 +1467,15 @@ export function DashboardPanel({ dismissedNotifIds, onOpenHistory, onOpenTab }: 
               onOpenTerminal={handleOpenTerminal}
               onOpenGitHub={handleOpenGitHub}
               onPushBranch={handlePushBranch}
-              dismissedNotifIds={dismissedNotifIds}            />
+              dismissedNotifIds={dismissedNotifIds}
+              workflowFilter={ciFocus?.workflowName ?? null}
+            />
           ))}
           </div>
         )}
       </div>
     </div>
-    {ciOpen && <CiHealthPanel onClose={() => setCiOpen(false)} />}
+    {ciOpen && <CiHealthPanel onClose={() => { setCiOpen(false); focusCi(null); }} focus={ciFocus} onFocus={focusCi} />}
     </div>
   );
 }

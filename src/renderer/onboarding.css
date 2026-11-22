@@ -6678,7 +6678,9 @@ h5.ec-heading { font-size: 0.9375rem; }
   align-items: flex-start;
   gap: 1rem;
   width: 100%;
-  overflow-x: auto;
+  /* Wrap the side panel below on narrow windows. No overflow here: a scroll
+     container would stop the sticky CI health panel from sticking. */
+  flex-wrap: wrap;
 }
 .dash-with-side > .dashboard-panel {
   flex: 1 1 0;
@@ -6686,6 +6688,11 @@ h5.ec-heading { font-size: 0.9375rem; }
 }
 .ci-health-panel {
   flex: 0 0 340px;
+  /* Stay in view while the repo list scrolls to a filtered repo. */
+  position: sticky;
+  top: 0.5rem;
+  max-height: calc(100vh - 1rem);
+  overflow-y: auto;
   padding: 0.75rem 1rem;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 8px;
@@ -6696,7 +6703,18 @@ h5.ec-heading { font-size: 0.9375rem; }
 .ci-health-note { font-size: 0.8125rem; opacity: 0.7; margin: 0.5rem 0; }
 .ci-health-group { margin-top: 1rem; }
 .ci-health-group h4 { margin: 0 0 0.4rem; font-size: 0.9375rem; }
-.ci-health-row { display: flex; justify-content: space-between; gap: 0.75rem; padding: 0.3rem 0; border-top: 1px solid rgba(255, 255, 255, 0.06); }
+.ci-health-row {
+  display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; width: 100%;
+  padding: 0.3rem 0.4rem; margin: 0; text-align: left; font: inherit; color: inherit; cursor: pointer;
+  background: transparent; border: none; border-top: 1px solid rgba(255, 255, 255, 0.06); border-radius: 0;
+}
+.ci-health-row:hover { background: #1a2a4e; }
+.ci-health-row--active, .ci-health-row--active:hover { background: #1f3460; box-shadow: inset 3px 0 0 #4d9fff; }
+.dash-ci-focus {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+  margin-bottom: 0.6rem; padding: 0.4rem 0.7rem; font-size: var(--type-label); color: var(--text-secondary);
+  background: #16213e; border: 1px solid #2c4a80; border-radius: 6px;
+}
 .ci-health-name { display: flex; flex-direction: column; min-width: 0; }
 .ci-health-workflow { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ci-health-repo { font-size: 0.8125rem; opacity: 0.65; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -6704,22 +6722,32 @@ h5.ec-heading { font-size: 0.9375rem; }
 .ci-health-empty { font-size: 0.875rem; opacity: 0.7; }
 /* ── "What's on fire" brief ──────────────────────────────────────────────── */
 .fire-brief {
-  padding: 0.7rem 0.9rem;
+  padding: 0.6rem 0.9rem;
   margin-bottom: 0.85rem;
-  background: #2a1510;
-  border: 1px solid #a8441f;
+  background: #16213e;
+  border: 1px solid #0f3460;
   border-radius: 7px;
 }
-.fire-brief--clear { background: #0d2a1a; border-color: #1a7a44; }
+.fire-brief--clear { border-color: #1a4a34; }
 .fire-brief-head { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
-.fire-brief-title { font-size: 0.9375rem; font-weight: 600; color: #f0a07c; }
-.fire-brief--clear .fire-brief-title { color: #4eca8a; }
-.fire-brief-summary { margin: 0.4rem 0; font-size: 0.875rem; font-style: italic; opacity: 0.9; }
+.fire-brief-title { font-size: var(--type-body); font-weight: 600; color: var(--text-primary); }
+.fire-brief--clear .fire-brief-title { color: var(--text-secondary); font-weight: 500; }
+.fire-brief-summary { margin: 0.4rem 0; font-size: var(--type-label); font-style: italic; color: var(--text-secondary); }
 .fire-brief-section { margin-top: 0.5rem; }
-.fire-brief-section-title { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; opacity: 0.7; }
+.fire-brief-section-title { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
 .fire-brief-list { list-style: none; margin: 0.2rem 0 0; padding: 0; }
-.fire-brief-item { font-size: 0.875rem; padding: 0.1rem 0 0.1rem 0.6rem; border-left: 3px solid #d9a441; }
-.fire-brief-item--fire { border-left-color: #e5533d; }
-.fire-brief-item a { color: inherit; text-decoration: underline; }
-.fire-brief-more { font-size: 0.8125rem; opacity: 0.7; padding-left: 0.6rem; }
-.fire-brief-open { margin-left: 0.5rem; font-size: 0.75rem; }
+.fire-brief-item {
+  display: flex; align-items: center; gap: 0.5rem;
+  font-size: var(--type-label); color: var(--text-secondary);
+  padding: 0.15rem 0 0.15rem 0.6rem; border-left: 2px solid #3a4560;
+}
+.fire-brief-item--fire { border-left-color: #b8544a; color: var(--text-primary); }
+.fire-brief-item a { color: inherit; text-decoration: none; }
+.fire-brief-item a:hover { text-decoration: underline; }
+.fire-brief-more { font-size: var(--type-meta); color: var(--text-muted); padding-left: 0.6rem; }
+.fire-brief-open {
+  flex-shrink: 0; background: transparent; color: var(--text-muted);
+  border: 1px solid #2c3a5e; border-radius: 4px;
+  padding: 0.05rem 0.5rem; font-size: 0.75rem;
+}
+.fire-brief-open:hover { background: #1a2a4e; color: var(--text-primary); }

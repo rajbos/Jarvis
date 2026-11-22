@@ -93,6 +93,22 @@ function plural(n: number, word: string): string {
   return `${n} ${word}${n === 1 ? '' : 's'}`;
 }
 
+/**
+ * Coarse, human-readable length of time: "31 min", "5 hours", "3 days",
+ * "6 weeks", "2 months", "1 year". Rounds down to the largest sensible unit.
+ */
+export function formatElapsed(ms: number): string {
+  const mins = Math.max(0, Math.floor(ms / 60_000));
+  if (mins < 60) return `${mins} min`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 48) return plural(hours, 'hour');
+  const days = Math.floor(hours / 24);
+  if (days < 14) return plural(days, 'day');
+  if (days < 60) return plural(Math.floor(days / 7), 'week');
+  if (days < 365) return plural(Math.floor(days / 30), 'month');
+  return plural(Math.floor(days / 365), 'year');
+}
+
 function section(id: BriefSectionId, title: string, items: BriefItem[]): BriefSection {
   return { id, title, total: items.length, items: items.slice(0, MAX_ITEMS_PER_SECTION) };
 }
@@ -121,6 +137,9 @@ function sessionItems(entries: ActiveSessionEntry[], now: number): BriefItem[] {
   const items: BriefItem[] = [];
   for (const e of entries) {
     const s = e.session;
+    // The session's PR was merged or closed: its work is finished, whatever
+    // the agent last reported. Sessions with no PR (or an open one) still show.
+    if (e.pr && e.pr.state !== 'OPEN') continue;
     const prUrl = e.pr?.url ?? (s.linkedPr ? `${repoWebUrl(s.linkedPr.repoFullName)}/pull/${s.linkedPr.number}` : null);
     if (s.activity === 'waiting_for_user') {
       items.push({ id: `session:${s.key}`, severity: 'fire', text: `${s.client} needs input: ${sessionLabel(e)}`, url: prUrl, tab: 'agent-sessions' });
@@ -128,8 +147,7 @@ function sessionItems(entries: ActiveSessionEntry[], now: number): BriefItem[] {
     }
     const updated = s.updatedAt ? Date.parse(s.updatedAt) : NaN;
     if (s.activity === 'working' && Number.isFinite(updated) && now - updated >= SESSION_STALL_MS) {
-      const mins = Math.floor((now - updated) / 60000);
-      items.push({ id: `session:${s.key}`, severity: 'attention', text: `${s.client} looks stalled (${mins} min without update): ${sessionLabel(e)}`, url: prUrl, tab: 'agent-sessions' });
+      items.push({ id: `session:${s.key}`, severity: 'attention', text: `${s.client} looks stalled (no update for ${formatElapsed(now - updated)}): ${sessionLabel(e)}`, url: prUrl, tab: 'agent-sessions' });
     }
   }
   return items;

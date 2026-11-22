@@ -42,7 +42,7 @@ describe('main window — tabs', () => {
   it('shows the fire brief card with a link per line', async () => {
     const view = await harness.open('index');
     const card = view.page.locator('[data-testid="fire-brief"]');
-    await expect.poll(() => card.innerText()).toContain("What's on fire (5)");
+    await expect.poll(() => card.innerText()).toContain("Needs attention (5)");
     const links = await card.locator('a').evaluateAll((as) => as.map((a) => (a as HTMLAnchorElement).href));
     expect(links).toHaveLength(4);
     expect(links.every((l) => l.startsWith('https://github.com/'))).toBe(true);
@@ -87,6 +87,26 @@ describe('main window — tabs', () => {
     expect(await page.locator('.ci-health-panel').innerText()).toContain('Getting slower');
     await expect(page.locator('.dash-repo-list').isVisible()).resolves.toBe(true);
     expect((await view.calls('dashboardGetCiHealth')).map((c) => c.args[0])).toContain(7);
+    await expectCleanRender(view);
+  });
+
+  it('filters the repo list to a workflow when a CI health row is clicked', async () => {
+    const view = await harness.open('index');
+    const { page } = view;
+    await page.getByRole('button', { name: /CI health/ }).click();
+    const row = page.locator('.ci-health-row', { hasText: 'Launch tests' }).first();
+    await row.click();
+    await expect.poll(() => page.locator('.dash-ci-focus').innerText()).toContain('Launch tests');
+    await expect.poll(() => page.locator('.dash-repo-name').allInnerTexts()).toEqual(['rocket-sled']);
+    // The repo is expanded and only the focused workflow's notifications show.
+    await expect.poll(() => page.locator('.dash-notif-group-name').allInnerTexts()).toEqual([expect.stringContaining('Launch tests')]);
+    expect(await page.locator('.dash-notif-list').innerText()).not.toContain('turbo boost');
+
+    await row.click();
+    await expect.poll(() => page.locator('.dash-ci-focus').count()).toBe(0);
+    await expect.poll(() => page.locator('.dash-repo-name').allInnerTexts()).toEqual(
+      expect.arrayContaining(['rocket-sled', 'anvil-api', 'hammock']),
+    );
     await expectCleanRender(view);
   });
 });
