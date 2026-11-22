@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { createPortal } from 'preact/compat';
 import { isIpcError, type UsageHistoryMetric, type UsageHistoryPoint, type UsageHistoryRange } from '../types';
 import { formatNumber } from './utils';
-import { type AxisDomain, chartY, fitAxisDomain, historyBands, timeTicks } from './usage-history-chart';
+import { chartY, historyAxisScale, historyBands, limitPercentSuffix, timeTicks } from './usage-history-chart';
 
 const W = 760;
 const H = 240;
@@ -109,15 +109,8 @@ export function UsageHistoryDialog({
   const view = data && data.end - data.start > 0 ? data : null;
   const visible = series.filter((s) => shown[s.key]);
 
-  // Series plot as a share of their own limit. When any shown series has none
-  // (unlimited Copilot plan), or `absolute` is set, every line switches to raw
-  // values on an axis fitted to the visible data, so they stay comparable.
-  const unlimited = view ? visible.some((s) => view.slots.some((slot) => slot.series[s.key] && slot.series[s.key].limit === null)) : false;
-  let scale: AxisDomain | null = null;
-  if (view && (unlimited || absolute)) {
-    const vals = visible.flatMap((s) => view.slots.flatMap((slot) => (slot.series[s.key] ? [slot.series[s.key].min, slot.series[s.key].max] : [])));
-    scale = vals.length > 0 ? fitAxisDomain(Math.min(...vals), Math.max(...vals)) : { min: 0, max: 1 };
-  }
+  // Share-of-limit axis, or raw values on a fitted axis (see historyAxisScale).
+  const scale = view ? historyAxisScale(view.slots, visible.map((s) => s.key), absolute) : null;
   const yOf = (value: number, limit: number | null) => chartY(value, limit, PLOT_H, scale);
 
   const bands = view
@@ -143,8 +136,7 @@ export function UsageHistoryDialog({
   const hoverSlot = view && hover !== null ? view.slots[hover] : null;
   const hoverX = hoverSlot ? xOf((hoverSlot.from + hoverSlot.to) / 2) : 0;
   const withLimit = (value: number, limit: number | null) => (showLimit && limit !== null ? `${format(value)} / ${format(limit)}` : format(value));
-  // Only needed when the axis shows raw values; otherwise the axis itself is the percentage.
-  const pct = (value: number, limit: number | null) => (absolute && showLimit && limit ?` (${Math.round((value / limit) * 100)}%)` : '');
+  const pct = (value: number, limit: number | null) => limitPercentSuffix(value, limit, absolute, showLimit);
 
   return createPortal(
     <div class="bg-copilot-raw-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
