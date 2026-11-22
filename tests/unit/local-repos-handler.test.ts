@@ -56,7 +56,10 @@ vi.mock('../../src/services/local-discovery', () => ({
   runLocalDiscovery: vi.fn().mockResolvedValue({ reposFound: 0, elapsed: 0 }),
 }));
 
-import { registerHandlers } from '../../src/plugins/local-repos/handler';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { activeSessionUse, registerHandlers } from '../../src/plugins/local-repos/handler';
 import {
   getScanFolders,
   addScanFolder,
@@ -76,6 +79,24 @@ function callHandler(channel: string, ...args: unknown[]): unknown {
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
+
+describe('activeSessionUse (branch-prune dependency)', () => {
+  let home: string;
+  beforeEach(() => { home = fs.mkdtempSync(path.join(os.tmpdir(), 'jarvis-prune-sessions-')); });
+  afterEach(() => { fs.rmSync(home, { recursive: true, force: true }); });
+
+  it('reports nothing in use when no agent tool is installed', async () => {
+    const used = await activeSessionUse({ homeDir: home });
+    expect([...used.branches]).toEqual([]);
+    expect(used.paths).toEqual([]);
+  });
+
+  it('throws, instead of reporting nothing in use, when a session store cannot be read', async () => {
+    fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(home, '.claude', 'sessions'), '');
+    await expect(activeSessionUse({ homeDir: home })).rejects.toThrow(/nothing was pruned/);
+  });
+});
 
 describe('Local-repos plugin — IPC handlers', () => {
   let db: SqlJsDatabase;

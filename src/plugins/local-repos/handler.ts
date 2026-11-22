@@ -20,9 +20,14 @@ import { fetchPullRequests, prLookupKey, type PrLookup, type PrLookupResult } fr
 import { accessForRepo, ghCliFallbacks } from '../../services/github-repo-access';
 import { DEFAULT_HOST } from '../../services/github-host';
 import { resolveGitContext } from '../../services/git-context';
-import { discoverClaudeLocalSessions, discoverCopilotLocalSessions } from '../../services/local-agent-sessions';
+import {
+  discoverClaudeLocalSessions,
+  discoverCopilotLocalSessions,
+  type CopilotLocalDiscovery,
+  type LocalSessionDiscoveryOptions,
+} from '../../services/local-agent-sessions';
 import path from 'node:path';
-import type { PruneRequestItem } from '../types';
+import type { ActiveAgentSession, PruneRequestItem } from '../types';
 
 let localScanRunning = false;
 let lastLocalScanProgress: ScanProgress | null = null;
@@ -38,9 +43,23 @@ function openTerminalInFolder(folderPath: string): void {
   openTerminal(resolvedPath, undefined, (err) => logger.error('[IPC] local:open-terminal failed:', err));
 }
 
-/** Branches and folders that agent sessions use right now; throws when sessions cannot be listed. */
-async function activeSessionUse(): Promise<{ branches: Set<string>; paths: string[] }> {
-  const [copilot, claude] = await Promise.all([discoverCopilotLocalSessions(), discoverClaudeLocalSessions()]);
+/**
+ * Branches and folders that agent sessions use right now; throws when sessions
+ * cannot be listed. Exported for tests.
+ */
+export async function activeSessionUse(
+  options: LocalSessionDiscoveryOptions = {},
+): Promise<{ branches: Set<string>; paths: string[] }> {
+  // Strict: an unreadable session store must stop pruning, not look like "no sessions".
+  const discovery = { ...options, strict: true };
+  let copilot: CopilotLocalDiscovery;
+  let claude: ActiveAgentSession[];
+  try {
+    [copilot, claude] = await Promise.all([discoverCopilotLocalSessions(discovery), discoverClaudeLocalSessions(discovery)]);
+  } catch (err) {
+    logger.warn('[LocalRepos] Could not list agent sessions; refusing to prune:', err);
+    throw new Error('Could not verify which branches running agent sessions use, so nothing was pruned. Try again.', { cause: err });
+  }
   const branches = new Set<string>();
   const paths: string[] = [];
   for (const session of [...copilot.sessions, ...claude]) {

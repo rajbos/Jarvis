@@ -37,6 +37,14 @@ export interface LocalSessionDiscoveryOptions {
   mirrorWindowMs?: number;
   /** Collects per-phase timings for the sweep's debug log. */
   timer?: PhaseTimer;
+  /**
+   * Fail closed: reject when a session store can't be read instead of treating
+   * it as "no sessions". A missing path (ENOENT: the tool isn't installed, or a
+   * session ended between listing and reading) still means "no sessions".
+   * Used where a missed live session would be destructive (branch pruning);
+   * the dashboard sweep keeps the lenient default.
+   */
+  strict?: boolean;
 }
 
 const DEFAULT_RECENT_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
@@ -132,19 +140,30 @@ async function lockOwnerVerifier(
   };
 }
 
-async function mtimeOf(filePath: string): Promise<number | null> {
+/** ENOENT: the file or folder isn't there (never created, or removed meanwhile). */
+function isMissing(err: unknown): boolean {
+  return (err as NodeJS.ErrnoException | null)?.code === 'ENOENT';
+}
+
+/** Lenient mode treats every read error as "absent"; strict mode only a missing path. */
+function absentOrThrow(err: unknown, strict: boolean | undefined): null {
+  if (strict && !isMissing(err)) throw err;
+  return null;
+}
+
+async function mtimeOf(filePath: string, strict?: boolean): Promise<number | null> {
   try {
     return (await fsp.stat(filePath)).mtimeMs;
-  } catch {
-    return null;
+  } catch (err) {
+    return absentOrThrow(err, strict);
   }
 }
 
-async function readFileText(filePath: string): Promise<string | null> {
+async function readFileText(filePath: string, strict?: boolean): Promise<string | null> {
   try {
     return await fsp.readFile(filePath, 'utf-8');
-  } catch {
-    return null;
+  } catch (err) {
+    return absentOrThrow(err, strict);
   }
 }
 
@@ -438,16 +457,16 @@ const sessionDirCache = new Map<string, SessionDirInfo>();
  */
 const staleDirs = new Map<string, number>();
 
-async function readSessionDir(dir: string, mtimeMs: number): Promise<SessionDirInfo | null> {
+async function readSessionDir(dir: string, mtimeMs: number, strict?: boolean): Promise<SessionDirInfo | null> {
   const cached = sessionDirCache.get(dir);
   if (cached && cached.mtimeMs === mtimeMs) return cached;
   let files: string[];
   try {
     files = await fsp.readdir(dir);
-  } catch {
-    return null;
+  } catch (err) {
+    return absentOrThrow(err, strict);
   }
-  const yamlText = files.includes('workspace.yaml') ? await readFileText(path.join(dir, 'workspace.yaml')) : null;
+  const yamlText = files.includes('workspace.yaml') ? await readFileText(path.join(dir, 'workspace.yaml'), strict) : null;
   const info = { mtimeMs, files, ws: yamlText ? parseWorkspaceYaml(yamlText) : {} };
   sessionDirCache.set(dir, info);
   return info;
@@ -469,6 +488,7 @@ export async function discoverCopilotLocalSessions(options: LocalSessionDiscover
   const mirrorCutoff = Math.min(cutoff, now - (options.mirrorWindowMs ?? DEFAULT_MIRROR_WINDOW_MS));
   const root = path.join(home, '.copilot', 'session-state');
   const timer = options.timer ?? new PhaseTimer();
+  const strict = options.strict;
   const scanStart = Date.now();
 
   const sessions: ActiveAgentSession[] = [];
@@ -477,7 +497,8 @@ export async function discoverCopilotLocalSessions(options: LocalSessionDiscover
   let entries: fs.Dirent[];
   try {
     entries = await fsp.readdir(root, { withFileTypes: true });
-  } catch {
+  } catch (err) {
+    absentOrThrow(err, strict);
     return { sessions, mirroredTasks };
   }
 
@@ -486,10 +507,11 @@ export async function discoverCopilotLocalSessions(options: LocalSessionDiscover
   const dirs = entries.filter((e) => e.isDirectory()).map((e) => ({ dirName: e.name, dir: path.join(root, e.name) }));
   let statted = 0;
   const scanned = await mapLimit(dirs, SCAN_CONCURRENCY, async ({ dirName, dir }) => {
+    // Strict callers can't afford to miss a session resumed since the last check.
     const checkedAt = staleDirs.get(dir);
-    if (checkedAt !== undefined && now - checkedAt < STALE_DIR_RECHECK_MS) return null;
+    if (!strict && checkedAt !== undefined && now - checkedAt < STALE_DIR_RECHECK_MS) return null;
     statted++;
-    const mtimeMs = await mtimeOf(dir);
+    const mtimeMs = await mtimeOf(dir, strict);
     if (mtimeMs === null || mtimeMs < mirrorCutoff) {
       sessionDirCache.delete(dir);
       if (mtimeMs === null) staleDirs.delete(dir);
@@ -497,7 +519,7 @@ export async function discoverCopilotLocalSessions(options: LocalSessionDiscover
       return null;
     }
     staleDirs.delete(dir);
-    const info = await readSessionDir(dir, mtimeMs);
+    const info = await readSessionDir(dir, mtimeMs, strict);
     return info ? { dirName, dir, info } : null;
   });
   // Forget dirs that were deleted.
@@ -530,7 +552,7 @@ export async function discoverCopilotLocalSessions(options: LocalSessionDiscover
     if (pid === undefined) continue;
 
     // A live session rewrites workspace.yaml (name, updated_at) in place, so read it fresh.
-    const yamlText = files.includes('workspace.yaml') ? await readFileText(path.join(dir, 'workspace.yaml')) : null;
+    const yamlText = files.includes('workspace.yaml') ? await readFileText(path.join(dir, 'workspace.yaml'), strict) : null;
     const ws = yamlText ? parseWorkspaceYaml(yamlText) : {};
     const eventsPath = files.includes('events.jsonl') ? path.join(dir, 'events.jsonl') : null;
     const events = eventsPath
@@ -733,23 +755,30 @@ export async function discoverClaudeLocalSessions(options: LocalSessionDiscovery
   const alive = options.isPidAlive ?? isPidAlive;
   const now = options.now?.() ?? Date.now();
   const sessionsDir = path.join(home, '.claude', 'sessions');
+  const strict = options.strict;
 
   let files: string[];
   try {
     files = (await fsp.readdir(sessionsDir)).filter((f) => f.endsWith('.json'));
-  } catch {
+  } catch (err) {
+    absentOrThrow(err, strict);
     return [];
   }
 
   const candidates: Array<{ meta: Record<string, unknown>; lock: LockCandidate }> = [];
   for (const file of files) {
     const filePath = path.join(sessionsDir, file);
-    const raw = await readFileText(filePath);
+    const raw = await readFileText(filePath, strict);
     if (!raw) continue;
     let meta: Record<string, unknown>;
     try {
       meta = JSON.parse(raw) as Record<string, unknown>;
     } catch {
+      // Possibly caught mid-write. A live process behind it is a session whose
+      // folder we can't tell, so strict callers must not guess.
+      if (strict && alive(Number(path.basename(file, '.json')))) {
+        throw new Error(`Unreadable Claude session file for a running process: ${file}`);
+      }
       continue;
     }
     const pid = typeof meta.pid === 'number' ? meta.pid : Number(path.basename(file, '.json'));
