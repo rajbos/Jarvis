@@ -42,7 +42,7 @@ describe('main window — tabs', () => {
   it('shows the fire brief card with a link per line', async () => {
     const view = await harness.open('index');
     const card = view.page.locator('[data-testid="fire-brief"]');
-    await expect.poll(() => card.innerText()).toContain("What's on fire (5)");
+    await expect.poll(() => card.innerText()).toContain("Needs attention (5)");
     const links = await card.locator('a').evaluateAll((as) => as.map((a) => (a as HTMLAnchorElement).href));
     expect(links).toHaveLength(4);
     expect(links.every((l) => l.startsWith('https://github.com/'))).toBe(true);

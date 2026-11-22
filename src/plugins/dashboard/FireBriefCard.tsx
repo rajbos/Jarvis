@@ -34,7 +34,7 @@ export function FireBriefCard({ onOpenTab }: { onOpenTab?: (tab: BriefTab) => vo
   if (brief.allClear) {
     return (
       <div class="fire-brief fire-brief--clear" data-testid="fire-brief">
-        <span class="fire-brief-title">✅ Nothing on fire since {new Date(brief.since).toLocaleString()}</span>
+        <span class="fire-brief-title">All clear since {new Date(brief.since).toLocaleString()}</span>
       </div>
     );
   }
@@ -42,7 +42,7 @@ export function FireBriefCard({ onOpenTab }: { onOpenTab?: (tab: BriefTab) => vo
   return (
     <div class="fire-brief" data-testid="fire-brief">
       <div class="fire-brief-head">
-        <span class="fire-brief-title">🔥 What's on fire ({brief.totalItems})</span>
+        <span class="fire-brief-title">Needs attention ({brief.totalItems})</span>
         <button class="dash-refresh-btn" onClick={() => void acknowledge()} disabled={busy} title="Mark this brief as read; failures older than now are hidden next time">
           Mark as read
         </button>
