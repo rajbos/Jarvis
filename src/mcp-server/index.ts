@@ -55,6 +55,10 @@ import {
 } from './tools/triage.js';
 import { openIndexSnapshot, INDEX_DB_PATH } from './index-db.js';
 import { describeIndex, searchLocalFiles } from './tools/files.js';
+import { errorResult, indexStatusReply, okOrError, searchFilesReply } from './results.js';
+
+// Result convention (see ./results.ts): isError for missing prerequisites, invalid input and
+// not-found-by-key lookups; plain success for searches that legitimately match nothing.
 
 const server = new McpServer(
   { name: 'jarvis', version: '0.1.0' },
@@ -120,14 +124,14 @@ server.registerTool(
   },
   async ({ name, path }: { name?: string; path?: string }) => {
     if (!name && !path) {
-      return { content: [{ type: 'text' as const, text: 'Error: provide either "name" or "path".' }], isError: true };
+      return errorResult('Error: provide either "name" or "path".');
     }
     const db = await openSnapshot();
     const project = path
       ? getRuddrProjectByPath(db, path)
       : getRuddrProjectByName(db, name!);
     if (!project) {
-      return { content: [{ type: 'text' as const, text: `No project found for ${path ? `path="${path}"` : `name="${name}"`}.` }] };
+      return errorResult(`No project found for ${path ? `path="${path}"` : `name="${name}"`}.`);
     }
     return { content: [{ type: 'text' as const, text: JSON.stringify(project, null, 2) }] };
   },
@@ -234,7 +238,7 @@ server.registerTool(
     const db = await openSnapshot();
     const page = getOneNotePageContent(db, groupId, relativePath, pageIndex, maxChars ?? 8000);
     if (!page) {
-      return { content: [{ type: 'text' as const, text: `Page not found: groupId=${groupId}, path="${relativePath}", index=${pageIndex}` }] };
+      return errorResult(`Page not found: groupId=${groupId}, path="${relativePath}", index=${pageIndex}`);
     }
     return { content: [{ type: 'text' as const, text: JSON.stringify(page, null, 2) }] };
   },
@@ -339,13 +343,7 @@ server.registerTool(
   },
   async ({ query, repoPath, kind, limit }: { query: string; repoPath?: string; kind?: 'script' | 'doc' | 'config' | 'source' | 'other'; limit?: number }) => {
     const result = searchLocalFiles(await openIndexSnapshot(), query, { repoPath, kind, limit: limit ?? 20 });
-    if (!result.indexAvailable) {
-      return { content: [{ type: 'text' as const, text: `No file index found at ${INDEX_DB_PATH}. Start Jarvis and let the local repo scan finish; the index is built right after it.` }] };
-    }
-    if (result.hits.length === 0) {
-      return { content: [{ type: 'text' as const, text: `No indexed files match "${query}" (index last built ${result.lastIndexedAt ?? 'unknown'}).` }] };
-    }
-    return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+    return searchFilesReply(result, INDEX_DB_PATH);
   },
 );
 
@@ -360,11 +358,7 @@ server.registerTool(
       'and per-repo counts or skip reasons. Use it to understand why github_search_files found nothing.',
   },
   async () => {
-    const status = describeIndex(await openIndexSnapshot());
-    if (!status) {
-      return { content: [{ type: 'text' as const, text: `No file index found at ${INDEX_DB_PATH}.` }] };
-    }
-    return { content: [{ type: 'text' as const, text: JSON.stringify({ indexPath: INDEX_DB_PATH, ...status }, null, 2) }] };
+    return indexStatusReply(describeIndex(await openIndexSnapshot()), INDEX_DB_PATH);
   },
 );
 
@@ -481,8 +475,7 @@ server.registerTool(
 // ── Triage tools ──────────────────────────────────────────────────────────────
 
 function triageReply<T>(result: TriageResult<T>) {
-  if (!result.ok) return { content: [{ type: 'text' as const, text: result.error }], isError: true };
-  return { content: [{ type: 'text' as const, text: JSON.stringify(result.value, null, 2) }] };
+  return okOrError(result);
 }
 
 const triageLimit = z.number().int().min(1).max(200).optional().default(25);
@@ -620,8 +613,7 @@ server.registerTool(
   async (args: { from?: string; to?: string; client?: string; project?: string; group?: string; workType?: string; groupBy?: HoursGroupBy[] }) => {
     const db = await openSnapshot();
     const result = queryRuddrHours(db, args);
-    if (!result.ok) return { content: [{ type: 'text' as const, text: result.error }] };
-    return { content: [{ type: 'text' as const, text: JSON.stringify(result.value, null, 2) }] };
+    return okOrError(result);
   },
 );
 
@@ -645,8 +637,7 @@ server.registerTool(
   async (args: { from?: string; to?: string; client?: string; project?: string; group?: string; workType?: string; note?: string; status?: string; limit?: number }) => {
     const db = await openSnapshot();
     const result = listRuddrHourEntries(db, args);
-    if (!result.ok) return { content: [{ type: 'text' as const, text: result.error }] };
-    return { content: [{ type: 'text' as const, text: JSON.stringify(result.value, null, 2) }] };
+    return okOrError(result);
   },
 );
 
