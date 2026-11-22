@@ -25,6 +25,7 @@ import { registerDiagnosticsIpcHandlers } from './diagnostics';
 import { registerAppWindowIpcHandlers } from './app-window-ipc';
 import { buildCrashDiagnostic, detectNewCrashDumps, trimCrashDumps } from './crash-dumps';
 import type { DiagnosticReport } from '../types/ipc-payloads';
+import { safeSend } from '../plugins/ipc-utils';
 if (process.env.JARVIS_CONFIG_DIR) {
   app.setPath('userData', path.join(process.env.JARVIS_CONFIG_DIR, 'electron'));
 } else if (!app.isPackaged) {
@@ -97,7 +98,7 @@ process.on('unhandledRejection', (reason) => {
 
 let mainWindow: BrowserWindow | null = null;
 setFreezeReportSender((report) => {
-  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('diagnostics:show', report);
+  safeSend(mainWindow, 'diagnostics:show', report);
 });
 setUserAttentionProbe(() => !!mainWindow && !mainWindow.isDestroyed()
   && mainWindow.isVisible() && !mainWindow.isMinimized() && mainWindow.isFocused());
@@ -178,7 +179,7 @@ async function initialize(): Promise<void> {
   const onboarding = getOnboardingStatus(db);
   const needsOnboarding = Object.values(onboarding).some((s) => s === 'pending');
 
-  const openChat = () => { mainWindow?.webContents.send('chat:open'); };
+  const openChat = () => { safeSend(mainWindow, 'chat:open'); };
 
   // Build native application menu
   const appMenu = Menu.buildFromTemplate([
@@ -271,7 +272,7 @@ function showMainWindow(): void {
     pendingCrashReport = null;
     // Give the renderer a moment to mount its diagnostics listener.
     setTimeout(() => {
-      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('diagnostics:show', report);
+      safeSend(mainWindow, 'diagnostics:show', report);
     }, 3000);
   });
 }

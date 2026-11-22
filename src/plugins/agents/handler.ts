@@ -4,7 +4,7 @@ import { execFile } from 'child_process';
 import * as path from 'path';
 import type { BrowserWindow } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
-import { safeHandle } from '../ipc-utils';
+import { safeHandle, safeSend } from '../ipc-utils';
 import { logger } from '../../services/logger';
 import { getConfigValue, saveDatabase } from '../../storage/database';
 import { loadGitHubPat } from '../../services/github-oauth';
@@ -166,7 +166,7 @@ export function registerHandlers(
 
       // Notify the renderer immediately so it can show a "waiting for model" state
       // before the first token arrives (Ollama startup + context assembly can take seconds)
-      getWindow()?.webContents.send('agent:session-starting', {
+      safeSend(getWindow(), 'agent:session-starting', {
         sessionId,
         agentName: agentDef.name,
         scopeType,
@@ -237,7 +237,7 @@ export function registerHandlers(
     });
     saveDatabase();
 
-    getWindow()?.webContents.send('agent:session-starting', {
+    safeSend(getWindow(), 'agent:session-starting', {
       sessionId,
       agentName: agentDef.name,
       scopeType: 'repo',

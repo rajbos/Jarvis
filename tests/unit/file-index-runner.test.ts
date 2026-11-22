@@ -38,7 +38,7 @@ async function waitFor(pred: () => Promise<boolean> | boolean, timeoutMs = 10_00
 describe('file index runner', () => {
   let tmp: string;
   const sent: Array<{ channel: string; payload: unknown }> = [];
-  const getWindow = () => ({ webContents: { send: (channel: string, payload: unknown) => sent.push({ channel, payload }) } }) as never;
+  const getWindow = () => ({ isDestroyed: () => false, webContents: { isDestroyed: () => false, send: (channel: string, payload: unknown) => sent.push({ channel, payload }) } }) as never;
 
   beforeEach(() => {
     _resetFileIndexStateForTests();

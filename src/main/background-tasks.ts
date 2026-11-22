@@ -15,7 +15,7 @@ import { runReadmeBatch } from '../services/github-repo-catalog';
 import { runSecretsBatch } from '../services/github-secrets';
 import { loadGitHubPat } from '../services/github-oauth';
 import { accessForPrimary } from '../services/github-repo-access';
-import { safeHandle } from '../plugins/ipc-utils';
+import { safeHandle, safeSend } from '../plugins/ipc-utils';
 import { runDueSkills } from '../plugins/browser-companion/skill-runner';
 import { logger } from '../services/logger';
 import { countGitHubApiCalls, summarizeGitHubApiCalls } from '../services/github-api';
@@ -52,9 +52,7 @@ let scheduler: TaskScheduler | null = null;
 
 function broadcastTaskUpdate(getWindow: () => BrowserWindow | null, record: TaskRunRecord): void {
   const win = getWindow();
-  if (win && !win.isDestroyed()) {
-    win.webContents.send('tasks:run-complete', record);
-  }
+  safeSend(win, 'tasks:run-complete', record);
 }
 
 function registerTask(

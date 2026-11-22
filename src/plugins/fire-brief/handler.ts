@@ -1,6 +1,6 @@
 import type { Database as SqlJsDatabase } from 'sql.js';
 import type { BrowserWindow } from 'electron';
-import { safeHandle } from '../ipc-utils';
+import { safeHandle, safeSend } from '../ipc-utils';
 import { getConfigValue, saveDatabase } from '../../storage/database';
 import { checkOllama, streamChat } from '../../services/ollama';
 import { acknowledgeBrief, addProseSummary, buildFireBrief, collectBriefInputs, type FireBrief, type SummarizeFn } from '../../services/fire-brief';
@@ -33,7 +33,7 @@ async function resolveSummarizer(db: SqlJsDatabase): Promise<SummarizeFn | null>
 export async function pushFireBrief(db: SqlJsDatabase, getWindow: () => BrowserWindow | null, show: boolean): Promise<void> {
   const send = (brief: FireBrief, showNow: boolean): void => {
     const win = getWindow();
-    if (win && !win.isDestroyed()) win.webContents.send('fire-brief:updated', { brief, show: showNow });
+    safeSend(win, 'fire-brief:updated', { brief, show: showNow });
   };
   try {
     const brief = generateFireBrief(db);

@@ -74,7 +74,7 @@ function callHandler(channel: string, ...args: unknown[]): unknown {
 }
 
 function fakeWindow() {
-  return { webContents: { send: vi.fn() } } as unknown as Electron.BrowserWindow;
+  return { isDestroyed: () => false, webContents: { isDestroyed: () => false, send: vi.fn() } } as unknown as Electron.BrowserWindow;
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

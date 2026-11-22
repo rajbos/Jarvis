@@ -7,7 +7,7 @@
 
 import { clipboard, shell, type BrowserWindow } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
-import { safeHandle } from '../ipc-utils';
+import { safeHandle, safeSend } from '../ipc-utils';
 import { logger } from '../../services/logger';
 import { showSafeNotification } from '../../services/notifications';
 import { accessForPrimary, accessForRepo, ghCliFallbacks } from '../../services/github-repo-access';
@@ -154,7 +154,7 @@ export async function refreshActiveSessions(
 
     latestSnapshot = snapshot;
     const win = getWindow();
-    if (win && !win.isDestroyed()) win.webContents.send('active-sessions:updated', snapshot);
+    safeSend(win, 'active-sessions:updated', snapshot);
     logger.debug(`[ActiveSessions] ${snapshot.entries.length} session(s), ${snapshot.readyCount} ready for review`);
     logger.debug(`[ActiveSessions] sweep took ${Date.now() - startedAt}ms: ${timer.summary()}`);
     const apiCalls = summarizeGitHubApiCalls(startedAt);

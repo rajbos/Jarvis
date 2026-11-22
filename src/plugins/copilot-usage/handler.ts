@@ -1,7 +1,7 @@
 // ── GitHub Copilot AI credit usage IPC handlers ──────────────────────────────
 import { BrowserWindow } from 'electron';
 import type { Database as SqlJsDatabase } from 'sql.js';
-import { safeHandle } from '../ipc-utils';
+import { safeHandle, safeSend } from '../ipc-utils';
 import { logger } from '../../services/logger';
 import { showSafeNotification } from '../../services/notifications';
 import { recordCopilotCredits } from './credit-history';
@@ -80,7 +80,7 @@ function broadcast(getWindow: () => BrowserWindow | null, usage: CopilotUsage): 
   const main = getWindow();
   if (main) windows.add(main);
   for (const win of windows) {
-    if (!win.isDestroyed()) win.webContents.send('copilot-usage:updated', usage);
+    safeSend(win, 'copilot-usage:updated', usage);
   }
 }
 

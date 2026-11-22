@@ -18,6 +18,7 @@ import {
   type IndexStatus,
 } from '../../services/local-file-index';
 import { logger } from '../../services/logger';
+import { safeSend } from '../ipc-utils';
 
 /** Persist after this many repos so a crash mid-run keeps most of the work. */
 const SAVE_EVERY_REPOS = 10;
@@ -114,7 +115,7 @@ async function runFileIndex(
     const done = await indexRepos(idx, repos, {
       onProgress: (progress) => {
         lastIndexProgress = progress;
-        getWindow()?.webContents.send('local:index-progress', progress);
+        safeSend(getWindow(), 'local:index-progress', progress);
       },
       onRepoDone: (_repo, i) => {
         if ((i + 1) % SAVE_EVERY_REPOS === 0) saveIndexDatabase(idx, indexPath);
@@ -122,7 +123,7 @@ async function runFileIndex(
     });
     saveIndexDatabase(idx, indexPath);
     lastIndexProgress = done;
-    getWindow()?.webContents.send('local:index-complete', done);
+    safeSend(getWindow(), 'local:index-complete', done);
     return done;
   } finally {
     idx.close();

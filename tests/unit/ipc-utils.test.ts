@@ -10,7 +10,7 @@ vi.mock('electron', () => ({
   },
 }));
 
-import { safeHandle } from '../../src/plugins/ipc-utils';
+import { safeHandle, safeSend } from '../../src/plugins/ipc-utils';
 
 describe('safeHandle', () => {
   beforeEach(() => handlers.clear());
@@ -44,5 +44,38 @@ describe('safeHandle', () => {
     safeHandle('test:success', () => ({ ok: true }));
 
     expect(handlers.get('test:success')!({})).toEqual({ ok: true });
+  });
+});
+
+describe('safeSend', () => {
+  function mockWindow({ winDestroyed = false, contentsDestroyed = false } = {}) {
+    return {
+      isDestroyed: () => winDestroyed,
+      webContents: { isDestroyed: () => contentsDestroyed, send: vi.fn() },
+    };
+  }
+
+  it('sends the channel and all arguments to a live window', () => {
+    const win = mockWindow();
+    safeSend(win, 'test:push', { a: 1 }, 'two');
+    expect(win.webContents.send).toHaveBeenCalledWith('test:push', { a: 1 }, 'two');
+  });
+
+  it('skips a destroyed window without throwing', () => {
+    const win = mockWindow({ winDestroyed: true });
+    win.webContents.send.mockImplementation(() => { throw new Error('Object has been destroyed'); });
+    expect(() => safeSend(win, 'test:push')).not.toThrow();
+    expect(win.webContents.send).not.toHaveBeenCalled();
+  });
+
+  it('skips a window whose webContents is destroyed', () => {
+    const win = mockWindow({ contentsDestroyed: true });
+    safeSend(win, 'test:push');
+    expect(win.webContents.send).not.toHaveBeenCalled();
+  });
+
+  it('ignores a missing window', () => {
+    expect(() => safeSend(null, 'test:push')).not.toThrow();
+    expect(() => safeSend(undefined, 'test:push')).not.toThrow();
   });
 });

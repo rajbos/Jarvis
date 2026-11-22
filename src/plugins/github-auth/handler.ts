@@ -19,7 +19,7 @@ import { saveDatabase, setConfigValue } from '../../storage/database';
 import { loadConfig, resolveGitHubScopes } from '../../agent/config';
 import { completeOnboardingStep } from '../../agent/onboarding';
 import { startDiscoveryIfAuthed } from '../discovery/handler';
-import { safeHandle } from '../ipc-utils';
+import { safeHandle, safeSend } from '../ipc-utils';
 import { logger } from '../../services/logger';
 import { showSafeNotification } from '../../services/notifications';
 import { getRateLimitHistory, recordRateLimitSample } from '../../services/github-rate-limit-history';
@@ -36,7 +36,7 @@ import { getGitHubApiStats, githubRequest, registerGitHubToken } from '../../ser
  */
 function broadcastOAuthComplete(payload: { login?: string; name?: string | null; avatarUrl?: string; error?: string }): void {
   for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed()) win.webContents.send('github:oauth-complete', payload);
+    safeSend(win, 'github:oauth-complete', payload);
   }
 }
 
@@ -202,7 +202,7 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
     const { setConfigValue } = await import('../../storage/database');
     setConfigValue(db, 'force_pat_discovery', '1');
     saveDatabase();
-    getWindow()?.webContents.send('github:pat-status-changed');
+    safeSend(getWindow(), 'github:pat-status-changed');
     return { ok: true };
   });
 
@@ -211,7 +211,7 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
     if (!login) return { ok: false };
     deleteGitHubPat(db, login);
     saveDatabase();
-    getWindow()?.webContents.send('github:pat-status-changed');
+    safeSend(getWindow(), 'github:pat-status-changed');
     return { ok: true };
   });
 
@@ -341,11 +341,11 @@ export function registerHandlers(db: SqlJsDatabase, getWindow: () => BrowserWind
     // means the token is expired/revoked — let the renderer switch to the
     // "PAT expired" state immediately.
     if (patResult?.tokenExpired) {
-      getWindow()?.webContents.send('github:pat-expired');
+      safeSend(getWindow(), 'github:pat-expired');
     }
     // Same for the OAuth sign-in token.
     if (oauthResult?.tokenExpired) {
-      getWindow()?.webContents.send('github:oauth-expired');
+      safeSend(getWindow(), 'github:oauth-expired');
     }
 
     return {
@@ -456,7 +456,7 @@ export async function checkPatForExpiry(
   const result = await validateGitHubPat(pat);
   if (result.status !== 'expired') return false;
   logger.warn('[PAT] Stored Personal Access Token is expired or revoked');
-  getWindow()?.webContents.send('github:pat-expired');
+  safeSend(getWindow(), 'github:pat-expired');
   return true;
 }
 
@@ -474,6 +474,6 @@ export async function checkOAuthForExpiry(
   const result = await validateGitHubPat(auth.accessToken);
   if (result.status !== 'expired') return false;
   logger.warn('[OAuth] Stored GitHub sign-in token is expired or revoked');
-  getWindow()?.webContents.send('github:oauth-expired');
+  safeSend(getWindow(), 'github:oauth-expired');
   return true;
 }
