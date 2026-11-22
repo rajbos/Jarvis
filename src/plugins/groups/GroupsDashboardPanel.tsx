@@ -3,6 +3,7 @@ import { useState, useEffect } from 'preact/hooks';
 import { isIpcError, type Group, type RuddrProjectMatch, type RuddrBudget, type RuddrProjectInfo, type RuddrHoursSummary, type RuddrHoursGroupTotals } from '../types';
 import { RuddrProjectsPanel } from './RuddrProjectsPanel';
 import { RuddrHoursSection, formatMinutes } from './RuddrHoursSection';
+import { startPolling } from '../shared/polling';
 
 // ── GroupsDashboardPanel ──────────────────────────────────────────────────────
 // A high-level dashboard view over every configured group (project).
@@ -87,8 +88,9 @@ export function GroupsDashboardPanel() {
   useEffect(() => {
     loadData();
 
-    // Auto-refresh budget data every 30 seconds
-    const interval = setInterval(() => {
+    // Auto-refresh budget data every 30 seconds; a full reload (which re-fetches
+    // stale budgets) on wake from sleep.
+    const stopPolling = startPolling(() => {
       window.jarvis.groupsGetRuddrBudgetCache()
         .catch(() => ({ ok: true, budgets: {} }))
         .then((budgetCache) => {
@@ -96,7 +98,7 @@ export function GroupsDashboardPanel() {
             setBudgetData(budgetCache.budgets);
           }
         });
-    }, 30000);
+    }, 30000, { onWake: loadData });
 
     // Refresh when window regains focus
     const onFocus = () => {
@@ -105,7 +107,7 @@ export function GroupsDashboardPanel() {
     window.addEventListener('focus', onFocus);
 
     return () => {
-      clearInterval(interval);
+      stopPolling();
       window.removeEventListener('focus', onFocus);
     };
   }, []);

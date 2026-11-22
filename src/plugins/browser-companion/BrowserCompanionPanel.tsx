@@ -7,6 +7,7 @@ import {
 } from '../types';
 import { copyToClipboard } from '../clipboard';
 import { useTimeouts } from '../shared/timeouts';
+import { startPolling } from '../shared/polling';
 
 // ── Skill form ────────────────────────────────────────────────────────────────
 
@@ -270,8 +271,7 @@ export function BrowserCompanionPanel({ onBack }: { onBack: () => void }) {
     void loadToken();
 
     // Poll connection status every 3 seconds
-    const timer = setInterval(() => void loadStatus(), 3000);
-    return () => clearInterval(timer);
+    return startPolling(loadStatus, 3000);
   }, [loadStatus, loadSkills, loadRuns, loadToken]);
 
   // Listen for extension connection events

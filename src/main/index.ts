@@ -19,7 +19,7 @@ import { showSafeNotification } from '../services/notifications';
 import { startStallWatchdog } from '../services/stall-watchdog';
 import { STALL_NOTIFY_THRESHOLD_MS, buildStallDiagnostic, reportFreeze, setFreezeReportSender, setUserAttentionProbe } from './freeze-diagnostics';
 import { checkForUpdates, registerUpdateIpcHandlers, startUpdateChecks, stopUpdateChecks, onUpdateCheckResume } from './update-checker';
-import { registerPowerResumeHandler } from './power-resume';
+import { notifyRenderersOfResume, registerPowerResumeHandler } from './power-resume';
 import { pushFireBrief } from '../plugins/fire-brief/handler';
 import { registerDiagnosticsIpcHandlers } from './diagnostics';
 import { registerAppWindowIpcHandlers } from './app-window-ipc';
@@ -159,6 +159,7 @@ async function initialize(): Promise<void> {
     onUpdateCheckResume();
     getBackgroundTaskScheduler()?.onResume();
     void pushFireBrief(db, () => mainWindow, true);
+    notifyRenderersOfResume(BrowserWindow.getAllWindows(), safeSend);
   });
 
   // Check if Ollama is available and update onboarding step accordingly
