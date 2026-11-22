@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'preact/hooks';
 import type { Repo } from '../types';
 import { isIpcError } from '../types';
 import { repoWebUrl } from '../shared/github-urls';
+import { useTimeouts } from '../shared/timeouts';
 
 export function SearchBar() {
   const [query, setQuery] = useState('');
@@ -9,7 +10,7 @@ export function SearchBar() {
   const [searchError, setSearchError] = useState<string | null>(null);
   const [showResults, setShowResults] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const timerRef = useRef<number | undefined>(undefined);
+  const timeouts = useTimeouts();
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -24,14 +25,14 @@ export function SearchBar() {
   const onInput = useCallback((e: Event) => {
     const q = (e.target as HTMLInputElement).value;
     setQuery(q);
-    clearTimeout(timerRef.current);
+    timeouts.clear('search');
     if (q.trim().length < 2) {
       setShowResults(false);
       setResults(null);
       setSearchError(null);
       return;
     }
-    timerRef.current = window.setTimeout(async () => {
+    timeouts.set('search', async () => {
       try {
         const r = await window.jarvis.searchRepos(q.trim());
         if (isIpcError(r)) {
@@ -48,7 +49,7 @@ export function SearchBar() {
         console.error('[Search]', err);
       }
     }, 200);
-  }, []);
+  }, [timeouts]);
 
   const onKeyDown = useCallback((e: KeyboardEvent) => {
     if (e.key === 'Escape') {

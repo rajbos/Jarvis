@@ -2,6 +2,7 @@ import { useState } from 'preact/hooks';
 import type { CopilotRawResponse, CopilotUsage } from '../types';
 import { formatNumber } from '../shared/utils';
 import { copyToClipboard } from '../clipboard';
+import { useTimeouts } from '../shared/timeouts';
 import { buildProbePresets, sumUsageItems, type ProbePreset } from './probe-presets';
 
 type ProbeSource = 'gh-cli' | 'oauth' | 'pat';
@@ -35,6 +36,7 @@ function initialProbeState(usage: CopilotUsage, presets: ProbePreset[]): Account
 export function RawEntry({ response, quotaCredits }: { response: CopilotRawResponse; quotaCredits?: number }) {
   const [copied, setCopied] = useState(false);
   const [copyFailed, setCopyFailed] = useState(false);
+  const timeouts = useTimeouts();
   const text = typeof response.body === 'string' ? response.body : JSON.stringify(response.body, null, 2);
   const itemsTotal = sumUsageItems(response.body);
 
@@ -42,11 +44,11 @@ export function RawEntry({ response, quotaCredits }: { response: CopilotRawRespo
     if (await copyToClipboard(text)) {
       setCopyFailed(false);
       setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      timeouts.set('copied', () => setCopied(false), 1500);
     } else {
       setCopied(false);
       setCopyFailed(true);
-      setTimeout(() => setCopyFailed(false), 2000);
+      timeouts.set('copyFailed', () => setCopyFailed(false), 2000);
     }
   };
 
