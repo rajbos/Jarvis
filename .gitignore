@@ -55,3 +55,7 @@ AppData/
 
 # Local code-graph (graphify) output
 graphify-out/
+
+
+# APM (apm.yml) download cache; installed skills are committed
+apm_modules/

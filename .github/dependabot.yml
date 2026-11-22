@@ -29,4 +29,21 @@ updates:
   package-ecosystem: github-actions
   schedule:
     interval: weekly
+# Third-party agent skills declared in /apm.yml (APM, Agent Package Manager).
+# Dependabot moves the release-tag pins in apm.yml and regenerates
+# apm.lock.yaml, but only runs `apm lock`: it does not refresh the installed
+# files under .claude/, .agents/ and .github/agents/. On each of these PRs,
+# run `apm install` and push the result (`apm audit` shows what is stale).
+# cloudflare/security-audit-skill is pinned to a commit (no upstream release
+# tags) and is never moved; use `apm outdated`.
+- directory: /
+  groups:
+    agent-skills:
+      patterns:
+      - "*"
+  package-ecosystem: apm
+  cooldown:
+    default-days: 8
+  schedule:
+    interval: weekly
 version: 2
