@@ -47,6 +47,13 @@ const SHOTS: Shot[] = [
     name: 'repo-dashboard-ci-health', view: 'index', waitFor: ['rocket-sled', 'Top failing', 'Launch tests'],
     prepare: (page) => page.getByRole('button', { name: /CI health/ }).click(),
   },
+  {
+    name: 'repo-dashboard-ci-focus', view: 'index', waitFor: ['Filtered by CI health', 'Launch tests workflow run failed'],
+    prepare: async (page) => {
+      await page.getByRole('button', { name: /CI health/ }).click();
+      await page.locator('.ci-health-row', { hasText: 'Launch tests' }).first().click();
+    },
+  },
   { name: 'groups-dashboard', view: 'index', tab: /Groups Dashboard/, waitFor: ['Acme Retainer', 'Globex Pilot'] },
   {
     name: 'agent-sessions', view: 'index', tab: /Agent Sessions/,

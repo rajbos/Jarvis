@@ -155,6 +155,13 @@ export function createFixtures(now: number) {
       subject_actor_type: 'Bot',
       reason: 'subscribed',
     }),
+    notification('9004', REPO_ROCKET, 'Launch tests workflow run failed for main branch', now, {
+      subject_type: 'CheckSuite',
+      subject_url: null,
+      subject_actor_login: null,
+      subject_actor_type: null,
+      reason: 'ci_activity',
+    }),
     notification('9003', REPO_HAMMOCK, 'Hammock swings too far to the left', now, {
       subject_type: 'Issue',
       subject_url: `https://api.github.com/repos/${REPO_HAMMOCK}/issues/9003`,
