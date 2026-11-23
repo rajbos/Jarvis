@@ -1,0 +1,101 @@
+# Agent skills from other repositories, managed with APM (Agent Package Manager).
+# https://github.com/microsoft/apm
+#
+#   Install or refresh:  apm install     (then commit what it changed)
+#   Check for updates:   apm outdated
+#   Verify the files:    apm audit
+#
+# One install serves both assistants (targets below):
+#   Claude Code    -> .claude/skills/  and .claude/agents/
+#   GitHub Copilot -> .agents/skills/  and .github/agents/
+# The installed files are committed, so skills work in every clone, cloud
+# session and Copilot coding agent run without running APM first.
+# Never edit them by hand: change this file and run `apm install` again.
+# This repo's own skills stay mirrored in .github/skills and .claude/skills;
+# these third-party ones are not part of that mirror.
+#
+# Every entry uses the plain "owner/repo/path#ref" form on purpose: Dependabot
+# (package-ecosystem "apm") updates only that form and skips "git:"/"path:"
+# objects. Pinned to release tags, so Dependabot proposes each new release.
+#
+# Picked in the Nov 2026 review of five widely shared skill repositories.
+# Left out completely: kepano/obsidian-skills (only useful with Obsidian vaults).
+
+name: agent-skills
+version: 1.0.0
+targets: [claude, copilot]
+
+dependencies:
+  apm:
+    # ── cloudflare/security-audit-skill ──────────────────────────────────────
+    # https://github.com/cloudflare/security-audit-skill (Cloudflare)
+    # security-audit: one agent team hunts for vulnerabilities, a second team
+    # tries to disprove each finding before it is reported. Has reference
+    # files for desktop/local IPC, web auth, data isolation and supply chain,
+    # which match an Electron app holding OAuth tokens and local credentials. Guidance by default; the full six-phase
+    # audit runs only when explicitly asked for.
+    # Pinned to a commit: the repo has no release tags yet, so Dependabot
+    # cannot move this pin. Check it with `apm outdated`.
+    - cloudflare/security-audit-skill#c1c8a8c1471069fb0e188eeaff69b8e8db6564a8
+
+    # ── mattpocock/skills ────────────────────────────────────────────────────
+    # https://github.com/mattpocock/skills (Matt Pocock)
+    # Issue-to-agent workflow, matching how work here is split into
+    # per-issue sessions. All except writing-for-agents and codebase-design
+    # run only when you type them (/triage, /to-tickets, ...).
+    # Not taken: git-guardrails-claude-code (blocks every git push, which
+    # breaks agent-driven PRs) and the rest of the 39 skills.
+    #
+    # One-time setup per repo: issue tracker, label names, doc layout.
+    # triage, to-tickets and wayfinder stop and ask for it until it has run.
+    - mattpocock/skills/skills/engineering/setup-matt-pocock-skills#v1.3.2
+    # Moves issues and PRs through needs-triage / needs-info / ready-for-agent /
+    # ready-for-human, and writes the agent brief for ready-for-agent.
+    - mattpocock/skills/skills/engineering/triage#v1.3.2
+    # Splits a plan or spec into tickets that declare what blocks what.
+    - mattpocock/skills/skills/engineering/to-tickets#v1.3.2
+    # Plans work too big for one session as a map of decision tickets.
+    - mattpocock/skills/skills/engineering/wayfinder#v1.3.2
+    # The four below are called by the skills above through the Skill tool
+    # (wayfinder: all four; triage and improve-codebase-architecture:
+    # grilling and domain-modeling). Without them those workflows stall.
+    # Interviews you one question at a time to pin down a plan or decision.
+    - mattpocock/skills/skills/productivity/grilling#v1.3.2
+    # Keeps GLOSSARY.md and ADRs up to date as terms and decisions settle.
+    - mattpocock/skills/skills/engineering/domain-modeling#v1.3.2
+    # Looks up facts in primary sources and saves the findings as Markdown.
+    - mattpocock/skills/skills/engineering/research#v1.3.2
+    # Builds a throwaway prototype to answer a design question.
+    - mattpocock/skills/skills/engineering/prototype#v1.3.2
+    # Finds the module boundary behind repeated duplication or complexity
+    # (instead of fixing one clone at a time), as an HTML report.
+    - mattpocock/skills/skills/engineering/improve-codebase-architecture#v1.3.2
+    # Deep-module vocabulary; improve-codebase-architecture loads it.
+    - mattpocock/skills/skills/engineering/codebase-design#v1.3.2
+    # Rules for writing skills, AGENTS.md and CLAUDE.md for agents to read.
+    - mattpocock/skills/skills/productivity/writing-for-agents#v1.3.2
+
+    # ── google/elephant-goldfish-model: NOT installed through APM ──────────
+    # https://github.com/google/elephant-goldfish-model (Google)
+    # Wanted for /egm-drift-report (design docs and READMEs vs the current
+    # code) and /egm-review (fresh-context design review). EGM must be
+    # installed as a whole plugin: its skills read agents/, docs/ and
+    # resources/document_standards/ at run time, and its Claude reviewer
+    # agents need the plugin's read-only, context-isolated (omitClaudeMd)
+    # setup. APM installs skills and agents only, which breaks both.
+    # Declared instead in .claude/settings.json as plugin egm@egm, pinned to
+    # tag v0.1.1. Each clone runs once:
+    #   claude plugin install egm@egm --scope project
+    # Not available for Copilot: EGM supports only Copilot CLI, experimentally,
+    # and not VS Code or the Copilot coding agent.
+
+    # ── addyosmani/agent-skills ──────────────────────────────────────────────
+    # https://github.com/addyosmani/agent-skills (Addy Osmani)
+    # Only these two; the other 23 overlap with what Claude Code, Copilot and
+    # this repo's own instructions already cover.
+    # Writes CONSTRAINTS.md with measured thresholds that may only go up and
+    # flags diffs that weaken them (new suppressions, skipped tests).
+    - addyosmani/agent-skills/skills/constraint-driven-development#0.6.16
+    # Before a non-trivial decision stands, a fresh-context reviewer tries to
+    # disprove it. Lighter than an EGM review.
+    - addyosmani/agent-skills/skills/doubt-driven-development#0.6.16
