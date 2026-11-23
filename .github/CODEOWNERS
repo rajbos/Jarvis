@@ -1,0 +1,19 @@
+# Review requests for agent, AI and CI configuration.
+#
+# These entries auto-request a review on the paths that decide what automation
+# does: agent instructions, skills and agents for Copilot and Claude, the APM
+# skill manifest and lockfile, and workflows. Dependabot's APM update PRs land
+# here too, so they always ask for a human look.
+#
+# This file is deliberately ADVISORY. Do not enable "Require review from Code
+# Owners" in branch protection: with a single owner it would block that owner's
+# own pull requests, because an author never satisfies their own code-owner
+# review. What actually gates these paths is
+# .github/workflows/guard-agent-config.yml (the `agent-config-approved` label).
+
+/AGENTS.md          @rajbos
+/apm.yml            @rajbos
+/apm.lock.yaml      @rajbos
+/.claude/           @rajbos
+/.agents/           @rajbos
+/.github/           @rajbos
