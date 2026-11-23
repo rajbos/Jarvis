@@ -357,7 +357,7 @@ interface BackupSection {
 }
 
 /**
- * Given a notebook name (e.g. "Royal London"), scan the OneNote local backup
+ * Given a notebook name (e.g. "Acme Corp"), scan the OneNote local backup
  * folder for matching notebook sections.
  *
  * OneNote backup layout:

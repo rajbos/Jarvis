@@ -28,7 +28,16 @@ This project is **Jarvis**: a locally-hosted personal assistant agent for GitHub
 - **docs/**: Documentation (see ARCHITECTURE.md for design/requirements)
 - **scripts/**: Node scripts for building and watching Electron/renderer
 - **tests/unit/**: Unit tests for all major modules
-- **Ad-hoc inspection scripts**: no `dev/` scratch folder — put reusable, parameterized helpers under `.github/skills/` (e.g. `check-db`). Never commit scripts with hardcoded customer or business names.
+- **Ad-hoc inspection scripts**: no `dev/` scratch folder — put reusable, parameterized helpers under `.github/skills/` (e.g. `check-db`). See "No real customer names" below for the rule on names.
+
+### No real customer names
+
+This repository is public. Never put real customer, client, or employer-specific names (company names, project names, workspace slugs, notebook names) in **any** tracked file: source code, comments/JSDoc, LLM system prompts and tool-schema descriptions, tests and fixtures, docs, and `.github/skills/**/*.md` (including YAML frontmatter such as `argument-hint`). This applies to examples too, not only to scripts.
+
+- Use synthetic placeholders: `Acme Corp`, `Northwind`, `Globex`, and `example-org` for slugs/paths.
+- When editing an existing example, keep the placeholders; never "restore" a real name from chat, a database, or a screenshot.
+- Before finishing a change, grep your diff for names that came from the user's own data (`git diff | grep -iE "<name>"`) and replace any you find.
+- Real names belong only in the user's local database or config, never in the repo.
 
 ---
 
@@ -106,3 +115,10 @@ Scripts for development:
 - **Renderer polling uses `startPolling()`, not bare `setInterval`** — Any renderer loop that keeps user-facing data fresh should use `startPolling(fn, ms)` from `src/plugins/shared/polling.ts`. Window timers pause during OS sleep, so it also refreshes on the main process's `app:resumed` push (sent from the `registerPowerResumeHandler` callback via `notifyRenderersOfResume`) and when the window becomes visible with a tick overdue.
 - **IPC handlers register via `safeHandle()`, never raw `ipcMain.handle`** — Use `safeHandle()` from `src/plugins/ipc-utils.ts` for every IPC channel; it centralizes error handling (logging + the `{ ok: false, error }` failure shape). A `no-restricted-syntax` eslint rule bans `ipcMain.handle(` everywhere under `src/` except inside `ipc-utils.ts` itself.
 - **Main-to-renderer pushes go through `safeSend()`, never raw `webContents.send()`** — Use `safeSend(win, channel, ...args)` from `src/plugins/ipc-utils.ts` to push events to a window. It skips the send when the window is missing or it (or its webContents) is already destroyed; async callbacks (discovery, agent streaming, polling timers) routinely fire after a window has closed, and `webContents.send()` on a destroyed window throws "Object has been destroyed". The same `no-restricted-syntax` eslint rule bans `*.webContents.send(` under `src/` outside `ipc-utils.ts`.
+
+---
+
+## Hard rules (read before editing)
+
+- **No real customer names.** This repo is public. Never write real customer, client, or employer names (companies, projects, workspace slugs, notebook names) into any tracked file: source, comments, LLM prompts and tool descriptions, tests, docs, or `.github/skills/**/*.md` frontmatter and examples. Use placeholders such as `Acme Corp`, `Northwind`, `Globex`, `example-org`. See "No real customer names" above.
+- Before finishing, check your diff for names that came from the user's data and replace them.

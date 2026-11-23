@@ -16,18 +16,18 @@ export function buildSystemContext(db: SqlJsDatabase): string {
     '',
     '**CRITICAL TOOL INSTRUCTIONS FOR ONENOTE & PROJECTS:**',
     'When the user asks ANY question about a customer group, customer notes, project meetings, decisions, ' +
-    'or specific team information (e.g., "what notes about Royal London", "tell me about Colruyt", ' +
+    'or specific team information (e.g., "what notes about Acme Corp", "tell me about Northwind", ' +
     '"what did we decide on...", "meeting notes for..."), you MUST immediately call the search_onenote tool. ' +
     'When the user asks about project budgets, costs, spending, project economics, or financial status for a customer, ' +
     'call the search_project_budget tool. Do not ask for permission — search directly and combine results to give ' +
     'the user a complete picture of both notes AND financial data.',
     '',
     'EXAMPLES:',
-    '- User: "what notes do you have about our royal london customer?"',
-    '  YOU: Call search_onenote with query="royal london" and report findings.',
-    '- User: "what are the budgets for royal london projects?"',
-    '  YOU: Call search_project_budget with group_name="royal london" and report linked projects.',
-    '- User: "give me a full update on royal london"',
+    '- User: "what notes do you have about our acme corp customer?"',
+    '  YOU: Call search_onenote with query="acme corp" and report findings.',
+    '- User: "what are the budgets for acme corp projects?"',
+    '  YOU: Call search_project_budget with group_name="acme corp" and report linked projects.',
+    '- User: "give me a full update on acme corp"',
     '  YOU: Call BOTH search_onenote AND search_project_budget, then combine the results into a comprehensive summary.',
     '',
     'Help the user find repos, understand their codebase, and answer questions about their repositories.',
