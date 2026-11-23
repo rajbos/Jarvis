@@ -56,6 +56,17 @@ dependencies:
     - mattpocock/skills/skills/engineering/to-tickets#v1.3.2
     # Plans work too big for one session as a map of decision tickets.
     - mattpocock/skills/skills/engineering/wayfinder#v1.3.2
+    # The four below are called by the skills above through the Skill tool
+    # (wayfinder: all four; triage and improve-codebase-architecture:
+    # grilling and domain-modeling). Without them those workflows stall.
+    # Interviews you one question at a time to pin down a plan or decision.
+    - mattpocock/skills/skills/productivity/grilling#v1.3.2
+    # Keeps GLOSSARY.md and ADRs up to date as terms and decisions settle.
+    - mattpocock/skills/skills/engineering/domain-modeling#v1.3.2
+    # Looks up facts in primary sources and saves the findings as Markdown.
+    - mattpocock/skills/skills/engineering/research#v1.3.2
+    # Builds a throwaway prototype to answer a design question.
+    - mattpocock/skills/skills/engineering/prototype#v1.3.2
     # Finds the module boundary behind repeated duplication or complexity
     # (instead of fixing one clone at a time), as an HTML report.
     - mattpocock/skills/skills/engineering/improve-codebase-architecture#v1.3.2
@@ -64,16 +75,19 @@ dependencies:
     # Rules for writing skills, AGENTS.md and CLAUDE.md for agents to read.
     - mattpocock/skills/skills/productivity/writing-for-agents#v1.3.2
 
-    # ── google/elephant-goldfish-model ───────────────────────────────────────
+    # ── google/elephant-goldfish-model: NOT installed through APM ──────────
     # https://github.com/google/elephant-goldfish-model (Google)
-    # The "elephant" (this session, with full context) writes a design doc;
-    # "goldfish" reviewers with no prior context try to tear it apart.
-    # Wanted: /egm-drift-report (design docs and READMEs vs the current code)
-    # and /egm-review (five-stage fresh-context design review).
-    # The whole package is installed because egm-review hands off to
-    # egm-resolve and egm-review-loop and spawns the 10 reviewer agents it
-    # ships. All EGM skills run only when you type them.
-    - google/elephant-goldfish-model#v0.1.1
+    # Wanted for /egm-drift-report (design docs and READMEs vs the current
+    # code) and /egm-review (fresh-context design review). EGM must be
+    # installed as a whole plugin: its skills read agents/, docs/ and
+    # resources/document_standards/ at run time, and its Claude reviewer
+    # agents need the plugin's read-only, context-isolated (omitClaudeMd)
+    # setup. APM installs skills and agents only, which breaks both.
+    # Declared instead in .claude/settings.json as plugin egm@egm, pinned to
+    # tag v0.1.1. Each clone runs once:
+    #   claude plugin install egm@egm --scope project
+    # Not available for Copilot: EGM supports only Copilot CLI, experimentally,
+    # and not VS Code or the Copilot coding agent.
 
     # ── addyosmani/agent-skills ──────────────────────────────────────────────
     # https://github.com/addyosmani/agent-skills (Addy Osmani)

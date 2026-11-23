@@ -1,0 +1,14 @@
+{
+  "extraKnownMarketplaces": {
+    "egm": {
+      "source": {
+        "source": "github",
+        "repo": "google/elephant-goldfish-model",
+        "ref": "v0.1.1"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "egm@egm": true
+  }
+}
