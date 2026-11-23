@@ -22,6 +22,15 @@ export function formatSince(sinceMs: number, now: number): string {
   return `${Math.floor(hours / 24)} d`;
 }
 
+/** Per-purpose call counts for one token, busiest first, summed from its URL-pattern groups. */
+export function purposesForToken(stats: GitHubApiCallStats, token: string): Array<{ purpose: string; count: number }> {
+  const counts = new Map<string, number>();
+  for (const p of stats.byPattern) {
+    if (p.token === token) counts.set(p.purpose, (counts.get(p.purpose) ?? 0) + p.count);
+  }
+  return [...counts].map(([purpose, count]) => ({ purpose, count })).sort((a, b) => b.count - a.count);
+}
+
 export interface PurposeRow {
   purpose: string;
   total: number;
