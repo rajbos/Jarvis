@@ -71,7 +71,7 @@ Groups store OneNote shortcuts as `.url` files in their OneDrive folders. The ca
 **Solution**: Write PowerShell output to a **temp file** instead of accumulating stdout.
 
 ```
-User's OneNote (Royal London Notes)
+User's OneNote (Acme Corp Notes)
     ↓ (lives on SharePoint)
     └── COM Query via PowerShell
         ├── Tier 1: Write JSON to temp file (✅ no buffer limit)
@@ -98,7 +98,7 @@ User's OneNote (Royal London Notes)
 ```json
 {
   "ok": true,
-  "notebookName": "Royal London Notes",
+  "notebookName": "Acme Corp Notes",
   "sections": [
     {
       "sectionName": "Meetings",

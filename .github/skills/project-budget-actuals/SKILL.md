@@ -1,7 +1,7 @@
 ---
 name: project-budget-actuals
 description: Query customer project information and budget/actuals data. Retrieve linked projects, budgets, costs, and financial status for any customer group. Use this when analyzing project economics, budget tracking, or cost performance for customer engagements.
-argument-hint: "[required: customer group name (e.g. Royal London, Colruyt, UCB)]"
+argument-hint: "[required: customer group name (e.g. Acme Corp, Northwind, Globex)]"
 ---
 
 # Customer Project Budget & Actuals Lookup
@@ -24,15 +24,15 @@ The skill queries two primary sources:
 
 #### 1. **Groups Table** (Customer Mapping)
 - Stores customer group names and their linked projects
-- Example: "Royal London" group is linked to:
-  - "Royal London | GitHub Migration (part II)"
-  - "Royal London | GitHub Migration"
+- Example: "Acme Corp" group is linked to:
+  - "Acme Corp | GitHub Migration (part II)"
+  - "Acme Corp | GitHub Migration"
 - Each group has a JSON array of `ruddr_project_name` values
 
 #### 2. **Ruddr Projects Table** (Project Metadata)
 - Contains all projects discovered from your Rudder system
 - Fields: `name`, `path`, `note`, `cached_at`, `cloud_folder_url`, `discovered_at`
-- Example path: `/app/xebia-xms-benelux/portfolio/projects/royal-london/github-migration-part-ii`
+- Example path: `/app/example-org/portfolio/projects/acme-corp/github-migration-part-ii`
 
 #### 3. **External Finance System** (Actual Budget/Actuals)
 - Not yet stored locally in Jarvis (future enhancement)
@@ -44,11 +44,11 @@ The skill queries two primary sources:
 When you ask about a customer's budget:
 
 ```
-User: "what are the budgets for royal london?"
+User: "what are the budgets for acme corp?"
         ↓
-Chat calls search_project_budget(group_name="royal london")
+Chat calls search_project_budget(group_name="acme corp")
         ↓
-1. Find group "Royal London" in database
+1. Find group "Acme Corp" in database
         ↓
 2. Extract linked project names from ruddr_project_name JSON array
         ↓
@@ -61,9 +61,9 @@ Chat calls search_project_budget(group_name="royal london")
 
 | Situation | What to ask | Expected Result |
 |-----------|-----------|-----------------|
-| Check projects for a customer | "What projects does Royal London have?" | List of all linked projects with paths |
-| Review budget status | "What's the budget for Colruyt?" | Project information + link to budget details |
-| Understand project costs | "Tell me about cost tracking for UCB" | Projects + guidance to finance system |
+| Check projects for a customer | "What projects does Acme Corp have?" | List of all linked projects with paths |
+| Review budget status | "What's the budget for Northwind?" | Project information + link to budget details |
+| Understand project costs | "Tell me about cost tracking for Globex" | Projects + guidance to finance system |
 | Combine notes with budgets | "Full update on Liantis" | OneNote notes + projects + financial links |
 
 ## Combining with OneNote
@@ -71,11 +71,11 @@ Chat calls search_project_budget(group_name="royal london")
 The most powerful use is **combining this with the OneNote caching skill**:
 
 ```
-User: "Full customer report for Royal London"
+User: "Full customer report for Acme Corp"
         ↓
 Chat calls BOTH:
-  1. search_onenote(query="royal london")  → Gets meeting notes, decisions, strategy
-  2. search_project_budget(group_name="royal london")  → Gets projects, budget links
+  1. search_onenote(query="acme corp")  → Gets meeting notes, decisions, strategy
+  2. search_project_budget(group_name="acme corp")  → Gets projects, budget links
         ↓
 Returns comprehensive customer profile:
   - Latest notes from OneNote
@@ -89,11 +89,11 @@ Returns comprehensive customer profile:
 The skill returns:
 
 ```
-**Project Information for Royal London:**
+**Project Information for Acme Corp:**
 
 **Linked Projects (2):**
-- **Royal London | GitHub Migration (part II)**
-- **Royal London | GitHub Migration**
+- **Acme Corp | GitHub Migration (part II)**
+- **Acme Corp | GitHub Migration**
 
 **Budget & Actuals:** These are tracked in your project management system 
 (Rudder, Jira, finance tools, etc.). For detailed financial breakdowns, check the 
@@ -120,7 +120,7 @@ The tool automatically:
 | Column | Type | Purpose |
 |--------|------|---------|
 | `id` | INTEGER | Primary key |
-| `name` | TEXT | Customer group name (e.g., "Royal London") |
+| `name` | TEXT | Customer group name (e.g., "Acme Corp") |
 | `ruddr_project_name` | TEXT | JSON array of project names linked to this group |
 | `ruddr_project_paths` | TEXT | JSON array of project paths (not yet populated) |
 | `created_at` | DATETIME | When group was created |
@@ -129,7 +129,7 @@ The tool automatically:
 ### Ruddr Projects Table Columns
 | Column | Type | Purpose |
 |--------|------|---------|
-| `name` | TEXT | Full project name (e.g., "Royal London \| GitHub Migration (part II)") |
+| `name` | TEXT | Full project name (e.g., "Acme Corp \| GitHub Migration (part II)") |
 | `path` | TEXT | Internal project path in Rudder system |
 | `note` | TEXT | Optional notes about the project |
 | `cached_at` | DATETIME | When project was last cached |
@@ -143,7 +143,7 @@ The tool automatically:
 
 **Fix:**
 1. Check spelling of customer name
-2. Try partial match: "london" instead of "Royal London"
+2. Try partial match: "acme" instead of "Acme Corp"
 3. Verify group exists in Groups panel of Jarvis UI
 
 ### Error: "No projects linked to this group yet"
@@ -192,7 +192,7 @@ The tool automatically:
 ## Lessons Learned
 
 ### 1. **Partial Matching for Group Names**
-Customer names may have variations (e.g., "Royal London" vs "Royal_London" vs "Royal London Group"). The tool uses case-insensitive `LIKE %...%` matching to be forgiving.
+Customer names may have variations (e.g., "Acme Corp" vs "Acme_Corp" vs "Acme Corp Group"). The tool uses case-insensitive `LIKE %...%` matching to be forgiving.
 
 ### 2. **JSON Storage for Relationships**
 Project relationships are stored as JSON arrays in a single TEXT column rather than junction tables. This simplifies queries but requires parsing in code.
