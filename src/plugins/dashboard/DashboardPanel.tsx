@@ -1070,7 +1070,8 @@ function CiHealthPanel({ onClose, focus, onFocus }: { onClose: () => void; focus
             onFocus={onFocus}
             rows={report.topSlowing}
             empty="No duration drift detected"
-            metric={(w) => `+${Math.round((w.durationDrift ?? 0) * 100)}% (${formatDuration(w.previousMedianDurationMs)} → ${formatDuration(w.medianDurationMs)})`}
+            // Non-breaking spaces inside the brackets: a narrow panel wraps after the percentage only.
+            metric={(w) => `+${Math.round((w.durationDrift ?? 0) * 100)}% ${`(${formatDuration(w.previousMedianDurationMs)} → ${formatDuration(w.medianDurationMs)})`.replace(/ /g, ' ')}`}
           />
         </>
       )}
