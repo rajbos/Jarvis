@@ -1,0 +1,296 @@
+name: Guard agent config
+
+# Agent instructions, skills, the APM skill manifest and CI decide what
+# automation does and what it is allowed to do. A change to them needs a
+# deliberate human act before an automated PR can merge: a human adds the
+# `agent-config-approved` label after reading the change.
+#
+# Ported from rajbos/ai-engineering-fluency's guard-agent-config.yml, with two
+# changes:
+#
+# 1. Two tiers of protected paths.
+#    - AI config (AI_CONFIG_PATHS): AGENTS.md, skills, agents, instructions,
+#      the gh-aw agent prompts and apm.yml / apm.lock.yaml. Gated for AI agents
+#      AND for Dependabot / github-actions: a Dependabot APM bump swaps in
+#      third-party skill text that agents will follow, so it gets read first.
+#    - Other CI config (the rest of .github/): gated for AI agents only.
+#      Dependabot's GitHub Actions version bumps stay ungated, as in the
+#      original, to keep routine bumps friction-free.
+# 2. Approval is also checked against the PR timeline (server timestamps): the
+#    label must have been added by an approver AFTER the newest force-push.
+#    Dependabot updates its branch by force-pushing, and its PRs get a
+#    read-only token, so the label removal below cannot run on them; without
+#    this check a stale approval would pass on the next unrelated event.
+#
+# CODEOWNERS cannot express this: requiring code-owner review would also block
+# the owner's own pull requests, since an author never satisfies their own
+# code-owner review. This check keys on who wrote the change instead.
+#
+# It is a guardrail, not a security boundary: a `pull_request` event runs the
+# PR's own copy of this workflow, and an agent could drop its co-author trailer
+# or push to a differently-named branch. It stops the ordinary case - an agent
+# or a bot quietly changing agent configuration - not a determined bypass.
+# Make "Agent config guard" a required status check on main for it to block
+# merging.
+
+on:
+  pull_request:
+    # `edited` is in the list because it is the activity GitHub emits when a
+    # PR's BASE BRANCH changes. Without it, a protected-path PR opened against
+    # an unguarded target could be retargeted at main and merged with the guard
+    # never having run once. It also fires on title/body edits, which just
+    # re-runs a cheap check.
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled]
+    branches: [main]
+
+# Serialize per PR. These events mutate shared label state and all post the same
+# check, so an in-flight `labeled` run could otherwise finish "Allowed" from its
+# own (now stale) payload after a `synchronize` run had already revoked that
+# label. Cancelling the older run leaves it cancelled rather than passing.
+concurrency:
+  group: agent-config-guard-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  # Needed to REMOVE a stale approval label when new commits arrive, and to
+  # read the PR timeline. A pull request's labels go through the shared
+  # `issues/{number}/labels` endpoint, which on a PR is authorized as a PULL
+  # REQUEST write: `issues: write` alone returns 403, so both are declared.
+  issues: write
+  pull-requests: write
+
+env:
+  # Applied by a human on the PR to accept the change to these paths. The point
+  # is the deliberate act, not the label itself.
+  APPROVAL_LABEL: agent-config-approved
+  # Only these logins (space-separated) can grant that approval. Anyone who can
+  # label a PR could otherwise satisfy the gate, bots included.
+  APPROVERS: rajbos
+  # Gated for AI agents AND Dependabot / github-actions (extended regex, matched
+  # against repository-relative paths).
+  AI_CONFIG_PATHS: '^(AGENTS\.md$|CLAUDE\.md$|apm\.yml$|apm\.lock\.yaml$|\.mcp\.json$|\.vscode/mcp\.json$|\.claude/|\.agents/|\.github/(agents|skills|instructions|prompts|aw)/|\.github/copilot-instructions\.md$|\.github/workflows/[^/]+\.md$)'
+  # Gated for AI agents only.
+  CI_CONFIG_PATHS: '^\.github/'
+
+jobs:
+  guard-agent-config:
+    name: Agent config guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Check automated changes to protected paths
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          EVENT_ACTION: ${{ github.event.action }}
+          SENDER: ${{ github.event.sender.login }}
+          # Which label this `labeled` event is about. Empty on every other
+          # action. Without it the approver check fires for ANY label, so a
+          # non-approver adding an unrelated label to an already approved PR
+          # would revoke that approval.
+          ADDED_LABEL: ${{ github.event.label.name }}
+          # Only set when an `edited` event changed the BASE BRANCH (it holds
+          # the previous ref). Empty for a title/body edit.
+          BASE_CHANGED_FROM: ${{ github.event.changes.base.ref.from }}
+          # Every one of these is attacker-controllable (a branch name, a login,
+          # a label). They go through `env:` so the shell never interpolates
+          # them as code.
+          HEAD_REF: ${{ github.head_ref }}
+          BASE_REF: ${{ github.base_ref }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          # JSON, not a comma-joined string: label names may contain commas.
+          PR_LABELS_JSON: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: |
+          # Every git command below is evaluated on its own line. A pipeline
+          # with `|| true`, or one used as an `if` condition, hides its exit
+          # status from errexit - and a git failure that reads as "nothing
+          # changed" or "no trailer found" makes this guard fail OPEN, which is
+          # the one way it must never fail.
+          set -euo pipefail
+
+          git fetch --quiet origin "$BASE_REF"
+
+          # --no-renames: with rename detection on, a moved file is reported
+          # under its destination path only, so moving a protected file out of
+          # a protected folder would not match. -z: without it git quotes paths
+          # with non-ASCII characters, which then never match the patterns.
+          changed=$(git diff --no-renames --name-only -z "origin/$BASE_REF...HEAD" | tr '\0' '\n')
+
+          # grep exits 1 for "no match" and >1 for an error; only an error may
+          # stop the guard, and it must fail closed.
+          match_paths() {
+            local pattern="$1" out rc
+            set +e
+            out=$(printf '%s\n' "$changed" | grep -E "$pattern")
+            rc=$?
+            set -e
+            if [ "$rc" -gt 1 ]; then
+              echo "::error::grep failed while checking protected paths (exit $rc). Failing closed." >&2
+              exit 1
+            fi
+            printf '%s' "$out"
+          }
+          ai_paths=$(match_paths "$AI_CONFIG_PATHS")
+          ci_paths=$(match_paths "$CI_CONFIG_PATHS")
+          # A path in both tiers belongs to the stricter one only.
+          if [ -n "$ai_paths" ] && [ -n "$ci_paths" ]; then
+            ci_paths=$(comm -23 <(printf '%s\n' "$ci_paths" | sort -u) <(printf '%s\n' "$ai_paths" | sort -u))
+          fi
+
+          if [ -z "$ai_paths" ] && [ -z "$ci_paths" ]; then
+            echo "No protected paths touched - nothing to guard."
+            exit 0
+          fi
+
+          if [ -n "$ai_paths" ]; then
+            echo "AI config paths in this PR (gated for agents and bots):"
+            while IFS= read -r path; do echo "  $path"; done <<< "$ai_paths"
+          fi
+          if [ -n "$ci_paths" ]; then
+            echo "CI config paths in this PR (gated for agents):"
+            while IFS= read -r path; do echo "  $path"; done <<< "$ci_paths"
+          fi
+          echo
+
+          # Who wrote it? Commit author is useless here: an agent running with
+          # the maintainer's git identity authors commits as the maintainer.
+          signal=""
+          case "$HEAD_REF" in
+            claude/*|copilot/*|agent-review/*) signal="branch prefix ${HEAD_REF%%/*}/" ;;
+          esac
+          if [ -z "$signal" ]; then
+            case "$PR_AUTHOR" in
+              # Dependency bots: gated on AI config only. Their GitHub Actions
+              # version bumps (CI tier) are mechanical and stay ungated.
+              dependabot'[bot]'|github-actions'[bot]')
+                if [ -n "$ai_paths" ]; then
+                  signal="PR author $PR_AUTHOR changing AI config"
+                fi
+                ;;
+              # Any other bot account, plus Copilot's non-suffixed spellings.
+              *'[bot]'|Copilot|copilot-swe-agent) signal="PR author $PR_AUTHOR" ;;
+            esac
+          fi
+          if [ -z "$signal" ]; then
+            # %B, not %b: %b is the body alone, so a trailer in the subject line
+            # would not be scanned. Not `grep -q`: with pipefail, an early
+            # match can SIGPIPE printf and report 141, which would read as a
+            # scan error. Reading all input keeps the status honest.
+            trailers=$(git log "origin/$BASE_REF..HEAD" --format='%B')
+            set +e
+            printf '%s\n' "$trailers" \
+              | grep -iE '^[[:space:]]*co-authored-by:.*(claude|copilot|gpt|codex|gemini|mistral|vibe|devin|cursor|aider)' \
+                >/dev/null
+            trailer_rc=$?
+            set -e
+
+            if [ "$trailer_rc" -eq 0 ]; then
+              signal="AI co-author trailer"
+            elif [ "$trailer_rc" -gt 1 ]; then
+              echo "::error::Could not scan commit messages for AI co-author trailers (grep exited $trailer_rc). Failing closed."
+              exit 1
+            fi
+          fi
+
+          if [ -z "$signal" ]; then
+            echo "No agent signal, and no dependency bot touching AI config - treating as a routine change. Allowed."
+            exit 0
+          fi
+
+          echo "Automation signal: $signal"
+          need_msg="This PR changes agent/CI configuration and looks automated ($signal). A human must review those paths and add the '$APPROVAL_LABEL' label to merge."
+
+          has_label=false
+          if printf '%s' "$PR_LABELS_JSON" \
+              | jq -e --arg want "$APPROVAL_LABEL" 'any(.[]; . == $want)' >/dev/null; then
+            has_label=true
+          fi
+
+          # Removing the approval is this guard's whole job, so a removal that
+          # failed must not read like one that worked. Every caller exits 1
+          # right after, so this only picks the message, never the outcome.
+          # Expected to fail on Dependabot-triggered runs (read-only token);
+          # the timeline check below covers that case.
+          revoke_label() {
+            local why="$1"
+            if curl -fsS -X DELETE \
+                -H "Authorization: Bearer $GITHUB_TOKEN" \
+                -H "Accept: application/vnd.github+json" \
+                "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/labels/$APPROVAL_LABEL" \
+                >/dev/null; then
+              echo "::error::${why} The '$APPROVAL_LABEL' label was removed."
+            else
+              echo "::error::${why} The '$APPROVAL_LABEL' label could NOT be removed automatically (read-only token, for example on a Dependabot push). It no longer counts as approval: remove it and add it again after reviewing."
+            fi
+          }
+
+          # New commits or a new base void any prior approval. The label is
+          # deleted server-side whenever the head moves; the human re-applies
+          # it after looking at the new commits. `reopened` re-runs the
+          # revocation in case an earlier one failed.
+          if [ "$EVENT_ACTION" = "synchronize" ] \
+            || [ "$EVENT_ACTION" = "reopened" ] \
+            || { [ "$EVENT_ACTION" = "edited" ] && [ -n "${BASE_CHANGED_FROM:-}" ]; }; then
+            if [ "$has_label" = true ]; then
+              revoke_label "The earlier approval no longer applies ($EVENT_ACTION). Review the changes to the protected paths and approve again."
+            else
+              echo "::error::$need_msg"
+            fi
+            exit 1
+          fi
+
+          if [ "$has_label" != true ]; then
+            echo "::error::$need_msg"
+            exit 1
+          fi
+
+          # On the labeling event itself the sender is the labeller.
+          if [ "$EVENT_ACTION" = "labeled" ] && [ "$ADDED_LABEL" = "$APPROVAL_LABEL" ]; then
+            case " $APPROVERS " in
+              *" $SENDER "*) : ;;
+              *)
+                revoke_label "'$SENDER' is not an approver for agent configuration changes (approvers: $APPROVERS)."
+                exit 1
+                ;;
+            esac
+          fi
+
+          # Timeline check, on every event: the most recent time the label was
+          # added must be by an approver and later than the newest force-push.
+          # Both timestamps are set by GitHub, not by whoever made the commits.
+          # A failed API call stops the step (errexit), so this fails closed.
+          events=$(gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/timeline?per_page=100" \
+            --jq '.[] | select(.event == "labeled" or .event == "head_ref_force_pushed")
+                  | {event, at: .created_at, actor: (.actor.login // ""), label: (.label.name // "")}')
+          verdict=$(printf '%s\n' "$events" | jq -rs \
+            --arg want "$APPROVAL_LABEL" --arg approvers " $APPROVERS " '
+              (map(select(.event == "head_ref_force_pushed")) | map(.at) | max // "") as $push
+              | (map(select(.event == "labeled" and .label == $want)) | sort_by(.at) | last) as $lab
+              | if $lab == null then "no-label-event"
+                elif ($approvers | contains(" " + $lab.actor + " ") | not) then "not-approver:" + $lab.actor
+                elif $push != "" and ($lab.at <= $push) then "stale:" + $lab.at + " <= " + $push
+                else "ok" end')
+          case "$verdict" in
+            ok) : ;;
+            not-approver:*)
+              echo "::error::The '$APPROVAL_LABEL' label was last added by '${verdict#not-approver:}', who is not an approver (approvers: $APPROVERS)."
+              exit 1
+              ;;
+            stale:*)
+              echo "::error::The '$APPROVAL_LABEL' label predates the latest force-push (${verdict#stale:}). Review the new changes, then remove the label and add it again."
+              exit 1
+              ;;
+            *)
+              echo "::error::Could not confirm who added the '$APPROVAL_LABEL' label ($verdict). Remove it and add it again."
+              exit 1
+              ;;
+          esac
+
+          echo "Approved by a human via '$APPROVAL_LABEL' after the latest changes. Allowed."
