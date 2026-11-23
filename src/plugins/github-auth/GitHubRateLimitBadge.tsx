@@ -6,6 +6,7 @@ import { formatNumber, formatDurationUntil } from '../shared/utils';
 import { CHART_BUCKETS, rateLimitSeries, tightestBucket, type ChartBucket } from './rate-limit-chart';
 import { historyTriggerProps } from '../shared/UsageHistoryDialog';
 import { GitHubApiUsageDialog } from './GitHubApiUsageDialog';
+import { purposesForToken } from './api-usage';
 
 const CHART_W = 320;
 const CHART_H = 72;
@@ -166,14 +167,17 @@ export function GitHubRateLimitBadge({ label, source, apiCalls, rateLimit }: Pro
         ))}
 
         {apiCalls && apiCalls.total > 0 && (() => {
-          const mine = apiCalls.byToken.find((t) => t.token === (label === 'OAuth' ? 'oauth' : 'pat'))?.count ?? 0;
+          const token = label === 'OAuth' ? 'oauth' : 'pat';
+          const mine = apiCalls.byToken.find((t) => t.token === token)?.count ?? 0;
+          const myPatterns = apiCalls.byPattern.filter((p) => p.token === token);
+          const myPurposes = purposesForToken(apiCalls, token);
           return (
-            <div class="bg-ratelimit-calls" title={apiCalls.byPattern.slice(0, 12).map((p) => `${p.count}× ${p.method} ${p.pattern} (${p.purpose}, ${p.token})`).join('\n')}>
+            <div class="bg-ratelimit-calls" title={myPatterns.slice(0, 12).map((p) => `${p.count}× ${p.method} ${p.pattern} (${p.purpose})`).join('\n')}>
               <div class="bg-ratelimit-calls-head">
                 Jarvis made {formatNumber(mine)} call{mine === 1 ? '' : 's'} with this token in the last {formatSince(apiCalls.since, now)}
                 {apiCalls.total !== mine ? ` (${formatNumber(apiCalls.total)} with all tokens)` : ''}
               </div>
-              {apiCalls.byPurpose.slice(0, 6).map((p) => (
+              {myPurposes.slice(0, 6).map((p) => (
                 <div class="bg-ratelimit-calls-row" key={p.purpose}>
                   <span class="bg-ratelimit-calls-purpose">{p.purpose}</span>
                   <span class="bg-ratelimit-calls-count">{formatNumber(p.count)}</span>
