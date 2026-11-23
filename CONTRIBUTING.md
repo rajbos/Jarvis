@@ -140,7 +140,7 @@ To add a view or state to the table, add it to `SHOTS` in
   each live in their own folder under `src/`.
 - **No cloud dependencies** — all core features run locally.
 
-See [.github/copilot-instructions.md](.github/copilot-instructions.md) for the full
+See [AGENTS.md](AGENTS.md) for the full
 set of conventions and accumulated gotchas, and `docs/ARCHITECTURE.md` before making
 major design changes.
 
