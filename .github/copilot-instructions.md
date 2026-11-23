@@ -28,7 +28,16 @@ This project is **Jarvis**: a locally-hosted personal assistant agent for GitHub
 - **docs/**: Documentation (see ARCHITECTURE.md for design/requirements)
 - **scripts/**: Node scripts for building and watching Electron/renderer
 - **tests/unit/**: Unit tests for all major modules
-- **Ad-hoc inspection scripts**: no `dev/` scratch folder — put reusable, parameterized helpers under `.github/skills/` (e.g. `check-db`). Never commit scripts with hardcoded customer or business names.
+- **Ad-hoc inspection scripts**: no `dev/` scratch folder — put reusable, parameterized helpers under `.github/skills/` (e.g. `check-db`). See "No real customer names" below for the rule on names.
+
+### No real customer names
+
+This repository is public. Never put real customer, client, or employer-specific names (company names, project names, workspace slugs, notebook names) in **any** tracked file: source code, comments/JSDoc, LLM system prompts and tool-schema descriptions, tests and fixtures, docs, and `.github/skills/**/*.md` (including YAML frontmatter such as `argument-hint`). This applies to examples too, not only to scripts.
+
+- Use synthetic placeholders: `Acme Corp`, `Northwind`, `Globex`, and `example-org` for slugs/paths.
+- When editing an existing example, keep the placeholders; never "restore" a real name from chat, a database, or a screenshot.
+- Before finishing a change, grep your diff for names that came from the user's own data (`git diff | grep -iE "<name>"`) and replace any you find.
+- Real names belong only in the user's local database or config, never in the repo.
 
 ---
 

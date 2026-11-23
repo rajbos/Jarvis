@@ -106,7 +106,7 @@ const CHAT_TOOLS: OllamaTool[] = [
         properties: {
           group_name: {
             type: 'string',
-            description: 'The customer group name (e.g., "Royal London", "Colruyt", "UCB"). Will perform a partial match.',
+            description: 'The customer group name (e.g., "Acme Corp", "Northwind", "Globex"). Will perform a partial match.',
           },
         },
         required: ['group_name'],
